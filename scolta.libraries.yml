@@ -1,0 +1,10 @@
+search:
+  version: VERSION
+  js:
+    # Path resolves to the tag1/scolta Composer package's assets directory.
+    # Platforms using Composer will have this at vendor/tag1/scolta/assets/js/scolta.js.
+    # For development, symlink or copy the JS into the module's directory.
+    js/scolta.js: { type: external, minified: false }
+  css:
+    theme:
+      css/scolta.css: {}

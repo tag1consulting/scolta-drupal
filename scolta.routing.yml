@@ -1,0 +1,23 @@
+scolta.settings:
+  path: '/admin/config/search/scolta'
+  defaults:
+    _form: '\Drupal\scolta\Form\ScoltaSettingsForm'
+    _title: 'Scolta Settings'
+  requirements:
+    _permission: 'administer scolta'
+
+scolta.expand:
+  path: '/api/scolta/expand'
+  defaults:
+    _controller: '\Drupal\scolta\Controller\ExpandController::handle'
+  methods: [POST]
+  requirements:
+    _permission: 'use scolta ai'
+
+scolta.summarize:
+  path: '/api/scolta/summarize'
+  defaults:
+    _controller: '\Drupal\scolta\Controller\SummarizeController::handle'
+  methods: [POST]
+  requirements:
+    _permission: 'use scolta ai'

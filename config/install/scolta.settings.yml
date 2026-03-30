@@ -1,0 +1,5 @@
+ai_provider: anthropic
+scoring:
+  title_boost: 2.0
+  recency_decay: 0.1
+  content_boost: 1.0

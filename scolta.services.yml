@@ -1,0 +1,4 @@
+services:
+  scolta.ai_service:
+    class: Drupal\scolta\Service\ScoltaAiService
+    arguments: ['@http_client', '@config.factory']

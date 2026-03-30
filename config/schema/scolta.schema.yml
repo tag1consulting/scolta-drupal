@@ -1,0 +1,20 @@
+scolta.settings:
+  type: config_object
+  label: 'Scolta settings'
+  mapping:
+    ai_provider:
+      type: string
+      label: 'AI provider'
+    scoring:
+      type: mapping
+      label: 'Scoring configuration'
+      mapping:
+        title_boost:
+          type: float
+          label: 'Title boost factor'
+        recency_decay:
+          type: float
+          label: 'Recency decay factor'
+        content_boost:
+          type: float
+          label: 'Content boost factor'

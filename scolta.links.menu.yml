@@ -1,0 +1,5 @@
+scolta.settings:
+  title: 'Scolta'
+  description: 'Configure Scolta AI-powered search settings.'
+  route_name: scolta.settings_form
+  parent: system.admin_config_search
