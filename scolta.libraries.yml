@@ -8,3 +8,12 @@ search:
   css:
     theme:
       css/scolta.css: {}
+
+drupal_bridge:
+  version: VERSION
+  js:
+    js/scolta-drupal-bridge.js: {}
+  dependencies:
+    - core/drupal
+    - core/drupalSettings
+    - scolta/search

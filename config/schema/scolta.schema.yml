@@ -5,16 +5,122 @@ scolta.settings:
     ai_provider:
       type: string
       label: 'AI provider'
+    ai_model:
+      type: string
+      label: 'AI model'
+    ai_base_url:
+      type: string
+      label: 'AI base URL'
+    ai_expand_query:
+      type: boolean
+      label: 'Enable AI query expansion'
+    ai_summarize:
+      type: boolean
+      label: 'Enable AI summarization'
+    max_follow_ups:
+      type: integer
+      label: 'Maximum follow-up questions'
+    site_name:
+      type: string
+      label: 'Site name'
+    site_description:
+      type: string
+      label: 'Site description'
     scoring:
       type: mapping
       label: 'Scoring configuration'
       mapping:
-        title_boost:
+        title_match_boost:
           type: float
-          label: 'Title boost factor'
-        recency_decay:
+          label: 'Title match boost'
+        title_all_terms_multiplier:
           type: float
-          label: 'Recency decay factor'
-        content_boost:
+          label: 'Title all terms multiplier'
+        content_match_boost:
           type: float
-          label: 'Content boost factor'
+          label: 'Content match boost'
+        recency_boost_max:
+          type: float
+          label: 'Recency boost maximum'
+        recency_half_life_days:
+          type: integer
+          label: 'Recency half-life in days'
+        recency_penalty_after_days:
+          type: integer
+          label: 'Recency penalty after days'
+        recency_max_penalty:
+          type: float
+          label: 'Recency maximum penalty'
+        expand_primary_weight:
+          type: float
+          label: 'Expanded term primary weight'
+    display:
+      type: mapping
+      label: 'Display configuration'
+      mapping:
+        excerpt_length:
+          type: integer
+          label: 'Excerpt length'
+        results_per_page:
+          type: integer
+          label: 'Results per page'
+        max_pagefind_results:
+          type: integer
+          label: 'Maximum Pagefind results'
+        ai_summary_top_n:
+          type: integer
+          label: 'AI summary top N results'
+        ai_summary_max_chars:
+          type: integer
+          label: 'AI summary max characters'
+    cache_ttl:
+      type: integer
+      label: 'Cache TTL in seconds'
+    prompt_expand_query:
+      type: string
+      label: 'Custom expand query prompt'
+    prompt_summarize:
+      type: string
+      label: 'Custom summarize prompt'
+    prompt_follow_up:
+      type: string
+      label: 'Custom follow-up prompt'
+    pagefind:
+      type: mapping
+      label: 'Pagefind configuration'
+      mapping:
+        build_dir:
+          type: string
+          label: 'Build directory'
+        output_dir:
+          type: string
+          label: 'Output directory'
+        binary:
+          type: string
+          label: 'Pagefind binary path'
+        auto_rebuild:
+          type: boolean
+          label: 'Auto-rebuild after indexing'
+        view_mode:
+          type: string
+          label: 'Entity view mode for indexing'
+
+search_api.backend.plugin.scolta_pagefind:
+  type: mapping
+  label: 'Scolta Pagefind backend configuration'
+  mapping:
+    build_dir:
+      type: string
+      label: 'Build directory'
+    output_dir:
+      type: string
+      label: 'Pagefind output directory'
+    pagefind_binary:
+      type: string
+      label: 'Pagefind binary path'
+    auto_rebuild:
+      type: boolean
+      label: 'Auto-rebuild index after changes'
+    view_mode:
+      type: string
+      label: 'Entity view mode'

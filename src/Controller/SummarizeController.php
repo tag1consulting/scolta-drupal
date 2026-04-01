@@ -15,7 +15,7 @@ use Symfony\Component\HttpFoundation\Request;
  *
  * POST /api/scolta/v1/summarize
  *   {"query": "product pricing", "context": "...excerpts..."}
- *   → {"summary": "Our pricing plans include..."}
+ *   -> {"summary": "Our pricing plans include..."}
  */
 class SummarizeController extends ControllerBase {
 
@@ -44,7 +44,7 @@ class SummarizeController extends ControllerBase {
     $userMessage = "Search query: {$query}\n\nSearch result excerpts:\n{$context}";
 
     try {
-      $summary = $this->aiService->getClient()->message(
+      $summary = $this->aiService->message(
         $this->aiService->getSummarizePrompt(),
         $userMessage,
         512,

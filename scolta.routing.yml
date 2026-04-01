@@ -7,17 +7,25 @@ scolta.settings:
     _permission: 'administer scolta'
 
 scolta.expand:
-  path: '/api/scolta/expand'
+  path: '/api/scolta/v1/expand-query'
   defaults:
-    _controller: '\Drupal\scolta\Controller\ExpandController::handle'
+    _controller: '\Drupal\scolta\Controller\ExpandQueryController::handle'
   methods: [POST]
   requirements:
     _permission: 'use scolta ai'
 
 scolta.summarize:
-  path: '/api/scolta/summarize'
+  path: '/api/scolta/v1/summarize'
   defaults:
     _controller: '\Drupal\scolta\Controller\SummarizeController::handle'
+  methods: [POST]
+  requirements:
+    _permission: 'use scolta ai'
+
+scolta.followup:
+  path: '/api/scolta/v1/followup'
+  defaults:
+    _controller: '\Drupal\scolta\Controller\FollowUpController::handle'
   methods: [POST]
   requirements:
     _permission: 'use scolta ai'

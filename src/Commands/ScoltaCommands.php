@@ -8,6 +8,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
+use GuzzleHttp\ClientInterface;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Export\ContentItem;
 
@@ -15,14 +16,16 @@ use Tag1\Scolta\Export\ContentItem;
  * Drush commands for Scolta.
  *
  * scolta:export  — Export CMS content as HTML files for Pagefind indexing.
- * scolta:build   — Run export → pagefind CLI → deploy search page.
+ * scolta:build   — Run export -> pagefind CLI -> deploy search page.
  * scolta:clear-cache — Clear Scolta's expansion/summary caches.
+ * scolta:download-pagefind — Download the Pagefind binary for the current platform.
  */
 class ScoltaCommands extends DrushCommands {
 
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ConfigFactoryInterface $configFactory,
+    private readonly ClientInterface $httpClient,
   ) {
     parent::__construct();
   }
@@ -108,7 +111,7 @@ class ScoltaCommands extends DrushCommands {
   /**
    * Build the Pagefind search index.
    *
-   * Runs export → pagefind CLI → copies search page to docroot.
+   * Runs export -> pagefind CLI -> copies search page to docroot.
    */
   #[CLI\Command(name: 'scolta:build', aliases: ['sb'])]
   #[CLI\Option(name: 'entity-type', description: 'Entity type to export')]
@@ -154,6 +157,152 @@ class ScoltaCommands extends DrushCommands {
     $cache = \Drupal::cache('default');
     $cache->invalidateAll();
     $this->logger()->success('Scolta caches cleared.');
+  }
+
+  /**
+   * Download the Pagefind binary for the current platform.
+   *
+   * Detects OS and architecture, fetches the latest release from GitHub,
+   * and extracts the binary to the specified location.
+   */
+  #[CLI\Command(name: 'scolta:download-pagefind', aliases: ['sdp'])]
+  #[CLI\Option(name: 'version', description: 'Pagefind version to download (default: latest)')]
+  #[CLI\Option(name: 'dest', description: 'Destination directory for the binary')]
+  #[CLI\Usage(name: 'scolta:download-pagefind', description: 'Download latest Pagefind binary')]
+  #[CLI\Usage(name: 'scolta:download-pagefind --version=1.1.0 --dest=/usr/local/bin', description: 'Download specific version to specific directory')]
+  public function downloadPagefind(
+    array $options = ['version' => 'latest', 'dest' => ''],
+  ): void {
+    // Detect platform.
+    $os = PHP_OS_FAMILY;
+    $arch = php_uname('m');
+
+    $platformMap = [
+      'Darwin' => [
+        'x86_64' => 'x86_64-apple-darwin',
+        'arm64' => 'aarch64-apple-darwin',
+      ],
+      'Linux' => [
+        'x86_64' => 'x86_64-unknown-linux-musl',
+        'aarch64' => 'aarch64-unknown-linux-musl',
+        'arm64' => 'aarch64-unknown-linux-musl',
+      ],
+      'Windows' => [
+        'x86_64' => 'x86_64-pc-windows-msvc',
+        'AMD64' => 'x86_64-pc-windows-msvc',
+      ],
+    ];
+
+    if (!isset($platformMap[$os][$arch])) {
+      $this->logger()->error("Unsupported platform: {$os} {$arch}");
+      return;
+    }
+
+    $platform = $platformMap[$os][$arch];
+    $version = $options['version'];
+    $dest = $options['dest'] ?: getcwd();
+
+    // Resolve latest version from GitHub API.
+    if ($version === 'latest') {
+      $this->logger()->notice('Fetching latest Pagefind release info from GitHub...');
+      try {
+        $response = $this->httpClient->request('GET', 'https://api.github.com/repos/CloudCannon/pagefind/releases/latest', [
+          'headers' => [
+            'Accept' => 'application/vnd.github.v3+json',
+            'User-Agent' => 'Scolta-Drupal',
+          ],
+          'timeout' => 15,
+        ]);
+        $releaseData = json_decode((string) $response->getBody(), TRUE);
+        $version = ltrim($releaseData['tag_name'] ?? '', 'v');
+        if (empty($version)) {
+          $this->logger()->error('Could not determine latest Pagefind version from GitHub.');
+          return;
+        }
+      }
+      catch (\Exception $e) {
+        $this->logger()->error('Failed to fetch release info from GitHub: ' . $e->getMessage());
+        return;
+      }
+    }
+
+    $this->logger()->notice("Downloading Pagefind v{$version} for {$platform}...");
+
+    $ext = ($os === 'Windows') ? 'zip' : 'tar.gz';
+    $filename = "pagefind-v{$version}-{$platform}.{$ext}";
+    $url = "https://github.com/CloudCannon/pagefind/releases/download/v{$version}/{$filename}";
+
+    // Download the archive.
+    $tempFile = sys_get_temp_dir() . '/' . $filename;
+    try {
+      $response = $this->httpClient->request('GET', $url, [
+        'sink' => $tempFile,
+        'timeout' => 120,
+        'headers' => [
+          'User-Agent' => 'Scolta-Drupal',
+        ],
+      ]);
+
+      if ($response->getStatusCode() !== 200) {
+        $this->logger()->error("Download failed with HTTP {$response->getStatusCode()}");
+        return;
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger()->error('Download failed: ' . $e->getMessage());
+      return;
+    }
+
+    // Extract the binary.
+    if (!is_dir($dest)) {
+      mkdir($dest, 0755, TRUE);
+    }
+
+    try {
+      if ($ext === 'tar.gz') {
+        $phar = new \PharData($tempFile);
+        $phar->extractTo($dest, NULL, TRUE);
+      }
+      else {
+        $zip = new \ZipArchive();
+        if ($zip->open($tempFile) === TRUE) {
+          $zip->extractTo($dest);
+          $zip->close();
+        }
+        else {
+          $this->logger()->error('Failed to open zip archive.');
+          return;
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger()->error('Extraction failed: ' . $e->getMessage());
+      return;
+    }
+
+    // Make binary executable on Unix.
+    $binaryPath = rtrim($dest, '/') . '/pagefind';
+    if ($os !== 'Windows' && file_exists($binaryPath)) {
+      chmod($binaryPath, 0755);
+    }
+
+    // Clean up temp file.
+    if (file_exists($tempFile)) {
+      unlink($tempFile);
+    }
+
+    $this->logger()->success("Pagefind v{$version} installed to {$dest}/");
+
+    // Verify the binary works.
+    $output = [];
+    $exitCode = NULL;
+    exec("{$binaryPath} --version 2>&1", $output, $exitCode);
+    if ($exitCode === 0) {
+      $this->logger()->notice('Verified: ' . implode(' ', $output));
+    }
+    else {
+      $this->logger()->warning('Binary was extracted but --version check failed. You may need to adjust your PATH or permissions.');
+    }
   }
 
 }

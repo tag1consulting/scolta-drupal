@@ -1,0 +1,9 @@
+services:
+  scolta.commands:
+    class: Drupal\scolta\Commands\ScoltaCommands
+    arguments:
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@http_client'
+    tags:
+      - { name: drush.command }

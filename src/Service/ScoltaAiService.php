@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Drupal\scolta\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Site\Settings;
 use GuzzleHttp\ClientInterface;
+use Psr\Log\LoggerInterface;
 use Tag1\Scolta\AiClient;
 use Tag1\Scolta\Config\ScoltaConfig;
 use Tag1\Scolta\Prompt\DefaultPrompts;
@@ -15,34 +17,223 @@ use Tag1\Scolta\Prompt\DefaultPrompts;
  *
  * Registered as the 'scolta.ai_service' service. Controllers and
  * commands use this instead of constructing AiClient directly.
+ *
+ * Supports a dual-path AI strategy:
+ * 1. If the Drupal AI module (ai:ai) is installed and has a provider,
+ *    route requests through its abstraction layer.
+ * 2. Otherwise, fall back to the built-in AiClient with direct HTTP calls.
  */
 class ScoltaAiService {
 
   private ConfigFactoryInterface $configFactory;
   private ClientInterface $httpClient;
+  private LoggerInterface $logger;
   private ?AiClient $client = null;
   private ?ScoltaConfig $config = null;
 
-  public function __construct(ClientInterface $httpClient, ConfigFactoryInterface $configFactory) {
+  public function __construct(
+    ClientInterface $httpClient,
+    ConfigFactoryInterface $configFactory,
+    LoggerInterface $logger,
+  ) {
     $this->httpClient = $httpClient;
     $this->configFactory = $configFactory;
+    $this->logger = $logger;
   }
 
   /**
    * Get the Scolta configuration from Drupal config + settings.
+   *
+   * Flattens the nested scoring and display config into top-level keys
+   * for ScoltaConfig::fromArray(), removes pagefind settings (not needed
+   * by the AI client), and injects the API key and site name.
    */
   public function getConfig(): ScoltaConfig {
     if ($this->config === null) {
       $drupalConfig = $this->configFactory->get('scolta.settings');
       $values = $drupalConfig->getRawData();
 
-      // API key comes from Drupal settings.php, not config (not exportable).
-      $apiKey = \Drupal\Core\Site\Settings::get('scolta.api_key', '');
-      $values['ai_api_key'] = $apiKey;
+      // Flatten nested scoring config to top-level keys.
+      if (isset($values['scoring']) && is_array($values['scoring'])) {
+        foreach ($values['scoring'] as $key => $value) {
+          $values[$key] = $value;
+        }
+        unset($values['scoring']);
+      }
+
+      // Flatten nested display config to top-level keys.
+      if (isset($values['display']) && is_array($values['display'])) {
+        foreach ($values['display'] as $key => $value) {
+          $values[$key] = $value;
+        }
+        unset($values['display']);
+      }
+
+      // Remove pagefind config (not relevant to ScoltaConfig).
+      unset($values['pagefind']);
+
+      // API key comes from env or settings.php, not exportable config.
+      $values['ai_api_key'] = $this->getApiKey();
+
+      // Site name fallback to Drupal site name.
+      if (empty($values['site_name'])) {
+        $values['site_name'] = $this->configFactory->get('system.site')->get('name') ?? '';
+      }
 
       $this->config = ScoltaConfig::fromArray($values);
     }
     return $this->config;
+  }
+
+  /**
+   * Get the API key from environment variable or Drupal settings.
+   *
+   * Priority: SCOLTA_API_KEY env var > settings.php scolta.api_key.
+   */
+  public function getApiKey(): string {
+    $envKey = getenv('SCOLTA_API_KEY');
+    if ($envKey !== false && $envKey !== '') {
+      return $envKey;
+    }
+
+    return Settings::get('scolta.api_key', '');
+  }
+
+  /**
+   * Determine the source of the API key.
+   *
+   * @return string
+   *   One of 'env', 'settings', or 'none'.
+   */
+  public function getApiKeySource(): string {
+    $envKey = getenv('SCOLTA_API_KEY');
+    if ($envKey !== false && $envKey !== '') {
+      return 'env';
+    }
+
+    $settingsKey = Settings::get('scolta.api_key', '');
+    if (!empty($settingsKey)) {
+      return 'settings';
+    }
+
+    return 'none';
+  }
+
+  /**
+   * Check if the Drupal AI module is available.
+   */
+  public function hasDrupalAiModule(): bool {
+    return \Drupal::hasService('ai.provider');
+  }
+
+  /**
+   * Send a single-turn message via the best available AI path.
+   *
+   * Tries the Drupal AI module first (if available), then falls back
+   * to the built-in AiClient.
+   *
+   * @param string $systemPrompt
+   *   The system prompt.
+   * @param string $userMessage
+   *   The user message.
+   * @param int $maxTokens
+   *   Maximum response tokens.
+   *
+   * @return string
+   *   The AI response text.
+   */
+  public function message(string $systemPrompt, string $userMessage, int $maxTokens = 512): string {
+    if ($this->hasDrupalAiModule()) {
+      try {
+        return $this->messageViaDrupalAi($systemPrompt, $userMessage, $maxTokens);
+      }
+      catch (\Exception $e) {
+        $this->logger->warning('Drupal AI module message failed, falling back to built-in client: @msg', [
+          '@msg' => $e->getMessage(),
+        ]);
+      }
+    }
+
+    return $this->getClient()->message($systemPrompt, $userMessage, $maxTokens);
+  }
+
+  /**
+   * Send a multi-turn conversation via the best available AI path.
+   *
+   * Tries the Drupal AI module first (if available), then falls back
+   * to the built-in AiClient.
+   *
+   * @param string $systemPrompt
+   *   The system prompt.
+   * @param array $messages
+   *   Array of message objects with 'role' and 'content' keys.
+   * @param int $maxTokens
+   *   Maximum response tokens.
+   *
+   * @return string
+   *   The AI response text.
+   */
+  public function conversation(string $systemPrompt, array $messages, int $maxTokens = 512): string {
+    if ($this->hasDrupalAiModule()) {
+      try {
+        return $this->conversationViaDrupalAi($systemPrompt, $messages, $maxTokens);
+      }
+      catch (\Exception $e) {
+        $this->logger->warning('Drupal AI module conversation failed, falling back to built-in client: @msg', [
+          '@msg' => $e->getMessage(),
+        ]);
+      }
+    }
+
+    return $this->getClient()->conversation($systemPrompt, $messages, $maxTokens);
+  }
+
+  /**
+   * Send a single message via the Drupal AI module.
+   */
+  protected function messageViaDrupalAi(string $systemPrompt, string $userMessage, int $maxTokens): string {
+    /** @var \Drupal\ai\AiProviderPluginManager $aiProvider */
+    $aiProvider = \Drupal::service('ai.provider');
+
+    $config = $this->getConfig();
+
+    $input = new \Drupal\ai\OperationType\Chat\ChatInput([
+      new \Drupal\ai\OperationType\Chat\ChatMessage('system', $systemPrompt),
+      new \Drupal\ai\OperationType\Chat\ChatMessage('user', $userMessage),
+    ]);
+
+    $provider = $aiProvider->createInstance($config->aiProvider);
+    $response = $provider->chat($input, $config->aiModel, [
+      'max_tokens' => $maxTokens,
+    ]);
+
+    return $response->getNormalized()->getText();
+  }
+
+  /**
+   * Send a multi-turn conversation via the Drupal AI module.
+   */
+  protected function conversationViaDrupalAi(string $systemPrompt, array $messages, int $maxTokens): string {
+    /** @var \Drupal\ai\AiProviderPluginManager $aiProvider */
+    $aiProvider = \Drupal::service('ai.provider');
+
+    $config = $this->getConfig();
+
+    $chatMessages = [
+      new \Drupal\ai\OperationType\Chat\ChatMessage('system', $systemPrompt),
+    ];
+    foreach ($messages as $msg) {
+      $chatMessages[] = new \Drupal\ai\OperationType\Chat\ChatMessage($msg['role'], $msg['content']);
+    }
+
+    $input = new \Drupal\ai\OperationType\Chat\ChatInput($chatMessages);
+
+    $provider = $aiProvider->createInstance($config->aiProvider);
+    $response = $provider->chat($input, $config->aiModel, [
+      'max_tokens' => $maxTokens,
+    ]);
+
+    return $response->getNormalized()->getText();
   }
 
   /**

@@ -1,5 +1,33 @@
 ai_provider: anthropic
+ai_model: 'claude-sonnet-4-5-20250929'
+ai_base_url: ''
+ai_expand_query: true
+ai_summarize: true
+max_follow_ups: 3
+site_name: ''
+site_description: 'website'
 scoring:
-  title_boost: 2.0
-  recency_decay: 0.1
-  content_boost: 1.0
+  title_match_boost: 1.0
+  title_all_terms_multiplier: 1.5
+  content_match_boost: 0.4
+  recency_boost_max: 0.5
+  recency_half_life_days: 365
+  recency_penalty_after_days: 1825
+  recency_max_penalty: 0.3
+  expand_primary_weight: 0.7
+display:
+  excerpt_length: 300
+  results_per_page: 10
+  max_pagefind_results: 50
+  ai_summary_top_n: 5
+  ai_summary_max_chars: 2000
+cache_ttl: 2592000
+prompt_expand_query: ''
+prompt_summarize: ''
+prompt_follow_up: ''
+pagefind:
+  build_dir: 'private://scolta-build'
+  output_dir: 'public://scolta-pagefind'
+  binary: 'pagefind'
+  auto_rebuild: true
+  view_mode: 'search_index'

@@ -15,7 +15,7 @@ use Symfony\Component\HttpFoundation\Request;
  *
  * POST /api/scolta/v1/followup
  *   {"messages": [...conversation history...]}
- *   → {"response": "Based on the search results...", "remaining": 2}
+ *   -> {"response": "Based on the search results...", "remaining": 2}
  */
 class FollowUpController extends ControllerBase {
 
@@ -65,7 +65,7 @@ class FollowUpController extends ControllerBase {
     }
 
     try {
-      $response = $this->aiService->getClient()->conversation(
+      $response = $this->aiService->conversation(
         $this->aiService->getFollowUpPrompt(),
         $messages,
         512,

@@ -1,4 +1,16 @@
 services:
+  logger.channel.scolta:
+    parent: logger.channel_base
+    arguments: ['scolta']
+
   scolta.ai_service:
     class: Drupal\scolta\Service\ScoltaAiService
-    arguments: ['@http_client', '@config.factory']
+    arguments: ['@http_client', '@config.factory', '@logger.channel.scolta']
+
+  scolta.pagefind_exporter:
+    class: Drupal\scolta\Service\PagefindExporter
+    arguments: ['@entity_type.manager', '@renderer', '@file_system', '@logger.channel.scolta']
+
+  scolta.pagefind_builder:
+    class: Drupal\scolta\Service\PagefindBuilder
+    arguments: ['@logger.channel.scolta']

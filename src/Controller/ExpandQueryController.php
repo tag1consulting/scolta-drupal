@@ -16,7 +16,7 @@ use Symfony\Component\HttpFoundation\Request;
  *
  * POST /api/scolta/v1/expand-query
  *   {"query": "product pricing"}
- *   → ["cost", "pricing plans", "rates", "subscription tiers"]
+ *   -> ["cost", "pricing plans", "rates", "subscription tiers"]
  */
 class ExpandQueryController extends ControllerBase {
 
@@ -52,7 +52,7 @@ class ExpandQueryController extends ControllerBase {
     }
 
     try {
-      $response = $this->aiService->getClient()->message(
+      $response = $this->aiService->message(
         $this->aiService->getExpandPrompt(),
         'Expand this search query: ' . $query,
         512,
@@ -79,7 +79,7 @@ class ExpandQueryController extends ControllerBase {
       }
 
       if ($config->cacheTtl > 0) {
-        $this->cache->set($cacheKey, $terms, time() + $config->cacheTtl);
+        $this->cache->set($cacheKey, $terms, time() + $config->cacheTtl, ['scolta:expand']);
       }
 
       return new JsonResponse($terms);
