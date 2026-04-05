@@ -12,6 +12,14 @@ Major versions are synchronized across all Scolta packages. This is a platform a
 - If scolta-php adds a new method you need, bump the minimum constraint (e.g., `^1.5`).
 - All public methods SHOULD have `@since` and `@stability` annotations.
 
+### Version management and -dev workflow
+
+The `version` field in `composer.json` is always either a tagged release (`0.2.0`) or a dev pre-release (`0.3.0-dev`). See scolta-core/VERSIONING.md for the full workflow.
+
+- If current version has `-dev`, **do not change it** — multiple commits accumulate on one dev version.
+- If current version is a bare release and you're making the first change after it, bump to next target with `-dev`.
+- **WARNING:** Never commit a bare version bump without tagging it as a release.
+
 ### Drupal conventions
 
 - Use Drupal coding standards (no `declare(strict_types=1)` in .module files, but use it in classes).
