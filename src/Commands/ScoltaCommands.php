@@ -118,12 +118,14 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Option(name: 'bundle', description: 'Bundle to export')]
   #[CLI\Option(name: 'output-dir', description: 'Export directory')]
   #[CLI\Option(name: 'docroot', description: 'Docroot path')]
+  #[CLI\Option(name: 'skip-pagefind', description: 'Export content only, skip Pagefind build')]
   public function build(
     array $options = [
       'entity-type' => 'node',
       'bundle' => '',
       'output-dir' => '/var/www/html/pagefind-site',
       'docroot' => 'docroot',
+      'skip-pagefind' => FALSE,
     ],
   ): void {
     $this->logger()->notice('Step 1: Exporting content...');
@@ -131,6 +133,11 @@ class ScoltaCommands extends DrushCommands {
       'bundle' => $options['bundle'],
       'output-dir' => $options['output-dir'],
     ]);
+
+    if ($options['skip-pagefind']) {
+      $this->logger()->success('Export complete. Skipped Pagefind build (--skip-pagefind).');
+      return;
+    }
 
     $this->logger()->notice('Step 2: Building Pagefind index...');
     $docroot = $options['docroot'];
@@ -161,6 +168,99 @@ class ScoltaCommands extends DrushCommands {
     $cache = \Drupal::cache('default');
     $cache->invalidateAll();
     $this->logger()->success('Scolta caches cleared.');
+  }
+
+  /**
+   * Show Scolta status: tracker, index, binary, AI provider.
+   */
+  #[CLI\Command(name: 'scolta:status', aliases: ['sst'])]
+  public function status(): void {
+    $config = $this->configFactory->get('scolta.settings');
+
+    // Search API index status.
+    $this->logger()->notice('--- Search API ---');
+    try {
+      $indexes = $this->entityTypeManager
+        ->getStorage('search_api_index')
+        ->loadMultiple();
+      $found = FALSE;
+      foreach ($indexes as $index) {
+        if ($index->getServerId() && str_contains($index->getServerId(), 'scolta')) {
+          $tracker = $index->getTrackerInstance();
+          $indexed = $tracker->getIndexedItemsCount();
+          $total = $tracker->getTotalItemsCount();
+          $statusLabel = $index->status() ? 'enabled' : 'disabled';
+          $this->logger()->notice("  Index: {$index->label()} ({$statusLabel})");
+          $this->logger()->notice("  Indexed: {$indexed}/{$total}");
+          $found = TRUE;
+        }
+      }
+      if (!$found) {
+        $this->logger()->warning('  No Scolta index configured.');
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger()->warning('  Could not query Search API: ' . $e->getMessage());
+    }
+
+    // Pagefind binary.
+    $this->logger()->notice('--- Pagefind Binary ---');
+    $binary = $config->get('pagefind.binary') ?? 'pagefind';
+    $output = [];
+    $exitCode = NULL;
+    exec(escapeshellcmd($binary) . ' --version 2>&1', $output, $exitCode);
+    if ($exitCode === 0) {
+      $this->logger()->notice("  Binary:  {$binary}");
+      $this->logger()->notice("  Version: " . trim(implode(' ', $output)));
+    }
+    else {
+      $this->logger()->warning("  Pagefind binary not found at: {$binary}");
+      $this->logger()->notice('  Install: npm install -g pagefind');
+      $this->logger()->notice('  Or:      drush scolta:download-pagefind');
+    }
+
+    // Pagefind index.
+    $this->logger()->notice('--- Pagefind Index ---');
+    $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
+    if (str_contains($outputDir, '://')) {
+      try {
+        $swm = \Drupal::service('stream_wrapper_manager');
+        $resolvedDir = $swm->getViaUri($outputDir)->realpath() ?: $outputDir;
+      }
+      catch (\Exception $e) {
+        $resolvedDir = $outputDir;
+      }
+    }
+    else {
+      $resolvedDir = $outputDir;
+    }
+    if (file_exists($resolvedDir . '/pagefind.js')) {
+      $fragmentCount = count(glob($resolvedDir . '/fragment/*') ?: []);
+      $mtime = filemtime($resolvedDir . '/pagefind.js');
+      $this->logger()->notice("  Path:       {$outputDir}");
+      $this->logger()->notice("  Fragments:  {$fragmentCount}");
+      $this->logger()->notice("  Last built: " . ($mtime ? date('Y-m-d H:i:s', $mtime) : 'unknown'));
+    }
+    else {
+      $this->logger()->notice("  Path: {$outputDir} (no index built yet)");
+    }
+
+    // AI provider.
+    $this->logger()->notice('--- AI Provider ---');
+    $aiService = \Drupal::service('scolta.ai_service');
+    if ($aiService->hasDrupalAiModule()) {
+      $this->logger()->notice('  Provider: Drupal AI module');
+    }
+    else {
+      $provider = $config->get('ai_provider') ?? 'anthropic';
+      $this->logger()->notice("  Provider: {$provider} (built-in)");
+    }
+    $keySource = $aiService->getApiKeySource();
+    $this->logger()->notice("  API key:  {$keySource}");
+
+    // Generation counter.
+    $generation = \Drupal::state()->get('scolta.generation', 0);
+    $this->logger()->notice("  Cache generation: {$generation}");
   }
 
   /**
