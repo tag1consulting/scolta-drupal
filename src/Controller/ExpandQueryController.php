@@ -42,8 +42,9 @@ class ExpandQueryController extends ControllerBase {
 
     $config = $this->aiService->getConfig();
 
-    // Cache lookup (enabled when cache_ttl > 0).
-    $cacheKey = 'scolta:expand:' . hash('sha256', strtolower($query));
+    // Cache lookup with generation counter for invalidation on rebuild.
+    $generation = \Drupal::state()->get('scolta.generation', 0);
+    $cacheKey = 'scolta_expand_' . $generation . '_' . hash('sha256', strtolower($query));
     if ($config->cacheTtl > 0) {
       $cached = $this->cache->get($cacheKey);
       if ($cached) {
@@ -79,7 +80,7 @@ class ExpandQueryController extends ControllerBase {
       }
 
       if ($config->cacheTtl > 0) {
-        $this->cache->set($cacheKey, $terms, time() + $config->cacheTtl, ['scolta:expand']);
+        $this->cache->set($cacheKey, $terms, time() + $config->cacheTtl, ['scolta_expand']);
       }
 
       return new JsonResponse($terms);

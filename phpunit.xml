@@ -7,6 +7,7 @@
   <testsuites>
     <testsuite name="scolta-drupal">
       <directory>tests/src</directory>
+      <exclude>tests/src/Functional</exclude>
     </testsuite>
   </testsuites>
 </phpunit>

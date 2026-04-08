@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Controller;
 
+use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -21,11 +22,13 @@ class SummarizeController extends ControllerBase {
 
   public function __construct(
     private readonly ScoltaAiService $aiService,
+    private readonly CacheBackendInterface $cache,
   ) {}
 
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('scolta.ai_service'),
+      $container->get('cache.default'),
     );
   }
 
@@ -41,6 +44,18 @@ class SummarizeController extends ControllerBase {
       return new JsonResponse(['error' => 'Invalid context'], 400);
     }
 
+    $config = $this->aiService->getConfig();
+
+    // Cache lookup with generation counter.
+    $generation = \Drupal::state()->get('scolta.generation', 0);
+    $cacheKey = 'scolta_summarize_' . $generation . '_' . hash('sha256', strtolower($query) . '|' . $context);
+    if ($config->cacheTtl > 0) {
+      $cached = $this->cache->get($cacheKey);
+      if ($cached) {
+        return new JsonResponse($cached->data);
+      }
+    }
+
     $userMessage = "Search query: {$query}\n\nSearch result excerpts:\n{$context}";
 
     try {
@@ -50,7 +65,13 @@ class SummarizeController extends ControllerBase {
         512,
       );
 
-      return new JsonResponse(['summary' => $summary]);
+      $result = ['summary' => $summary];
+
+      if ($config->cacheTtl > 0) {
+        $this->cache->set($cacheKey, $result, time() + $config->cacheTtl, ['scolta_summarize']);
+      }
+
+      return new JsonResponse($result);
     }
     catch (\Exception $e) {
       $this->getLogger('scolta')->error(

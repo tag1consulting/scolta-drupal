@@ -146,6 +146,10 @@ class ScoltaCommands extends DrushCommands {
       return;
     }
 
+    // Increment the generation counter to invalidate cached expansions/summaries.
+    $generation = \Drupal::state()->get('scolta.generation', 0);
+    \Drupal::state()->set('scolta.generation', $generation + 1);
+
     $this->logger()->success('Index built successfully.');
   }
 
