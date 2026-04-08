@@ -141,6 +141,35 @@ class ScoltaCommands extends DrushCommands {
     }
 
     $this->logger()->notice('Step 2: Building Pagefind index...');
+    $docroot = $options['docroot'];
+    $this->runPagefind($options['output-dir'], $docroot . '/pagefind');
+  }
+
+  /**
+   * Rebuild the Pagefind index from existing exported HTML files.
+   *
+   * Skips the content export step — runs only the Pagefind CLI.
+   * Useful after config changes or Pagefind upgrades.
+   */
+  #[CLI\Command(name: 'scolta:rebuild-index', aliases: ['sri'])]
+  #[CLI\Option(name: 'source-dir', description: 'Source directory with exported HTML files')]
+  #[CLI\Option(name: 'output-dir', description: 'Pagefind output directory')]
+  public function rebuildIndex(
+    array $options = [
+      'source-dir' => '/var/www/html/pagefind-site',
+      'output-dir' => '',
+    ],
+  ): void {
+    $sourceDir = $options['source-dir'];
+    $outputDir = $options['output-dir'] ?: dirname($sourceDir) . '/pagefind';
+    $this->logger()->notice('Rebuilding Pagefind index from existing HTML files...');
+    $this->runPagefind($sourceDir, $outputDir);
+  }
+
+  /**
+   * Run the Pagefind CLI to build a search index.
+   */
+  private function runPagefind(string $sourceDir, string $outputDir): void {
     $config = $this->configFactory->get('scolta.settings');
     $resolver = new PagefindBinary(
       configuredPath: $config->get('pagefind.binary'),
@@ -159,11 +188,9 @@ class ScoltaCommands extends DrushCommands {
       'via' => $resolver->resolvedVia(),
     ]);
 
-    $docroot = $options['docroot'];
-    $outputDir = $options['output-dir'];
     $cmd = $binary
-      . ' --site ' . escapeshellarg($outputDir)
-      . ' --output-path ' . escapeshellarg($docroot . '/pagefind')
+      . ' --site ' . escapeshellarg($sourceDir)
+      . ' --output-path ' . escapeshellarg($outputDir)
       . ' 2>&1';
     $result = NULL;
     $output = [];
