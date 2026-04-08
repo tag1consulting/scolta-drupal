@@ -1,0 +1,55 @@
+# Scolta AI Search Configuration
+# These are the default values installed with the module.
+# Override via the admin UI at /admin/config/search/scolta
+# or by importing config overrides.
+#
+# API key is NOT stored in config — set it via:
+#   - Environment variable: SCOLTA_API_KEY=sk-ant-...
+#   - settings.php: $settings['scolta.api_key'] = 'sk-ant-...';
+
+# --- AI Provider ---
+ai_provider: anthropic              # 'anthropic' or 'openai'
+ai_model: 'claude-sonnet-4-5-20250514'  # Model for expansion/summarization
+ai_base_url: ''                     # Custom API endpoint (leave empty for defaults)
+ai_expand_query: true               # Enable AI query expansion
+ai_summarize: true                  # Enable AI result summarization
+max_follow_ups: 3                   # Max follow-up questions per session (0 to disable)
+
+# --- Site Identity (used in AI prompts) ---
+site_name: ''                       # Leave empty to use Drupal site name
+site_description: 'website'         # Brief description for AI context
+
+# --- Scoring ---
+scoring:
+  title_match_boost: 1.0            # Boost for title matches
+  title_all_terms_multiplier: 1.5   # Extra boost when ALL terms match title
+  content_match_boost: 0.4          # Boost for content body matches
+  recency_boost_max: 0.5            # Max boost for recent content
+  recency_half_life_days: 365       # Days for recency boost to halve
+  recency_penalty_after_days: 1825  # Content older than this gets penalized
+  recency_max_penalty: 0.3          # Max penalty for old content
+  expand_primary_weight: 0.7        # Weight for original vs expanded terms (0-1)
+
+# --- Display ---
+display:
+  excerpt_length: 300               # Max characters in result excerpts
+  results_per_page: 10              # Results shown per page
+  max_pagefind_results: 50          # Max results fetched from Pagefind
+  ai_summary_top_n: 5               # Top N results sent to AI for summary
+  ai_summary_max_chars: 2000        # Max context chars sent to AI
+
+# --- Cache ---
+cache_ttl: 2592000                  # AI response cache in seconds (30 days)
+
+# --- Custom Prompts (leave empty for built-in defaults) ---
+prompt_expand_query: ''
+prompt_summarize: ''
+prompt_follow_up: ''
+
+# --- Pagefind ---
+pagefind:
+  build_dir: 'private://scolta-build'     # Where exported HTML is stored
+  output_dir: 'public://scolta-pagefind'  # Where Pagefind index is built
+  binary: 'pagefind'                       # Binary path (leave default for auto-detection)
+  auto_rebuild: true                       # Rebuild index on Search API indexing
+  view_mode: 'search_index'               # Entity view mode for rendering
