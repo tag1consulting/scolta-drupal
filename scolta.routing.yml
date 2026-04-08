@@ -29,3 +29,11 @@ scolta.followup:
   methods: [POST]
   requirements:
     _permission: 'use scolta ai'
+
+scolta.health:
+  path: '/api/scolta/v1/health'
+  defaults:
+    _controller: '\Drupal\scolta\Controller\HealthController::handle'
+  methods: [GET]
+  requirements:
+    _permission: 'use scolta ai'
