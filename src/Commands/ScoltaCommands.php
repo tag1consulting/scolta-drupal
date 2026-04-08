@@ -223,6 +223,45 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
+   * Verify Scolta dependencies and configuration.
+   *
+   * Checks PHP, FFI, Extism, WASM binary, Pagefind, and AI key.
+   */
+  #[CLI\Command(name: 'scolta:check-setup', aliases: ['scs'])]
+  public function checkSetup(): void {
+    $config = $this->configFactory->get('scolta.settings');
+    $aiService = \Drupal::service('scolta.ai_service');
+
+    $results = \Tag1\Scolta\SetupCheck::run(
+      configuredBinaryPath: $config->get('pagefind.binary'),
+      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
+      aiApiKey: $aiService->getApiKey(),
+    );
+
+    foreach ($results as $r) {
+      $icon = match ($r['status']) {
+        'pass' => '[OK]',
+        'warn' => '[!!]',
+        'fail' => '[FAIL]',
+      };
+      $method = match ($r['status']) {
+        'fail' => 'error',
+        'warn' => 'warning',
+        default => 'notice',
+      };
+      $this->logger()->$method("{$icon} {$r['name']}: {$r['message']}");
+    }
+
+    $exit = \Tag1\Scolta\SetupCheck::exitCode($results);
+    if ($exit === 0) {
+      $this->logger()->success('All critical checks passed.');
+    }
+    else {
+      $this->logger()->error('One or more critical checks failed.');
+    }
+  }
+
+  /**
    * Show Scolta status: tracker, index, binary, AI provider.
    */
   #[CLI\Command(name: 'scolta:status', aliases: ['sst'])]
