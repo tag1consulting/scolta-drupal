@@ -76,6 +76,43 @@ class ScoltaSettingsFormTest extends TestCase {
     );
   }
 
+  /**
+   * Methods with ': string' return type must not return $this->t() uncasted.
+   *
+   * Drupal's $this->t() returns TranslatableMarkup, not string. Returning
+   * it from a method typed ': string' causes a TypeError at runtime.
+   * This test catches the pattern statically.
+   */
+  public function testStringReturnMethodsDoNotReturnTranslatableMarkupUncasted(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+
+    // Find all methods with ': string' return type.
+    preg_match_all(
+      '/function\s+(\w+)\([^)]*\)\s*:\s*string\s*\{(.*?)\n  \}/s',
+      $contents,
+      $matches,
+      PREG_SET_ORDER,
+    );
+
+    $violations = [];
+    foreach ($matches as $match) {
+      $method = $match[1];
+      $body = $match[2];
+
+      // Look for 'return $this->t(' without a (string) cast.
+      if (preg_match('/return\s+\$this->t\s*\(/', $body)) {
+        $violations[] = $method;
+      }
+    }
+
+    $this->assertEmpty(
+      $violations,
+      'Methods with : string return type must cast $this->t() with (string): '
+      . implode(', ', $violations)
+    );
+  }
+
   // -------------------------------------------------------------------
   // 2. Form fields map to install config keys.
   // -------------------------------------------------------------------

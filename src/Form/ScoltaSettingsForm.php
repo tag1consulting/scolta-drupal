@@ -487,9 +487,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
   protected function getPromptDescription($config, string $configKey): string {
     $saved = $config->get($configKey) ?? '';
     if (!empty($saved)) {
-      return $this->t('Customized. Clear the field and save to reset to the built-in default.');
+      return (string) $this->t('Customized. Clear the field and save to reset to the built-in default.');
     }
-    return $this->t('Showing the built-in default. Edit to customize, or leave as-is.');
+    return (string) $this->t('Showing the built-in default. Edit to customize, or leave as-is.');
   }
 
   /**
