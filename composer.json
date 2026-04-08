@@ -15,8 +15,14 @@
         "tag1/scolta-php": "@dev"
     },
     "require-dev": {
+        "drupal/coder": "^8.3",
         "phpunit/phpunit": "^10.0|^11.0",
         "symfony/yaml": "^6.0|^7.0"
+    },
+    "scripts": {
+        "test": "phpunit",
+        "lint": "phpcs",
+        "format": "phpcbf"
     },
     "repositories": [
         {
