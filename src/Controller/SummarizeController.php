@@ -27,6 +27,9 @@ class SummarizeController extends ControllerBase {
     private readonly StateInterface $state,
   ) {}
 
+  /**
+   * {@inheritdoc}
+   */
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('scolta.ai_service'),
@@ -35,6 +38,9 @@ class SummarizeController extends ControllerBase {
     );
   }
 
+  /**
+   * Handle a summarize request.
+   */
   public function handle(Request $request): JsonResponse {
     $body = json_decode($request->getContent(), TRUE);
     $query = trim($body['query'] ?? '');

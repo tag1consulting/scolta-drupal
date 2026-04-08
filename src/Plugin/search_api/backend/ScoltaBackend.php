@@ -7,6 +7,7 @@ namespace Drupal\scolta\Plugin\search_api\backend;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Plugin\PluginFormInterface;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Service\PagefindBuilder;
 use Drupal\scolta\Service\PagefindExporter;
 use Drupal\search_api\Backend\BackendPluginBase;
@@ -36,8 +37,32 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  */
 class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
 
+  /**
+   * The Pagefind exporter service.
+   *
+   * @var \Drupal\scolta\Service\PagefindExporter
+   */
   protected PagefindExporter $exporter;
+
+  /**
+   * The Pagefind builder service.
+   *
+   * @var \Drupal\scolta\Service\PagefindBuilder
+   */
   protected PagefindBuilder $builder;
+
+  /**
+   * The stream wrapper manager.
+   *
+   * @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface
+   */
+  protected StreamWrapperManagerInterface $streamWrapperManager;
+
+  /**
+   * The Scolta logger channel.
+   *
+   * @var \Psr\Log\LoggerInterface
+   */
   protected LoggerInterface $scoltaLogger;
 
   /**
@@ -47,6 +72,7 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->exporter = $container->get('scolta.pagefind_exporter');
     $instance->builder = $container->get('scolta.pagefind_builder');
+    $instance->streamWrapperManager = $container->get('stream_wrapper_manager');
     $instance->scoltaLogger = $container->get('logger.channel.scolta');
     return $instance;
   }
@@ -237,9 +263,7 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
   protected function getResolvedBuildDir(): string {
     $dir = $this->configuration['build_dir'];
     if (str_contains($dir, '://')) {
-      /** @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $swm */
-      $swm = \Drupal::service('stream_wrapper_manager');
-      $dir = $swm->getViaUri($dir)->realpath() ?: $dir;
+      $dir = $this->streamWrapperManager->getViaUri($dir)->realpath() ?: $dir;
     }
     return $dir;
   }
@@ -250,9 +274,7 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
   protected function getResolvedOutputDir(): string {
     $dir = $this->configuration['output_dir'];
     if (str_contains($dir, '://')) {
-      /** @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $swm */
-      $swm = \Drupal::service('stream_wrapper_manager');
-      $dir = $swm->getViaUri($dir)->realpath() ?: $dir;
+      $dir = $this->streamWrapperManager->getViaUri($dir)->realpath() ?: $dir;
     }
     return $dir;
   }

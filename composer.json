@@ -15,7 +15,10 @@
         "tag1/scolta-php": "@dev"
     },
     "require-dev": {
-        "drupal/coder": "^8.3",
+        "drupal/coder": "^9.0",
+        "mglaman/phpstan-drupal": "^2.0",
+        "phpstan/phpstan": "^2.1",
+        "phpstan/phpstan-deprecation-rules": "^2.0",
         "phpunit/phpunit": "^10.0|^11.0",
         "symfony/yaml": "^6.0|^7.0"
     },
@@ -41,6 +44,9 @@
         }
     },
     "config": {
-        "sort-packages": true
+        "sort-packages": true,
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
     }
 }

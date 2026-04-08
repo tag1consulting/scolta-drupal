@@ -23,12 +23,18 @@ class FollowUpController extends ControllerBase {
     private readonly ScoltaAiService $aiService,
   ) {}
 
+  /**
+   * {@inheritdoc}
+   */
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('scolta.ai_service'),
     );
   }
 
+  /**
+   * Handle a follow-up question request.
+   */
   public function handle(Request $request): JsonResponse {
     $body = json_decode($request->getContent(), TRUE);
     $messages = $body['messages'] ?? [];

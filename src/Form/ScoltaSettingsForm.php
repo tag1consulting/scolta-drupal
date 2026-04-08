@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Form;
 
+use Tag1\Scolta\Prompt\DefaultPrompts;
+use Tag1\Scolta\Binary\PagefindBinary;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Service\PagefindBuilder;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -20,18 +24,63 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  */
 class ScoltaSettingsForm extends ConfigFormBase {
 
+  /**
+   * The Scolta AI service.
+   *
+   * @var \Drupal\scolta\Service\ScoltaAiService
+   */
   protected ScoltaAiService $aiService;
+
+  /**
+   * The Pagefind builder service.
+   *
+   * @var \Drupal\scolta\Service\PagefindBuilder
+   */
   protected PagefindBuilder $pagefindBuilder;
 
+  /**
+   * The stream wrapper manager.
+   *
+   * @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface
+   */
+  protected StreamWrapperManagerInterface $streamWrapperManager;
+
+  /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected EntityTypeManagerInterface $entityTypeManager;
+
+  /**
+   * Constructs a ScoltaSettingsForm object.
+   *
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
+   *   The config factory.
+   * @param \Drupal\Core\Config\TypedConfigManagerInterface $typedConfigManager
+   *   The typed config manager.
+   * @param \Drupal\scolta\Service\ScoltaAiService $aiService
+   *   The Scolta AI service.
+   * @param \Drupal\scolta\Service\PagefindBuilder $pagefindBuilder
+   *   The Pagefind builder service.
+   * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $streamWrapperManager
+   *   The stream wrapper manager.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
+   *   The entity type manager.
+   */
   public function __construct(
     ConfigFactoryInterface $configFactory,
     TypedConfigManagerInterface $typedConfigManager,
     ScoltaAiService $aiService,
     PagefindBuilder $pagefindBuilder,
+    StreamWrapperManagerInterface $streamWrapperManager,
+    EntityTypeManagerInterface $entityTypeManager,
   ) {
     parent::__construct($configFactory, $typedConfigManager);
     $this->aiService = $aiService;
     $this->pagefindBuilder = $pagefindBuilder;
+    $this->streamWrapperManager = $streamWrapperManager;
+    $this->entityTypeManager = $entityTypeManager;
   }
 
   /**
@@ -43,6 +92,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $container->get('config.typed'),
       $container->get('scolta.ai_service'),
       $container->get('scolta.pagefind_builder'),
+      $container->get('stream_wrapper_manager'),
+      $container->get('entity_type.manager'),
     );
   }
 
@@ -77,8 +128,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'select',
       '#title' => $this->t('AI Provider'),
       '#options' => [
-        'anthropic' => 'Anthropic (Claude)',
-        'openai' => 'OpenAI',
+        'anthropic' => $this->t('Anthropic (Claude)'),
+        'openai' => $this->t('OpenAI'),
       ],
       '#default_value' => $config->get('ai_provider') ?? 'anthropic',
     ];
@@ -345,12 +396,12 @@ class ScoltaSettingsForm extends ConfigFormBase {
         break;
 
       case 'settings':
-        $message = $this->t('API key configured via settings.php ($settings[\'scolta.api_key\']).');
+        $message = $this->t("API key configured via settings.php (\$settings['scolta.api_key']).");
         $class = 'color--success';
         break;
 
       default:
-        $message = $this->t('No API key configured. Set the SCOLTA_API_KEY environment variable or add $settings[\'scolta.api_key\'] to settings.php.');
+        $message = $this->t("No API key configured. Set the SCOLTA_API_KEY environment variable or add \$settings['scolta.api_key'] to settings.php.");
         $class = 'color--warning';
         break;
     }
@@ -378,7 +429,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     // Pagefind binary status.
     $config = $this->config('scolta.settings');
-    $resolver = new \Tag1\Scolta\Binary\PagefindBinary(
+    $resolver = new PagefindBinary(
       configuredPath: $config->get('pagefind.binary'),
       projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
     );
@@ -396,9 +447,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
     if (str_contains($outputDir, '://')) {
       try {
-        /** @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $swm */
-        $swm = \Drupal::service('stream_wrapper_manager');
-        $resolvedDir = $swm->getViaUri($outputDir)->realpath() ?: $outputDir;
+        $resolvedDir = $this->streamWrapperManager
+          ->getViaUri($outputDir)->realpath() ?: $outputDir;
       }
       catch (\Exception $e) {
         $resolvedDir = $outputDir;
@@ -422,7 +472,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     // Search API index.
     try {
-      $indexes = \Drupal::entityTypeManager()
+      $indexes = $this->entityTypeManager
         ->getStorage('search_api_index')
         ->loadByProperties(['server' => 'scolta_pagefind']);
       if (!empty($indexes)) {
@@ -434,7 +484,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       }
       else {
         // Try loading any index with scolta backend.
-        $allIndexes = \Drupal::entityTypeManager()
+        $allIndexes = $this->entityTypeManager
           ->getStorage('search_api_index')
           ->loadMultiple();
         $found = FALSE;
@@ -483,7 +533,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
   }
 
   /**
-   * Get the description text for a prompt field, indicating customization state.
+   * Get the description text for a prompt field.
+   *
+   * Indicates the current customization state.
    */
   protected function getPromptDescription($config, string $configKey): string {
     $saved = $config->get($configKey) ?? '';
@@ -501,7 +553,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
    */
   protected function getDefaultPrompt(string $name): string {
     try {
-      return \Tag1\Scolta\Prompt\DefaultPrompts::getTemplate($name);
+      return DefaultPrompts::getTemplate($name);
     }
     catch (\Throwable $e) {
       return '';

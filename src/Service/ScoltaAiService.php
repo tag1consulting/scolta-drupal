@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Service;
 
+use Drupal\ai\OperationType\Chat\ChatMessage;
+use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Site\Settings;
 use GuzzleHttp\ClientInterface;
@@ -25,11 +27,40 @@ use Tag1\Scolta\Prompt\DefaultPrompts;
  */
 class ScoltaAiService {
 
+  /**
+   * The config factory.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
   private ConfigFactoryInterface $configFactory;
+
+  /**
+   * The HTTP client.
+   *
+   * @var \GuzzleHttp\ClientInterface
+   */
   private ClientInterface $httpClient;
+
+  /**
+   * The logger.
+   *
+   * @var \Psr\Log\LoggerInterface
+   */
   private LoggerInterface $logger;
-  private ?AiClient $client = null;
-  private ?ScoltaConfig $config = null;
+
+  /**
+   * The lazily-initialized AI client.
+   *
+   * @var \Tag1\Scolta\AiClient|null
+   */
+  private ?AiClient $client = NULL;
+
+  /**
+   * The cached Scolta configuration.
+   *
+   * @var \Tag1\Scolta\Config\ScoltaConfig|null
+   */
+  private ?ScoltaConfig $config = NULL;
 
   public function __construct(
     ClientInterface $httpClient,
@@ -49,7 +80,7 @@ class ScoltaAiService {
    * by the AI client), and injects the API key and site name.
    */
   public function getConfig(): ScoltaConfig {
-    if ($this->config === null) {
+    if ($this->config === NULL) {
       $drupalConfig = $this->configFactory->get('scolta.settings');
       $values = $drupalConfig->getRawData();
 
@@ -92,7 +123,7 @@ class ScoltaAiService {
    */
   public function getApiKey(): string {
     $envKey = getenv('SCOLTA_API_KEY');
-    if ($envKey !== false && $envKey !== '') {
+    if ($envKey !== FALSE && $envKey !== '') {
       return $envKey;
     }
 
@@ -107,7 +138,7 @@ class ScoltaAiService {
    */
   public function getApiKeySource(): string {
     $envKey = getenv('SCOLTA_API_KEY');
-    if ($envKey !== false && $envKey !== '') {
+    if ($envKey !== FALSE && $envKey !== '') {
       return 'env';
     }
 
@@ -197,9 +228,9 @@ class ScoltaAiService {
 
     $config = $this->getConfig();
 
-    $input = new \Drupal\ai\OperationType\Chat\ChatInput([
-      new \Drupal\ai\OperationType\Chat\ChatMessage('system', $systemPrompt),
-      new \Drupal\ai\OperationType\Chat\ChatMessage('user', $userMessage),
+    $input = new ChatInput([
+      new ChatMessage('system', $systemPrompt),
+      new ChatMessage('user', $userMessage),
     ]);
 
     $provider = $aiProvider->createInstance($config->aiProvider);
@@ -220,13 +251,13 @@ class ScoltaAiService {
     $config = $this->getConfig();
 
     $chatMessages = [
-      new \Drupal\ai\OperationType\Chat\ChatMessage('system', $systemPrompt),
+      new ChatMessage('system', $systemPrompt),
     ];
     foreach ($messages as $msg) {
-      $chatMessages[] = new \Drupal\ai\OperationType\Chat\ChatMessage($msg['role'], $msg['content']);
+      $chatMessages[] = new ChatMessage($msg['role'], $msg['content']);
     }
 
-    $input = new \Drupal\ai\OperationType\Chat\ChatInput($chatMessages);
+    $input = new ChatInput($chatMessages);
 
     $provider = $aiProvider->createInstance($config->aiProvider);
     $response = $provider->chat($input, $config->aiModel, [
@@ -240,7 +271,7 @@ class ScoltaAiService {
    * Get the AI client, configured from Drupal settings.
    */
   public function getClient(): AiClient {
-    if ($this->client === null) {
+    if ($this->client === NULL) {
       $config = $this->getConfig();
       $this->client = new AiClient($config->toAiClientConfig(), $this->httpClient);
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Service;
 
+use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
@@ -89,7 +90,7 @@ class PagefindExporter {
    * @param string $buildDir
    *   The build directory path.
    * @param string|null $datasourceId
-   *   If provided, only delete files from this datasource (e.g., 'entity:node').
+   *   Optional datasource filter (e.g., 'entity:node').
    */
   public function deleteAll(string $buildDir, ?string $datasourceId = NULL): void {
     if (!is_dir($buildDir)) {
@@ -187,12 +188,12 @@ class PagefindExporter {
     // Content type (bundle).
     $entityType = $entity->getEntityType();
     $bundleKey = $entityType->getKey('bundle');
-    if ($bundleKey && $entity->hasField($bundleKey)) {
+    if ($bundleKey && $entity instanceof FieldableEntityInterface && $entity->hasField($bundleKey)) {
       $meta['content_type'] = $entity->bundle();
       // Human-readable bundle label.
       $bundleEntity = $this->entityTypeManager
         ->getStorage($entityType->getBundleEntityType())
-        ?->load($entity->bundle());
+        ->load($entity->bundle());
       if ($bundleEntity) {
         $meta['content_type_label'] = $bundleEntity->label();
       }

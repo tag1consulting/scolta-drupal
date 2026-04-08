@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Service;
 
+use Tag1\Scolta\Binary\PagefindBinary;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Process\Process;
 
@@ -30,7 +31,9 @@ class PagefindBuilder {
    * @param string $outputDir
    *   Where the _pagefind/ bundle should be written.
    *
-   * @return array{success: bool, output: string, error: ?string, file_count: ?int, index_size: ?string}
+   * @return array{success: bool, output: string, error: ?string,
+   *   file_count: ?int, index_size: ?string}
+   *   The build result array.
    */
   public function build(string $binary, string $buildDir, string $outputDir): array {
     if (!is_dir($buildDir)) {
@@ -78,7 +81,8 @@ class PagefindBuilder {
     ]);
 
     $process = new Process($command);
-    $process->setTimeout(300); // 5 minutes for large sites.
+    // 5 minutes for large sites.
+    $process->setTimeout(300);
     $process->run();
 
     $output = $process->getOutput() . $process->getErrorOutput();
@@ -108,10 +112,12 @@ class PagefindBuilder {
   /**
    * Check if the pagefind binary is available.
    *
-   * @return array{available: bool, binary: ?string, version: ?string, via: string, message: string}
+   * @return array{available: bool, binary: ?string,
+   *   version: ?string, via: string, message: string}
+   *   The binary status array.
    */
-  public function checkBinary(?string $configuredPath = null): array {
-    $resolver = new \Tag1\Scolta\Binary\PagefindBinary(
+  public function checkBinary(?string $configuredPath = NULL): array {
+    $resolver = new PagefindBinary(
       configuredPath: $configuredPath,
       projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
     );
@@ -121,7 +127,9 @@ class PagefindBuilder {
   /**
    * Get stats about the current Pagefind index.
    *
-   * @return array{exists: bool, file_count: int, index_size: string, last_built: ?string}
+   * @return array{exists: bool, file_count: int,
+   *   index_size: string, last_built: ?string}
+   *   The index status array.
    */
   public function getStatus(string $outputDir): array {
     if (!is_dir($outputDir)) {

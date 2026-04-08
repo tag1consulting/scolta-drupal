@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Commands;
 
+use Drupal\Core\Entity\EntityChangedInterface;
+use Drupal\Core\Entity\FieldableEntityInterface;
+use Tag1\Scolta\SetupCheck;
+use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\State\StateInterface;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\scolta\Service\ScoltaAiService;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 use GuzzleHttp\ClientInterface;
@@ -17,18 +23,39 @@ use Tag1\Scolta\Export\ContentItem;
 /**
  * Drush commands for Scolta.
  *
- * scolta:export  — Export CMS content as HTML files for Pagefind indexing.
- * scolta:build   — Run export -> pagefind CLI -> deploy search page.
- * scolta:clear-cache — Clear Scolta's expansion/summary caches.
- * scolta:download-pagefind — Download the Pagefind binary for the current platform.
+ * Scolta:export  -- Export CMS content as HTML files.
+ * scolta:build   -- Run export, pagefind CLI, deploy.
+ * scolta:clear-cache -- Clear expansion/summary caches.
+ * scolta:download-pagefind -- Download the Pagefind binary.
  */
 class ScoltaCommands extends DrushCommands {
 
+  /**
+   * Constructs a ScoltaCommands object.
+   *
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
+   *   The entity type manager.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
+   *   The config factory.
+   * @param \GuzzleHttp\ClientInterface $httpClient
+   *   The HTTP client.
+   * @param \Drupal\Core\State\StateInterface $state
+   *   The state service.
+   * @param \Drupal\Core\Cache\CacheBackendInterface $cache
+   *   The default cache backend.
+   * @param \Drupal\scolta\Service\ScoltaAiService $aiService
+   *   The Scolta AI service.
+   * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $streamWrapperManager
+   *   The stream wrapper manager.
+   */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ConfigFactoryInterface $configFactory,
     private readonly ClientInterface $httpClient,
     private readonly StateInterface $state,
+    private readonly CacheBackendInterface $cache,
+    private readonly ScoltaAiService $aiService,
+    private readonly StreamWrapperManagerInterface $streamWrapperManager,
   ) {
     parent::__construct();
   }
@@ -79,6 +106,10 @@ class ScoltaCommands extends DrushCommands {
     $entities = $storage->loadMultiple($ids);
 
     foreach ($entities as $entity) {
+      if (!$entity instanceof FieldableEntityInterface) {
+        continue;
+      }
+
       // Extract body content — try common field names.
       $body = '';
       foreach (['body', 'field_body', 'field_content'] as $field) {
@@ -92,12 +123,16 @@ class ScoltaCommands extends DrushCommands {
         continue;
       }
 
+      $changedTime = $entity instanceof EntityChangedInterface
+        ? $entity->getChangedTime()
+        : (int) ($entity->get('changed')->value ?? 0);
+
       $item = new ContentItem(
         id: (string) $entity->id(),
         title: $entity->label() ?: 'Untitled',
         bodyHtml: $body,
         url: $entity->toUrl()->setAbsolute(TRUE)->toString(),
-        date: date('Y-m-d', $entity->getChangedTime()),
+        date: date('Y-m-d', $changedTime),
         siteName: $siteName,
       );
 
@@ -179,7 +214,7 @@ class ScoltaCommands extends DrushCommands {
     );
 
     $binary = $resolver->resolve();
-    if ($binary === null) {
+    if ($binary === NULL) {
       $status = $resolver->status();
       $this->logger()->error($status['message']);
       return;
@@ -205,7 +240,7 @@ class ScoltaCommands extends DrushCommands {
       return;
     }
 
-    // Increment the generation counter to invalidate cached expansions/summaries.
+    // Increment generation counter to invalidate caches.
     $generation = $this->state->get('scolta.generation', 0);
     $this->state->set('scolta.generation', $generation + 1);
 
@@ -217,8 +252,7 @@ class ScoltaCommands extends DrushCommands {
    */
   #[CLI\Command(name: 'scolta:clear-cache', aliases: ['scc'])]
   public function clearCache(): void {
-    $cache = \Drupal::cache('default');
-    $cache->invalidateAll();
+    $this->cache->deleteAll();
     $this->logger()->success('Scolta caches cleared.');
   }
 
@@ -230,12 +264,12 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Command(name: 'scolta:check-setup', aliases: ['scs'])]
   public function checkSetup(): void {
     $config = $this->configFactory->get('scolta.settings');
-    $aiService = \Drupal::service('scolta.ai_service');
 
-    $results = \Tag1\Scolta\SetupCheck::run(
+    $results = SetupCheck::run(
       configuredBinaryPath: $config->get('pagefind.binary'),
-      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
-      aiApiKey: $aiService->getApiKey(),
+      projectDir: defined('DRUPAL_ROOT')
+        ? DRUPAL_ROOT : getcwd(),
+      aiApiKey: $this->aiService->getApiKey(),
     );
 
     foreach ($results as $r) {
@@ -243,6 +277,7 @@ class ScoltaCommands extends DrushCommands {
         'pass' => '[OK]',
         'warn' => '[!!]',
         'fail' => '[FAIL]',
+        default => '[??]',
       };
       $method = match ($r['status']) {
         'fail' => 'error',
@@ -252,7 +287,7 @@ class ScoltaCommands extends DrushCommands {
       $this->logger()->$method("{$icon} {$r['name']}: {$r['message']}");
     }
 
-    $exit = \Tag1\Scolta\SetupCheck::exitCode($results);
+    $exit = SetupCheck::exitCode($results);
     if ($exit === 0) {
       $this->logger()->success('All critical checks passed.');
     }
@@ -313,8 +348,8 @@ class ScoltaCommands extends DrushCommands {
     $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
     if (str_contains($outputDir, '://')) {
       try {
-        $swm = \Drupal::service('stream_wrapper_manager');
-        $resolvedDir = $swm->getViaUri($outputDir)->realpath() ?: $outputDir;
+        $resolvedDir = $this->streamWrapperManager
+          ->getViaUri($outputDir)->realpath() ?: $outputDir;
       }
       catch (\Exception $e) {
         $resolvedDir = $outputDir;
@@ -336,15 +371,14 @@ class ScoltaCommands extends DrushCommands {
 
     // AI provider.
     $this->logger()->notice('--- AI Provider ---');
-    $aiService = \Drupal::service('scolta.ai_service');
-    if ($aiService->hasDrupalAiModule()) {
+    if ($this->aiService->hasDrupalAiModule()) {
       $this->logger()->notice('  Provider: Drupal AI module');
     }
     else {
       $provider = $config->get('ai_provider') ?? 'anthropic';
       $this->logger()->notice("  Provider: {$provider} (built-in)");
     }
-    $keySource = $aiService->getApiKeySource();
+    $keySource = $this->aiService->getApiKeySource();
     $this->logger()->notice("  API key:  {$keySource}");
 
     // Generation counter.
@@ -490,7 +524,7 @@ class ScoltaCommands extends DrushCommands {
     $this->logger()->success("Pagefind v{$version} installed to {$dest}/");
 
     // Auto-update Drupal config to point to the downloaded binary.
-    $editableConfig = \Drupal::configFactory()->getEditable('scolta.settings');
+    $editableConfig = $this->configFactory->getEditable('scolta.settings');
     $editableConfig->set('pagefind.binary', $binaryPath);
     $editableConfig->save();
     $this->logger()->notice('Drupal config updated: pagefind.binary = {path}', [

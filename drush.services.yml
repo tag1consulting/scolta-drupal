@@ -6,5 +6,8 @@ services:
       - '@config.factory'
       - '@http_client'
       - '@state'
+      - '@cache.default'
+      - '@scolta.ai_service'
+      - '@stream_wrapper_manager'
     tags:
       - { name: drush.command }
