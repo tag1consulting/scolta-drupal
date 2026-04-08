@@ -148,14 +148,33 @@ config/
 
 ## Testing
 
+**Unit tests** (fast, no CMS required — 329 tests):
+
 ```bash
-# Unit/structural tests (no Drupal bootstrap required)
 cd packages/scolta-drupal
 ./vendor/bin/phpunit
+```
 
-# Functional tests (requires DDEV with Drupal installed)
+**Functional tests** (requires DDEV — 19 tests):
+
+```bash
 cd test-drupal-11
 ddev exec php vendor/bin/phpunit --testsuite=scolta-functional
+```
+
+**Coding standards:**
+
+```bash
+cd packages/scolta-drupal
+composer lint    # PHPCS (Drupal + DrupalPractice)
+composer format  # Auto-fix violations
+```
+
+**PHPStan** (requires DDEV for Drupal class resolution):
+
+```bash
+cd test-drupal-11
+ddev exec vendor/bin/phpstan analyse --no-progress --memory-limit=512M
 ```
 
 ## Troubleshooting
