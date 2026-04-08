@@ -300,6 +300,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'textarea',
       '#title' => $this->t('Expand query prompt'),
       '#default_value' => $config->get('prompt_expand_query') ?? '',
+      '#placeholder' => $this->getDefaultPrompt('expand_query'),
       '#rows' => 6,
       '#description' => $this->t('Custom system prompt for query expansion. Leave blank for default.'),
     ];
@@ -308,6 +309,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'textarea',
       '#title' => $this->t('Summarize prompt'),
       '#default_value' => $config->get('prompt_summarize') ?? '',
+      '#placeholder' => $this->getDefaultPrompt('summarize'),
       '#rows' => 6,
       '#description' => $this->t('Custom system prompt for result summarization. Leave blank for default.'),
     ];
@@ -316,6 +318,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'textarea',
       '#title' => $this->t('Follow-up prompt'),
       '#default_value' => $config->get('prompt_follow_up') ?? '',
+      '#placeholder' => $this->getDefaultPrompt('follow_up'),
       '#rows' => 6,
       '#description' => $this->t('Custom system prompt for follow-up conversations. Leave blank for default.'),
     ];
@@ -468,6 +471,21 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'item',
       '#markup' => $list,
     ];
+  }
+
+  /**
+   * Get the default prompt template for use as a placeholder.
+   *
+   * Returns the raw template with {SITE_NAME} and {SITE_DESCRIPTION}
+   * placeholders intact. Returns empty string if WASM is unavailable.
+   */
+  protected function getDefaultPrompt(string $name): string {
+    try {
+      return \Tag1\Scolta\Prompt\DefaultPrompts::getTemplate($name);
+    }
+    catch (\Throwable $e) {
+      return '';
+    }
   }
 
   /**
