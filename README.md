@@ -74,6 +74,16 @@ $settings['scolta.api_key'] = 'sk-ant-...';
 
 Then configure AI settings at **Admin > Configuration > Search > Scolta** (`/admin/config/search/scolta`).
 
+## Verify Your Setup
+
+After installation, run the setup check to verify all prerequisites:
+
+```bash
+drush scolta:check-setup
+```
+
+This verifies PHP version, FFI extension, Extism library, WASM binary, Pagefind binary, AI provider configuration, and cache backend. Fix any items marked as failed before proceeding.
+
 ## Configuration
 
 The settings form at `/admin/config/search/scolta` provides:
@@ -97,10 +107,14 @@ The settings form at `/admin/config/search/scolta` provides:
 ## Drush Commands
 
 ```bash
-drush scolta:build          # Export content and build Pagefind index
-drush scolta:export         # Export content to HTML (without building index)
-drush scolta:clear-cache    # Clear Scolta caches
-drush scolta:download-pagefind  # Download the Pagefind binary
+drush scolta:build                    # Export content and build Pagefind index
+drush scolta:build --skip-pagefind    # Export HTML without rebuilding index
+drush scolta:export                   # Export content to HTML only
+drush scolta:rebuild-index            # Rebuild Pagefind index from existing HTML
+drush scolta:status                   # Show tracker, content, index, and AI status
+drush scolta:clear-cache              # Clear Scolta AI response caches
+drush scolta:download-pagefind        # Download the Pagefind binary
+drush scolta:check-setup              # Verify PHP, Extism, Pagefind, and configuration
 ```
 
 ## Permissions
@@ -143,6 +157,54 @@ cd packages/scolta-drupal
 cd test-drupal-11
 ddev exec php vendor/bin/phpunit --testsuite=scolta-functional
 ```
+
+## Troubleshooting
+
+### "FFI not enabled" or WASM load failure
+
+Scolta requires PHP FFI and the Extism shared library:
+
+```bash
+# Check FFI
+php -r "echo extension_loaded('ffi') ? 'OK' : 'MISSING';"
+
+# Check Extism
+php -r "echo class_exists('\Extism\Plugin') ? 'OK' : 'MISSING';"
+
+# Linux: check library path
+ldconfig -p | grep extism
+
+# macOS: check library
+ls /usr/local/lib/libextism.dylib
+```
+
+Install Extism if missing:
+
+```bash
+curl -s https://get.extism.org/cli | bash -s -- -y
+sudo extism lib install --version latest
+sudo ldconfig  # Linux only
+```
+
+### "Pagefind binary not found"
+
+```bash
+drush scolta:download-pagefind
+# or
+npm install -g pagefind
+```
+
+### "AI features not working"
+
+1. Verify API key: `drush scolta:check-setup`
+2. Clear stale cache: `drush scolta:clear-cache`
+3. Also clear Drupal cache: `drush cr`
+
+### "No search results"
+
+1. Check index status: `drush scolta:status`
+2. Run a full build: `drush search-api:index && drush scolta:build`
+3. Verify the Pagefind output directory is web-accessible
 
 ## License
 

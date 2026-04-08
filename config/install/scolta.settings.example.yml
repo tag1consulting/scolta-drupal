@@ -9,7 +9,7 @@
 
 # --- AI Provider ---
 ai_provider: anthropic              # 'anthropic' or 'openai'
-ai_model: 'claude-sonnet-4-5-20250514'  # Model for expansion/summarization
+ai_model: 'claude-sonnet-4-5-20250929'  # Model for expansion/summarization
 ai_base_url: ''                     # Custom API endpoint (leave empty for defaults)
 ai_expand_query: true               # Enable AI query expansion
 ai_summarize: true                  # Enable AI result summarization
