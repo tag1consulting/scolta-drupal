@@ -6,6 +6,7 @@ namespace Drupal\scolta\Commands;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\State\StateInterface;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 use GuzzleHttp\ClientInterface;
@@ -27,6 +28,7 @@ class ScoltaCommands extends DrushCommands {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ConfigFactoryInterface $configFactory,
     private readonly ClientInterface $httpClient,
+    private readonly StateInterface $state,
   ) {
     parent::__construct();
   }
@@ -204,8 +206,8 @@ class ScoltaCommands extends DrushCommands {
     }
 
     // Increment the generation counter to invalidate cached expansions/summaries.
-    $generation = \Drupal::state()->get('scolta.generation', 0);
-    \Drupal::state()->set('scolta.generation', $generation + 1);
+    $generation = $this->state->get('scolta.generation', 0);
+    $this->state->set('scolta.generation', $generation + 1);
 
     $this->logger()->success('Index built successfully.');
   }
@@ -307,7 +309,7 @@ class ScoltaCommands extends DrushCommands {
     $this->logger()->notice("  API key:  {$keySource}");
 
     // Generation counter.
-    $generation = \Drupal::state()->get('scolta.generation', 0);
+    $generation = $this->state->get('scolta.generation', 0);
     $this->logger()->notice("  Cache generation: {$generation}");
   }
 

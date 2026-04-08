@@ -6,6 +6,7 @@ namespace Drupal\scolta\Controller;
 
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\State\StateInterface;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -23,12 +24,14 @@ class ExpandQueryController extends ControllerBase {
   public function __construct(
     private readonly ScoltaAiService $aiService,
     private readonly CacheBackendInterface $cache,
+    private readonly StateInterface $state,
   ) {}
 
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('scolta.ai_service'),
       $container->get('cache.default'),
+      $container->get('state'),
     );
   }
 
@@ -43,7 +46,7 @@ class ExpandQueryController extends ControllerBase {
     $config = $this->aiService->getConfig();
 
     // Cache lookup with generation counter for invalidation on rebuild.
-    $generation = \Drupal::state()->get('scolta.generation', 0);
+    $generation = $this->state->get('scolta.generation', 0);
     $cacheKey = 'scolta_expand_' . $generation . '_' . hash('sha256', strtolower($query));
     if ($config->cacheTtl > 0) {
       $cached = $this->cache->get($cacheKey);
