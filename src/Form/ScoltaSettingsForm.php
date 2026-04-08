@@ -293,34 +293,31 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'details',
       '#title' => $this->t('Custom Prompts'),
       '#open' => FALSE,
-      '#description' => $this->t('Override the default AI prompts. Leave blank to use built-in defaults. Supports {SITE_NAME} and {SITE_DESCRIPTION} placeholders.'),
+      '#description' => $this->t('Edit the AI prompts below. The default prompt is shown when no custom value is saved. Clear the field and save to reset to the default. Supports {SITE_NAME} and {SITE_DESCRIPTION} placeholders.'),
     ];
 
     $form['prompts']['prompt_expand_query'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Expand query prompt'),
-      '#default_value' => $config->get('prompt_expand_query') ?? '',
-      '#placeholder' => $this->getDefaultPrompt('expand_query'),
-      '#rows' => 6,
-      '#description' => $this->t('Custom system prompt for query expansion. Leave blank for default.'),
+      '#default_value' => $this->getEffectivePrompt($config, 'prompt_expand_query', 'expand_query'),
+      '#rows' => 8,
+      '#description' => $this->getPromptDescription($config, 'prompt_expand_query'),
     ];
 
     $form['prompts']['prompt_summarize'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Summarize prompt'),
-      '#default_value' => $config->get('prompt_summarize') ?? '',
-      '#placeholder' => $this->getDefaultPrompt('summarize'),
-      '#rows' => 6,
-      '#description' => $this->t('Custom system prompt for result summarization. Leave blank for default.'),
+      '#default_value' => $this->getEffectivePrompt($config, 'prompt_summarize', 'summarize'),
+      '#rows' => 8,
+      '#description' => $this->getPromptDescription($config, 'prompt_summarize'),
     ];
 
     $form['prompts']['prompt_follow_up'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Follow-up prompt'),
-      '#default_value' => $config->get('prompt_follow_up') ?? '',
-      '#placeholder' => $this->getDefaultPrompt('follow_up'),
-      '#rows' => 6,
-      '#description' => $this->t('Custom system prompt for follow-up conversations. Leave blank for default.'),
+      '#default_value' => $this->getEffectivePrompt($config, 'prompt_follow_up', 'follow_up'),
+      '#rows' => 8,
+      '#description' => $this->getPromptDescription($config, 'prompt_follow_up'),
     ];
 
     // ── Status Section (read-only) ──
@@ -474,7 +471,29 @@ class ScoltaSettingsForm extends ConfigFormBase {
   }
 
   /**
-   * Get the default prompt template for use as a placeholder.
+   * Get the effective prompt: saved custom value, or the built-in default.
+   */
+  protected function getEffectivePrompt($config, string $configKey, string $templateName): string {
+    $saved = $config->get($configKey) ?? '';
+    if (!empty($saved)) {
+      return $saved;
+    }
+    return $this->getDefaultPrompt($templateName);
+  }
+
+  /**
+   * Get the description text for a prompt field, indicating customization state.
+   */
+  protected function getPromptDescription($config, string $configKey): string {
+    $saved = $config->get($configKey) ?? '';
+    if (!empty($saved)) {
+      return $this->t('Customized. Clear the field and save to reset to the built-in default.');
+    }
+    return $this->t('Showing the built-in default. Edit to customize, or leave as-is.');
+  }
+
+  /**
+   * Get the default prompt template text.
    *
    * Returns the raw template with {SITE_NAME} and {SITE_DESCRIPTION}
    * placeholders intact. Returns empty string if WASM is unavailable.
@@ -486,6 +505,20 @@ class ScoltaSettingsForm extends ConfigFormBase {
     catch (\Throwable $e) {
       return '';
     }
+  }
+
+  /**
+   * If a prompt value matches the built-in default, store empty string.
+   *
+   * This ensures the prompt automatically picks up future default changes
+   * from WASM updates, rather than persisting a stale copy.
+   */
+  protected function normalizePromptValue(string $value, string $templateName): string {
+    $default = $this->getDefaultPrompt($templateName);
+    if ($default !== '' && trim($value) === trim($default)) {
+      return '';
+    }
+    return $value;
   }
 
   /**
@@ -521,9 +554,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
       // Cache.
       ->set('cache_ttl', (int) $form_state->getValue('cache_ttl'))
       // Custom prompts.
-      ->set('prompt_expand_query', $form_state->getValue('prompt_expand_query'))
-      ->set('prompt_summarize', $form_state->getValue('prompt_summarize'))
-      ->set('prompt_follow_up', $form_state->getValue('prompt_follow_up'))
+      ->set('prompt_expand_query', $this->normalizePromptValue($form_state->getValue('prompt_expand_query') ?? '', 'expand_query'))
+      ->set('prompt_summarize', $this->normalizePromptValue($form_state->getValue('prompt_summarize') ?? '', 'summarize'))
+      ->set('prompt_follow_up', $this->normalizePromptValue($form_state->getValue('prompt_follow_up') ?? '', 'follow_up'))
       ->save();
 
     parent::submitForm($form, $form_state);
