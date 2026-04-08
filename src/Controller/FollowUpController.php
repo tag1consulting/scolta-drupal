@@ -36,7 +36,11 @@ class FollowUpController extends ControllerBase {
    * Handle a follow-up question request.
    */
   public function handle(Request $request): JsonResponse {
-    $body = json_decode($request->getContent(), TRUE);
+    try {
+        $body = json_decode($request->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+    } catch (\JsonException $e) {
+        return new JsonResponse(['error' => 'Malformed JSON: ' . $e->getMessage()], 400);
+    }
     $messages = $body['messages'] ?? [];
 
     if (empty($messages) || !is_array($messages)) {
@@ -86,7 +90,7 @@ class FollowUpController extends ControllerBase {
     catch (\Exception $e) {
       $this->getLogger('scolta')->error(
         'Follow-up failed: @msg',
-        ['@msg' => $e->getMessage()]
+        ['@msg' => $e->getMessage(), 'exception' => $e]
       );
       return new JsonResponse(['error' => 'Follow-up unavailable'], 503);
     }

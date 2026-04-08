@@ -42,7 +42,11 @@ class SummarizeController extends ControllerBase {
    * Handle a summarize request.
    */
   public function handle(Request $request): JsonResponse {
-    $body = json_decode($request->getContent(), TRUE);
+    try {
+        $body = json_decode($request->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+    } catch (\JsonException $e) {
+        return new JsonResponse(['error' => 'Malformed JSON: ' . $e->getMessage()], 400);
+    }
     $query = trim($body['query'] ?? '');
     $context = trim($body['context'] ?? '');
 
@@ -85,7 +89,7 @@ class SummarizeController extends ControllerBase {
     catch (\Exception $e) {
       $this->getLogger('scolta')->error(
         'Summarize failed: @msg',
-        ['@msg' => $e->getMessage()]
+        ['@msg' => $e->getMessage(), 'exception' => $e]
       );
       return new JsonResponse(['error' => 'Summarization unavailable'], 503);
     }

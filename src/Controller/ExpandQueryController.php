@@ -42,7 +42,11 @@ class ExpandQueryController extends ControllerBase {
    * Handle an expand-query request.
    */
   public function handle(Request $request): JsonResponse {
-    $body = json_decode($request->getContent(), TRUE);
+    try {
+        $body = json_decode($request->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+    } catch (\JsonException $e) {
+        return new JsonResponse(['error' => 'Malformed JSON: ' . $e->getMessage()], 400);
+    }
     $query = trim($body['query'] ?? '');
 
     if (empty($query) || strlen($query) > 500) {
@@ -68,11 +72,6 @@ class ExpandQueryController extends ControllerBase {
         512,
       );
 
-      $this->getLogger('scolta')->notice(
-        'Expand raw response for "@query": @resp',
-        ['@query' => $query, '@resp' => $response]
-      );
-
       // Claude may wrap the JSON in markdown code fences — strip them.
       $cleaned = trim($response);
       $cleaned = preg_replace('/^```(?:json)?\s*/i', '', $cleaned);
@@ -82,8 +81,8 @@ class ExpandQueryController extends ControllerBase {
       $terms = json_decode($cleaned, TRUE);
       if (!is_array($terms) || count($terms) < 2) {
         $this->getLogger('scolta')->warning(
-          'Expand failed to produce array for "@query". Parsed: @parsed',
-          ['@query' => $query, '@parsed' => print_r($terms, TRUE)]
+          'Expand failed to parse AI response for "@query"',
+          ['@query' => $query]
         );
         $terms = [$query];
       }
@@ -97,7 +96,7 @@ class ExpandQueryController extends ControllerBase {
     catch (\Exception $e) {
       $this->getLogger('scolta')->error(
         'Expand query failed: @msg',
-        ['@msg' => $e->getMessage()]
+        ['@msg' => $e->getMessage(), 'exception' => $e]
       );
       return new JsonResponse(['error' => 'Query expansion unavailable'], 503);
     }
