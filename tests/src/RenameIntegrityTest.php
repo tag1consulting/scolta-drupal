@@ -107,15 +107,23 @@ class RenameIntegrityTest extends TestCase {
       "composer.json should not require tag1/scolta (old name)");
   }
 
-  public function testLibrariesYmlReferencesScoltaPhpVendorPath(): void {
+  public function testLibrariesYmlDoesNotReferenceOldPackageName(): void {
     $content = file_get_contents($this->moduleRoot . '/scolta.libraries.yml');
 
-    // Comments should reference the new package name.
+    // Must not reference the old vendor path (vendor/tag1/scolta/).
+    $this->assertStringNotContainsString('vendor/tag1/scolta/', $content,
+      "libraries.yml should not reference old vendor/tag1/scolta/ path");
+
+    // If vendor paths are used, they should reference scolta-php.
     if (str_contains($content, 'vendor/tag1/')) {
       $this->assertStringContainsString('tag1/scolta-php', $content,
         "libraries.yml vendor references should use tag1/scolta-php");
-      $this->assertStringNotContainsString('vendor/tag1/scolta/', $content,
-        "libraries.yml should not reference old vendor/tag1/scolta/ path");
+    }
+
+    // Comments mentioning the shared package should say scolta-php.
+    if (preg_match('/scolta-(?:core|php)/', $content)) {
+      $this->assertStringNotContainsString('scolta-core', $content,
+        "libraries.yml should reference scolta-php, not scolta-core");
     }
   }
 

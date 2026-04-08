@@ -104,7 +104,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
   protected function resolvePagefindUrl(string $uri): string {
     if (str_contains($uri, '://')) {
       try {
-        $url = $this->fileUrlGenerator->generateAbsoluteString($uri);
+        $url = $this->fileUrlGenerator->generateString($uri);
         return rtrim($url, '/');
       }
       catch (\Exception $e) {
