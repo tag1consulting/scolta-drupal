@@ -39,6 +39,9 @@ class ScoltaExportFunctionalTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    // Create content types first so permissions exist.
+    $this->drupalCreateContentType(['type' => 'article']);
+    $this->drupalCreateContentType(['type' => 'page']);
     $this->adminUser = $this->drupalCreateUser([
       'administer scolta',
       'administer search_api',
@@ -46,8 +49,6 @@ class ScoltaExportFunctionalTest extends BrowserTestBase {
       'create article content',
       'create page content',
     ]);
-    $this->drupalCreateContentType(['type' => 'article']);
-    $this->drupalCreateContentType(['type' => 'page']);
   }
 
   /**
