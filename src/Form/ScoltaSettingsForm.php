@@ -378,17 +378,18 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     // Pagefind binary status.
     $config = $this->config('scolta.settings');
-    $binary = $config->get('pagefind.binary') ?? 'pagefind';
-    $binaryCheck = $this->pagefindBuilder->checkBinary($binary);
-    if ($binaryCheck['available']) {
-      $items[] = $this->t('Pagefind binary: Found (@version)', [
-        '@version' => $binaryCheck['version'] ?? 'unknown',
+    $resolver = new \Tag1\Scolta\Binary\PagefindBinary(
+      configuredPath: $config->get('pagefind.binary'),
+      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
+    );
+    $binaryStatus = $resolver->status();
+    if ($binaryStatus['available']) {
+      $items[] = $this->t('Pagefind binary: @message', [
+        '@message' => $binaryStatus['message'],
       ]);
     }
     else {
-      $items[] = $this->t('Pagefind binary: Not found at "@path". Install via npm or use drush scolta:download-pagefind.', [
-        '@path' => $binary,
-      ]);
+      $items[] = $this->t('Pagefind binary: Not available. Run drush scolta:download-pagefind or install via npm.');
     }
 
     // Pagefind index status.

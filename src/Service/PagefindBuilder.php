@@ -108,27 +108,14 @@ class PagefindBuilder {
   /**
    * Check if the pagefind binary is available.
    *
-   * @return array{available: bool, version: ?string}
+   * @return array{available: bool, binary: ?string, version: ?string, via: string, message: string}
    */
-  public function checkBinary(string $binary): array {
-    $parts = explode(' ', $binary);
-    $parts[] = '--version';
-
-    $process = new Process($parts);
-    $process->setTimeout(10);
-    $process->run();
-
-    if ($process->isSuccessful()) {
-      return [
-        'available' => TRUE,
-        'version' => trim($process->getOutput()),
-      ];
-    }
-
-    return [
-      'available' => FALSE,
-      'version' => NULL,
-    ];
+  public function checkBinary(?string $configuredPath = null): array {
+    $resolver = new \Tag1\Scolta\Binary\PagefindBinary(
+      configuredPath: $configuredPath,
+      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
+    );
+    return $resolver->status();
   }
 
   /**

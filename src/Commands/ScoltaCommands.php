@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 use GuzzleHttp\ClientInterface;
+use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Export\ContentItem;
 
@@ -140,11 +141,33 @@ class ScoltaCommands extends DrushCommands {
     }
 
     $this->logger()->notice('Step 2: Building Pagefind index...');
+    $config = $this->configFactory->get('scolta.settings');
+    $resolver = new PagefindBinary(
+      configuredPath: $config->get('pagefind.binary'),
+      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
+    );
+
+    $binary = $resolver->resolve();
+    if ($binary === null) {
+      $status = $resolver->status();
+      $this->logger()->error($status['message']);
+      return;
+    }
+
+    $this->logger()->notice('Using Pagefind: {binary} (resolved via {via})', [
+      'binary' => $binary,
+      'via' => $resolver->resolvedVia(),
+    ]);
+
     $docroot = $options['docroot'];
     $outputDir = $options['output-dir'];
+    $cmd = $binary
+      . ' --site ' . escapeshellarg($outputDir)
+      . ' --output-path ' . escapeshellarg($docroot . '/pagefind')
+      . ' 2>&1';
     $result = NULL;
     $output = [];
-    exec("npx pagefind --site {$outputDir} --output-path {$docroot}/pagefind 2>&1", $output, $result);
+    exec($cmd, $output, $result);
     foreach ($output as $line) {
       $this->logger()->notice($line);
     }
@@ -205,18 +228,16 @@ class ScoltaCommands extends DrushCommands {
 
     // Pagefind binary.
     $this->logger()->notice('--- Pagefind Binary ---');
-    $binary = $config->get('pagefind.binary') ?? 'pagefind';
-    $output = [];
-    $exitCode = NULL;
-    exec(escapeshellcmd($binary) . ' --version 2>&1', $output, $exitCode);
-    if ($exitCode === 0) {
-      $this->logger()->notice("  Binary:  {$binary}");
-      $this->logger()->notice("  Version: " . trim(implode(' ', $output)));
+    $resolver = new PagefindBinary(
+      configuredPath: $config->get('pagefind.binary'),
+      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
+    );
+    $binaryStatus = $resolver->status();
+    if ($binaryStatus['available']) {
+      $this->logger()->notice("  {$binaryStatus['message']}");
     }
     else {
-      $this->logger()->warning("  Pagefind binary not found at: {$binary}");
-      $this->logger()->notice('  Install: npm install -g pagefind');
-      $this->logger()->notice('  Or:      drush scolta:download-pagefind');
+      $this->logger()->warning($binaryStatus['message']);
     }
 
     // Pagefind index.
@@ -304,7 +325,10 @@ class ScoltaCommands extends DrushCommands {
 
     $platform = $platformMap[$os][$arch];
     $version = $options['version'];
-    $dest = $options['dest'] ?: getcwd();
+    $resolver = new PagefindBinary(
+      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
+    );
+    $dest = $options['dest'] ?: $resolver->downloadTargetDir();
 
     // Resolve latest version from GitHub API.
     if ($version === 'latest') {
@@ -396,6 +420,14 @@ class ScoltaCommands extends DrushCommands {
     }
 
     $this->logger()->success("Pagefind v{$version} installed to {$dest}/");
+
+    // Auto-update Drupal config to point to the downloaded binary.
+    $editableConfig = \Drupal::configFactory()->getEditable('scolta.settings');
+    $editableConfig->set('pagefind.binary', $binaryPath);
+    $editableConfig->save();
+    $this->logger()->notice('Drupal config updated: pagefind.binary = {path}', [
+      'path' => $binaryPath,
+    ]);
 
     // Verify the binary works.
     $output = [];
