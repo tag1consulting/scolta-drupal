@@ -8,8 +8,7 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Tag1\Scolta\Binary\PagefindBinary;
-use Tag1\Scolta\ExtismCheck;
+use Tag1\Scolta\Health\HealthChecker;
 
 /**
  * Health check endpoint for monitoring.
@@ -46,50 +45,36 @@ class HealthController extends ControllerBase {
    */
   public function handle(): JsonResponse {
     $config = $this->config('scolta.settings');
+    $scoltaConfig = $this->aiService->getConfig();
 
-    // AI status.
-    $aiConfigured = !empty($this->aiService->getApiKey());
-
-    // Pagefind binary.
-    $resolver = new PagefindBinary(
-      configuredPath: $config->get('pagefind.binary'),
-      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
-    );
-    $binaryStatus = $resolver->status();
-
-    // WASM status.
-    $wasmStatus = ExtismCheck::status();
-
-    // Index status.
+    // Resolve the index output directory (handle Drupal stream wrappers).
     $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
-    $indexExists = FALSE;
     if (str_contains($outputDir, '://')) {
       try {
         $swm = \Drupal::service('stream_wrapper_manager');
-        $resolvedDir = $swm->getViaUri($outputDir)->realpath() ?: $outputDir;
+        $outputDir = $swm->getViaUri($outputDir)->realpath() ?: $outputDir;
       }
       catch (\Exception $e) {
-        $resolvedDir = $outputDir;
+        // Fall through with original path.
       }
     }
-    else {
-      $resolvedDir = $outputDir;
-    }
-    $indexExists = file_exists($resolvedDir . '/pagefind.js');
 
-    $status = 'ok';
-    if (!$indexExists || !$aiConfigured) {
-      $status = 'degraded';
+    $checker = new HealthChecker(
+      config: $scoltaConfig,
+      indexOutputDir: $outputDir,
+      pagefindBinaryPath: $config->get('pagefind.binary'),
+      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
+    );
+
+    $result = $checker->check();
+
+    // Drupal-specific: override AI provider when Drupal AI module is active.
+    if ($this->aiService->hasDrupalAiModule()) {
+      $result['ai_provider'] = 'drupal-ai';
+      $result['ai_configured'] = true;
     }
 
-    return new JsonResponse([
-      'status' => $status,
-      'ai_provider' => $this->aiService->hasDrupalAiModule() ? 'drupal-ai' : ($config->get('ai_provider') ?? 'anthropic'),
-      'ai_configured' => $aiConfigured,
-      'pagefind_available' => $binaryStatus['available'],
-      'wasm_available' => $wasmStatus['available'],
-      'index_exists' => $indexExists,
-    ]);
+    return new JsonResponse($result);
   }
 
 }
