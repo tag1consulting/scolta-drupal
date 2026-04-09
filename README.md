@@ -2,7 +2,49 @@
 
 [![CI](https://github.com/tag1consulting/scolta-drupal/actions/workflows/ci.yml/badge.svg)](https://github.com/tag1consulting/scolta-drupal/actions/workflows/ci.yml)
 
-Drupal module providing AI-powered search with Pagefind. Integrates with Search API as a backend and delivers client-side search with optional AI query expansion, summarization, and follow-up conversations.
+Scolta adds AI-powered search to your Drupal site. Search runs entirely in the browser using Pagefind — no search server needed. Optional AI features handle query expansion, result summarization, and follow-up conversations. Works with any content type, any language.
+
+## Quickstart
+
+```bash
+# 1. Install
+composer require tag1/scolta-drupal tag1/scolta-php
+
+# 2. Enable the module
+drush en scolta
+
+# 3. Verify prerequisites
+drush scolta:check-setup
+
+# 4. Create a Search API server + index with the Scolta backend
+#    (Admin > Configuration > Search > Search API)
+
+# 5. Index content and build the search index
+drush search-api:index && drush scolta:build
+
+# 6. Place the Scolta Search block — you have AI search.
+```
+
+## Configuration
+
+Set the API key to enable AI features:
+
+```bash
+export SCOLTA_API_KEY=sk-ant-...
+```
+
+Then configure AI settings at **Admin > Configuration > Search > Scolta** (`/admin/config/search/scolta`):
+
+- **AI Configuration** -- Provider, model, feature toggles, follow-up limits
+- **Scoring** -- Title/content match boosts, recency decay, expanded term weights
+- **Display** -- Excerpt length, results per page, AI summary parameters
+- **Cache** -- TTL for AI response caching
+
+See [CONFIG_REFERENCE.md](../../docs/CONFIG_REFERENCE.md) for the full list of settings.
+
+## Prompt Enrichment
+
+The built-in expand, summarize, and follow-up prompts can be customized via the settings form under **Custom Prompts**. You can also set site name and description to give the AI better context about your content. See [ENRICHMENT.md](../../docs/ENRICHMENT.md) for details on prompt customization.
 
 ## How It Works
 
@@ -102,7 +144,7 @@ drush scolta:check-setup
 
 This verifies PHP version, FFI extension, Extism library, WASM binary, Pagefind binary, AI provider configuration, and cache backend. Fix any items marked as failed before proceeding.
 
-## Configuration
+## Configuration Details
 
 The settings form at `/admin/config/search/scolta` provides:
 
@@ -166,14 +208,14 @@ config/
 
 ## Testing
 
-**Unit tests** (fast, no CMS required — 329 tests):
+**Unit tests** (fast, no CMS required -- 329 tests):
 
 ```bash
 cd packages/scolta-drupal
 ./vendor/bin/phpunit
 ```
 
-**Functional tests** (requires DDEV — 19 tests):
+**Functional tests** (requires DDEV -- 19 tests):
 
 ```bash
 cd test-drupal-11
