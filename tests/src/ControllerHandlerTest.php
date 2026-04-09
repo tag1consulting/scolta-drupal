@@ -134,67 +134,55 @@ class ControllerHandlerTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // ExpandQueryController response format expectations.
+  // Controllers delegate to AiEndpointHandler.
   // -------------------------------------------------------------------
 
-  public function testExpandSuccessReturnsJsonArray(): void {
-    // The expand endpoint returns a flat JSON array of search terms.
-    $contents = file_get_contents($this->moduleRoot . '/src/Controller/ExpandQueryController.php');
-    $this->assertStringContainsString('return new JsonResponse($terms)', $contents,
-      'Expand success should return JSON array of terms');
+  #[\PHPUnit\Framework\Attributes\DataProvider('controllerProvider')]
+  public function testControllerUsesAiEndpointHandler(string $className, string $file): void {
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString(
+      'AiEndpointHandler',
+      $contents,
+      "{$className} should delegate to AiEndpointHandler"
+    );
   }
 
-  public function testExpandErrorReturnsJsonWithErrorKey(): void {
+  public function testExpandReturnsDataOnSuccess(): void {
     $contents = file_get_contents($this->moduleRoot . '/src/Controller/ExpandQueryController.php');
-    $this->assertStringContainsString("'error' => 'Invalid query'", $contents,
-      'Expand validation error should include error key');
-    $this->assertStringContainsString("'error' => 'Query expansion unavailable'", $contents,
-      'Expand exception should return error message');
+    $this->assertStringContainsString("return new JsonResponse(\$result['data'])", $contents,
+      'Expand success should return data from handler result');
+  }
+
+  public function testExpandReturnsErrorOnFailure(): void {
+    $contents = file_get_contents($this->moduleRoot . '/src/Controller/ExpandQueryController.php');
+    $this->assertStringContainsString("'error' => \$result['error']", $contents,
+      'Expand error should forward handler error');
   }
 
   // -------------------------------------------------------------------
   // SummarizeController response format expectations.
   // -------------------------------------------------------------------
 
-  public function testSummarizeSuccessReturnsJsonWithSummaryKey(): void {
+  public function testSummarizeReturnsDataOnSuccess(): void {
     $contents = file_get_contents($this->moduleRoot . '/src/Controller/SummarizeController.php');
-    $this->assertStringContainsString("'summary' => \$summary", $contents,
-      'Summarize success should return JSON with summary key');
-  }
-
-  public function testSummarizeHasContextValidation(): void {
-    $contents = file_get_contents($this->moduleRoot . '/src/Controller/SummarizeController.php');
-    $this->assertStringContainsString("'error' => 'Invalid context'", $contents,
-      'Summarize should validate context parameter');
+    $this->assertStringContainsString("return new JsonResponse(\$result['data'])", $contents,
+      'Summarize success should return data from handler result');
   }
 
   // -------------------------------------------------------------------
   // FollowUpController response format expectations.
   // -------------------------------------------------------------------
 
-  public function testFollowUpSuccessReturnsResponseAndRemaining(): void {
+  public function testFollowUpReturnsDataOnSuccess(): void {
     $contents = file_get_contents($this->moduleRoot . '/src/Controller/FollowUpController.php');
-    $this->assertStringContainsString("'response' => \$response", $contents,
-      'FollowUp success should return response key');
-    $this->assertStringContainsString("'remaining'", $contents,
-      'FollowUp success should return remaining count');
+    $this->assertStringContainsString("return new JsonResponse(\$result['data'])", $contents,
+      'FollowUp success should return data from handler result');
   }
 
-  public function testFollowUpEnforcesRateLimit(): void {
+  public function testFollowUpForwardsLimitOnRateLimit(): void {
     $contents = file_get_contents($this->moduleRoot . '/src/Controller/FollowUpController.php');
-    $this->assertStringContainsString("'error' => 'Follow-up limit reached'", $contents,
-      'FollowUp should enforce follow-up limit');
-    // HTTP 429 for rate limiting.
-    $this->assertStringContainsString('429', $contents,
-      'FollowUp should return 429 when limit reached');
-  }
-
-  public function testFollowUpValidatesMessageRoles(): void {
-    $contents = file_get_contents($this->moduleRoot . '/src/Controller/FollowUpController.php');
-    $this->assertStringContainsString("'error' => 'Invalid role'", $contents,
-      'FollowUp should reject invalid message roles');
-    $this->assertStringContainsString("'user', 'assistant'", $contents,
-      'FollowUp should only allow user and assistant roles');
+    $this->assertStringContainsString("result['limit']", $contents,
+      'FollowUp should forward limit from handler on rate limit');
   }
 
   // -------------------------------------------------------------------
@@ -234,7 +222,7 @@ class ControllerHandlerTest extends TestCase {
 
   public function testFollowUpDoesNotUseCache(): void {
     $contents = file_get_contents($this->moduleRoot . '/src/Controller/FollowUpController.php');
-    $this->assertStringNotContainsString('$this->cache', $contents,
+    $this->assertStringNotContainsString('DrupalCacheDriver', $contents,
       'FollowUpController should not cache responses (conversations are stateful)');
   }
 

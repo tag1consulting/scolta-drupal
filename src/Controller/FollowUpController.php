@@ -9,6 +9,8 @@ use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Tag1\Scolta\Cache\NullCacheDriver;
+use Tag1\Scolta\Http\AiEndpointHandler;
 
 /**
  * Handles follow-up questions about search results.
@@ -41,59 +43,34 @@ class FollowUpController extends ControllerBase {
     } catch (\JsonException $e) {
         return new JsonResponse(['error' => 'Malformed JSON: ' . $e->getMessage()], 400);
     }
-    $messages = $body['messages'] ?? [];
-
-    if (empty($messages) || !is_array($messages)) {
-      return new JsonResponse(['error' => 'Messages required'], 400);
-    }
 
     $config = $this->aiService->getConfig();
-    $maxFollowUps = $config->maxFollowUps;
+    $handler = new AiEndpointHandler(
+      $this->aiService,
+      new NullCacheDriver(),
+      0,
+      0,
+      $config->maxFollowUps,
+    );
 
-    // Enforce follow-up limit server-side.
-    $followUpsSoFar = (int) ((count($messages) - 2) / 2);
-    if ($followUpsSoFar >= $maxFollowUps) {
-      return new JsonResponse([
-        'error' => 'Follow-up limit reached',
-        'limit' => $maxFollowUps,
-      ], 429);
+    $result = $handler->handleFollowUp($body['messages'] ?? []);
+
+    if ($result['ok']) {
+      return new JsonResponse($result['data']);
     }
 
-    // Validate each message has role and content.
-    foreach ($messages as $msg) {
-      if (empty($msg['role']) || empty($msg['content'])) {
-        return new JsonResponse(['error' => 'Invalid message format'], 400);
-      }
-      if (!in_array($msg['role'], ['user', 'assistant'], TRUE)) {
-        return new JsonResponse(['error' => 'Invalid role'], 400);
-      }
-    }
-
-    // Last message must be from the user.
-    if (end($messages)['role'] !== 'user') {
-      return new JsonResponse(['error' => 'Last message must be from user'], 400);
-    }
-
-    try {
-      $response = $this->aiService->conversation(
-        $this->aiService->getFollowUpPrompt(),
-        $messages,
-        512,
-      );
-
-      $remaining = $maxFollowUps - $followUpsSoFar - 1;
-      return new JsonResponse([
-        'response' => $response,
-        'remaining' => max(0, $remaining),
-      ]);
-    }
-    catch (\Exception $e) {
+    if (isset($result['exception'])) {
       $this->getLogger('scolta')->error(
         'Follow-up failed: @msg',
-        ['@msg' => $e->getMessage(), 'exception' => $e]
+        ['@msg' => $result['exception']->getMessage(), 'exception' => $result['exception']]
       );
-      return new JsonResponse(['error' => 'Follow-up unavailable'], 503);
     }
+
+    $response = ['error' => $result['error']];
+    if (isset($result['limit'])) {
+      $response['limit'] = $result['limit'];
+    }
+    return new JsonResponse($response, $result['status']);
   }
 
 }

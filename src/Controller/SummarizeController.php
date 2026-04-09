@@ -7,10 +7,13 @@ namespace Drupal\scolta\Controller;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\State\StateInterface;
+use Drupal\scolta\Cache\DrupalCacheDriver;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Tag1\Scolta\Cache\NullCacheDriver;
+use Tag1\Scolta\Http\AiEndpointHandler;
 
 /**
  * Summarizes search results using the configured AI provider.
@@ -47,52 +50,30 @@ class SummarizeController extends ControllerBase {
     } catch (\JsonException $e) {
         return new JsonResponse(['error' => 'Malformed JSON: ' . $e->getMessage()], 400);
     }
-    $query = trim($body['query'] ?? '');
-    $context = trim($body['context'] ?? '');
-
-    if (empty($query) || strlen($query) > 500) {
-      return new JsonResponse(['error' => 'Invalid query'], 400);
-    }
-    if (empty($context) || strlen($context) > 50000) {
-      return new JsonResponse(['error' => 'Invalid context'], 400);
-    }
 
     $config = $this->aiService->getConfig();
+    $handler = new AiEndpointHandler(
+      $this->aiService,
+      $config->cacheTtl > 0 ? new DrupalCacheDriver($this->cache) : new NullCacheDriver(),
+      (int) $this->state->get('scolta.generation', 0),
+      $config->cacheTtl,
+      $config->maxFollowUps,
+    );
 
-    // Cache lookup with generation counter.
-    $generation = $this->state->get('scolta.generation', 0);
-    $cacheKey = 'scolta_summarize_' . $generation . '_' . hash('sha256', strtolower($query) . '|' . $context);
-    if ($config->cacheTtl > 0) {
-      $cached = $this->cache->get($cacheKey);
-      if ($cached) {
-        return new JsonResponse($cached->data);
-      }
+    $result = $handler->handleSummarize($body['query'] ?? '', $body['context'] ?? '');
+
+    if ($result['ok']) {
+      return new JsonResponse($result['data']);
     }
 
-    $userMessage = "Search query: {$query}\n\nSearch result excerpts:\n{$context}";
-
-    try {
-      $summary = $this->aiService->message(
-        $this->aiService->getSummarizePrompt(),
-        $userMessage,
-        512,
-      );
-
-      $result = ['summary' => $summary];
-
-      if ($config->cacheTtl > 0) {
-        $this->cache->set($cacheKey, $result, time() + $config->cacheTtl, ['scolta_summarize']);
-      }
-
-      return new JsonResponse($result);
-    }
-    catch (\Exception $e) {
+    if (isset($result['exception'])) {
       $this->getLogger('scolta')->error(
         'Summarize failed: @msg',
-        ['@msg' => $e->getMessage(), 'exception' => $e]
+        ['@msg' => $result['exception']->getMessage(), 'exception' => $result['exception']]
       );
-      return new JsonResponse(['error' => 'Summarization unavailable'], 503);
     }
+
+    return new JsonResponse(['error' => $result['error']], $result['status']);
   }
 
 }

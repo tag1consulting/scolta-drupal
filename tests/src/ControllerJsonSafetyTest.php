@@ -114,14 +114,14 @@ class ControllerJsonSafetyTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // 5. Each controller's catch block includes 'exception' => $e.
+  // 5. Each controller's error-logging block includes the exception object.
   // -------------------------------------------------------------------
 
   #[\PHPUnit\Framework\Attributes\DataProvider('controllerProvider')]
   public function testExceptionObjectPreservedInLog(string $className, string $file): void {
     $contents = file_get_contents($file);
     $this->assertStringContainsString(
-      "'exception' => \$e",
+      "'exception' => \$result['exception']",
       $contents,
       "{$className} must pass the exception object to the logger for stack traces"
     );
@@ -135,33 +135,13 @@ class ControllerJsonSafetyTest extends TestCase {
   public function testErrorResponseDoesNotLeakExceptionMessage(string $className, string $file): void {
     $contents = file_get_contents($file);
 
-    // Find the catch (\Exception $e) block and its JsonResponse.
-    // The 503 error responses should use a static string, not $e->getMessage().
-    if (preg_match('/catch\s*\(\s*\\\\Exception\s+\$e\s*\)\s*\{(.*?)\}/s', $contents, $m)) {
-      $catchBlock = $m[1];
-      // The JsonResponse in the catch block should not contain $e->getMessage().
-      $this->assertStringNotContainsString(
-        '$e->getMessage()',
-        $this->extractJsonResponseFromCatch($catchBlock),
-        "{$className} must not leak exception message in HTTP response"
-      );
-    }
-    else {
-      $this->fail("{$className} must have a catch (\\Exception \$e) block");
-    }
-  }
-
-  /**
-   * Extract the JsonResponse line(s) from a catch block.
-   *
-   * This isolates the return statement so we can verify the exception
-   * message is only passed to the logger, not the HTTP response.
-   */
-  private function extractJsonResponseFromCatch(string $catchBlock): string {
-    if (preg_match('/return\s+new\s+JsonResponse\([^;]+;/s', $catchBlock, $m)) {
-      return $m[0];
-    }
-    return '';
+    // The error responses use $result['error'] (a static string from the handler),
+    // never $e->getMessage() or $result['exception']->getMessage().
+    $this->assertStringContainsString(
+      "['error' => \$result['error']]",
+      $contents,
+      "{$className} must use handler error message in HTTP response, not raw exception"
+    );
   }
 
 }
