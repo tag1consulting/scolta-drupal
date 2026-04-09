@@ -63,6 +63,7 @@ class SummarizeController extends ControllerBase {
       $config->cacheTtl,
       $config->maxFollowUps,
       new EventDrivenEnricher($this->eventDispatcher),
+      $config->aiLanguages,
     );
 
     $result = $handler->handleSummarize($body['query'] ?? '', $body['context'] ?? '');

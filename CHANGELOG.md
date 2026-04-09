@@ -8,6 +8,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ### Added
 
+- `ai_languages` config setting for multilingual AI response support, configurable via the admin form (comma-separated language codes)
+- All AI controllers now pass `aiLanguages` from config to `AiEndpointHandler`
 - `PromptEnrichEvent` Symfony event dispatched before AI prompts are sent to the LLM provider
 - `EventDrivenEnricher` bridging scolta-php's `PromptEnricherInterface` with Drupal's event system
 - All AI controllers now inject the event dispatcher and pass the enricher to `AiEndpointHandler`

@@ -63,6 +63,7 @@ class ExpandQueryController extends ControllerBase {
       $config->cacheTtl,
       $config->maxFollowUps,
       new EventDrivenEnricher($this->eventDispatcher),
+      $config->aiLanguages,
     );
 
     $result = $handler->handleExpandQuery($body['query'] ?? '');

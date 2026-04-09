@@ -162,6 +162,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Use AI to generate summaries of search results.'),
     ];
 
+    $form['ai']['ai_languages'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('AI Languages'),
+      '#default_value' => implode(', ', $config->get('ai_languages') ?? ['en']),
+      '#description' => $this->t('Comma-separated language codes (e.g., en, es, fr). When multiple languages are configured, AI responses will match the language of the user\'s query.'),
+    ];
+
     $form['ai']['max_follow_ups'] = [
       '#type' => 'number',
       '#title' => $this->t('Maximum follow-up questions'),
@@ -591,6 +598,10 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('ai_base_url', $form_state->getValue('ai_base_url'))
       ->set('ai_expand_query', (bool) $form_state->getValue('ai_expand_query'))
       ->set('ai_summarize', (bool) $form_state->getValue('ai_summarize'))
+      ->set('ai_languages', array_values(array_filter(array_map(
+        'trim',
+        explode(',', $form_state->getValue('ai_languages') ?? 'en')
+      ))) ?: ['en'])
       ->set('max_follow_ups', (int) $form_state->getValue('max_follow_ups'))
       // Content settings.
       ->set('site_name', $form_state->getValue('site_name'))

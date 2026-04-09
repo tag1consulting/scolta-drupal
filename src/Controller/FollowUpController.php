@@ -56,6 +56,7 @@ class FollowUpController extends ControllerBase {
       0,
       $config->maxFollowUps,
       new EventDrivenEnricher($this->eventDispatcher),
+      $config->aiLanguages,
     );
 
     $result = $handler->handleFollowUp($body['messages'] ?? []);

@@ -17,6 +17,12 @@ scolta.settings:
     ai_summarize:
       type: boolean
       label: 'Enable AI summarization'
+    ai_languages:
+      type: sequence
+      label: 'AI response languages'
+      sequence:
+        type: string
+        label: 'Language code'
     max_follow_ups:
       type: integer
       label: 'Maximum follow-up questions'
