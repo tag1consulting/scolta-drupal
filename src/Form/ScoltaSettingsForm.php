@@ -556,7 +556,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
       return DefaultPrompts::getTemplate($name);
     }
     catch (\Throwable $e) {
-      return '';
+      $this->getLogger('scolta')->warning(
+        'Failed to load default prompt "@name": @msg',
+        ['@name' => $name, '@msg' => $e->getMessage()]
+      );
+      return (string) $this->t(
+        'Default prompt unavailable. Run "drush scolta:check-setup" for diagnostics.'
+      );
     }
   }
 

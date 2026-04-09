@@ -113,6 +113,51 @@ class ScoltaSettingsFormTest extends TestCase {
     );
   }
 
+  /**
+   * Verifies getDefaultPrompt shows a warning message on WASM failure.
+   *
+   * When WASM fails to load, the method should NOT return an empty
+   * string — it should return a visible warning message telling the
+   * admin to run check-setup.
+   */
+  public function testGetDefaultPromptShowsWarningOnFailure(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+
+    // The catch block should NOT return empty string.
+    $this->assertStringNotContainsString(
+      "return '';",
+      // Extract just the getDefaultPrompt method body.
+      $this->extractMethod($contents, 'getDefaultPrompt'),
+      'getDefaultPrompt catch block should not return empty string'
+    );
+
+    // Should contain a user-visible message.
+    $this->assertStringContainsString(
+      'check-setup',
+      $this->extractMethod($contents, 'getDefaultPrompt'),
+      'getDefaultPrompt catch should mention check-setup command'
+    );
+
+    // Should log the error.
+    $this->assertStringContainsString(
+      'getLogger',
+      $this->extractMethod($contents, 'getDefaultPrompt'),
+      'getDefaultPrompt should log warning when WASM fails'
+    );
+  }
+
+  /**
+   * Extract a method body from PHP source.
+   */
+  private function extractMethod(string $source, string $methodName): string {
+    $pattern = '/function\s+' . preg_quote($methodName) . '\s*\([^)]*\)[^{]*\{(.*?)\n  \}/s';
+    if (preg_match($pattern, $source, $m)) {
+      return $m[1];
+    }
+    return '';
+  }
+
   // -------------------------------------------------------------------
   // 2. Form fields map to install config keys.
   // -------------------------------------------------------------------

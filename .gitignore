@@ -1,2 +1,7 @@
 /vendor/
 /.phpunit.cache/
+
+# Copied from scolta-php by composer post-install script.
+# Not source files — regenerated on composer install.
+/js/scolta.js
+/css/scolta.css

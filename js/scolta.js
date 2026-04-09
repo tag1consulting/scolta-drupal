@@ -1,1 +1,0 @@
-../../scolta-php/assets/js/scolta.js
