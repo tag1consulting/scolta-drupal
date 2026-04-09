@@ -32,7 +32,8 @@
         ],
         "test": "phpunit",
         "lint": "phpcs",
-        "format": "phpcbf"
+        "format": "phpcbf",
+        "validate-release": "php scripts/validate-release.php"
     },
     "repositories": [
         {
