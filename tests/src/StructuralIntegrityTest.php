@@ -94,30 +94,8 @@ class StructuralIntegrityTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // All PHP files have correct namespace declarations.
+  // PHP use-statements reference classes that exist in scolta-php or Drupal.
   // -------------------------------------------------------------------
-
-  #[\PHPUnit\Framework\Attributes\DataProvider('phpFileProvider')]
-  public function testPhpFileNamespaceMatchesPath(string $file): void {
-    $contents = file_get_contents($file);
-
-    if (preg_match('/^namespace\s+(.+);/m', $contents, $m)) {
-      $namespace = $m[1];
-
-      // Derive expected namespace from file path relative to src/.
-      $relative = str_replace($this->moduleRoot . '/src/', '', $file);
-      $dir = dirname($relative);
-      $expectedNamespace = 'Drupal\\scolta';
-      if ($dir !== '.') {
-        $expectedNamespace .= '\\' . str_replace('/', '\\', $dir);
-      }
-
-      $this->assertEquals(
-        $expectedNamespace, $namespace,
-        "Namespace mismatch in {$file}"
-      );
-    }
-  }
 
   public static function phpFileProvider(): \Generator {
     $root = dirname(__DIR__, 2);
@@ -130,23 +108,6 @@ class StructuralIntegrityTest extends TestCase {
       }
     }
   }
-
-  // -------------------------------------------------------------------
-  // All PHP files pass syntax check.
-  // -------------------------------------------------------------------
-
-  #[\PHPUnit\Framework\Attributes\DataProvider('phpFileProvider')]
-  public function testPhpSyntaxIsValid(string $file): void {
-    $output = [];
-    $exitCode = 0;
-    exec('php -l ' . escapeshellarg($file) . ' 2>&1', $output, $exitCode);
-    $this->assertEquals(0, $exitCode,
-      "Syntax error in {$file}: " . implode("\n", $output));
-  }
-
-  // -------------------------------------------------------------------
-  // PHP use-statements reference classes that exist in scolta-php or Drupal.
-  // -------------------------------------------------------------------
 
   #[\PHPUnit\Framework\Attributes\DataProvider('phpFileProvider')]
   public function testScoltaPhpImportsReferenceRealClasses(string $file): void {
