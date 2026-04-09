@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Drupal\scolta\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\scolta\Prompt\EventDrivenEnricher;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Tag1\Scolta\Cache\NullCacheDriver;
 use Tag1\Scolta\Http\AiEndpointHandler;
 
@@ -23,6 +25,7 @@ class FollowUpController extends ControllerBase {
 
   public function __construct(
     private readonly ScoltaAiService $aiService,
+    private readonly EventDispatcherInterface $eventDispatcher,
   ) {}
 
   /**
@@ -31,6 +34,7 @@ class FollowUpController extends ControllerBase {
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('scolta.ai_service'),
+      $container->get('event_dispatcher'),
     );
   }
 
@@ -51,6 +55,7 @@ class FollowUpController extends ControllerBase {
       0,
       0,
       $config->maxFollowUps,
+      new EventDrivenEnricher($this->eventDispatcher),
     );
 
     $result = $handler->handleFollowUp($body['messages'] ?? []);

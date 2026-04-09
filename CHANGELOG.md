@@ -8,6 +8,12 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ### Added
 
+- `PromptEnrichEvent` Symfony event dispatched before AI prompts are sent to the LLM provider
+- `EventDrivenEnricher` bridging scolta-php's `PromptEnricherInterface` with Drupal's event system
+- All AI controllers now inject the event dispatcher and pass the enricher to `AiEndpointHandler`
+
+### Previously added
+
 - Search API backend (`ScoltaBackend`) for Pagefind-based indexing and search
 - 7 Drush commands: `scolta:build`, `scolta:export`, `scolta:rebuild-index`, `scolta:status`, `scolta:clear-cache`, `scolta:download-pagefind`, `scolta:check-setup`
 - Admin settings form at `/admin/config/search/scolta` with AI, scoring, display, cache, and prompt configuration

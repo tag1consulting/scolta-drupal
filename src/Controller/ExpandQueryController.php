@@ -8,10 +8,12 @@ use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\State\StateInterface;
 use Drupal\scolta\Cache\DrupalCacheDriver;
+use Drupal\scolta\Prompt\EventDrivenEnricher;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Tag1\Scolta\Cache\NullCacheDriver;
 use Tag1\Scolta\Http\AiEndpointHandler;
 
@@ -28,6 +30,7 @@ class ExpandQueryController extends ControllerBase {
     private readonly ScoltaAiService $aiService,
     private readonly CacheBackendInterface $cache,
     private readonly StateInterface $state,
+    private readonly EventDispatcherInterface $eventDispatcher,
   ) {}
 
   /**
@@ -38,6 +41,7 @@ class ExpandQueryController extends ControllerBase {
       $container->get('scolta.ai_service'),
       $container->get('cache.default'),
       $container->get('state'),
+      $container->get('event_dispatcher'),
     );
   }
 
@@ -58,6 +62,7 @@ class ExpandQueryController extends ControllerBase {
       (int) $this->state->get('scolta.generation', 0),
       $config->cacheTtl,
       $config->maxFollowUps,
+      new EventDrivenEnricher($this->eventDispatcher),
     );
 
     $result = $handler->handleExpandQuery($body['query'] ?? '');
