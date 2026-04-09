@@ -35,7 +35,7 @@ jobs:
           coverage: none
 
       - name: Install dependencies
-        run: composer install --no-progress --prefer-dist ${{ matrix.lint == false && '--no-dev' || '' }}
+        run: composer update --no-interaction --prefer-dist --ignore-platform-req=php
 
       - name: Lint (Drupal coding standards)
         if: matrix.lint
