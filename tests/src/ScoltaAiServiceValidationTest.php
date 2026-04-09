@@ -18,22 +18,48 @@ class ScoltaAiServiceValidationTest extends TestCase {
   private string $moduleRoot;
   private string $serviceFile;
   private string $serviceContents;
+  private string $adapterFile;
+  private string $adapterContents;
 
   protected function setUp(): void {
     $this->moduleRoot = dirname(__DIR__, 2);
     $this->serviceFile = $this->moduleRoot . '/src/Service/ScoltaAiService.php';
     $this->serviceContents = file_get_contents($this->serviceFile);
+
+    // The base class lives in scolta-php.
+    $this->adapterFile = $this->moduleRoot . '/vendor/tag1/scolta-php/src/Service/AiServiceAdapter.php';
+    $this->adapterContents = file_get_contents($this->adapterFile);
   }
 
   // -------------------------------------------------------------------
-  // getConfig() method.
+  // Extends AiServiceAdapter.
   // -------------------------------------------------------------------
 
-  public function testGetConfigMethodExists(): void {
+  public function testExtendsAiServiceAdapter(): void {
+    $this->assertStringContainsString(
+      'extends AiServiceAdapter',
+      $this->serviceContents,
+      'ScoltaAiService must extend AiServiceAdapter'
+    );
+  }
+
+  public function testImportsAiServiceAdapter(): void {
+    $this->assertStringContainsString(
+      'use Tag1\Scolta\Service\AiServiceAdapter',
+      $this->serviceContents,
+      'ScoltaAiService must import AiServiceAdapter'
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // getConfig() method (inherited from AiServiceAdapter).
+  // -------------------------------------------------------------------
+
+  public function testGetConfigMethodExistsInAdapter(): void {
     $this->assertStringContainsString(
       'function getConfig(): ScoltaConfig',
-      $this->serviceContents,
-      'ScoltaAiService must have getConfig() returning ScoltaConfig'
+      $this->adapterContents,
+      'AiServiceAdapter must have getConfig() returning ScoltaConfig'
     );
   }
 
@@ -45,44 +71,35 @@ class ScoltaAiServiceValidationTest extends TestCase {
     );
   }
 
-  public function testGetConfigFlattensNestedScoringConfig(): void {
+  public function testBuildConfigFlattensNestedScoringConfig(): void {
     $this->assertStringContainsString(
       "unset(\$values['scoring'])",
       $this->serviceContents,
-      'getConfig must flatten and remove scoring subarray'
+      'buildConfig must flatten and remove scoring subarray'
     );
   }
 
-  public function testGetConfigFlattensNestedDisplayConfig(): void {
+  public function testBuildConfigFlattensNestedDisplayConfig(): void {
     $this->assertStringContainsString(
       "unset(\$values['display'])",
       $this->serviceContents,
-      'getConfig must flatten and remove display subarray'
+      'buildConfig must flatten and remove display subarray'
     );
   }
 
-  public function testGetConfigRemovesPagefindConfig(): void {
+  public function testBuildConfigRemovesPagefindConfig(): void {
     $this->assertStringContainsString(
       "unset(\$values['pagefind'])",
       $this->serviceContents,
-      'getConfig must remove pagefind config (not relevant to ScoltaConfig)'
+      'buildConfig must remove pagefind config (not relevant to ScoltaConfig)'
     );
   }
 
-  public function testGetConfigInjectsApiKey(): void {
+  public function testBuildConfigInjectsApiKey(): void {
     $this->assertStringContainsString(
       "['ai_api_key'] = \$this->getApiKey()",
       $this->serviceContents,
-      'getConfig must inject API key from getApiKey()'
-    );
-  }
-
-  public function testGetConfigCachesResult(): void {
-    // getConfig() should cache the ScoltaConfig instance.
-    $this->assertStringContainsString(
-      '$this->config === NULL',
-      $this->serviceContents,
-      'getConfig should lazily initialize and cache the config'
+      'buildConfig must inject API key from getApiKey()'
     );
   }
 
@@ -137,85 +154,85 @@ class ScoltaAiServiceValidationTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // Prompt methods.
+  // Prompt methods (inherited from AiServiceAdapter).
   // -------------------------------------------------------------------
 
-  public function testGetExpandPromptMethodExists(): void {
+  public function testGetExpandPromptMethodExistsInAdapter(): void {
     $this->assertStringContainsString(
       'function getExpandPrompt(): string',
-      $this->serviceContents,
-      'ScoltaAiService must have getExpandPrompt()'
+      $this->adapterContents,
+      'AiServiceAdapter must have getExpandPrompt()'
     );
   }
 
-  public function testGetSummarizePromptMethodExists(): void {
+  public function testGetSummarizePromptMethodExistsInAdapter(): void {
     $this->assertStringContainsString(
       'function getSummarizePrompt(): string',
-      $this->serviceContents,
-      'ScoltaAiService must have getSummarizePrompt()'
+      $this->adapterContents,
+      'AiServiceAdapter must have getSummarizePrompt()'
     );
   }
 
-  public function testGetFollowUpPromptMethodExists(): void {
+  public function testGetFollowUpPromptMethodExistsInAdapter(): void {
     $this->assertStringContainsString(
       'function getFollowUpPrompt(): string',
-      $this->serviceContents,
-      'ScoltaAiService must have getFollowUpPrompt()'
+      $this->adapterContents,
+      'AiServiceAdapter must have getFollowUpPrompt()'
     );
   }
 
   public function testPromptMethodsUseDefaultPromptsFallback(): void {
     $this->assertStringContainsString(
       'DefaultPrompts::EXPAND_QUERY',
-      $this->serviceContents,
+      $this->adapterContents,
       'getExpandPrompt should fall back to DefaultPrompts::EXPAND_QUERY'
     );
     $this->assertStringContainsString(
       'DefaultPrompts::SUMMARIZE',
-      $this->serviceContents,
+      $this->adapterContents,
       'getSummarizePrompt should fall back to DefaultPrompts::SUMMARIZE'
     );
     $this->assertStringContainsString(
       'DefaultPrompts::FOLLOW_UP',
-      $this->serviceContents,
+      $this->adapterContents,
       'getFollowUpPrompt should fall back to DefaultPrompts::FOLLOW_UP'
     );
   }
 
   public function testPromptMethodsCheckForCustomOverride(): void {
     // All three prompt methods should check if a custom prompt is configured.
-    $this->assertStringContainsString('promptExpandQuery', $this->serviceContents,
+    $this->assertStringContainsString('promptExpandQuery', $this->adapterContents,
       'getExpandPrompt should check for custom promptExpandQuery');
-    $this->assertStringContainsString('promptSummarize', $this->serviceContents,
+    $this->assertStringContainsString('promptSummarize', $this->adapterContents,
       'getSummarizePrompt should check for custom promptSummarize');
-    $this->assertStringContainsString('promptFollowUp', $this->serviceContents,
+    $this->assertStringContainsString('promptFollowUp', $this->adapterContents,
       'getFollowUpPrompt should check for custom promptFollowUp');
   }
 
   // -------------------------------------------------------------------
-  // message() and conversation() methods.
+  // message() and conversation() methods (inherited from AiServiceAdapter).
   // -------------------------------------------------------------------
 
-  public function testMessageMethodExists(): void {
+  public function testMessageMethodExistsInAdapter(): void {
     $this->assertStringContainsString(
       'function message(string $systemPrompt, string $userMessage, int $maxTokens',
-      $this->serviceContents,
-      'ScoltaAiService must have message() with correct signature'
+      $this->adapterContents,
+      'AiServiceAdapter must have message() with correct signature'
     );
   }
 
-  public function testConversationMethodExists(): void {
+  public function testConversationMethodExistsInAdapter(): void {
     $this->assertStringContainsString(
       'function conversation(string $systemPrompt, array $messages, int $maxTokens',
-      $this->serviceContents,
-      'ScoltaAiService must have conversation() with correct signature'
+      $this->adapterContents,
+      'AiServiceAdapter must have conversation() with correct signature'
     );
   }
 
   public function testMessageReturnsString(): void {
     $this->assertStringContainsString(
       'public function message(string $systemPrompt, string $userMessage, int $maxTokens = 512): string',
-      $this->serviceContents,
+      $this->adapterContents,
       'message() must return string'
     );
   }
@@ -223,7 +240,7 @@ class ScoltaAiServiceValidationTest extends TestCase {
   public function testConversationReturnsString(): void {
     $this->assertStringContainsString(
       'public function conversation(string $systemPrompt, array $messages, int $maxTokens = 512): string',
-      $this->serviceContents,
+      $this->adapterContents,
       'conversation() must return string'
     );
   }
@@ -231,7 +248,7 @@ class ScoltaAiServiceValidationTest extends TestCase {
   public function testMessageDefaultMaxTokensIs512(): void {
     $this->assertStringContainsString(
       '$maxTokens = 512',
-      $this->serviceContents,
+      $this->adapterContents,
       'Default max tokens should be 512'
     );
   }
@@ -248,27 +265,27 @@ class ScoltaAiServiceValidationTest extends TestCase {
     );
   }
 
-  public function testMessageTriesDrupalAiFirst(): void {
+  public function testTryFrameworkAiChecksDrupalAiModule(): void {
     $this->assertStringContainsString(
       '$this->hasDrupalAiModule()',
       $this->serviceContents,
-      'message() should check for Drupal AI module before using built-in client'
+      'tryFrameworkAi() should check for Drupal AI module'
     );
   }
 
-  public function testMessageFallsBackToBuiltInClient(): void {
+  public function testAdapterFallsBackToBuiltInClient(): void {
     $this->assertStringContainsString(
       '$this->getClient()->message(',
-      $this->serviceContents,
-      'message() should fall back to built-in AiClient'
+      $this->adapterContents,
+      'AiServiceAdapter message() should fall back to built-in AiClient'
     );
   }
 
-  public function testConversationFallsBackToBuiltInClient(): void {
+  public function testAdapterConversationFallsBackToBuiltInClient(): void {
     $this->assertStringContainsString(
       '$this->getClient()->conversation(',
-      $this->serviceContents,
-      'conversation() should fall back to built-in AiClient'
+      $this->adapterContents,
+      'AiServiceAdapter conversation() should fall back to built-in AiClient'
     );
   }
 
@@ -317,41 +334,41 @@ class ScoltaAiServiceValidationTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // Client lazy initialization.
+  // Client lazy initialization (in AiServiceAdapter).
   // -------------------------------------------------------------------
 
-  public function testGetClientMethodExists(): void {
+  public function testGetClientMethodExistsInAdapter(): void {
     $this->assertStringContainsString(
       'function getClient(): AiClient',
-      $this->serviceContents,
-      'ScoltaAiService must have getClient() returning AiClient'
+      $this->adapterContents,
+      'AiServiceAdapter must have getClient() returning AiClient'
     );
   }
 
   public function testClientIsLazilyInitialized(): void {
     $this->assertStringContainsString(
-      '$this->client === NULL',
-      $this->serviceContents,
+      '$this->client === null',
+      $this->adapterContents,
       'getClient() should lazily initialize the AiClient'
     );
   }
 
   // -------------------------------------------------------------------
-  // resolvePrompt helper.
+  // resolvePrompt helper (in AiServiceAdapter).
   // -------------------------------------------------------------------
 
-  public function testResolvePromptMethodExists(): void {
+  public function testResolvePromptMethodExistsInAdapter(): void {
     $this->assertStringContainsString(
       'function resolvePrompt(string $template): string',
-      $this->serviceContents,
-      'ScoltaAiService must have resolvePrompt() method'
+      $this->adapterContents,
+      'AiServiceAdapter must have resolvePrompt() method'
     );
   }
 
   public function testResolvePromptUsesDefaultPrompts(): void {
     $this->assertStringContainsString(
       'DefaultPrompts::resolve(',
-      $this->serviceContents,
+      $this->adapterContents,
       'resolvePrompt should delegate to DefaultPrompts::resolve()'
     );
   }
@@ -360,11 +377,23 @@ class ScoltaAiServiceValidationTest extends TestCase {
   // Site name fallback.
   // -------------------------------------------------------------------
 
-  public function testGetConfigFallsBackToSystemSiteName(): void {
+  public function testBuildConfigFallsBackToSystemSiteName(): void {
     $this->assertStringContainsString(
       "system.site",
       $this->serviceContents,
-      'getConfig should fall back to Drupal system.site name'
+      'buildConfig should fall back to Drupal system.site name'
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // createClient uses Drupal HTTP client.
+  // -------------------------------------------------------------------
+
+  public function testCreateClientUsesDrupalHttpClient(): void {
+    $this->assertStringContainsString(
+      '$this->httpClient',
+      $this->serviceContents,
+      'createClient should inject the Drupal HTTP client'
     );
   }
 

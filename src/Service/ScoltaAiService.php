@@ -13,6 +13,7 @@ use Psr\Log\LoggerInterface;
 use Tag1\Scolta\AiClient;
 use Tag1\Scolta\Config\ScoltaConfig;
 use Tag1\Scolta\Prompt\DefaultPrompts;
+use Tag1\Scolta\Service\AiServiceAdapter;
 
 /**
  * Wraps Tag1\Scolta\AiClient with Drupal config injection.
@@ -25,7 +26,7 @@ use Tag1\Scolta\Prompt\DefaultPrompts;
  *    route requests through its abstraction layer.
  * 2. Otherwise, fall back to the built-in AiClient with direct HTTP calls.
  */
-class ScoltaAiService {
+class ScoltaAiService extends AiServiceAdapter {
 
   /**
    * The config factory.
@@ -48,20 +49,6 @@ class ScoltaAiService {
    */
   private LoggerInterface $logger;
 
-  /**
-   * The lazily-initialized AI client.
-   *
-   * @var \Tag1\Scolta\AiClient|null
-   */
-  private ?AiClient $client = NULL;
-
-  /**
-   * The cached Scolta configuration.
-   *
-   * @var \Tag1\Scolta\Config\ScoltaConfig|null
-   */
-  private ?ScoltaConfig $config = NULL;
-
   public function __construct(
     ClientInterface $httpClient,
     ConfigFactoryInterface $configFactory,
@@ -70,50 +57,49 @@ class ScoltaAiService {
     $this->httpClient = $httpClient;
     $this->configFactory = $configFactory;
     $this->logger = $logger;
+
+    parent::__construct($this->buildConfig());
   }
 
   /**
-   * Get the Scolta configuration from Drupal config + settings.
+   * Build ScoltaConfig from Drupal config + settings.
    *
    * Flattens the nested scoring and display config into top-level keys
    * for ScoltaConfig::fromArray(), removes pagefind settings (not needed
    * by the AI client), and injects the API key and site name.
    */
-  public function getConfig(): ScoltaConfig {
-    if ($this->config === NULL) {
-      $drupalConfig = $this->configFactory->get('scolta.settings');
-      $values = $drupalConfig->getRawData();
+  private function buildConfig(): ScoltaConfig {
+    $drupalConfig = $this->configFactory->get('scolta.settings');
+    $values = $drupalConfig->getRawData();
 
-      // Flatten nested scoring config to top-level keys.
-      if (isset($values['scoring']) && is_array($values['scoring'])) {
-        foreach ($values['scoring'] as $key => $value) {
-          $values[$key] = $value;
-        }
-        unset($values['scoring']);
+    // Flatten nested scoring config to top-level keys.
+    if (isset($values['scoring']) && is_array($values['scoring'])) {
+      foreach ($values['scoring'] as $key => $value) {
+        $values[$key] = $value;
       }
-
-      // Flatten nested display config to top-level keys.
-      if (isset($values['display']) && is_array($values['display'])) {
-        foreach ($values['display'] as $key => $value) {
-          $values[$key] = $value;
-        }
-        unset($values['display']);
-      }
-
-      // Remove pagefind config (not relevant to ScoltaConfig).
-      unset($values['pagefind']);
-
-      // API key comes from env or settings.php, not exportable config.
-      $values['ai_api_key'] = $this->getApiKey();
-
-      // Site name fallback to Drupal site name.
-      if (empty($values['site_name'])) {
-        $values['site_name'] = $this->configFactory->get('system.site')->get('name') ?? '';
-      }
-
-      $this->config = ScoltaConfig::fromArray($values);
+      unset($values['scoring']);
     }
-    return $this->config;
+
+    // Flatten nested display config to top-level keys.
+    if (isset($values['display']) && is_array($values['display'])) {
+      foreach ($values['display'] as $key => $value) {
+        $values[$key] = $value;
+      }
+      unset($values['display']);
+    }
+
+    // Remove pagefind config (not relevant to ScoltaConfig).
+    unset($values['pagefind']);
+
+    // API key comes from env or settings.php, not exportable config.
+    $values['ai_api_key'] = $this->getApiKey();
+
+    // Site name fallback to Drupal site name.
+    if (empty($values['site_name'])) {
+      $values['site_name'] = $this->configFactory->get('system.site')->get('name') ?? '';
+    }
+
+    return ScoltaConfig::fromArray($values);
   }
 
   /**
@@ -158,65 +144,41 @@ class ScoltaAiService {
   }
 
   /**
-   * Send a single-turn message via the best available AI path.
-   *
-   * Tries the Drupal AI module first (if available), then falls back
-   * to the built-in AiClient.
-   *
-   * @param string $systemPrompt
-   *   The system prompt.
-   * @param string $userMessage
-   *   The user message.
-   * @param int $maxTokens
-   *   Maximum response tokens.
-   *
-   * @return string
-   *   The AI response text.
+   * {@inheritdoc}
    */
-  public function message(string $systemPrompt, string $userMessage, int $maxTokens = 512): string {
-    if ($this->hasDrupalAiModule()) {
-      try {
-        return $this->messageViaDrupalAi($systemPrompt, $userMessage, $maxTokens);
-      }
-      catch (\Exception $e) {
-        $this->logger->warning('Drupal AI module message failed, falling back to built-in client: @msg', [
-          '@msg' => $e->getMessage(),
-        ]);
-      }
+  protected function tryFrameworkAi(string $systemPrompt, string $userMessage, int $maxTokens): ?string {
+    if (!$this->hasDrupalAiModule()) {
+      return NULL;
     }
 
-    return $this->getClient()->message($systemPrompt, $userMessage, $maxTokens);
+    try {
+      return $this->messageViaDrupalAi($systemPrompt, $userMessage, $maxTokens);
+    }
+    catch (\Exception $e) {
+      $this->logger->warning('Drupal AI module message failed, falling back to built-in client: @msg', [
+        '@msg' => $e->getMessage(),
+      ]);
+      return NULL;
+    }
   }
 
   /**
-   * Send a multi-turn conversation via the best available AI path.
-   *
-   * Tries the Drupal AI module first (if available), then falls back
-   * to the built-in AiClient.
-   *
-   * @param string $systemPrompt
-   *   The system prompt.
-   * @param array $messages
-   *   Array of message objects with 'role' and 'content' keys.
-   * @param int $maxTokens
-   *   Maximum response tokens.
-   *
-   * @return string
-   *   The AI response text.
+   * {@inheritdoc}
    */
-  public function conversation(string $systemPrompt, array $messages, int $maxTokens = 512): string {
-    if ($this->hasDrupalAiModule()) {
-      try {
-        return $this->conversationViaDrupalAi($systemPrompt, $messages, $maxTokens);
-      }
-      catch (\Exception $e) {
-        $this->logger->warning('Drupal AI module conversation failed, falling back to built-in client: @msg', [
-          '@msg' => $e->getMessage(),
-        ]);
-      }
+  protected function tryFrameworkConversation(string $systemPrompt, array $messages, int $maxTokens): ?string {
+    if (!$this->hasDrupalAiModule()) {
+      return NULL;
     }
 
-    return $this->getClient()->conversation($systemPrompt, $messages, $maxTokens);
+    try {
+      return $this->conversationViaDrupalAi($systemPrompt, $messages, $maxTokens);
+    }
+    catch (\Exception $e) {
+      $this->logger->warning('Drupal AI module conversation failed, falling back to built-in client: @msg', [
+        '@msg' => $e->getMessage(),
+      ]);
+      return NULL;
+    }
   }
 
   /**
@@ -268,55 +230,10 @@ class ScoltaAiService {
   }
 
   /**
-   * Get the AI client, configured from Drupal settings.
+   * {@inheritdoc}
    */
-  public function getClient(): AiClient {
-    if ($this->client === NULL) {
-      $config = $this->getConfig();
-      $this->client = new AiClient($config->toAiClientConfig(), $this->httpClient);
-    }
-    return $this->client;
-  }
-
-  /**
-   * Resolve a prompt template with site name and description from config.
-   */
-  public function resolvePrompt(string $template): string {
-    $config = $this->getConfig();
-    return DefaultPrompts::resolve($template, $config->siteName, $config->siteDescription);
-  }
-
-  /**
-   * Get the expand-query system prompt (custom override or default).
-   */
-  public function getExpandPrompt(): string {
-    $config = $this->getConfig();
-    if (!empty($config->promptExpandQuery)) {
-      return $config->promptExpandQuery;
-    }
-    return $this->resolvePrompt(DefaultPrompts::EXPAND_QUERY);
-  }
-
-  /**
-   * Get the summarize system prompt (custom override or default).
-   */
-  public function getSummarizePrompt(): string {
-    $config = $this->getConfig();
-    if (!empty($config->promptSummarize)) {
-      return $config->promptSummarize;
-    }
-    return $this->resolvePrompt(DefaultPrompts::SUMMARIZE);
-  }
-
-  /**
-   * Get the follow-up system prompt (custom override or default).
-   */
-  public function getFollowUpPrompt(): string {
-    $config = $this->getConfig();
-    if (!empty($config->promptFollowUp)) {
-      return $config->promptFollowUp;
-    }
-    return $this->resolvePrompt(DefaultPrompts::FOLLOW_UP);
+  protected function createClient(): AiClient {
+    return new AiClient($this->getConfig()->toAiClientConfig(), $this->httpClient);
   }
 
 }
