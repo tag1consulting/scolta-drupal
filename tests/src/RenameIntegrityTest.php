@@ -165,6 +165,31 @@ class RenameIntegrityTest extends TestCase {
   }
 
   /**
+   * Verify scolta.js is present and accessible.
+   */
+  public function testScoltaJsExists(): void {
+    $jsFile = $this->moduleRoot . '/js/scolta.js';
+    $this->assertFileExists($jsFile,
+      'scolta.js must exist at js/scolta.js (symlink or copy from scolta-php)');
+    $contents = file_get_contents($jsFile);
+    $this->assertNotEmpty($contents, 'scolta.js must not be empty');
+    $this->assertStringContainsString('Scolta', $contents,
+      'scolta.js must contain the Scolta namespace');
+  }
+
+  /**
+   * Verify scolta.css is present and accessible.
+   */
+  public function testScoltaCssExists(): void {
+    $cssFile = $this->moduleRoot . '/css/scolta.css';
+    $this->assertFileExists($cssFile,
+      'scolta.css must exist at css/scolta.css (symlink or copy from scolta-php)');
+    $contents = file_get_contents($cssFile);
+    $this->assertNotEmpty($contents);
+    $this->assertStringContainsString('scolta-', $contents);
+  }
+
+  /**
    * Verify scolta-php's composer.json has the correct package name.
    */
   public function testScoltaPhpPackageNameIsCorrect(): void {
