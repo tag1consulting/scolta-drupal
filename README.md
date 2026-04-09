@@ -1,5 +1,8 @@
 # Scolta for Drupal
 
+<!-- TODO: Add CI badge once repo is on GitHub -->
+<!-- [![CI](https://github.com/tag1consulting/scolta-drupal/actions/workflows/ci.yml/badge.svg)](https://github.com/tag1consulting/scolta-drupal/actions/workflows/ci.yml) -->
+
 Drupal module providing AI-powered search with Pagefind. Integrates with Search API as a backend and delivers client-side search with optional AI query expansion, summarization, and follow-up conversations.
 
 ## How It Works
