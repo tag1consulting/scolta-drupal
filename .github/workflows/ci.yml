@@ -32,6 +32,30 @@ jobs:
       - name: Run tests
         run: composer test
 
+  docs-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check CHANGELOG.md updated when code changes
+        run: |
+          CODE_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- \
+            'src/' 'composer.json' 'tests/' 'config/' 'js/' 'css/' '*.module' '*.install' | head -1)
+          if [ -n "$CODE_CHANGED" ]; then
+            CHANGELOG_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- CHANGELOG.md)
+            if [ -z "$CHANGELOG_CHANGED" ]; then
+              echo "FAIL: Code changed but CHANGELOG.md was not updated."
+              echo "Please add an entry under ## [Unreleased] in CHANGELOG.md."
+              exit 1
+            fi
+            echo "PASS: CHANGELOG.md updated alongside code changes."
+          else
+            echo "SKIP: No code changes detected."
+          fi
+
   version-sync:
     runs-on: ubuntu-latest
     steps:

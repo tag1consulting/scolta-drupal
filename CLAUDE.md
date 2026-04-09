@@ -32,3 +32,12 @@ The `version` field in `composer.json` is always either a tagged release (`0.2.0
 - Run: `./vendor/bin/phpunit`
 - Tests run without a Drupal bootstrap — they use YAML parsing and reflection.
 - WASM-dependent tests are covered by scolta-php, not this package.
+
+## Documentation Rules
+
+Documentation follows code. When a PR changes behavior, the same PR must update the relevant docs.
+
+- **CHANGELOG.md**: Every PR that changes code (not docs-only) MUST add an entry under `## [Unreleased]`. CI enforces this.
+- **README.md**: Update if the change affects installation, Drush commands, API endpoints, permissions, or configuration.
+- **Config schema**: `config/schema/scolta.schema.yml` MUST stay in sync with `config/install/scolta.settings.yml` and the settings form.
+- **PHPDoc**: All public methods SHOULD have complete PHPDoc including `@since` and `@stability`.
