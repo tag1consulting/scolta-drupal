@@ -13,7 +13,7 @@ use Tag1\Scolta\Health\HealthChecker;
 /**
  * Health check endpoint for monitoring.
  *
- * GET /api/scolta/v1/health
+ * GET /api/scolta/v1/health.
  */
 class HealthController extends ControllerBase {
 
@@ -71,7 +71,7 @@ class HealthController extends ControllerBase {
     // Drupal-specific: override AI provider when Drupal AI module is active.
     if ($this->aiService->hasDrupalAiModule()) {
       $result['ai_provider'] = 'drupal-ai';
-      $result['ai_configured'] = true;
+      $result['ai_configured'] = TRUE;
     }
 
     return new JsonResponse($result);

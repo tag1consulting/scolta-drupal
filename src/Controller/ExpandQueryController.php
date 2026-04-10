@@ -50,9 +50,10 @@ class ExpandQueryController extends ControllerBase {
    */
   public function handle(Request $request): JsonResponse {
     try {
-        $body = json_decode($request->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
-    } catch (\JsonException $e) {
-        return new JsonResponse(['error' => 'Malformed JSON: ' . $e->getMessage()], 400);
+      $body = json_decode($request->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+    }
+    catch (\JsonException $e) {
+      return new JsonResponse(['error' => 'Malformed JSON: ' . $e->getMessage()], 400);
     }
 
     $config = $this->aiService->getConfig();

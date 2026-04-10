@@ -12,7 +12,6 @@ use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
 use Tag1\Scolta\AiClient;
 use Tag1\Scolta\Config\ScoltaConfig;
-use Tag1\Scolta\Prompt\DefaultPrompts;
 use Tag1\Scolta\Service\AiServiceAdapter;
 
 /**

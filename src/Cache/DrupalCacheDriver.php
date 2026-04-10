@@ -19,11 +19,17 @@ class DrupalCacheDriver implements CacheDriverInterface {
     private readonly CacheBackendInterface $cache,
   ) {}
 
+  /**
+   *
+   */
   public function get(string $key): mixed {
     $cached = $this->cache->get($key);
-    return $cached ? $cached->data : null;
+    return $cached ? $cached->data : NULL;
   }
 
+  /**
+   *
+   */
   public function set(string $key, mixed $value, int $ttlSeconds): void {
     $this->cache->set($key, $value, time() + $ttlSeconds);
   }
