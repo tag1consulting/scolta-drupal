@@ -26,9 +26,13 @@ jobs:
           extensions: ffi
           coverage: none
 
-      - name: Configure Composer for scolta-php
+      - name: Replace path repo with GitHub VCS repo
         run: |
-          composer config repositories.0 vcs https://github.com/tag1consulting/scolta-php.git
+          php -r '
+            $j = json_decode(file_get_contents("composer.json"), true);
+            $j["repositories"] = [["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"]];
+            file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+          '
 
       - name: Install dependencies
         run: composer update --no-interaction --prefer-dist --ignore-platform-req=php
