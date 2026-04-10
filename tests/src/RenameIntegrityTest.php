@@ -193,7 +193,12 @@ class RenameIntegrityTest extends TestCase {
    * Verify scolta-php's composer.json has the correct package name.
    */
   public function testScoltaPhpPackageNameIsCorrect(): void {
-    $composerFile = $this->moduleRoot . '/../scolta-php/composer.json';
+    $scoltaPhpRoot = $this->resolveScoltaPhpRoot();
+    if ($scoltaPhpRoot === null) {
+      $this->markTestSkipped('scolta-php not available at sibling or vendor path');
+    }
+
+    $composerFile = $scoltaPhpRoot . '/composer.json';
     $this->assertFileExists($composerFile, 'scolta-php/composer.json must exist');
 
     $composer = json_decode(file_get_contents($composerFile), true);
@@ -205,7 +210,12 @@ class RenameIntegrityTest extends TestCase {
    * Verify the scolta-php WASM binary path uses underscores (scolta_core.wasm).
    */
   public function testScoltaPhpWasmPathUsesUnderscores(): void {
-    $wasmFile = $this->moduleRoot . '/../scolta-php/src/Wasm/ScoltaWasm.php';
+    $scoltaPhpRoot = $this->resolveScoltaPhpRoot();
+    if ($scoltaPhpRoot === null) {
+      $this->markTestSkipped('scolta-php not available at sibling or vendor path');
+    }
+
+    $wasmFile = $scoltaPhpRoot . '/src/Wasm/ScoltaWasm.php';
     $this->assertFileExists($wasmFile);
 
     $contents = file_get_contents($wasmFile);
@@ -213,6 +223,22 @@ class RenameIntegrityTest extends TestCase {
       "ScoltaWasm.php should reference scolta_core.wasm (underscored)");
     $this->assertStringNotContainsString('scolta-core.wasm', $contents,
       "ScoltaWasm.php should not reference scolta-core.wasm (hyphenated)");
+  }
+
+  /**
+   * Resolve the scolta-php root directory (sibling path repo or vendor).
+   */
+  private function resolveScoltaPhpRoot(): ?string {
+    $candidates = [
+      $this->moduleRoot . '/../scolta-php',
+      $this->moduleRoot . '/vendor/tag1/scolta-php',
+    ];
+    foreach ($candidates as $path) {
+      if (is_dir($path)) {
+        return $path;
+      }
+    }
+    return null;
   }
 
 }

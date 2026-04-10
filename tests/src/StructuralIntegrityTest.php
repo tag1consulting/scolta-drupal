@@ -111,6 +111,11 @@ class StructuralIntegrityTest extends TestCase {
 
   #[\PHPUnit\Framework\Attributes\DataProvider('phpFileProvider')]
   public function testScoltaPhpImportsReferenceRealClasses(string $file): void {
+    $scoltaPhpSrc = $this->resolveScoltaPhpSrc();
+    if ($scoltaPhpSrc === null) {
+      $this->markTestSkipped('scolta-php source not available at sibling or vendor path');
+    }
+
     $contents = file_get_contents($file);
 
     // Extract all use statements referencing Tag1\Scolta.
@@ -125,7 +130,7 @@ class StructuralIntegrityTest extends TestCase {
     foreach ($matches[1] as $fqcn) {
       // Convert FQCN to expected file path under scolta-php.
       $relative = str_replace('\\', '/', str_replace('Tag1\\Scolta\\', '', $fqcn));
-      $expectedFile = $this->moduleRoot . '/../scolta-php/src/' . $relative . '.php';
+      $expectedFile = $scoltaPhpSrc . $relative . '.php';
 
       $this->assertFileExists($expectedFile,
         "File {$file} imports {$fqcn} but {$expectedFile} does not exist");
@@ -179,6 +184,19 @@ class StructuralIntegrityTest extends TestCase {
   // -------------------------------------------------------------------
   // Helpers.
   // -------------------------------------------------------------------
+
+  private function resolveScoltaPhpSrc(): ?string {
+    $candidates = [
+      $this->moduleRoot . '/../scolta-php/src/',
+      $this->moduleRoot . '/vendor/tag1/scolta-php/src/',
+    ];
+    foreach ($candidates as $path) {
+      if (is_dir($path)) {
+        return $path;
+      }
+    }
+    return null;
+  }
 
   private function classToFile(string $fqcn): string {
     // Drupal\scolta\Foo\Bar -> src/Foo/Bar.php
