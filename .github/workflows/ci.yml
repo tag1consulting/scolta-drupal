@@ -19,17 +19,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure Composer to use scolta-php from GitHub
-        run: |
-          composer config repositories.0 vcs https://github.com/tag1consulting/scolta-php.git
-          composer config github-oauth.github.com ${{ secrets.GITHUB_TOKEN }}
-
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
           extensions: ffi
           coverage: none
+
+      - name: Configure Composer for scolta-php
+        run: |
+          composer config repositories.0 vcs https://github.com/tag1consulting/scolta-php.git
 
       - name: Install dependencies
         run: composer update --no-interaction --prefer-dist --ignore-platform-req=php
