@@ -19,6 +19,8 @@ use Symfony\Contracts\EventDispatcher\Event;
 class PromptEnrichEvent extends Event {
 
   /**
+   * Constructs a PromptEnrichEvent.
+   *
    * @param string $resolvedPrompt
    *   The prompt text after template resolution.
    * @param string $promptName

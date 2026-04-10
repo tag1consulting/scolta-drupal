@@ -20,7 +20,7 @@ class DrupalCacheDriver implements CacheDriverInterface {
   ) {}
 
   /**
-   *
+   * {@inheritdoc}
    */
   public function get(string $key): mixed {
     $cached = $this->cache->get($key);
@@ -28,7 +28,7 @@ class DrupalCacheDriver implements CacheDriverInterface {
   }
 
   /**
-   *
+   * {@inheritdoc}
    */
   public function set(string $key, mixed $value, int $ttlSeconds): void {
     $this->cache->set($key, $value, time() + $ttlSeconds);
