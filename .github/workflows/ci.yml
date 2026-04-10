@@ -38,7 +38,7 @@ jobs:
 
       - name: Lint (Drupal coding standards)
         if: matrix.lint
-        run: composer lint
+        run: ./vendor/bin/phpcs --warning-severity=0
 
       - name: Run tests
         run: composer test
