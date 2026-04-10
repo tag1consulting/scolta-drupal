@@ -290,7 +290,7 @@ class ScoltaCommands extends DrushCommands {
   /**
    * Verify Scolta dependencies and configuration.
    *
-   * Checks PHP, FFI, Extism, WASM binary, Pagefind, and AI key.
+   * Checks PHP version, Pagefind binary, and AI key.
    */
   #[CLI\Command(name: 'scolta:check-setup', aliases: ['scs'])]
   public function checkSetup(): void {

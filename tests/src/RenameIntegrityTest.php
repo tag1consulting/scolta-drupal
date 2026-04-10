@@ -207,25 +207,6 @@ class RenameIntegrityTest extends TestCase {
   }
 
   /**
-   * Verify the scolta-php WASM binary path uses underscores (scolta_core.wasm).
-   */
-  public function testScoltaPhpWasmPathUsesUnderscores(): void {
-    $scoltaPhpRoot = $this->resolveScoltaPhpRoot();
-    if ($scoltaPhpRoot === null) {
-      $this->markTestSkipped('scolta-php not available at sibling or vendor path');
-    }
-
-    $wasmFile = $scoltaPhpRoot . '/src/Wasm/ScoltaWasm.php';
-    $this->assertFileExists($wasmFile);
-
-    $contents = file_get_contents($wasmFile);
-    $this->assertStringContainsString('scolta_core.wasm', $contents,
-      "ScoltaWasm.php should reference scolta_core.wasm (underscored)");
-    $this->assertStringNotContainsString('scolta-core.wasm', $contents,
-      "ScoltaWasm.php should not reference scolta-core.wasm (hyphenated)");
-  }
-
-  /**
    * Resolve the scolta-php root directory (sibling path repo or vendor).
    */
   private function resolveScoltaPhpRoot(): ?string {

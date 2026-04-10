@@ -23,7 +23,6 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: ffi
           coverage: none
 
       - name: Replace path repo with GitHub VCS repo
@@ -40,7 +39,6 @@ jobs:
       - name: Lint (Drupal coding standards)
         if: matrix.lint
         run: composer lint
-        continue-on-error: true
 
       - name: Run tests
         run: composer test

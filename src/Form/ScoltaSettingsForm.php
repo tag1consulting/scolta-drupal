@@ -577,7 +577,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
    * If a prompt value matches the built-in default, store empty string.
    *
    * This ensures the prompt automatically picks up future default changes
-   * from WASM updates, rather than persisting a stale copy.
+   * from library updates, rather than persisting a stale copy.
    */
   protected function normalizePromptValue(string $value, string $templateName): string {
     $default = $this->getDefaultPrompt($templateName);

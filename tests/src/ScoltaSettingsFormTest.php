@@ -281,14 +281,9 @@ class ScoltaSettingsFormTest extends TestCase {
   /**
    * toJsScoringConfig() output changes when config values change.
    *
-   * This verifies the full pipeline: Drupal config → ScoltaConfig → WASM → JS.
-   * Skipped if libextism is not available (WASM required for toJsScoringConfig).
+   * This verifies the full pipeline: Drupal config → ScoltaConfig → JS.
    */
   public function testJsScoringOutputReflectsConfigChanges(): void {
-    if (!$this->isExtismAvailable()) {
-      $this->markTestSkipped('libextism not available — skipping WASM-dependent test');
-    }
-
     $defaults = $this->getInstallDefaults();
 
     // Default config.
@@ -486,19 +481,6 @@ class ScoltaSettingsFormTest extends TestCase {
       $current = &$current[$part];
     }
     $current = $value;
-  }
-
-  /**
-   * Check if libextism is available for WASM tests.
-   */
-  private function isExtismAvailable(): bool {
-    try {
-      $config = ScoltaConfig::fromArray(['ai_api_key' => 'test']);
-      $config->toJsScoringConfig();
-      return true;
-    } catch (\Throwable $e) {
-      return false;
-    }
   }
 
 }
