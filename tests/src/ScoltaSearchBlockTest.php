@@ -226,6 +226,14 @@ class ScoltaSearchBlockTest extends TestCase {
     );
   }
 
+  public function testSettingsIncludesWasmPath(): void {
+    $this->assertStringContainsString(
+      "'wasmPath'",
+      $this->blockContents,
+      'drupalSettings should include wasmPath for client-side WASM scoring'
+    );
+  }
+
   // -------------------------------------------------------------------
   // Constructor accepts expected types.
   // -------------------------------------------------------------------

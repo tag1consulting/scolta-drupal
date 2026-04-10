@@ -6,8 +6,16 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased] (0.2.0-dev)
 
+### Changed
+
+- **Client-side WASM scoring**: Scoring, merging, and query expansion parsing now happen entirely in the browser via WASM instead of server-side PHP/WASM. The `wasmPath` setting is injected into `drupalSettings` so `scolta.js` can load the WASM glue module.
+- WASM assets (`scolta_core.js`, `scolta_core_bg.wasm`) are now copied to `js/wasm/` by the `copy-assets` composer script alongside the existing JS/CSS assets.
+- `scolta:build` Drush command now pre-resolves and caches all prompt templates (Step 3) after building the Pagefind index, reducing runtime overhead for API endpoints.
+- Prompt resolution uses pure PHP (`DefaultPrompts::resolve()`) instead of WASM calls.
+
 ### Added
 
+- `wasmPath` key added to `drupalSettings.scolta` in `ScoltaSearchBlock`, pointing to the WASM glue JS file served from the module directory.
 - `ai_languages` config setting for multilingual AI response support, configurable via the admin form (comma-separated language codes)
 - All AI controllers now pass `aiLanguages` from config to `AiEndpointHandler`
 - `PromptEnrichEvent` Symfony event dispatched before AI prompts are sent to the LLM provider

@@ -26,9 +26,11 @@
         "post-install-cmd": ["@copy-assets"],
         "post-update-cmd": ["@copy-assets"],
         "copy-assets": [
-            "mkdir -p js css",
+            "mkdir -p js js/wasm css",
             "cp vendor/tag1/scolta-php/assets/js/scolta.js js/scolta.js",
-            "cp vendor/tag1/scolta-php/assets/css/scolta.css css/scolta.css"
+            "cp vendor/tag1/scolta-php/assets/css/scolta.css css/scolta.css",
+            "cp vendor/tag1/scolta-php/assets/wasm/scolta_core.js js/wasm/scolta_core.js",
+            "cp vendor/tag1/scolta-php/assets/wasm/scolta_core_bg.wasm js/wasm/scolta_core_bg.wasm"
         ],
         "test": "phpunit",
         "lint": "phpcs",

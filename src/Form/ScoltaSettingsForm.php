@@ -556,7 +556,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
    * Get the default prompt template text.
    *
    * Returns the raw template with {SITE_NAME} and {SITE_DESCRIPTION}
-   * placeholders intact. Returns empty string if WASM is unavailable.
+   * placeholders intact. Returns empty string if the template is not found.
    */
   protected function getDefaultPrompt(string $name): string {
     try {

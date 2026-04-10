@@ -64,6 +64,10 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     $pagefindPath = $this->resolvePagefindUrl($outputDir);
 
     // Build the window.scolta configuration for the JS frontend.
+    // Resolve the WASM glue JS path for client-side scoring.
+    $modulePath = \Drupal::service('extension.list.module')->getPath('scolta');
+    $wasmPath = '/' . $modulePath . '/js/wasm/scolta_core.js';
+
     $scoltaSettings = [
       'scoring' => $config->toJsScoringConfig(),
       'endpoints' => [
@@ -72,6 +76,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
         'followup' => Url::fromRoute('scolta.followup')->toString(),
       ],
       'pagefindPath' => $pagefindPath . '/pagefind.js',
+      'wasmPath' => $wasmPath,
       'siteName' => $config->siteName ?: $this->configFactory->get('system.site')->get('name'),
       'container' => '#scolta-search',
       'allowedLinkDomains' => [],

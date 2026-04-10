@@ -19,6 +19,7 @@ use GuzzleHttp\ClientInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Export\ContentItem;
+use Tag1\Scolta\Prompt\DefaultPrompts;
 
 /**
  * Drush commands for Scolta.
@@ -180,6 +181,11 @@ class ScoltaCommands extends DrushCommands {
     $this->logger()->notice('Step 2: Building Pagefind index...');
     $docroot = $options['docroot'];
     $this->runPagefind($options['output-dir'], $docroot . '/pagefind');
+
+    // Step 3: Pre-resolve and cache prompts so API endpoints don't need to
+    // resolve them on every request.
+    $this->logger()->notice('Step 3: Caching resolved prompts...');
+    $this->cacheResolvedPrompts();
   }
 
   /**
@@ -245,6 +251,31 @@ class ScoltaCommands extends DrushCommands {
     $this->state->set('scolta.generation', $generation + 1);
 
     $this->logger()->success('Index built successfully.');
+  }
+
+  /**
+   * Pre-resolve and cache all prompt templates.
+   *
+   * Stores resolved prompts in Drupal's cache so API endpoints can
+   * read them without resolving on every request.
+   */
+  private function cacheResolvedPrompts(): void {
+    $config = $this->aiService->getConfig();
+    $siteName = $config->siteName;
+    $siteDescription = $config->siteDescription;
+
+    $prompts = [
+      'expand_query' => DefaultPrompts::resolve(DefaultPrompts::EXPAND_QUERY, $siteName, $siteDescription),
+      'summarize' => DefaultPrompts::resolve(DefaultPrompts::SUMMARIZE, $siteName, $siteDescription),
+      'follow_up' => DefaultPrompts::resolve(DefaultPrompts::FOLLOW_UP, $siteName, $siteDescription),
+    ];
+
+    $cacheTtl = $config->cacheTtl > 0 ? $config->cacheTtl : 2592000;
+    foreach ($prompts as $name => $resolved) {
+      $this->cache->set("scolta.prompt.{$name}", $resolved, time() + $cacheTtl);
+    }
+
+    $this->logger()->success('Cached resolved prompts for: ' . implode(', ', array_keys($prompts)));
   }
 
   /**
