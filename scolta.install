@@ -1,0 +1,22 @@
+<?php
+
+/**
+ * @file
+ * Install and uninstall hooks for the Scolta module.
+ */
+
+/**
+ * Implements hook_uninstall().
+ */
+function scolta_uninstall() {
+  // Clean up the rebuild queue.
+  \Drupal::queue('scolta_rebuild')->deleteQueue();
+
+  // Release the build lock if possible.
+  if (!\Drupal::lock()->lockMayBeAvailable('scolta_build')) {
+    \Drupal::lock()->release('scolta_build');
+  }
+
+  // Clean up state entries.
+  \Drupal::state()->delete('scolta.rebuild_requested_at');
+}

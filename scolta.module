@@ -1,0 +1,45 @@
+<?php
+
+/**
+ * @file
+ * Scolta module hooks.
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+
+/**
+ * Implements hook_entity_insert().
+ */
+function scolta_entity_insert(EntityInterface $entity) {
+  _scolta_auto_rebuild_check($entity);
+}
+
+/**
+ * Implements hook_entity_update().
+ */
+function scolta_entity_update(EntityInterface $entity) {
+  _scolta_auto_rebuild_check($entity);
+}
+
+/**
+ * Check if auto-rebuild should be triggered for the given entity.
+ *
+ * Enqueues a rebuild request when a node is inserted or updated
+ * and auto_rebuild is enabled in the Scolta pagefind configuration.
+ *
+ * @param \Drupal\Core\Entity\EntityInterface $entity
+ *   The entity that was inserted or updated.
+ */
+function _scolta_auto_rebuild_check(EntityInterface $entity) {
+  if ($entity->getEntityTypeId() !== 'node') {
+    return;
+  }
+
+  $config = \Drupal::config('scolta.settings');
+  if (!$config->get('pagefind.auto_rebuild')) {
+    return;
+  }
+
+  \Drupal::state()->set('scolta.rebuild_requested_at', time());
+  \Drupal::queue('scolta_rebuild')->createItem(['type' => 'auto']);
+}
