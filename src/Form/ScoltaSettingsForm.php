@@ -201,6 +201,18 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Brief description used in AI prompts (e.g., "corporate website", "health system websites").'),
     ];
 
+    $form['content']['indexer'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Indexer mode'),
+      '#options' => [
+        'auto' => $this->t('Auto (use binary if available, otherwise PHP)'),
+        'php' => $this->t('PHP (in-memory, no Pagefind binary needed)'),
+        'binary' => $this->t('Binary (requires Pagefind CLI)'),
+      ],
+      '#default_value' => $config->get('indexer') ?? 'auto',
+      '#description' => $this->t('How scolta:build creates the search index. Can be overridden with --indexer on the CLI.'),
+    ];
+
     // ── Scoring Section ──
     $form['scoring'] = [
       '#type' => 'details',
@@ -606,6 +618,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       // Content settings.
       ->set('site_name', $form_state->getValue('site_name'))
       ->set('site_description', $form_state->getValue('site_description'))
+      ->set('indexer', $form_state->getValue('indexer'))
       // Scoring settings.
       ->set('scoring.title_match_boost', (float) $form_state->getValue('title_match_boost'))
       ->set('scoring.title_all_terms_multiplier', (float) $form_state->getValue('title_all_terms_multiplier'))

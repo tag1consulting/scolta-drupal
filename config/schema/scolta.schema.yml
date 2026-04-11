@@ -91,6 +91,9 @@ scolta.settings:
     prompt_follow_up:
       type: string
       label: 'Custom follow-up prompt'
+    indexer:
+      type: string
+      label: 'Indexer mode (auto, php, or binary)'
     pagefind:
       type: mapping
       label: 'Pagefind configuration'

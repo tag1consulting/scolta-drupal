@@ -6,6 +6,21 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased] (0.2.0-dev)
 
+### Added
+
+- **PHP indexer integration**: `scolta:build` now supports in-memory PHP indexing via `Tag1\Scolta\Index\PhpIndexer`, eliminating the need for the Pagefind binary.
+- `--indexer` option on `scolta:build` to select indexer mode (`php`, `binary`, or `auto`); overrides the `indexer` config setting.
+- `--force` option on `scolta:build` to skip the content fingerprint check and force a rebuild.
+- `indexer` config key (`auto`/`php`/`binary`) in `scolta.settings.yml` with matching schema entry.
+- Auto-detection: when `indexer` is `auto`, the build command uses the binary if available, otherwise falls back to the PHP indexer.
+- Content fingerprint tracking (`.scolta-state` file) to skip unnecessary rebuilds when content has not changed.
+- `wasmPath` key added to `drupalSettings.scolta` in `ScoltaSearchBlock`, pointing to the WASM glue JS file served from the module directory.
+- `ai_languages` config setting for multilingual AI response support, configurable via the admin form (comma-separated language codes)
+- All AI controllers now pass `aiLanguages` from config to `AiEndpointHandler`
+- `PromptEnrichEvent` Symfony event dispatched before AI prompts are sent to the LLM provider
+- `EventDrivenEnricher` bridging scolta-php's `PromptEnricherInterface` with Drupal's event system
+- All AI controllers now inject the event dispatcher and pass the enricher to `AiEndpointHandler`
+
 ### Removed
 
 - **Extism/FFI dependency**: All references to `ScoltaWasm`, `ExtismCheck`, `Tag1\Scolta\Wasm`, FFI, and Extism have been removed. scolta-php is now pure PHP with no native extensions required.
@@ -21,15 +36,6 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 - `scolta:build` Drush command now pre-resolves and caches all prompt templates (Step 3) after building the Pagefind index, reducing runtime overhead for API endpoints.
 - Prompt resolution uses pure PHP (`DefaultPrompts::resolve()`) instead of WASM calls.
 - Updated PHPDoc comments to remove stale references to WASM/FFI/Extism.
-
-### Added
-
-- `wasmPath` key added to `drupalSettings.scolta` in `ScoltaSearchBlock`, pointing to the WASM glue JS file served from the module directory.
-- `ai_languages` config setting for multilingual AI response support, configurable via the admin form (comma-separated language codes)
-- All AI controllers now pass `aiLanguages` from config to `AiEndpointHandler`
-- `PromptEnrichEvent` Symfony event dispatched before AI prompts are sent to the LLM provider
-- `EventDrivenEnricher` bridging scolta-php's `PromptEnricherInterface` with Drupal's event system
-- All AI controllers now inject the event dispatcher and pass the enricher to `AiEndpointHandler`
 
 ### Previously added
 

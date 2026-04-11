@@ -27,6 +27,7 @@ cache_ttl: 2592000
 prompt_expand_query: ''
 prompt_summarize: ''
 prompt_follow_up: ''
+indexer: 'auto'
 pagefind:
   build_dir: 'private://scolta-build'
   output_dir: 'public://scolta-pagefind'

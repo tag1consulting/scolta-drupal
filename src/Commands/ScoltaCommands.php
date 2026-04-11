@@ -19,6 +19,7 @@ use GuzzleHttp\ClientInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Export\ContentItem;
+use Tag1\Scolta\Index\PhpIndexer;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 
 /**
@@ -151,6 +152,8 @@ class ScoltaCommands extends DrushCommands {
    * Build the Pagefind search index.
    *
    * Runs export -> pagefind CLI -> copies search page to docroot.
+   * When using the PHP indexer, content is processed in-memory without
+   * exporting HTML files or invoking the Pagefind binary.
    */
   #[CLI\Command(name: 'scolta:build', aliases: ['sb'])]
   #[CLI\Option(name: 'entity-type', description: 'Entity type to export')]
@@ -158,6 +161,8 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Option(name: 'output-dir', description: 'Export directory')]
   #[CLI\Option(name: 'docroot', description: 'Docroot path')]
   #[CLI\Option(name: 'skip-pagefind', description: 'Export content only, skip Pagefind build')]
+  #[CLI\Option(name: 'indexer', description: 'Indexer mode: php, binary, or auto (default: from config)')]
+  #[CLI\Option(name: 'force', description: 'Force rebuild even if content has not changed')]
   public function build(
     array $options = [
       'entity-type' => 'node',
@@ -165,8 +170,60 @@ class ScoltaCommands extends DrushCommands {
       'output-dir' => '/var/www/html/pagefind-site',
       'docroot' => 'docroot',
       'skip-pagefind' => FALSE,
+      'indexer' => '',
+      'force' => FALSE,
     ],
   ): void {
+    $config = $this->configFactory->get('scolta.settings');
+
+    // Resolve indexer mode: CLI option overrides config.
+    $indexerMode = $options['indexer'] ?: ($config->get('indexer') ?: 'auto');
+
+    if ($indexerMode === 'auto') {
+      $indexerMode = $this->resolveAutoIndexer($config);
+    }
+
+    if ($indexerMode === 'php') {
+      $this->buildWithPhpIndexer($options, $config, (bool) $options['force']);
+    }
+    else {
+      $this->buildWithBinary($options);
+    }
+
+    // Cache resolved prompts regardless of indexer mode.
+    $this->logger()->notice('Caching resolved prompts...');
+    $this->cacheResolvedPrompts();
+  }
+
+  /**
+   * Resolve 'auto' indexer mode based on binary availability.
+   *
+   * @param \Drupal\Core\Config\ImmutableConfig $config
+   *   The Scolta settings config.
+   *
+   * @return string
+   *   'binary' if the Pagefind binary is available, 'php' otherwise.
+   */
+  private function resolveAutoIndexer($config): string {
+    $resolver = new PagefindBinary(
+      configuredPath: $config->get('pagefind.binary'),
+      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
+    );
+
+    $binary = $resolver->resolve();
+    if ($binary !== NULL) {
+      $this->logger()->notice('Auto-detected indexer: binary (Pagefind available).');
+      return 'binary';
+    }
+
+    $this->logger()->notice('Auto-detected indexer: php (Pagefind binary not available).');
+    return 'php';
+  }
+
+  /**
+   * Build using the existing binary pipeline (export HTML + run Pagefind).
+   */
+  private function buildWithBinary(array $options): void {
     $this->logger()->notice('Step 1: Exporting content...');
     $this->export($options['entity-type'], [
       'bundle' => $options['bundle'],
@@ -178,14 +235,225 @@ class ScoltaCommands extends DrushCommands {
       return;
     }
 
-    $this->logger()->notice('Step 2: Building Pagefind index...');
+    $this->logger()->notice('Step 2: Building Pagefind index (binary)...');
     $docroot = $options['docroot'];
     $this->runPagefind($options['output-dir'], $docroot . '/pagefind');
+  }
 
-    // Step 3: Pre-resolve and cache prompts so API endpoints don't need to
-    // resolve them on every request.
-    $this->logger()->notice('Step 3: Caching resolved prompts...');
-    $this->cacheResolvedPrompts();
+  /**
+   * Build using the PHP indexer (in-memory, no Pagefind binary needed).
+   *
+   * @param array $options
+   *   The command options.
+   * @param \Drupal\Core\Config\ImmutableConfig $config
+   *   The Scolta settings config.
+   * @param bool $force
+   *   Whether to skip the fingerprint check and force a rebuild.
+   */
+  private function buildWithPhpIndexer(array $options, $config, bool $force): void {
+    $entityType = $options['entity-type'] ?: 'node';
+    $bundle = $options['bundle'] ?: '';
+    $siteName = $config->get('site_name') ?: 'Unknown';
+
+    // Resolve output directory for the PHP indexer.
+    $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
+    if (str_contains($outputDir, '://')) {
+      try {
+        $resolvedOutputDir = $this->streamWrapperManager
+          ->getViaUri($outputDir)->realpath() ?: $outputDir;
+      }
+      catch (\Exception $e) {
+        $resolvedOutputDir = $outputDir;
+      }
+    }
+    else {
+      $resolvedOutputDir = $outputDir;
+    }
+
+    $stateDir = $config->get('pagefind.build_dir') ?? 'private://scolta-build';
+    if (str_contains($stateDir, '://')) {
+      try {
+        $resolvedStateDir = $this->streamWrapperManager
+          ->getViaUri($stateDir)->realpath() ?: $stateDir;
+      }
+      catch (\Exception $e) {
+        $resolvedStateDir = $stateDir;
+      }
+    }
+    else {
+      $resolvedStateDir = $stateDir;
+    }
+
+    // Ensure directories exist.
+    if (!is_dir($resolvedStateDir) && !mkdir($resolvedStateDir, 0755, TRUE)) {
+      $this->logger()->error('Failed to create state directory: {dir}', ['dir' => $resolvedStateDir]);
+      return;
+    }
+    if (!is_dir($resolvedOutputDir) && !mkdir($resolvedOutputDir, 0755, TRUE)) {
+      $this->logger()->error('Failed to create output directory: {dir}', ['dir' => $resolvedOutputDir]);
+      return;
+    }
+
+    // Step 1: Gather content from Drupal.
+    $this->logger()->notice('Step 1: Gathering content (PHP indexer)...');
+    $items = $this->gatherContentItems($entityType, $bundle, $siteName);
+
+    if (empty($items)) {
+      $this->logger()->warning('No content found to index.');
+      return;
+    }
+
+    $this->logger()->notice('Found {count} content items.', ['count' => count($items)]);
+
+    // Step 2: Filter through ContentExporter.
+    $exporter = new ContentExporter($resolvedOutputDir);
+    $filteredItems = $exporter->exportToItems($items);
+    $skipped = count($items) - count($filteredItems);
+
+    if ($skipped > 0) {
+      $this->logger()->notice('Filtered out {count} items with insufficient content.', ['count' => $skipped]);
+    }
+
+    if (empty($filteredItems)) {
+      $this->logger()->warning('No items passed content filter.');
+      return;
+    }
+
+    $this->logger()->notice('{count} items ready for indexing.', ['count' => count($filteredItems)]);
+
+    // Step 3: Fingerprint check (skip if --force).
+    $language = $config->get('ai_languages')[0] ?? 'en';
+    $indexer = new PhpIndexer(
+      stateDir: $resolvedStateDir,
+      outputDir: $resolvedOutputDir,
+      hmacSecret: NULL,
+      language: $language,
+    );
+
+    if (!$force) {
+      $fingerprint = $indexer->shouldBuild($filteredItems);
+      if ($fingerprint === NULL) {
+        $this->logger()->success('Content unchanged — skipping rebuild. Use --force to override.');
+        return;
+      }
+      $this->logger()->notice('Content fingerprint changed, rebuilding index.');
+    }
+    else {
+      $this->logger()->notice('Forced rebuild (--force).');
+    }
+
+    // Step 4: Chunk and process.
+    $chunkSize = 100;
+    $chunks = array_chunk($filteredItems, $chunkSize);
+    $totalPages = count($filteredItems);
+    $totalProcessed = 0;
+
+    $this->logger()->notice('Step 2: Processing {chunks} chunk(s)...', ['chunks' => count($chunks)]);
+
+    foreach ($chunks as $chunkNumber => $chunk) {
+      $processed = $indexer->processChunk($chunk, $chunkNumber, $totalPages);
+      $totalProcessed += $processed;
+      $this->logger()->notice('  Chunk {n}/{total}: processed {count} pages.', [
+        'n' => $chunkNumber + 1,
+        'total' => count($chunks),
+        'count' => $processed,
+      ]);
+    }
+
+    // Step 5: Finalize.
+    $this->logger()->notice('Step 3: Finalizing index...');
+    $result = $indexer->finalize();
+
+    if ($result->success) {
+      // Write fingerprint for future change detection.
+      $fp = PhpIndexer::computeFingerprint($filteredItems);
+      file_put_contents($resolvedOutputDir . '/.scolta-state', $fp);
+
+      // Increment generation counter.
+      $generation = $this->state->get('scolta.generation', 0);
+      $this->state->set('scolta.generation', $generation + 1);
+
+      $this->logger()->success('PHP indexer: {message} in {time}s.', [
+        'message' => $result->message,
+        'time' => $result->elapsedSeconds,
+      ]);
+    }
+    else {
+      $this->logger()->error('PHP indexer failed: {error}', [
+        'error' => $result->error ?? $result->message,
+      ]);
+    }
+  }
+
+  /**
+   * Gather content items from Drupal entities.
+   *
+   * Queries published entities and converts them to ContentItem objects.
+   *
+   * @param string $entityType
+   *   The entity type to query.
+   * @param string $bundle
+   *   The bundle to filter by (empty for all).
+   * @param string $siteName
+   *   The site name for metadata.
+   *
+   * @return \Tag1\Scolta\Export\ContentItem[]
+   *   Array of content items.
+   */
+  private function gatherContentItems(string $entityType, string $bundle, string $siteName): array {
+    $storage = $this->entityTypeManager->getStorage($entityType);
+    $query = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('status', 1);
+
+    if ($bundle) {
+      $bundleKey = $this->entityTypeManager->getDefinition($entityType)->getKey('bundle');
+      if ($bundleKey) {
+        $query->condition($bundleKey, $bundle);
+      }
+    }
+
+    $ids = $query->execute();
+    if (empty($ids)) {
+      return [];
+    }
+
+    $entities = $storage->loadMultiple($ids);
+    $items = [];
+
+    foreach ($entities as $entity) {
+      if (!$entity instanceof FieldableEntityInterface) {
+        continue;
+      }
+
+      // Extract body content — try common field names.
+      $body = '';
+      foreach (['body', 'field_body', 'field_content'] as $field) {
+        if ($entity->hasField($field) && !$entity->get($field)->isEmpty()) {
+          $body = $entity->get($field)->value;
+          break;
+        }
+      }
+
+      if (empty($body)) {
+        continue;
+      }
+
+      $changedTime = $entity instanceof EntityChangedInterface
+        ? $entity->getChangedTime()
+        : (int) ($entity->get('changed')->value ?? 0);
+
+      $items[] = new ContentItem(
+        id: (string) $entity->id(),
+        title: $entity->label() ?: 'Untitled',
+        bodyHtml: $body,
+        url: $entity->toUrl()->setAbsolute(TRUE)->toString(),
+        date: date('Y-m-d', $changedTime),
+        siteName: $siteName,
+      );
+    }
+
+    return $items;
   }
 
   /**
