@@ -20,7 +20,6 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Export\ContentItem;
-use Tag1\Scolta\Index\PhpIndexer;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 
 /**
