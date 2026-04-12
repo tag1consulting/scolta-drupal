@@ -56,11 +56,37 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
    * {@inheritdoc}
    */
   public function build(): array {
-    $config = $this->aiService->getConfig();
-
     // Resolve the Pagefind output directory to a web-accessible URL.
     $drupalConfig = $this->configFactory->get('scolta.settings');
     $outputDir = $drupalConfig->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
+
+    // Check if index exists on the filesystem.
+    $resolvedDir = $outputDir;
+    if (str_contains($outputDir, '://')) {
+      try {
+        $swm = \Drupal::service('stream_wrapper_manager');
+        $resolvedDir = $swm->getViaUri($outputDir)->realpath() ?: $outputDir;
+      }
+      catch (\Exception $e) {
+        // Fall through with unresolved URI.
+      }
+    }
+    $indexExists = file_exists($resolvedDir . '/pagefind/pagefind-entry.json');
+
+    if (!$indexExists) {
+      if (\Drupal::currentUser()->hasPermission('administer site configuration')) {
+        return [
+          '#markup' => '<div class="messages messages--warning">'
+            . '<p><strong>Scolta:</strong> Search index has not been built yet.</p>'
+            . '<p><a href="/admin/config/search/scolta">Build now &rarr;</a> or run <code>drush scolta:build</code></p>'
+            . '</div>',
+        ];
+      }
+      return []; // Hide for non-admins
+    }
+
+    $config = $this->aiService->getConfig();
+
     $pagefindPath = $this->resolvePagefindUrl($outputDir);
 
     // Build the window.scolta configuration for the JS frontend.

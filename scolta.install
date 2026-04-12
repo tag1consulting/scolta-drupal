@@ -6,6 +6,17 @@
  */
 
 /**
+ * Implements hook_install().
+ */
+function scolta_install() {
+  \Drupal::queue('scolta_rebuild')->createItem(['type' => 'install']);
+  \Drupal::messenger()->addStatus(t(
+    'Scolta installed. Your search index will be built on the next cron run. '
+    . 'To build immediately: <code>drush scolta:build</code>'
+  ));
+}
+
+/**
  * Implements hook_uninstall().
  */
 function scolta_uninstall() {
