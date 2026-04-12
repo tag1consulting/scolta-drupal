@@ -82,7 +82,8 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
             . '</div>',
         ];
       }
-      return []; // Hide for non-admins
+      // Hide search block for non-admins when index is missing.
+      return [];
     }
 
     $config = $this->aiService->getConfig();
