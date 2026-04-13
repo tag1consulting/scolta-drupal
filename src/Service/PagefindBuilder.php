@@ -62,7 +62,15 @@ class PagefindBuilder {
 
     // Ensure output directory exists.
     if (!is_dir($outputDir)) {
-      mkdir($outputDir, 0755, TRUE);
+      if (!mkdir($outputDir, 0755, TRUE)) {
+        return [
+          'success' => FALSE,
+          'output' => '',
+          'error' => "Failed to create output directory: {$outputDir}",
+          'file_count' => $fileCount,
+          'index_size' => NULL,
+        ];
+      }
     }
 
     // Build the pagefind command.
