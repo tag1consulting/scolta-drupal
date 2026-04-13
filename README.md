@@ -270,6 +270,11 @@ drush scolta:download-pagefind
 
 Verify: `drush scolta:check-setup` — the Drupal Status Report also shows a warning when the binary is absent.
 
+## Hosting
+
+See the [Scolta Hosting Guide](../scolta-php/HOSTING.md) for platform-specific
+deployment guidance, indexer selection, and ephemeral filesystem handling.
+
 ## Troubleshooting
 
 ### "Pagefind binary not found"

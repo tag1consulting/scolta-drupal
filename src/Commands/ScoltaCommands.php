@@ -4,23 +4,21 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Commands;
 
-use Drupal\Core\Entity\EntityChangedInterface;
-use Drupal\Core\Entity\FieldableEntityInterface;
-use Tag1\Scolta\SetupCheck;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 use GuzzleHttp\ClientInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Export\ContentExporter;
-use Tag1\Scolta\Export\ContentItem;
 use Tag1\Scolta\Index\PhpIndexer;
 use Tag1\Scolta\Prompt\DefaultPrompts;
+use Tag1\Scolta\SetupCheck;
 
 /**
  * Drush commands for Scolta.
@@ -49,6 +47,8 @@ class ScoltaCommands extends DrushCommands {
    *   The Scolta AI service.
    * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $streamWrapperManager
    *   The stream wrapper manager.
+   * @param \Drupal\scolta\Service\ScoltaContentGatherer $contentGatherer
+   *   The content gatherer service.
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -58,6 +58,7 @@ class ScoltaCommands extends DrushCommands {
     private readonly CacheBackendInterface $cache,
     private readonly ScoltaAiService $aiService,
     private readonly StreamWrapperManagerInterface $streamWrapperManager,
+    private readonly ScoltaContentGatherer $contentGatherer,
   ) {
     parent::__construct();
   }
@@ -86,58 +87,14 @@ class ScoltaCommands extends DrushCommands {
     $exporter = new ContentExporter($outputDir);
     $exporter->prepareOutputDir();
 
-    // Query published entities.
-    $storage = $this->entityTypeManager->getStorage($entity_type);
-    $query = $storage->getQuery()
-      ->accessCheck(FALSE)
-      ->condition('status', 1);
+    $items = $this->contentGatherer->gather($entity_type, $bundle, $siteName);
 
-    if ($bundle) {
-      $bundleKey = $this->entityTypeManager->getDefinition($entity_type)->getKey('bundle');
-      if ($bundleKey) {
-        $query->condition($bundleKey, $bundle);
-      }
-    }
-
-    $ids = $query->execute();
-    if (empty($ids)) {
+    if (empty($items)) {
       $this->logger()->warning('No published entities found.');
       return;
     }
 
-    $entities = $storage->loadMultiple($ids);
-
-    foreach ($entities as $entity) {
-      if (!$entity instanceof FieldableEntityInterface) {
-        continue;
-      }
-
-      // Extract body content — try common field names.
-      $body = '';
-      foreach (['body', 'field_body', 'field_content'] as $field) {
-        if ($entity->hasField($field) && !$entity->get($field)->isEmpty()) {
-          $body = $entity->get($field)->value;
-          break;
-        }
-      }
-
-      if (empty($body)) {
-        continue;
-      }
-
-      $changedTime = $entity instanceof EntityChangedInterface
-        ? $entity->getChangedTime()
-        : (int) ($entity->get('changed')->value ?? 0);
-
-      $item = new ContentItem(
-        id: (string) $entity->id(),
-        title: $entity->label() ?: 'Untitled',
-        bodyHtml: $body,
-        url: $entity->toUrl()->setAbsolute(TRUE)->toString(),
-        date: date('Y-m-d', $changedTime),
-        siteName: $siteName,
-      );
-
+    foreach ($items as $item) {
       $exporter->export($item);
     }
 
@@ -296,7 +253,7 @@ class ScoltaCommands extends DrushCommands {
 
     // Step 1: Gather content from Drupal.
     $this->logger()->notice('Step 1: Gathering content (PHP indexer)...');
-    $items = $this->gatherContentItems($entityType, $bundle, $siteName);
+    $items = $this->contentGatherer->gather($entityType, $bundle, $siteName);
 
     if (empty($items)) {
       $this->logger()->warning('No content found to index.');
@@ -383,77 +340,6 @@ class ScoltaCommands extends DrushCommands {
         'error' => $result->error ?? $result->message,
       ]);
     }
-  }
-
-  /**
-   * Gather content items from Drupal entities.
-   *
-   * Queries published entities and converts them to ContentItem objects.
-   *
-   * @param string $entityType
-   *   The entity type to query.
-   * @param string $bundle
-   *   The bundle to filter by (empty for all).
-   * @param string $siteName
-   *   The site name for metadata.
-   *
-   * @return \Tag1\Scolta\Export\ContentItem[]
-   *   Array of content items.
-   */
-  private function gatherContentItems(string $entityType, string $bundle, string $siteName): array {
-    $storage = $this->entityTypeManager->getStorage($entityType);
-    $query = $storage->getQuery()
-      ->accessCheck(FALSE)
-      ->condition('status', 1);
-
-    if ($bundle) {
-      $bundleKey = $this->entityTypeManager->getDefinition($entityType)->getKey('bundle');
-      if ($bundleKey) {
-        $query->condition($bundleKey, $bundle);
-      }
-    }
-
-    $ids = $query->execute();
-    if (empty($ids)) {
-      return [];
-    }
-
-    $entities = $storage->loadMultiple($ids);
-    $items = [];
-
-    foreach ($entities as $entity) {
-      if (!$entity instanceof FieldableEntityInterface) {
-        continue;
-      }
-
-      // Extract body content — try common field names.
-      $body = '';
-      foreach (['body', 'field_body', 'field_content'] as $field) {
-        if ($entity->hasField($field) && !$entity->get($field)->isEmpty()) {
-          $body = $entity->get($field)->value;
-          break;
-        }
-      }
-
-      if (empty($body)) {
-        continue;
-      }
-
-      $changedTime = $entity instanceof EntityChangedInterface
-        ? $entity->getChangedTime()
-        : (int) ($entity->get('changed')->value ?? 0);
-
-      $items[] = new ContentItem(
-        id: (string) $entity->id(),
-        title: $entity->label() ?: 'Untitled',
-        bodyHtml: $body,
-        url: $entity->toUrl()->setAbsolute(TRUE)->toString(),
-        date: date('Y-m-d', $changedTime),
-        siteName: $siteName,
-      );
-    }
-
-    return $items;
   }
 
   /**

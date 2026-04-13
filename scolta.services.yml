@@ -14,3 +14,7 @@ services:
   scolta.pagefind_builder:
     class: Drupal\scolta\Service\PagefindBuilder
     arguments: ['@logger.channel.scolta']
+
+  scolta.content_gatherer:
+    class: Drupal\scolta\Service\ScoltaContentGatherer
+    arguments: ['@entity_type.manager']

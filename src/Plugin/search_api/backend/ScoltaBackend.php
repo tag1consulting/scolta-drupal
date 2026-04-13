@@ -86,6 +86,7 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
       'output_dir' => 'public://scolta-pagefind',
       'pagefind_binary' => 'pagefind',
       'auto_rebuild' => TRUE,
+      'auto_rebuild_delay' => 300,
       'view_mode' => 'search_index',
     ];
   }
@@ -133,6 +134,21 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
       '#default_value' => $this->configuration['auto_rebuild'],
     ];
 
+    $form['auto_rebuild_delay'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Rebuild delay (seconds)'),
+      '#description' => $this->t('Seconds to wait after the last content change before rebuilding. Minimum 60. Default 300. Higher values batch more changes.'),
+      '#default_value' => $this->configuration['auto_rebuild_delay'] ?? 300,
+      '#min' => 60,
+      '#max' => 3600,
+      '#step' => 60,
+      '#states' => [
+        'visible' => [
+          ':input[name="backend_config[auto_rebuild]"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
     return $form;
   }
 
@@ -149,6 +165,12 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
         $form_state->setErrorByName('pagefind_binary', $this->t('Pagefind binary not found at @path. Install via npm (npm install -g pagefind) or provide the correct path.', ['@path' => $binary]));
       }
     }
+
+    // Clamp auto_rebuild_delay to 60–3600.
+    $delay = (int) $form_state->getValue('auto_rebuild_delay');
+    if ($delay < 60 || $delay > 3600) {
+      $form_state->setValue('auto_rebuild_delay', max(60, min(3600, $delay)));
+    }
   }
 
   /**
@@ -160,6 +182,7 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
     $this->configuration['pagefind_binary'] = $form_state->getValue('pagefind_binary');
     $this->configuration['view_mode'] = $form_state->getValue('view_mode');
     $this->configuration['auto_rebuild'] = (bool) $form_state->getValue('auto_rebuild');
+    $this->configuration['auto_rebuild_delay'] = max(60, min(3600, (int) $form_state->getValue('auto_rebuild_delay')));
   }
 
   /**
