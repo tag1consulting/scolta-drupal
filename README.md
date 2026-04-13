@@ -73,23 +73,13 @@ The Drupal module handles CMS-specific concerns: Search API integration, Drush c
 - Drupal 10.3+ or 11
 - Search API module (`drupal/search_api`)
 - PHP 8.1+
-- [Extism](https://extism.org) shared library (for WASM scoring)
-- PHP FFI enabled (`ffi.enable=true`)
-- Pagefind CLI (`npm install -g pagefind`)
+- Pagefind CLI (`npm install -g pagefind`) — optional, see Indexer section below
 
 ## Installation
 
 ```bash
 composer require tag1/scolta-drupal tag1/scolta-php
 drush en scolta
-```
-
-### Install Extism (if not already present)
-
-```bash
-curl -s https://get.extism.org/cli | bash -s -- -y
-sudo extism lib install --version latest
-sudo ldconfig  # Linux only
 ```
 
 ## Setup
@@ -142,7 +132,7 @@ After installation, run the setup check to verify all prerequisites:
 drush scolta:check-setup
 ```
 
-This verifies PHP version, FFI extension, Extism library, WASM binary, Pagefind binary, AI provider configuration, and cache backend. Fix any items marked as failed before proceeding.
+This verifies PHP version, Pagefind binary, AI provider configuration, and cache backend. Fix any items marked as failed before proceeding.
 
 ## Configuration Details
 
@@ -174,8 +164,31 @@ drush scolta:rebuild-index            # Rebuild Pagefind index from existing HTM
 drush scolta:status                   # Show tracker, content, index, and AI status
 drush scolta:clear-cache              # Clear Scolta AI response caches
 drush scolta:download-pagefind        # Download the Pagefind binary
-drush scolta:check-setup              # Verify PHP, Extism, Pagefind, and configuration
+drush scolta:check-setup              # Verify PHP, Pagefind, and configuration
 ```
+
+## Content Coverage
+
+Scolta indexes content through Search API. What gets indexed depends on which entity types, bundles, and fields you add to your Search API index.
+
+### What gets indexed
+
+- **Any Search API datasource** -- nodes, taxonomy terms, users, Commerce products, or custom entities added to the index.
+- **Rendered HTML** -- Scolta exports the rendered view of each item (via `entity_view()`). Body fields, paragraph fields, layout builder regions, and any other fields that render to HTML are included automatically.
+- **Title** -- sanitized and tokenized for search.
+- **URL and date** -- used for display and recency scoring.
+
+### What is NOT indexed by default
+
+- Fields not added to the Search API index.
+- Fields added to the index as raw values but not rendered through the entity view.
+- Content in blocks or sidebars outside the entity view.
+
+### Extending with a custom ContentItem
+
+The `ScoltaBackend` passes each indexed item through `PagefindExporter`, which builds a `ContentItem` from the rendered entity. To add metadata not present in the rendered output (e.g., product price, custom field), implement a Drupal event subscriber or alter hook and modify the export before it is written.
+
+Alternatively, add your custom field to the entity view mode used for indexing so it renders into the HTML that Scolta exports.
 
 ## Permissions
 
@@ -237,33 +250,27 @@ cd test-drupal-11
 ddev exec vendor/bin/phpstan analyse --no-progress --memory-limit=512M
 ```
 
+## Indexer
+
+Scolta auto-detects the best available indexer (`indexer: auto` default). See [scolta-php README](../scolta-php/README.md) for the full comparison table.
+
+| Feature | PHP Indexer | Pagefind Binary |
+| ------- | ----------- | --------------- |
+| Languages with stemming | 15 (Snowball) | 33+ |
+| Speed (1 000 pages) | ~3–4 seconds | ~0.3–0.5 seconds |
+| Shared / managed hosting | Yes | Only if binary installable |
+
+**To upgrade to the binary indexer:**
+
+```bash
+npm install -g pagefind
+# or:
+drush scolta:download-pagefind
+```
+
+Verify: `drush scolta:check-setup` — the Drupal Status Report also shows a warning when the binary is absent.
+
 ## Troubleshooting
-
-### "FFI not enabled" or WASM load failure
-
-Scolta requires PHP FFI and the Extism shared library:
-
-```bash
-# Check FFI
-php -r "echo extension_loaded('ffi') ? 'OK' : 'MISSING';"
-
-# Check Extism
-php -r "echo class_exists('\Extism\Plugin') ? 'OK' : 'MISSING';"
-
-# Linux: check library path
-ldconfig -p | grep extism
-
-# macOS: check library
-ls /usr/local/lib/libextism.dylib
-```
-
-Install Extism if missing:
-
-```bash
-curl -s https://get.extism.org/cli | bash -s -- -y
-sudo extism lib install --version latest
-sudo ldconfig  # Linux only
-```
 
 ### "Pagefind binary not found"
 

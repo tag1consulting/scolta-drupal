@@ -17,6 +17,48 @@ function scolta_install() {
 }
 
 /**
+ * Implements hook_requirements().
+ */
+function scolta_requirements(string $phase): array {
+  $requirements = [];
+
+  if ($phase === 'runtime') {
+    $config = \Drupal::config('scolta.settings');
+    $indexer = $config->get('indexer') ?? 'auto';
+
+    if ($indexer !== 'php') {
+      $binary_path = $config->get('pagefind_binary') ?? 'pagefind';
+      $resolver = new \Tag1\Scolta\Binary\PagefindBinary(
+        configuredPath: $binary_path !== 'pagefind' ? $binary_path : NULL,
+        projectDir: \Drupal::root(),
+      );
+      $status = $resolver->status();
+
+      if (!$status['available']) {
+        $requirements['scolta_pagefind_binary'] = [
+          'title' => t('Scolta Search Indexer'),
+          'value' => t('PHP indexer (fallback)'),
+          'description' => t(
+            'Pagefind binary not found. Scolta is using the PHP indexer, which is slower and supports English only. '
+            . 'For 10× faster indexing and 15-language support, install Pagefind: <code>npm install -g pagefind</code>'
+          ),
+          'severity' => REQUIREMENT_WARNING,
+        ];
+      }
+      else {
+        $requirements['scolta_pagefind_binary'] = [
+          'title' => t('Scolta Search Indexer'),
+          'value' => t('Pagefind binary (@version)', ['@version' => $status['version'] ?? 'unknown']),
+          'severity' => REQUIREMENT_OK,
+        ];
+      }
+    }
+  }
+
+  return $requirements;
+}
+
+/**
  * Implements hook_uninstall().
  */
 function scolta_uninstall() {

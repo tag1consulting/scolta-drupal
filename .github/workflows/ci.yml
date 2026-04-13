@@ -12,10 +12,14 @@ jobs:
     strategy:
       matrix:
         include:
+          - php: '8.1'
+            lint: false
           - php: '8.2'
             lint: false
           - php: '8.3'
             lint: true
+          - php: '8.4'
+            lint: false
     steps:
       - uses: actions/checkout@v4
 
@@ -23,6 +27,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
+          extensions: intl
           coverage: none
 
       - name: Replace path repo with GitHub VCS repo
@@ -42,6 +47,33 @@ jobs:
 
       - name: Run tests
         run: composer test
+
+  coverage:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP with Xdebug
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: intl
+          coverage: xdebug
+
+      - name: Replace path repo with GitHub VCS repo
+        run: |
+          php -r '
+            $j = json_decode(file_get_contents("composer.json"), true);
+            $j["repositories"] = [["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"]];
+            file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+          '
+
+      - name: Install dependencies
+        run: composer update --no-interaction --prefer-dist
+
+      - name: Run tests with coverage
+        run: ./vendor/bin/phpunit --coverage-text --colors=never 2>&1 | tail -20
 
   docs-check:
     runs-on: ubuntu-latest

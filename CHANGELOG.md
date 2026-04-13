@@ -6,6 +6,10 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased] (0.2.0-dev)
 
+### Fixed
+
+- **UX:** `hook_requirements()` added to `scolta.install` — shows a warning in the Drupal Status Report when the Pagefind binary is not installed and the PHP fallback indexer is active, with instructions to install the binary for full language support.
+
 ### Added
 
 - **Install hook**: `hook_install()` queues an initial index build on install and displays a status message with instructions for immediate building via Drush.
