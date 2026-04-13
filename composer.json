@@ -1,6 +1,6 @@
 {
     "name": "tag1/scolta-drupal",
-    "version": "0.3.0-dev",
+    "version": "0.2.1-dev",
     "description": "Scolta AI Search for Drupal — Search API backend with Pagefind client-side search",
     "type": "drupal-module",
     "license": "GPL-2.0-or-later",
