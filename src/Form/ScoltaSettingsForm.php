@@ -735,9 +735,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
         'trim',
         explode(',', $form_state->getValue('custom_stop_words') ?? '')
       ))))
-      ->set('scoring.recency_strategy', in_array($form_state->getValue('recency_strategy'), ['exponential', 'linear', 'step', 'none', 'custom'], TRUE)
-        ? $form_state->getValue('recency_strategy')
-        : 'exponential')
+      ->set('scoring.recency_strategy', in_array($form_state->getValue('recency_strategy'), [
+        'exponential', 'linear', 'step', 'none', 'custom',
+      ], TRUE) ? $form_state->getValue('recency_strategy') : 'exponential')
       ->set('scoring.recency_curve', json_decode($form_state->getValue('recency_curve') ?? '[]', TRUE) ?: [])
       // Display settings.
       ->set('display.excerpt_length', (int) $form_state->getValue('excerpt_length'))
