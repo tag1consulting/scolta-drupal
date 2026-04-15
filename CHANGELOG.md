@@ -6,6 +6,16 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+## [0.2.2] - Unreleased
+
+### Added
+
+- **Scoring language:** Settings form now includes a language select (30 ISO 639-1 options) stored as `scoring.language`.
+- **Custom stop words:** Textarea field for comma-separated additional stop words (`scoring.custom_stop_words`).
+- **Recency strategy:** Select field for recency decay function — `exponential`, `linear`, `step`, `none`, or `custom` (`scoring.recency_strategy`).
+- **Custom recency curve:** Textarea for JSON `[[days, boost], …]` control points, visible only when strategy is `custom` (`scoring.recency_curve`).
+- Config schema (`scolta.schema.yml`) and install defaults (`scolta.settings.yml`) updated for all four new fields.
+
 ## [0.2.1] - 2026-04-15
 
 ### Fixed

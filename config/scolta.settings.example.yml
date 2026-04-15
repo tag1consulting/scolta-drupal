@@ -29,6 +29,10 @@ scoring:
   recency_penalty_after_days: 1825  # Content older than this gets penalized
   recency_max_penalty: 0.3          # Max penalty for old content
   expand_primary_weight: 0.7        # Weight for original vs expanded terms (0-1)
+  language: 'en'                    # ISO 639-1 language code for stop word filtering
+  custom_stop_words: []             # Extra stop words: ['drupal', 'cms']
+  recency_strategy: 'exponential'   # 'exponential', 'linear', 'step', 'none', 'custom'
+  recency_curve: []                 # Custom control points: [[0, 1.0], [365, 0.0]]
 
 # --- Display ---
 display:

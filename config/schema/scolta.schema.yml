@@ -60,6 +60,27 @@ scolta.settings:
         expand_primary_weight:
           type: float
           label: 'Expanded term primary weight'
+        language:
+          type: string
+          label: 'Scoring language'
+        custom_stop_words:
+          type: sequence
+          label: 'Custom stop words'
+          sequence:
+            type: string
+            label: 'Stop word'
+        recency_strategy:
+          type: string
+          label: 'Recency strategy'
+        recency_curve:
+          type: sequence
+          label: 'Custom recency curve control points'
+          sequence:
+            type: sequence
+            label: 'Control point [days, boost]'
+            sequence:
+              type: float
+              label: 'Value'
     display:
       type: mapping
       label: 'Display configuration'

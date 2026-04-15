@@ -309,6 +309,80 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Weight given to the original query vs. expanded terms (0-1).'),
     ];
 
+    $form['scoring']['language'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Scoring language'),
+      '#default_value' => $config->get('scoring.language') ?? 'en',
+      '#options' => [
+        'ar' => $this->t('Arabic (ar)'),
+        'ca' => $this->t('Catalan (ca)'),
+        'da' => $this->t('Danish (da)'),
+        'de' => $this->t('German (de)'),
+        'el' => $this->t('Greek (el)'),
+        'en' => $this->t('English (en)'),
+        'es' => $this->t('Spanish (es)'),
+        'et' => $this->t('Estonian (et)'),
+        'eu' => $this->t('Basque (eu)'),
+        'fi' => $this->t('Finnish (fi)'),
+        'fr' => $this->t('French (fr)'),
+        'ga' => $this->t('Irish (ga)'),
+        'hi' => $this->t('Hindi (hi)'),
+        'hu' => $this->t('Hungarian (hu)'),
+        'hy' => $this->t('Armenian (hy)'),
+        'id' => $this->t('Indonesian (id)'),
+        'it' => $this->t('Italian (it)'),
+        'lt' => $this->t('Lithuanian (lt)'),
+        'ne' => $this->t('Nepali (ne)'),
+        'nl' => $this->t('Dutch (nl)'),
+        'no' => $this->t('Norwegian (no)'),
+        'pl' => $this->t('Polish (pl)'),
+        'pt' => $this->t('Portuguese (pt)'),
+        'ro' => $this->t('Romanian (ro)'),
+        'ru' => $this->t('Russian (ru)'),
+        'sr' => $this->t('Serbian (sr)'),
+        'sv' => $this->t('Swedish (sv)'),
+        'ta' => $this->t('Tamil (ta)'),
+        'tr' => $this->t('Turkish (tr)'),
+        'yi' => $this->t('Yiddish (yi)'),
+      ],
+      '#description' => $this->t('ISO 639-1 language code used for stop word filtering during scoring. Choose the primary language of your site content.'),
+    ];
+
+    $form['scoring']['custom_stop_words'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Custom stop words'),
+      '#default_value' => implode(', ', $config->get('scoring.custom_stop_words') ?? []),
+      '#rows' => 3,
+      '#description' => $this->t('Comma-separated additional stop words to exclude from scoring, beyond the built-in language list. e.g. <code>drupal, cms, site</code>'),
+    ];
+
+    $form['scoring']['recency_strategy'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Recency strategy'),
+      '#default_value' => $config->get('scoring.recency_strategy') ?? 'exponential',
+      '#options' => [
+        'exponential' => $this->t('Exponential (default)'),
+        'linear' => $this->t('Linear'),
+        'step' => $this->t('Step'),
+        'none' => $this->t('None (disable recency scoring)'),
+        'custom' => $this->t('Custom (piecewise-linear curve)'),
+      ],
+      '#description' => $this->t('Decay function for recency boost. <em>Custom</em> uses the control points below.'),
+    ];
+
+    $form['scoring']['recency_curve'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Custom recency curve'),
+      '#default_value' => $config->get('scoring.recency_curve') ? json_encode($config->get('scoring.recency_curve')) : '',
+      '#rows' => 3,
+      '#description' => $this->t('JSON array of <code>[days, boost]</code> control points for the custom strategy, sorted by days. e.g. <code>[[0, 1.0], [180, 0.5], [365, 0.0]]</code>'),
+      '#states' => [
+        'visible' => [
+          ':input[name="recency_strategy"]' => ['value' => 'custom'],
+        ],
+      ],
+    ];
+
     // ── Display Section ──
     $form['display'] = [
       '#type' => 'details',
@@ -656,6 +730,15 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('scoring.recency_penalty_after_days', (int) $form_state->getValue('recency_penalty_after_days'))
       ->set('scoring.recency_max_penalty', (float) $form_state->getValue('recency_max_penalty'))
       ->set('scoring.expand_primary_weight', (float) $form_state->getValue('expand_primary_weight'))
+      ->set('scoring.language', $form_state->getValue('language') ?? 'en')
+      ->set('scoring.custom_stop_words', array_values(array_filter(array_map(
+        'trim',
+        explode(',', $form_state->getValue('custom_stop_words') ?? '')
+      ))))
+      ->set('scoring.recency_strategy', in_array($form_state->getValue('recency_strategy'), ['exponential', 'linear', 'step', 'none', 'custom'], TRUE)
+        ? $form_state->getValue('recency_strategy')
+        : 'exponential')
+      ->set('scoring.recency_curve', json_decode($form_state->getValue('recency_curve') ?? '[]', TRUE) ?: [])
       // Display settings.
       ->set('display.excerpt_length', (int) $form_state->getValue('excerpt_length'))
       ->set('display.results_per_page', (int) $form_state->getValue('results_per_page'))
