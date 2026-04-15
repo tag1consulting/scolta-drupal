@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: intl
+          coverage: none
+
+      - name: Install dependencies (no dev)
+        run: composer install --no-dev --prefer-dist --no-interaction
+
+      - name: Create release archive
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          zip -r scolta-drupal-${VERSION}.zip . \
+            --exclude "*.git*" \
+            --exclude "tests/*" \
+            --exclude "node_modules/*" \
+            --exclude ".claude/*"
+          echo "ARCHIVE=scolta-drupal-${VERSION}.zip" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Extract CHANGELOG entry
+        run: |
+          awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" \
+            CHANGELOG.md > release-notes.txt
+          cat release-notes.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.txt
+          files: ${{ env.ARCHIVE }}
+          fail_on_unmatched_files: true
