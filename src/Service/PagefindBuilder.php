@@ -76,6 +76,21 @@ class PagefindBuilder {
     // Build the pagefind command.
     // Handle both "pagefind" (direct binary) and "npx pagefind" (via npm).
     $parts = explode(' ', $binary, 2);
+
+    // Validate binary name — only allow known Pagefind invocation patterns.
+    $allowedBinaries = ['pagefind', 'npx', 'node_modules/.bin/pagefind'];
+    $baseBinary = basename($parts[0]);
+    if (!in_array($baseBinary, $allowedBinaries, TRUE) && !in_array($parts[0], $allowedBinaries, TRUE)) {
+      $this->logger->error('Rejected Pagefind binary: @binary', ['@binary' => $binary]);
+      return [
+        'success' => FALSE,
+        'output' => '',
+        'error' => 'Invalid Pagefind binary path',
+        'file_count' => $fileCount,
+        'index_size' => NULL,
+      ];
+    }
+
     $command = array_merge(
       $parts,
       [
