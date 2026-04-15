@@ -12,7 +12,17 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Check out scolta-drupal into 'package/' so that '../scolta-php' resolves correctly
       - uses: actions/checkout@v4
+        with:
+          path: package
+
+      # Check out scolta-php at the same tag into 'scolta-php/'
+      - uses: actions/checkout@v4
+        with:
+          repository: tag1consulting/scolta-php
+          ref: ${{ github.ref_name }}
+          path: scolta-php
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -22,28 +32,30 @@ jobs:
           coverage: none
 
       - name: Install dependencies (no dev)
+        working-directory: package
         run: composer install --no-dev --prefer-dist --no-interaction
 
       - name: Create release archive
+        working-directory: package
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          zip -r scolta-drupal-${VERSION}.zip . \
+          zip -r ../scolta-drupal-${VERSION}.zip . \
             --exclude "*.git*" \
             --exclude "tests/*" \
             --exclude "node_modules/*" \
             --exclude ".claude/*"
-          echo "ARCHIVE=scolta-drupal-${VERSION}.zip" >> $GITHUB_ENV
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
       - name: Extract CHANGELOG entry
+        working-directory: package
         run: |
+          VERSION=${GITHUB_REF_NAME#v}
           awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" \
-            CHANGELOG.md > release-notes.txt
-          cat release-notes.txt
+            CHANGELOG.md > ../release-notes.txt
+          cat ../release-notes.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           body_path: release-notes.txt
-          files: ${{ env.ARCHIVE }}
+          files: scolta-drupal-*.zip
           fail_on_unmatched_files: true
