@@ -48,12 +48,11 @@ jobs:
             --exclude "scolta-drupal/.claude/*"
 
       - name: Extract CHANGELOG entry
-        working-directory: package
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" \
-            CHANGELOG.md > ../release-notes.txt
-          cat ../release-notes.txt
+            scolta-drupal/CHANGELOG.md > release-notes.txt
+          cat release-notes.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
