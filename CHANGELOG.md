@@ -6,6 +6,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+## [0.2.3] - Unreleased
+
 ## [0.2.2] - 2026-04-16
 
 ### Added
