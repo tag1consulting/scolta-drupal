@@ -205,4 +205,35 @@ class StructuralIntegrityTest extends TestCase {
     return $this->moduleRoot . '/src/' . $relative . '.php';
   }
 
+  // -------------------------------------------------------------------
+  // Release workflow ZIP folder structure
+  // -------------------------------------------------------------------
+
+  public function testReleaseWorkflowCreatesCorrectZipFolder(): void {
+    $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
+    $this->assertStringContainsString(
+      'mv package scolta-drupal',
+      $workflow,
+      'Release workflow must rename package dir to scolta-drupal before zipping'
+    );
+    $this->assertStringNotContainsString(
+      'zip -r ../scolta-drupal-${VERSION}.zip .',
+      $workflow,
+      'Must not zip from current dir (creates flat archive without scolta-drupal/ folder)'
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // isExecutable() guard
+  // -------------------------------------------------------------------
+
+  public function testCommandsDoNotCallIsExecutable(): void {
+    $source = file_get_contents($this->moduleRoot . '/src/Commands/ScoltaCommands.php');
+    $this->assertStringNotContainsString(
+      'isExecutable()',
+      $source,
+      'Drush commands must not call private isExecutable(); use resolve() + status() instead'
+    );
+  }
+
 }

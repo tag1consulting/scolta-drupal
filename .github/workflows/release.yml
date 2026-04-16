@@ -39,11 +39,13 @@ jobs:
         working-directory: package
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          zip -r ../scolta-drupal-${VERSION}.zip . \
-            --exclude "*.git*" \
-            --exclude "tests/*" \
-            --exclude "node_modules/*" \
-            --exclude ".claude/*"
+          cd ..
+          mv package scolta-drupal
+          zip -r scolta-drupal-${VERSION}.zip scolta-drupal/ \
+            --exclude "scolta-drupal/.git*" \
+            --exclude "scolta-drupal/tests/*" \
+            --exclude "scolta-drupal/node_modules/*" \
+            --exclude "scolta-drupal/.claude/*"
 
       - name: Extract CHANGELOG entry
         working-directory: package
