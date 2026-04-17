@@ -161,6 +161,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase {
         $generation = $state->get('scolta.generation', 0);
         $state->set('scolta.generation', $generation + 1);
 
+        \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
         \Drupal::logger('scolta')->info('Search index rebuilt via queue: @msg', [
           '@msg' => $result->message,
         ]);

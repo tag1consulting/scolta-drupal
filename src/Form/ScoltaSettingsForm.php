@@ -1044,6 +1044,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $generation = $this->state->get('scolta.generation', 0);
     $this->state->set('scolta.generation', $generation + 1);
 
+    \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
     $this->messenger()->addMessage($this->t('Search index rebuilt successfully (binary).'));
   }
 

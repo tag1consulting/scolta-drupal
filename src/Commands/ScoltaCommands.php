@@ -193,8 +193,21 @@ class ScoltaCommands extends DrushCommands {
     }
 
     $this->logger()->notice('Step 2: Building Pagefind index (binary)...');
-    $docroot = $options['docroot'];
-    $this->runPagefind($options['output-dir'], $docroot . '/pagefind');
+    $config = $this->configFactory->get('scolta.settings');
+    $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
+    if (str_contains($outputDir, '://')) {
+      try {
+        $resolvedOutputDir = $this->streamWrapperManager
+          ->getViaUri($outputDir)->realpath() ?: $outputDir;
+      }
+      catch (\Exception $e) {
+        $resolvedOutputDir = $outputDir;
+      }
+    }
+    else {
+      $resolvedOutputDir = $outputDir;
+    }
+    $this->runPagefind($options['output-dir'], $resolvedOutputDir . '/pagefind');
   }
 
   /**
@@ -334,6 +347,7 @@ class ScoltaCommands extends DrushCommands {
         'message' => $result->message,
         'time' => $result->elapsedSeconds,
       ]);
+      \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
     }
     else {
       $this->logger()->error('PHP indexer failed: {error}', [
@@ -404,6 +418,7 @@ class ScoltaCommands extends DrushCommands {
     $generation = $this->state->get('scolta.generation', 0);
     $this->state->set('scolta.generation', $generation + 1);
 
+    \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
     $this->logger()->success('Index built successfully.');
   }
 

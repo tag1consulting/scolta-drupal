@@ -9,11 +9,67 @@
  * Implements hook_install().
  */
 function scolta_install() {
+  _scolta_deploy_assets();
+
   \Drupal::queue('scolta_rebuild')->createItem(['type' => 'install']);
   \Drupal::messenger()->addStatus(t(
     'Scolta installed. Your search index will be built on the next cron run. '
     . 'To build immediately: <code>drush scolta:build</code>'
   ));
+}
+
+/**
+ * Deploy compiled JS/CSS/WASM assets from scolta-php into the module directory.
+ *
+ * Composer only runs post-install-cmd scripts for the root package, so assets
+ * are never copied during `composer require`. This hook does the copy at
+ * Drupal module install time instead.
+ */
+function _scolta_deploy_assets(): void {
+  // Locate scolta-php via Composer's installed package registry.
+  $scoltaPhpPath = NULL;
+  if (class_exists(\Composer\InstalledVersions::class)) {
+    try {
+      $scoltaPhpPath = \Composer\InstalledVersions::getInstallPath('tag1/scolta-php');
+    }
+    catch (\OutOfBoundsException $e) {
+      // Package not registered; fall through to fallback.
+    }
+  }
+  if (!$scoltaPhpPath) {
+    // Fallback: standard Composer vendor location relative to Drupal root.
+    $scoltaPhpPath = \Drupal::root() . '/../vendor/tag1/scolta-php';
+  }
+
+  $assetsDir = rtrim((string) $scoltaPhpPath, '/') . '/assets';
+  if (!is_dir($assetsDir)) {
+    \Drupal::logger('scolta')->warning('scolta-php assets not found at @path — JS/CSS/WASM unavailable.', ['@path' => $assetsDir]);
+    return;
+  }
+
+  $modulePath = \Drupal::root() . '/' . \Drupal::service('extension.list.module')->getPath('scolta');
+
+  // Map: source path (relative to assets/) => dest path (relative to module).
+  $assets = [
+    'js/scolta.js' => 'js/scolta.js',
+    'css/scolta.css' => 'css/scolta.css',
+    'wasm/scolta_core.js' => 'js/wasm/scolta_core.js',
+    'wasm/scolta_core_bg.wasm' => 'js/wasm/scolta_core_bg.wasm',
+  ];
+
+  foreach ($assets as $src => $dest) {
+    $srcPath = $assetsDir . '/' . $src;
+    $destPath = $modulePath . '/' . $dest;
+    if (!file_exists($srcPath)) {
+      \Drupal::logger('scolta')->warning('Missing scolta-php asset: @path', ['@path' => $srcPath]);
+      continue;
+    }
+    $destDir = dirname($destPath);
+    if (!is_dir($destDir)) {
+      mkdir($destDir, 0755, TRUE);
+    }
+    copy($srcPath, $destPath);
+  }
 }
 
 /**
@@ -62,6 +118,25 @@ function scolta_requirements(string $phase): array {
  * Implements hook_uninstall().
  */
 function scolta_uninstall() {
+  // Remove deployed assets from the module directory.
+  $modulePath = \Drupal::root() . '/' . \Drupal::service('extension.list.module')->getPath('scolta');
+  $deployed = [
+    'js/scolta.js',
+    'css/scolta.css',
+    'js/wasm/scolta_core.js',
+    'js/wasm/scolta_core_bg.wasm',
+  ];
+  foreach ($deployed as $asset) {
+    $path = $modulePath . '/' . $asset;
+    if (file_exists($path)) {
+      unlink($path);
+    }
+  }
+  $wasmDir = $modulePath . '/js/wasm';
+  if (is_dir($wasmDir) && count(array_diff(scandir($wasmDir), ['.', '..'])) === 0) {
+    rmdir($wasmDir);
+  }
+
   // Clean up the rebuild queue.
   \Drupal::queue('scolta_rebuild')->deleteQueue();
 

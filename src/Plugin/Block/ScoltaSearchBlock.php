@@ -80,10 +80,11 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
             . '<p><strong>Scolta:</strong> Search index has not been built yet.</p>'
             . '<p><a href="/admin/config/search/scolta">Build now &rarr;</a> or run <code>drush scolta:build</code></p>'
             . '</div>',
+          '#cache' => ['tags' => ['scolta_search_index']],
         ];
       }
       // Hide search block for non-admins when index is missing.
-      return [];
+      return ['#cache' => ['tags' => ['scolta_search_index']]];
     }
 
     $config = $this->aiService->getConfig();
@@ -102,7 +103,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
         'summarize' => Url::fromRoute('scolta.summarize')->toString(),
         'followup' => Url::fromRoute('scolta.followup')->toString(),
       ],
-      'pagefindPath' => $pagefindPath . '/pagefind.js',
+      'pagefindPath' => $pagefindPath . '/pagefind/pagefind.js',
       'wasmPath' => $wasmPath,
       'siteName' => $config->siteName ?: $this->configFactory->get('system.site')->get('name'),
       'container' => '#scolta-search',

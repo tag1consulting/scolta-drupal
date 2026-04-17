@@ -77,6 +77,7 @@ class ScoltaBatchOperations {
    */
   public static function finished(bool $success, array $results, array $operations): void {
     if ($success && ($results['success'] ?? FALSE)) {
+      \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
       \Drupal::messenger()->addMessage(t('Search index rebuilt: @msg', [
         '@msg' => $results['message'] ?? '',
       ]));
