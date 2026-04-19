@@ -97,6 +97,46 @@ jobs:
             echo "SKIP: No code changes detected."
           fi
 
+  playwright:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: intl
+          coverage: none
+
+      - name: Replace path repo with GitHub VCS repo
+        run: |
+          php -r '
+            $j = json_decode(file_get_contents("composer.json"), true);
+            $j["repositories"] = [["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"]];
+            file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+          '
+
+      - name: Install Composer dependencies (copies scolta.css via post-install-cmd)
+        run: composer update --no-interaction --prefer-dist --ignore-platform-req=php
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright
+        run: npm install
+        working-directory: tests/playwright
+
+      - name: Install Chromium browser
+        run: npx playwright install --with-deps chromium
+        working-directory: tests/playwright
+
+      - name: Run Playwright layout tests
+        run: npx playwright test
+        working-directory: tests/playwright
+
   version-sync:
     runs-on: ubuntu-latest
     steps:

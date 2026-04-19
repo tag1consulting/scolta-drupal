@@ -6,6 +6,10 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [0.2.4] - Unreleased
 
+### Added
+- **Playwright layout tests** (`tests/playwright/layout.spec.js`): Three browser-level tests at 1440 px viewport asserting `.scolta-layout` fills ≥90 % of viewport width in single-column and two-column (`has-filters`) modes. Wired into CI (`playwright` job in `.github/workflows/ci.yml`).
+- **Admin rebuild notice persistence**: Rebuild notices now persist in Drupal State across page loads until each admin user explicitly dismisses them. Per-user dismissal tracked via `user.data` service keyed to a unique `notice_id`; notices render via `hook_page_top()` on admin pages. Dismiss route: `GET /admin/config/search/scolta/dismiss-rebuild-notice?notice_id=…`.
+
 ### Fixed
 - **Full-width search results layout**: `css/scolta.css` had `grid-template-columns: 220px minmax(0, 1fr)` as the permanent default for `.scolta-layout`, making the empty filter sidebar always occupy 220px and squeezing all results into the narrow right column. The layout now defaults to `grid-template-columns: 1fr`; the two-column variant only activates via `.scolta-layout.has-filters` (added by JS when multiple sites are indexed). Added `.scolta-filters:empty { display: none }` so the empty sidebar is hidden. Adds `LayoutCssRegressionTest` to guard against recurrence.
 
