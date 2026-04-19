@@ -6,3 +6,9 @@
 /js/scolta.js
 /js/wasm/
 /css/scolta.css
+
+# Playwright
+/tests/playwright/node_modules/
+/tests/playwright/package-lock.json
+/tests/playwright/test-results/
+/tests/playwright/playwright-report/
