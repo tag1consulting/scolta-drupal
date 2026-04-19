@@ -1049,7 +1049,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
     // Store in State so the notice persists across page loads until dismissed.
-    $this->state->set('scolta.rebuild_notice', \Drupal\scolta\Batch\ScoltaBatchOperations::buildNoticeData(
+    $this->state->set('scolta.rebuild_notice', ScoltaBatchOperations::buildNoticeData(
       'ok',
       (string) $this->t('Search index rebuilt successfully (binary).')
     ));

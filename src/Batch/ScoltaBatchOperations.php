@@ -97,7 +97,7 @@ class ScoltaBatchOperations {
    * data structure without invoking \Drupal::state() directly.
    *
    * @param string $result
-   *   'ok' or 'error'.
+   *   Result status: 'ok' or 'error'.
    * @param string $message
    *   Human-readable detail string from the indexer result.
    *
