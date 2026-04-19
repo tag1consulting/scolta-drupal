@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [0.2.4] - Unreleased
 
+### Fixed
+- **Full-width search results layout**: `css/scolta.css` had `grid-template-columns: 220px minmax(0, 1fr)` as the permanent default for `.scolta-layout`, making the empty filter sidebar always occupy 220px and squeezing all results into the narrow right column. The layout now defaults to `grid-template-columns: 1fr`; the two-column variant only activates via `.scolta-layout.has-filters` (added by JS when multiple sites are indexed). Added `.scolta-filters:empty { display: none }` so the empty sidebar is hidden. Adds `LayoutCssRegressionTest` to guard against recurrence.
+
 ## [0.2.3] - 2026-04-17
 
 ### Fixed
