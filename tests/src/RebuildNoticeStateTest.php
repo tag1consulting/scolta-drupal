@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\scolta\Unit;
 
 use Drupal\scolta\Batch\ScoltaBatchOperations;
+use PHPUnit\Framework\Attributes\CoversMethod;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -14,9 +15,8 @@ use PHPUnit\Framework\TestCase;
  * Running these tests pre-fix produces a PHP fatal "Call to undefined method".
  *
  * Post-fix: all assertions pass.
- *
- * @covers \Drupal\scolta\Batch\ScoltaBatchOperations::buildNoticeData
  */
+#[CoversMethod(ScoltaBatchOperations::class, 'buildNoticeData')]
 class RebuildNoticeStateTest extends TestCase {
 
   /**
