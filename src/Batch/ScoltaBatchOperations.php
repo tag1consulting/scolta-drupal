@@ -78,13 +78,39 @@ class ScoltaBatchOperations {
   public static function finished(bool $success, array $results, array $operations): void {
     if ($success && ($results['success'] ?? FALSE)) {
       \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
-      \Drupal::messenger()->addMessage(t('Search index rebuilt: @msg', [
-        '@msg' => $results['message'] ?? '',
-      ]));
+      // Store in State instead of Messenger so the notice persists across page
+      // loads until the admin explicitly dismisses it or a new rebuild starts.
+      \Drupal::state()->set('scolta.rebuild_notice', self::buildNoticeData(
+        'ok',
+        (string) ($results['message'] ?? '')
+      ));
     }
     else {
-      \Drupal::messenger()->addError(t('Index rebuild failed.'));
+      \Drupal::state()->set('scolta.rebuild_notice', self::buildNoticeData('error', ''));
     }
+  }
+
+  /**
+   * Build the notice data array stored in State after a rebuild.
+   *
+   * Extracted as a public static method so unit tests can verify the
+   * data structure without invoking \Drupal::state() directly.
+   *
+   * @param string $result
+   *   'ok' or 'error'.
+   * @param string $message
+   *   Human-readable detail string from the indexer result.
+   *
+   * @return array
+   *   Notice data with notice_id, result, message, timestamp keys.
+   */
+  public static function buildNoticeData(string $result, string $message): array {
+    return [
+      'notice_id' => uniqid('scolta_notice_', TRUE),
+      'result'    => $result,
+      'message'   => $message,
+      'timestamp' => time(),
+    ];
   }
 
 }

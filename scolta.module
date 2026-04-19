@@ -6,6 +6,7 @@
  */
 
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Url;
 
 /**
  * Implements hook_entity_insert().
@@ -19,6 +20,72 @@ function scolta_entity_insert(EntityInterface $entity) {
  */
 function scolta_entity_update(EntityInterface $entity) {
   _scolta_auto_rebuild_check($entity);
+}
+
+/**
+ * Implements hook_page_top().
+ *
+ * Renders the persistent rebuild-notice from State on every admin page load,
+ * checking per-user dismissal via the user.data service. The notice shows
+ * until the admin explicitly dismisses it or a new rebuild replaces it.
+ */
+function scolta_page_top(array &$page_top) {
+  // Only show to users with admin access on admin routes.
+  $current_user = \Drupal::currentUser();
+  if (!$current_user->hasPermission('administer scolta')) {
+    return;
+  }
+
+  /** @var \Drupal\Core\Routing\AdminContext $admin_context */
+  $admin_context = \Drupal::service('router.admin_context');
+  if (!$admin_context->isAdminRoute()) {
+    return;
+  }
+
+  $notice = \Drupal::state()->get('scolta.rebuild_notice');
+  if (!$notice || empty($notice['notice_id'])) {
+    return;
+  }
+
+  $notice_id = $notice['notice_id'];
+
+  // Per-user dismissal check.
+  /** @var \Drupal\user\UserDataInterface $user_data */
+  $user_data = \Drupal::service('user.data');
+  $dismissed = $user_data->get('scolta', $current_user->id(), 'dismissed_rebuild_notice');
+  if ($dismissed === $notice_id) {
+    return;
+  }
+
+  $result = $notice['result'] ?? 'ok';
+  $message = $notice['message'] ?? '';
+
+  $dismiss_url = Url::fromRoute('scolta.dismiss_rebuild_notice', [], [
+    'query' => [
+      'notice_id'   => $notice_id,
+      'destination' => \Drupal::service('path.current')->getPath(),
+    ],
+  ])->toString();
+
+  $type = $result === 'ok' ? 'status' : 'error';
+  $text = $result === 'ok'
+    ? t('Scolta index rebuilt: @msg', ['@msg' => $message])
+    : t('Scolta index rebuild failed.');
+
+  $dismiss_text = t('Dismiss');
+  $markup = '<div role="contentinfo" class="messages messages--' . $type . '">'
+    . '<div class="messages__content">'
+    . \Drupal\Component\Utility\Html::escape((string) $text)
+    . ' <a href="' . \Drupal\Component\Utility\Html::escape($dismiss_url) . '">'
+    . \Drupal\Component\Utility\Html::escape((string) $dismiss_text)
+    . '</a>'
+    . '</div></div>';
+
+  $page_top['scolta_rebuild_notice'] = [
+    '#markup' => $markup,
+    '#allowed_tags' => ['div', 'a'],
+    '#weight' => -100,
+  ];
 }
 
 /**

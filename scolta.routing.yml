@@ -1,3 +1,12 @@
+scolta.dismiss_rebuild_notice:
+  path: '/admin/config/search/scolta/dismiss-rebuild-notice'
+  defaults:
+    _controller: '\Drupal\scolta\Controller\DismissRebuildNoticeController::handle'
+    _title: 'Dismiss rebuild notice'
+  requirements:
+    _permission: 'administer scolta'
+  methods: [GET]
+
 scolta.settings:
   path: '/admin/config/search/scolta'
   defaults:

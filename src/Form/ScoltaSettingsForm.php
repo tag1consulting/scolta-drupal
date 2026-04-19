@@ -772,6 +772,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $config = $this->config('scolta.settings');
     $siteName = $config->get('site_name') ?: '';
 
+    // Clear any previous notice so a fresh notice_id is used after this rebuild.
+    $this->state->delete('scolta.rebuild_notice');
+
     // Gather content items from published nodes.
     $items = $this->gatherContentItems($siteName);
 
@@ -1045,7 +1048,11 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $this->state->set('scolta.generation', $generation + 1);
 
     \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
-    $this->messenger()->addMessage($this->t('Search index rebuilt successfully (binary).'));
+    // Store in State so the notice persists across page loads until dismissed.
+    $this->state->set('scolta.rebuild_notice', \Drupal\scolta\Batch\ScoltaBatchOperations::buildNoticeData(
+      'ok',
+      (string) $this->t('Search index rebuilt successfully (binary).')
+    ));
   }
 
 }
