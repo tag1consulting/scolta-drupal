@@ -135,6 +135,7 @@ jobs:
             tag1/scolta-drupal:@dev \
             drupal/search_api:^1 \
             drush/drush:^13 \
+            drupal/core-dev:^11 \
             --no-interaction --ignore-platform-req=php --quiet
 
       - name: Install Drupal site with SQLite
