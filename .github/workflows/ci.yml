@@ -117,12 +117,9 @@ jobs:
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
-      - name: Install module dev dependencies (provides PHPUnit)
-        run: composer update --no-interaction --prefer-dist --ignore-platform-req=php --quiet
-
-      - name: Create Drupal 11 project
+      - name: Create Drupal 11 project (drupal/drupal includes dev deps + Mink)
         run: |
-          composer create-project drupal/recommended-project:^11 /tmp/drupal \
+          composer create-project drupal/drupal:^11 /tmp/drupal \
             --no-interaction --no-install --quiet
 
       - name: Configure Drupal project to use this module as a path repo
@@ -143,30 +140,30 @@ jobs:
       - name: Install Drupal site with SQLite
         working-directory: /tmp/drupal
         run: |
-          mkdir -p web/sites/default/files
-          chmod 777 web/sites/default/files
+          mkdir -p sites/default/files
+          chmod 777 sites/default/files
           ./vendor/bin/drush site:install minimal \
-            --db-url="sqlite://localhost/$(pwd)/web/sites/default/files/test.sqlite" \
+            --db-url="sqlite://localhost/$(pwd)/sites/default/files/test.sqlite" \
             --yes --quiet
 
       - name: Start PHP built-in web server
         working-directory: /tmp/drupal
         run: |
-          php -S localhost:8080 -t web > /tmp/php-server.log 2>&1 &
+          php -S localhost:8080 -t . > /tmp/php-server.log 2>&1 &
           until curl -sf http://localhost:8080/ > /dev/null 2>&1; do sleep 1; done
 
       - name: Run functional tests
         working-directory: /tmp/drupal
         env:
-          SIMPLETEST_DB: 'sqlite://localhost//tmp/drupal/web/sites/default/files/test.sqlite'
+          SIMPLETEST_DB: 'sqlite://localhost//tmp/drupal/sites/default/files/test.sqlite'
           SIMPLETEST_BASE_URL: 'http://localhost:8080'
           BROWSERTEST_OUTPUT_DIRECTORY: '/tmp/browsertest_output'
           SYMFONY_DEPRECATIONS_HELPER: disabled
         run: |
           mkdir -p /tmp/browsertest_output
-          "$GITHUB_WORKSPACE/vendor/bin/phpunit" \
-            web/modules/contrib/scolta/tests/src/Functional/ \
-            --bootstrap web/core/tests/bootstrap.php \
+          ./vendor/bin/phpunit \
+            modules/contrib/scolta/tests/src/Functional/ \
+            --bootstrap core/tests/bootstrap.php \
             --display-deprecations \
             --testdox
 
