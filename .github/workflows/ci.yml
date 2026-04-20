@@ -118,7 +118,7 @@ jobs:
           '
 
       - name: Install module dev dependencies (provides PHPUnit)
-        run: composer install --no-interaction --prefer-dist --ignore-platform-req=php --quiet
+        run: composer update --no-interaction --prefer-dist --ignore-platform-req=php --quiet
 
       - name: Create Drupal 11 project
         run: |
