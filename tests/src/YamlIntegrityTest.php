@@ -192,15 +192,52 @@ class YamlIntegrityTest extends TestCase {
 
     $expectedRoutes = [
       'scolta.settings' => '/admin/config/search/scolta',
+      'scolta.dismiss_rebuild_notice' => '/admin/config/search/scolta/dismiss-rebuild-notice',
       'scolta.expand' => '/api/scolta/v1/expand-query',
       'scolta.summarize' => '/api/scolta/v1/summarize',
       'scolta.followup' => '/api/scolta/v1/followup',
+      'scolta.health' => '/api/scolta/v1/health',
     ];
 
     foreach ($expectedRoutes as $name => $path) {
       $this->assertArrayHasKey($name, $routing, "Missing route: {$name}");
       $this->assertEquals($path, $routing[$name]['path'],
         "Route {$name} has wrong path");
+    }
+  }
+
+  public function testAllFromRouteCallsReferenceDefinedRoutes(): void {
+    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
+    $definedRoutes = array_keys($routing);
+
+    // Scan all PHP and .module files (excluding vendor and tests) for
+    // fromRoute('scolta.*') calls. Any scolta.* route name referenced in
+    // PHP source must exist in scolta.routing.yml or a crash like
+    // RouteNotFoundException will occur at runtime.
+    $sourceFiles = array_merge(
+      glob($this->moduleRoot . '/*.module') ?: [],
+      glob($this->moduleRoot . '/src/**/*.php') ?: [],
+      glob($this->moduleRoot . '/src/*.php') ?: [],
+    );
+
+    $referenced = [];
+    foreach ($sourceFiles as $file) {
+      $src = file_get_contents($file);
+      if (preg_match_all("/fromRoute\(\s*'(scolta\.[^']+)'/", $src, $matches)) {
+        foreach ($matches[1] as $routeName) {
+          $referenced[$routeName] = $file;
+        }
+      }
+    }
+
+    $this->assertNotEmpty($referenced, 'No fromRoute calls found — scanner may be broken');
+
+    foreach ($referenced as $routeName => $file) {
+      $this->assertContains(
+        $routeName,
+        $definedRoutes,
+        "Route '{$routeName}' is used in " . basename($file) . " but not defined in scolta.routing.yml"
+      );
     }
   }
 
