@@ -10,18 +10,10 @@ use Drupal\Tests\BrowserTestBase;
 /**
  * Functional tests for rebuild notice persistence and per-user dismissal.
  *
- * These tests require a full Drupal install (DDEV or similar). They are
- * excluded from the standard CI matrix (see phpunit.xml exclude) and must
- * be run manually before each release.
- *
  * Pre-fix: ScoltaBatchOperations stored notices in Messenger (flash — vanishes
  * after first render). Post-fix: notices are stored in State and persist until
  * explicitly dismissed by each admin user.
  *
- * Run with:
- *   ddev exec ./vendor/bin/phpunit tests/src/Functional/RebuildNoticePersistenceTest.php
- *
- * @group manual
  * @group scolta
  */
 class RebuildNoticePersistenceTest extends BrowserTestBase {

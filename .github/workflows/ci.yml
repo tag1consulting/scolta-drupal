@@ -97,6 +97,75 @@ jobs:
             echo "SKIP: No code changes detected."
           fi
 
+  functional:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: intl, pdo_sqlite, sqlite3
+          coverage: none
+
+      - name: Replace path repo with GitHub VCS repo
+        run: |
+          php -r '
+            $j = json_decode(file_get_contents("composer.json"), true);
+            $j["repositories"] = [["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"]];
+            file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+          '
+
+      - name: Create Drupal 11 project
+        run: |
+          composer create-project drupal/recommended-project:^11 /tmp/drupal \
+            --no-interaction --no-install --quiet
+
+      - name: Configure Drupal project to use this module as a path repo
+        working-directory: /tmp/drupal
+        run: |
+          composer config repositories.scolta-drupal path "$GITHUB_WORKSPACE"
+          composer config repositories.scolta-php vcs https://github.com/tag1consulting/scolta-php.git
+
+      - name: Install Drupal + scolta + drush
+        working-directory: /tmp/drupal
+        run: |
+          composer require \
+            tag1/scolta-drupal:@dev \
+            drupal/search_api:^1 \
+            drush/drush:^13 \
+            --no-interaction --ignore-platform-req=php --quiet
+
+      - name: Install Drupal site with SQLite
+        working-directory: /tmp/drupal
+        run: |
+          mkdir -p web/sites/default/files
+          chmod 777 web/sites/default/files
+          ./vendor/bin/drush site:install minimal \
+            --db-url="sqlite://$(pwd)/web/sites/default/files/test.sqlite" \
+            --yes --quiet
+
+      - name: Start PHP built-in web server
+        working-directory: /tmp/drupal
+        run: |
+          php -S localhost:8080 -t web > /tmp/php-server.log 2>&1 &
+          until curl -sf http://localhost:8080/ > /dev/null 2>&1; do sleep 1; done
+
+      - name: Run functional tests
+        working-directory: /tmp/drupal
+        env:
+          SIMPLETEST_DB: 'sqlite://sites/default/files/test.sqlite'
+          SIMPLETEST_BASE_URL: 'http://localhost:8080'
+          BROWSERTEST_OUTPUT_DIRECTORY: '/tmp/browsertest_output'
+          SYMFONY_DEPRECATIONS_HELPER: disabled
+        run: |
+          mkdir -p /tmp/browsertest_output
+          ./vendor/bin/phpunit \
+            web/modules/contrib/scolta/tests/src/Functional/ \
+            --configuration web/modules/contrib/scolta/phpunit-functional.xml \
+            --testdox
+
   playwright:
     runs-on: ubuntu-latest
     steps:

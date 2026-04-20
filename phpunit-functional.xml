@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PHPUnit configuration for Drupal functional (BrowserTestBase) tests.
+
+  These tests require a full running Drupal installation and web server.
+  They are NOT run by `composer test` (the fast unit suite); they are run
+  by the `functional` GitHub Actions job which:
+    1. Creates a Drupal 11 project via composer create-project
+    2. Installs scolta-drupal into it via path repo
+    3. Installs Drupal with SQLite
+    4. Starts the PHP built-in web server
+    5. Runs: ./vendor/bin/phpunit --configuration web/modules/contrib/scolta/phpunit-functional.xml
+
+  To run locally from within a DDEV Drupal environment:
+    ddev exec vendor/bin/phpunit --configuration web/modules/contrib/scolta/phpunit-functional.xml
+  with SIMPLETEST_DB and SIMPLETEST_BASE_URL set in your DDEV environment.
+
+  Bootstrap path is relative to this file's location in the installed Drupal
+  project (web/modules/contrib/scolta/), three levels above web/core/.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.5/phpunit.xsd"
+         bootstrap="../../../core/tests/bootstrap.php"
+         colors="true"
+         beStrictAboutTestsThatDoNotTestAnything="true">
+  <testsuites>
+    <testsuite name="functional">
+      <directory>tests/src/Functional</directory>
+    </testsuite>
+  </testsuites>
+  <php>
+    <ini name="error_reporting" value="32767"/>
+    <ini name="memory_limit" value="512M"/>
+    <!-- Override via env in CI: SIMPLETEST_DB and SIMPLETEST_BASE_URL -->
+    <env name="SYMFONY_DEPRECATIONS_HELPER" value="disabled"/>
+    <env name="BROWSERTEST_OUTPUT_DIRECTORY" value="/tmp/browsertest_output"/>
+  </php>
+</phpunit>

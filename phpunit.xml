@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Unit test suite — runs without a Drupal bootstrap.
+  Fast; safe to run anywhere with `composer test`.
+
+  Functional (BrowserTestBase) tests live in tests/src/Functional/ and are
+  run by the `functional` CI job via phpunit-functional.xml, which boots a
+  real Drupal 11 installation. They are excluded here because BrowserTestBase
+  requires SIMPLETEST_DB, SIMPLETEST_BASE_URL, and a running web server that
+  are not available in the plain `composer test` context.
+-->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
          bootstrap="vendor/autoload.php"
