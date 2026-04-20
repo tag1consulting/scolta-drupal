@@ -143,7 +143,7 @@ jobs:
           mkdir -p web/sites/default/files
           chmod 777 web/sites/default/files
           ./vendor/bin/drush site:install minimal \
-            --db-url="sqlite://$(pwd)/web/sites/default/files/test.sqlite" \
+            --db-url="sqlite://localhost/$(pwd)/web/sites/default/files/test.sqlite" \
             --yes --quiet
 
       - name: Start PHP built-in web server
@@ -155,7 +155,7 @@ jobs:
       - name: Run functional tests
         working-directory: /tmp/drupal
         env:
-          SIMPLETEST_DB: 'sqlite://sites/default/files/test.sqlite'
+          SIMPLETEST_DB: 'sqlite://localhost//tmp/drupal/web/sites/default/files/test.sqlite'
           SIMPLETEST_BASE_URL: 'http://localhost:8080'
           BROWSERTEST_OUTPUT_DIRECTORY: '/tmp/browsertest_output'
           SYMFONY_DEPRECATIONS_HELPER: disabled
