@@ -166,7 +166,8 @@ jobs:
           mkdir -p /tmp/browsertest_output
           "$GITHUB_WORKSPACE/vendor/bin/phpunit" \
             web/modules/contrib/scolta/tests/src/Functional/ \
-            --configuration web/modules/contrib/scolta/phpunit-functional.xml \
+            --bootstrap web/core/tests/bootstrap.php \
+            --display-deprecations \
             --testdox
 
   playwright:
