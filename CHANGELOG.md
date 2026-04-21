@@ -13,6 +13,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 - **`RouteSmokeFunctionalTest`**: Reads `scolta.routing.yml` at runtime and smoke-tests every defined route — GET routes as authenticated admin (assert non-500), GET routes as anonymous (assert 302/403), POST routes with empty body (assert structured JSON 4xx). Any route added to the YAML is automatically covered on the next CI run without a manual test-list update.
 - **`YamlIntegrityTest::testAllFromRouteCallsReferenceDefinedRoutes`**: Static-analysis guard that scans all `.module` and `src/` PHP files for `fromRoute('scolta.*')` calls and asserts each name exists in `scolta.routing.yml`. Catches the `RouteNotFoundException` class of bug at the unit-test level before a browser ever hits the page.
 
+### Changed
+- Inherits all scolta-php 0.2.4 fixes and features (phrase-proximity scoring, WASM config key fix, quoted-phrase forced-mode, second WASM rebuild)
+
 ### Fixed
 - **Full-width search results layout**: `css/scolta.css` had `grid-template-columns: 220px minmax(0, 1fr)` as the permanent default for `.scolta-layout`, making the empty filter sidebar always occupy 220px and squeezing all results into the narrow right column. The layout now defaults to `grid-template-columns: 1fr`; the two-column variant only activates via `.scolta-layout.has-filters` (added by JS when multiple sites are indexed). Added `.scolta-filters:empty { display: none }` so the empty sidebar is hidden. Adds `LayoutCssRegressionTest` to guard against recurrence.
 
