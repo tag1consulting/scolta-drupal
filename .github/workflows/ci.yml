@@ -137,6 +137,14 @@ jobs:
             drush/drush:^13 \
             --no-interaction --ignore-platform-req=php --quiet
 
+      - name: Ensure module is in the contrib modules path
+        working-directory: /tmp/drupal
+        run: |
+          mkdir -p modules/contrib
+          if [ ! -e modules/contrib/scolta ]; then
+            ln -sf "$GITHUB_WORKSPACE" modules/contrib/scolta
+          fi
+
       - name: Install Drupal site with SQLite
         working-directory: /tmp/drupal
         run: |
