@@ -24,6 +24,24 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
   protected $defaultTheme = 'stark';
 
   /**
+   * Creates a minimal fake Pagefind index so the search block renders.
+   *
+   * ScoltaSearchBlock::build() returns empty when pagefind-entry.json is
+   * missing. Tests that place the block and assert on its HTML need a real
+   * (but empty) index file at the configured output location.
+   */
+  protected function createFakeIndex(): void {
+    $settings = \Drupal::config('scolta.settings');
+    $outputUri = $settings->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
+    $wrappers = \Drupal::service('stream_wrapper_manager');
+    $realDir = $wrappers->getViaUri($outputUri)->realpath();
+    if ($realDir !== FALSE) {
+      @mkdir($realDir . '/pagefind', 0777, TRUE);
+      file_put_contents($realDir . '/pagefind/pagefind-entry.json', '{}');
+    }
+  }
+
+  /**
    * Tests that AI endpoints require the 'use scolta ai' permission.
    */
   public function testEndpointsRequirePermission(): void {
@@ -72,6 +90,7 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
    * Tests that the search block renders on a page.
    */
   public function testSearchBlockRenders(): void {
+    $this->createFakeIndex();
     $this->drupalCreateContentType(['type' => 'page']);
     $this->drupalCreateNode(['type' => 'page', 'title' => 'Search Page']);
     $this->drupalPlaceBlock('scolta_search', ['region' => 'content']);

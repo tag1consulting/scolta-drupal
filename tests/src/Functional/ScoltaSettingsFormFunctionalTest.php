@@ -43,6 +43,13 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
       'administer scolta',
       'access administration pages',
     ]);
+    // Create a minimal fake index so ScoltaSearchBlock renders the full UI.
+    $outputUri = \Drupal::config('scolta.settings')->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
+    $realDir = \Drupal::service('stream_wrapper_manager')->getViaUri($outputUri)->realpath();
+    if ($realDir !== FALSE) {
+      @mkdir($realDir . '/pagefind', 0777, TRUE);
+      file_put_contents($realDir . '/pagefind/pagefind-entry.json', '{}');
+    }
   }
 
   /**
