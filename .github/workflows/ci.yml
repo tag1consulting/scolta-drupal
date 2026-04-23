@@ -33,7 +33,7 @@ jobs:
           php -r '
             $j = json_decode(file_get_contents("composer.json"), true);
             $j["repositories"] = [["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"]];
-            $j["require"]["tag1/scolta-php"] = "dev-consolidation-0.3.0 as 0.3.0-dev";
+            $j["require"]["tag1/scolta-php"] = "@dev";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
@@ -65,7 +65,7 @@ jobs:
           php -r '
             $j = json_decode(file_get_contents("composer.json"), true);
             $j["repositories"] = [["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"]];
-            $j["require"]["tag1/scolta-php"] = "dev-consolidation-0.3.0 as 0.3.0-dev";
+            $j["require"]["tag1/scolta-php"] = "@dev";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
@@ -116,7 +116,7 @@ jobs:
           php -r '
             $j = json_decode(file_get_contents("composer.json"), true);
             $j["repositories"] = [["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"]];
-            $j["require"]["tag1/scolta-php"] = "dev-consolidation-0.3.0 as 0.3.0-dev";
+            $j["require"]["tag1/scolta-php"] = "@dev";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
@@ -195,7 +195,7 @@ jobs:
           php -r '
             $j = json_decode(file_get_contents("composer.json"), true);
             $j["repositories"] = [["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"]];
-            $j["require"]["tag1/scolta-php"] = "dev-consolidation-0.3.0 as 0.3.0-dev";
+            $j["require"]["tag1/scolta-php"] = "@dev";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
