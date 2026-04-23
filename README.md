@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/tag1consulting/scolta-drupal/actions/workflows/ci.yml/badge.svg)](https://github.com/tag1consulting/scolta-drupal/actions/workflows/ci.yml)
 
-Scolta is a browser-side search engine: the index lives in static files, scoring runs in the browser via WebAssembly, and an optional AI layer handles query expansion and summarization. No search server required. "Scolta" is archaic Italian for sentinel — someone watching for what matters.
+Scolta is a scoring, ranking, and AI layer built on [Pagefind](https://pagefind.app/). Pagefind is the search engine — it builds the static index, runs the browser-side WASM search, produces word-position data, and generates excerpts. Scolta takes Pagefind's results and re-ranks them with configurable title/content/recency/priority boosts, then optionally passes them through an AI layer for query expansion, summarization, and follow-up generation. No search server required. "Scolta" is archaic Italian for sentinel — someone watching for what matters.
 
 This module is the Drupal adapter. It provides a Search API backend, Drush commands, an admin settings form, a search block, and REST API endpoints.
 
@@ -17,7 +17,7 @@ drush en scolta
 
 # 3. Create a Search API server + index with the Scolta backend
 #    Admin > Configuration > Search > Search API > Add server
-#    Backend: Scolta (Pagefind)
+#    Backend: Scolta (re-ranks Pagefind results)
 
 # 4. Index content and build the search index
 drush search-api:index && drush scolta:build
@@ -373,6 +373,10 @@ config/
   install/scolta.settings.yml              Default configuration
   schema/scolta.schema.yml                 Config schema
 ```
+
+## Credits
+
+Scolta is built on [Pagefind](https://pagefind.app/) by [CloudCannon](https://cloudcannon.com/). Without Pagefind, Scolta has no search to score — the index format, WASM search engine, word-position data, and excerpt generation are all Pagefind's. Scolta's contribution is the layer that sits on top: configurable scoring, multi-adapter ranking parity, AI features, and platform glue.
 
 ## License
 
