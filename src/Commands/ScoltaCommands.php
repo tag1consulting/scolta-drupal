@@ -16,6 +16,9 @@ use Drush\Commands\DrushCommands;
 use GuzzleHttp\ClientInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Export\ContentExporter;
+use Tag1\Scolta\Index\BuildIntent;
+use Tag1\Scolta\Index\IndexBuildOrchestrator;
+use Tag1\Scolta\Index\MemoryBudget;
 use Tag1\Scolta\Index\PhpIndexer;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 use Tag1\Scolta\SetupCheck;
@@ -120,6 +123,9 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Option(name: 'skip-pagefind', description: 'Export content only, skip Pagefind build')]
   #[CLI\Option(name: 'indexer', description: 'Indexer mode: php, binary, or auto (default: from config)')]
   #[CLI\Option(name: 'force', description: 'Force rebuild even if content has not changed')]
+  #[CLI\Option(name: 'memory-budget', description: 'Memory profile: conservative, balanced, or aggressive (default: conservative)')]
+  #[CLI\Option(name: 'resume', description: 'Resume a previously interrupted PHP index build')]
+  #[CLI\Option(name: 'restart', description: 'Discard interrupted state and restart the PHP index build')]
   public function build(
     array $options = [
       'entity-type' => 'node',
@@ -129,6 +135,9 @@ class ScoltaCommands extends DrushCommands {
       'skip-pagefind' => FALSE,
       'indexer' => '',
       'force' => FALSE,
+      'memory-budget' => 'conservative',
+      'resume' => FALSE,
+      'restart' => FALSE,
     ],
   ): void {
     $config = $this->configFactory->get('scolta.settings');
@@ -224,37 +233,16 @@ class ScoltaCommands extends DrushCommands {
     $entityType = $options['entity-type'] ?: 'node';
     $bundle = $options['bundle'] ?: '';
     $siteName = $config->get('site_name') ?: 'Unknown';
+    $language = $config->get('ai_languages')[0] ?? 'en';
+    $budget = MemoryBudget::fromString((string) ($options['memory-budget'] ?? 'conservative'));
 
-    // Resolve output directory for the PHP indexer.
-    $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
-    if (str_contains($outputDir, '://')) {
-      try {
-        $resolvedOutputDir = $this->streamWrapperManager
-          ->getViaUri($outputDir)->realpath() ?: $outputDir;
-      }
-      catch (\Exception $e) {
-        $resolvedOutputDir = $outputDir;
-      }
-    }
-    else {
-      $resolvedOutputDir = $outputDir;
-    }
+    $resolvedOutputDir = $this->resolvePath(
+      $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind'
+    );
+    $resolvedStateDir = $this->resolvePath(
+      $config->get('pagefind.build_dir') ?? 'private://scolta-build'
+    );
 
-    $stateDir = $config->get('pagefind.build_dir') ?? 'private://scolta-build';
-    if (str_contains($stateDir, '://')) {
-      try {
-        $resolvedStateDir = $this->streamWrapperManager
-          ->getViaUri($stateDir)->realpath() ?: $stateDir;
-      }
-      catch (\Exception $e) {
-        $resolvedStateDir = $stateDir;
-      }
-    }
-    else {
-      $resolvedStateDir = $stateDir;
-    }
-
-    // Ensure directories exist.
     if (!is_dir($resolvedStateDir) && !mkdir($resolvedStateDir, 0755, TRUE)) {
       $this->logger()->error('Failed to create state directory: {dir}', ['dir' => $resolvedStateDir]);
       return;
@@ -264,8 +252,7 @@ class ScoltaCommands extends DrushCommands {
       return;
     }
 
-    // Step 1: Gather content from Drupal.
-    $this->logger()->notice('Step 1: Gathering content (PHP indexer)...');
+    $this->logger()->notice('Gathering content (PHP indexer)...');
     $items = $this->contentGatherer->gather($entityType, $bundle, $siteName);
 
     if (empty($items)) {
@@ -273,86 +260,64 @@ class ScoltaCommands extends DrushCommands {
       return;
     }
 
-    $this->logger()->notice('Found {count} content items.', ['count' => count($items)]);
-
-    // Step 2: Filter through ContentExporter.
     $exporter = new ContentExporter($resolvedOutputDir);
     $filteredItems = $exporter->exportToItems($items);
     $skipped = count($items) - count($filteredItems);
-
     if ($skipped > 0) {
       $this->logger()->notice('Filtered out {count} items with insufficient content.', ['count' => $skipped]);
     }
-
     if (empty($filteredItems)) {
       $this->logger()->warning('No items passed content filter.');
       return;
     }
 
-    $this->logger()->notice('{count} items ready for indexing.', ['count' => count($filteredItems)]);
+    $resume = (bool) ($options['resume'] ?? FALSE);
+    $restart = (bool) ($options['restart'] ?? FALSE);
 
-    // Step 3: Fingerprint check (skip if --force).
-    $language = $config->get('ai_languages')[0] ?? 'en';
-    $indexer = new PhpIndexer(
-      stateDir: $resolvedStateDir,
-      outputDir: $resolvedOutputDir,
-      hmacSecret: NULL,
-      language: $language,
-    );
-
-    if (!$force) {
-      $fingerprint = $indexer->shouldBuild($filteredItems);
-      if ($fingerprint === NULL) {
+    if (!$force && !$resume && !$restart) {
+      $indexer = new PhpIndexer(stateDir: $resolvedStateDir, outputDir: $resolvedOutputDir, language: $language);
+      if ($indexer->shouldBuild($filteredItems) === NULL) {
         $this->logger()->success('Content unchanged — skipping rebuild. Use --force to override.');
         return;
       }
-      $this->logger()->notice('Content fingerprint changed, rebuilding index.');
-    }
-    else {
-      $this->logger()->notice('Forced rebuild (--force).');
     }
 
-    // Step 4: Chunk and process.
-    $chunkSize = 100;
-    $chunks = array_chunk($filteredItems, $chunkSize);
-    $totalPages = count($filteredItems);
-    $totalProcessed = 0;
+    $intent = match (TRUE) {
+      $resume  => BuildIntent::resume($budget),
+      $restart => BuildIntent::restart(count($filteredItems), $budget),
+      default  => BuildIntent::fresh(count($filteredItems), $budget),
+    };
 
-    $this->logger()->notice('Step 2: Processing {chunks} chunk(s)...', ['chunks' => count($chunks)]);
+    $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
+    $report = $orchestrator->build($intent, $filteredItems);
 
-    foreach ($chunks as $chunkNumber => $chunk) {
-      $processed = $indexer->processChunk($chunk, $chunkNumber, $totalPages);
-      $totalProcessed += $processed;
-      $this->logger()->notice('  Chunk {n}/{total}: processed {count} pages.', [
-        'n' => $chunkNumber + 1,
-        'total' => count($chunks),
-        'count' => $processed,
-      ]);
-    }
-
-    // Step 5: Finalize.
-    $this->logger()->notice('Step 3: Finalizing index...');
-    $result = $indexer->finalize();
-
-    if ($result->success) {
-      // Write fingerprint for future change detection.
-      $fp = PhpIndexer::computeFingerprint($filteredItems);
-      file_put_contents($resolvedOutputDir . '/.scolta-state', $fp);
-
-      // Increment generation counter.
+    if ($report->success) {
       $generation = $this->state->get('scolta.generation', 0);
       $this->state->set('scolta.generation', $generation + 1);
-
-      $this->logger()->success('PHP indexer: {message} in {time}s.', [
-        'message' => $result->message,
-        'time' => $result->elapsedSeconds,
+      $this->logger()->success('Index built: {pages} pages in {time}s ({mem} peak RAM).', [
+        'pages' => $report->pagesProcessed,
+        'time' => $report->durationSeconds,
+        'mem' => $report->peakMemoryMb(),
       ]);
       \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
     }
     else {
-      $this->logger()->error('PHP indexer failed: {error}', [
-        'error' => $result->error ?? $result->message,
-      ]);
+      $this->logger()->error('PHP indexer failed: {error}', ['error' => $report->error ?? 'unknown']);
+    }
+  }
+
+  /**
+   * Resolve a stream-wrapper URI or plain path to an absolute filesystem path.
+   */
+  private function resolvePath(string $uri): string {
+    if (!str_contains($uri, '://')) {
+      return $uri;
+    }
+    try {
+      return $this->streamWrapperManager->getViaUri($uri)->realpath() ?: $uri;
+    }
+    catch (\Exception) {
+      return $uri;
     }
   }
 

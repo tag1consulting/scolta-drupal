@@ -4,6 +4,18 @@ All notable changes to scolta-drupal will be documented in this file.
 
 This project uses [Semantic Versioning](https://semver.org/). Major versions are synchronized across all Scolta packages.
 
+## [0.3.0] - Unreleased
+
+### Added
+- **`--memory-budget` option**: Pass `conservative` (default), `balanced`, or `aggressive` to `drush scolta:build`.
+- **`--resume` option**: Resume a previously interrupted PHP index build.
+- **`--restart` option**: Discard interrupted state and force a clean rebuild.
+
+### Changed
+- **`buildWithPhpIndexer()`** rewritten to use `IndexBuildOrchestrator::build()` — 85 lines down to ~30.
+- Path resolution logic extracted to `resolvePath()` private helper.
+- Inherits all scolta-php 0.3.0 improvements: `MemoryBudget`, `BuildIntent`, `BuildCoordinator`, streaming pre-merge fix.
+
 ## [0.2.5] - Unreleased
 
 ### Fixed
