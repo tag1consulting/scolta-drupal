@@ -6,6 +6,12 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [0.2.5] - Unreleased
 
+### Fixed
+- **Status command indexer section**: `drush scolta:status` now shows `--- Indexer ---` (was `--- Pagefind Binary ---`) with active indexer selection logic matching the Laravel/WP adapters.
+
+### Changed
+- Inherits scolta-php 0.2.5 OOM fix: PHP indexer now uses a streaming merge pipeline, keeping peak RAM ~5-10 MB regardless of corpus size.
+
 ## [0.2.4] - 2026-04-21
 
 ### Added
