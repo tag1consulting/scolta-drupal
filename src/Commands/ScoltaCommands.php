@@ -535,7 +535,7 @@ class ScoltaCommands extends DrushCommands {
       configuredPath: $config->get('pagefind.binary'),
       projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
     );
-    $binaryStatus  = $resolver->status();
+    $binaryStatus = $resolver->status();
     $indexerSetting = $config->get('indexer') ?: 'auto';
     if ($indexerSetting === 'php') {
       $activeIndexer = 'php (forced)';
