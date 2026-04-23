@@ -529,18 +529,33 @@ class ScoltaCommands extends DrushCommands {
       $this->logger()->warning('  Could not query Search API: ' . $e->getMessage());
     }
 
-    // Pagefind binary.
-    $this->logger()->notice('--- Pagefind Binary ---');
+    // Indexer selection and active state.
+    $this->logger()->notice('--- Indexer ---');
     $resolver = new PagefindBinary(
       configuredPath: $config->get('pagefind.binary'),
       projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
     );
-    $binaryStatus = $resolver->status();
-    if ($binaryStatus['available']) {
-      $this->logger()->notice("  {$binaryStatus['message']}");
+    $binaryStatus  = $resolver->status();
+    $indexerSetting = $config->get('indexer') ?: 'auto';
+    if ($indexerSetting === 'php') {
+      $activeIndexer = 'php (forced)';
+    }
+    elseif ($indexerSetting === 'binary') {
+      $activeIndexer = $binaryStatus['available'] ? 'binary' : 'binary (not found — check path)';
     }
     else {
-      $this->logger()->warning($binaryStatus['message']);
+      $activeIndexer = $binaryStatus['available'] ? 'binary (auto-detected)' : 'php (binary not found)';
+    }
+    $this->logger()->notice("  Active indexer: {$activeIndexer}");
+    if ($binaryStatus['available']) {
+      $this->logger()->notice("  Binary:         {$binaryStatus['message']}");
+    }
+    else {
+      $this->logger()->warning('  Binary:         NOT AVAILABLE');
+      $this->logger()->notice("  {$binaryStatus['message']}");
+      if ($activeIndexer !== 'php (forced)') {
+        $this->logger()->notice('  To upgrade: npm install -g pagefind  OR  drush scolta:download-pagefind');
+      }
     }
 
     // Pagefind index.
