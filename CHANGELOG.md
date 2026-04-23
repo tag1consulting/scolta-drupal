@@ -4,6 +4,15 @@ All notable changes to scolta-drupal will be documented in this file.
 
 This project uses [Semantic Versioning](https://semver.org/). Major versions are synchronized across all Scolta packages.
 
+## [0.3.1] - 2026-04-23
+
+### Fixed
+- **Release packaging**: Release workflow now triggers on both `v0.x.x` and bare `0.x.x` tag formats, fixing the 0.3.0 release that shipped with no binary assets.
+
+### Added
+- **Zip structure regression test**: New `validate-zip` CI job asserts `scolta-drupal/vendor/autoload.php` and `scolta-drupal/scolta.module` are present in each release archive.
+- **Memory budget profile fieldset**: Settings form (Content section) now includes a Memory Budget details element. Explains that the budget is advisory within the existing PHP `memory_limit`, shows the current limit inline, and warns when the selected profile's target RAM exceeds 70% of the detected limit. `drush scolta:build` reads the saved profile as the default for `--memory-budget`.
+
 ## [0.3.0] - 2026-04-23
 
 ### Added

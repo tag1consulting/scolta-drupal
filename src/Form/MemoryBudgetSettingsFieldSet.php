@@ -21,22 +21,33 @@ final class MemoryBudgetSettingsFieldSet {
    *   A Drupal Form API render array.
    */
   public static function build(MemoryBudgetConfig $config): array {
-    $suggestion = $config->suggest();
-
-    $descriptions = [
-      'conservative' => t('Peak RAM ≤ 96 MB — safe for shared hosting (memory_limit ≤ 128 MB).'),
-      'balanced'     => t('~256–512 MB available. Larger chunks, fewer round-trips.'),
-      'aggressive'   => t('≥ 1 GB available. Maximises throughput on high-memory servers.'),
-    ];
+    $suggestion  = $config->suggest();
+    $limitText   = \Tag1\Scolta\Index\MemoryBudgetSuggestion::getMemoryLimitText();
+    $fit         = \Tag1\Scolta\Index\MemoryBudgetSuggestion::checkProfileFit($config->profile());
 
     $fieldset = [
       '#type'        => 'details',
       '#title'       => t('Memory Budget'),
       '#open'        => FALSE,
       '#description' => t(
-        'Controls how aggressively the PHP indexer uses memory. The streaming pipeline keeps peak RAM bounded regardless of corpus size; this setting trades RAM for fewer round-trips and larger buffers.'
+        "Scolta's memory budget tells Scolta how much RAM to use while building the search index. It never exceeds the PHP memory limit your host already allows. You do not need to edit php.ini unless you want to use a profile that requires more memory than your host provides."
       ),
     ];
+
+    $limitDescription = t(
+      'Your current PHP memory limit is @limit. The conservative profile fits within 128 MB and is safe for most shared hosts. Detected: @reason Can be overridden per-run with <code>--memory-budget</code> on drush scolta:build.',
+      [
+        '@limit'  => $limitText,
+        '@reason' => $suggestion['reason'],
+      ]
+    );
+
+    if ($fit['status'] === 'warn') {
+      $limitDescription = $limitDescription . ' ' . t(
+        '<strong style="color:red">@warning</strong>',
+        ['@warning' => $fit['warning']]
+      );
+    }
 
     $fieldset['memory_budget_profile'] = [
       '#type'          => 'select',
@@ -47,19 +58,7 @@ final class MemoryBudgetSettingsFieldSet {
         'aggressive'   => t('Aggressive — ~1 GB'),
       ],
       '#default_value' => $config->profile(),
-      '#description'   => t(
-        '<strong>Detected:</strong> @reason Can be overridden per-run with <code>--memory-budget</code> on drush scolta:build.',
-        ['@reason' => $suggestion['reason']]
-      ),
-    ];
-
-    $fieldset['memory_budget_profile_descriptions'] = [
-      '#type'   => 'item',
-      '#markup' => '<ul>' . implode('', array_map(
-        static fn(string $p, $d): string => "<li><strong>$p</strong>: $d</li>",
-        array_keys($descriptions),
-        $descriptions,
-      )) . '</ul>',
+      '#description'   => $limitDescription,
     ];
 
     return $fieldset;

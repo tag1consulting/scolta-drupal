@@ -3,7 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - 'v[0-9]*.[0-9]*.[0-9]*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+'
 
 jobs:
   release:
@@ -60,3 +61,45 @@ jobs:
           body_path: release-notes.txt
           files: scolta-drupal-*.zip
           fail_on_unmatched_files: true
+
+  validate-zip:
+    name: Validate release archive
+    runs-on: ubuntu-latest
+    needs: release
+    steps:
+      - name: Download release asset
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          for i in 1 2 3 4 5; do
+            gh release download "${GITHUB_REF_NAME}" \
+              --repo "${{ github.repository }}" \
+              --pattern "scolta-drupal-${VERSION}.zip" \
+              --output scolta-drupal.zip && break
+            echo "Retry $i/5..."
+            sleep 5
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate archive structure
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          unzip -l scolta-drupal.zip > zip-contents.txt
+          cat zip-contents.txt
+
+          if ! grep -qE '^[[:space:]]+[0-9].*scolta-drupal/$' zip-contents.txt; then
+            echo "ERROR: Top-level directory is not scolta-drupal/"
+            exit 1
+          fi
+
+          if ! grep -q 'scolta-drupal/vendor/autoload.php' zip-contents.txt; then
+            echo "ERROR: vendor/autoload.php is missing from archive"
+            exit 1
+          fi
+
+          if ! grep -q 'scolta-drupal/scolta.module' zip-contents.txt; then
+            echo "ERROR: scolta.module is missing from archive"
+            exit 1
+          fi
+
+          echo "Archive structure OK."
