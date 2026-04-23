@@ -18,6 +18,7 @@ use Drupal\scolta\Service\PagefindBuilder;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
+use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Export\ContentItem;
 use Tag1\Scolta\Prompt\DefaultPrompts;
@@ -230,6 +231,12 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('indexer') ?? 'auto',
       '#description' => $this->t('How scolta:build creates the search index. Can be overridden with --indexer on the CLI.'),
     ];
+
+    $memoryBudgetConfig = MemoryBudgetConfig::load([
+      'profile'      => $config->get('memory_budget.profile') ?? 'conservative',
+      'custom_bytes' => $config->get('memory_budget.custom_bytes'),
+    ]);
+    $form['content']['memory_budget'] = MemoryBudgetSettingsFieldSet::build($memoryBudgetConfig);
 
     // ── Scoring Section ──
     $form['scoring'] = [
@@ -721,6 +728,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('site_name', $form_state->getValue('site_name'))
       ->set('site_description', $form_state->getValue('site_description'))
       ->set('indexer', $form_state->getValue('indexer'))
+      ->set('memory_budget.profile', $form_state->getValue('memory_budget_profile') ?? 'conservative')
+      ->set('memory_budget.custom_bytes', NULL)
       // Scoring settings.
       ->set('scoring.title_match_boost', (float) $form_state->getValue('title_match_boost'))
       ->set('scoring.title_all_terms_multiplier', (float) $form_state->getValue('title_all_terms_multiplier'))

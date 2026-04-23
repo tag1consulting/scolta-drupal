@@ -115,6 +115,16 @@ scolta.settings:
     indexer:
       type: string
       label: 'Indexer mode (auto, php, or binary)'
+    memory_budget:
+      type: mapping
+      label: 'Memory budget configuration'
+      mapping:
+        profile:
+          type: string
+          label: 'Memory budget profile (conservative, balanced, or aggressive)'
+        custom_bytes:
+          type: integer
+          label: 'Custom byte budget (null for named profile)'
     pagefind:
       type: mapping
       label: 'Pagefind configuration'

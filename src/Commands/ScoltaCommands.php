@@ -18,6 +18,7 @@ use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\BuildIntent;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
+use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Index\MemoryBudget;
 use Tag1\Scolta\Index\PhpIndexer;
 use Tag1\Scolta\Prompt\DefaultPrompts;
@@ -234,7 +235,11 @@ class ScoltaCommands extends DrushCommands {
     $bundle = $options['bundle'] ?: '';
     $siteName = $config->get('site_name') ?: 'Unknown';
     $language = $config->get('ai_languages')[0] ?? 'en';
-    $budget = MemoryBudget::fromString((string) ($options['memory-budget'] ?? 'conservative'));
+    $savedProfile = $config->get('memory_budget.profile') ?? 'conservative';
+    $budgetProfile = isset($options['memory-budget']) && $options['memory-budget'] !== NULL
+      ? (string) $options['memory-budget']
+      : $savedProfile;
+    $budget = MemoryBudget::fromString($budgetProfile);
 
     $resolvedOutputDir = $this->resolvePath(
       $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind'
