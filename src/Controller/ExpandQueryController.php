@@ -78,14 +78,23 @@ class ExpandQueryController extends ControllerBase {
     return new JsonResponse(['error' => $result['error']], $result['status']);
   }
 
+  /**
+   * {@inheritdoc}
+   */
   protected function resolveCache(int $cacheTtl): CacheDriverInterface {
     return $cacheTtl > 0 ? new DrupalCacheDriver($this->cache) : new NullCacheDriver();
   }
 
+  /**
+   * {@inheritdoc}
+   */
   protected function getCacheGeneration(): int {
     return (int) $this->state->get('scolta.generation', 0);
   }
 
+  /**
+   * {@inheritdoc}
+   */
   protected function resolveEnricher(): PromptEnricherInterface {
     return new EventDrivenEnricher($this->eventDispatcher);
   }

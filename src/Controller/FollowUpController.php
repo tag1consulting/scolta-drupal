@@ -75,14 +75,23 @@ class FollowUpController extends ControllerBase {
     return new JsonResponse($response, $result['status']);
   }
 
+  /**
+   * {@inheritdoc}
+   */
   protected function resolveCache(int $cacheTtl): CacheDriverInterface {
     return new NullCacheDriver();
   }
 
+  /**
+   * {@inheritdoc}
+   */
   protected function getCacheGeneration(): int {
     return 0;
   }
 
+  /**
+   * {@inheritdoc}
+   */
   protected function resolveEnricher(): PromptEnricherInterface {
     return new EventDrivenEnricher($this->eventDispatcher);
   }

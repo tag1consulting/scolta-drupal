@@ -232,10 +232,11 @@ class ScoltaCommands extends DrushCommands {
    *   Whether to skip the fingerprint check and force a rebuild.
    */
   private function buildWithPhpIndexer(array $options, $config, bool $force): void {
-    $entityType   = $options['entity-type'] ?: 'node';
-    $bundle       = $options['bundle'] ?: '';
-    $siteName     = $config->get('site_name') ?: 'Unknown';
-    $language     = $config->get('ai_languages')[0] ?? 'en';
+    $entityType = $options['entity-type'] ?: 'node';
+    $bundle     = $options['bundle'] ?: '';
+    $siteName   = $config->get('site_name') ?: 'Unknown';
+    $language   = $config->get('ai_languages')[0] ?? 'en';
+
     $budget = MemoryBudgetConfig::fromCliAndConfig(
       (isset($options['memory-budget']) && $options['memory-budget'] !== NULL)
         ? (string) $options['memory-budget']
