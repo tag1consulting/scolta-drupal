@@ -160,7 +160,7 @@ jobs:
       - name: Start PHP built-in web server
         working-directory: /tmp/drupal
         run: |
-          php -S localhost:8080 -t . > /tmp/php-server.log 2>&1 &
+          php -d display_errors=On -d error_reporting=E_ALL -S localhost:8080 -t . > /tmp/php-server.log 2>&1 &
           until curl -sf http://localhost:8080/ > /dev/null 2>&1; do sleep 1; done
 
       - name: Run functional tests
@@ -181,14 +181,18 @@ jobs:
       - name: Dump error info on failure
         if: failure()
         run: |
-          echo "=== BrowserTest HTML output (error pages) ==="
-          for f in /tmp/browsertest_output/*.html; do
+          echo "=== PHP server log errors (display_errors=On) ==="
+          grep -v "^\[.*\] \[::1\]" /tmp/php-server.log 2>/dev/null | head -50 || echo "(no error lines)"
+          echo ""
+          echo "=== BrowserTest HTML output files ==="
+          find /tmp/browsertest_output -type f 2>/dev/null | head -20 || echo "(none)"
+          find /tmp/browsertest_output -type f -name "*.html" 2>/dev/null | head -3 | while IFS= read -r f; do
             echo "--- $f ---"
-            grep -E "Exception|Fatal|Error|Warning|message" "$f" 2>/dev/null | head -20 || echo "(no matches)"
+            grep -oE "(Exception|Fatal error|Error)[^<]{0,300}" "$f" 2>/dev/null | head -10 || echo "(no error text)"
           done
           echo ""
-          echo "=== Last 50 lines of PHP server log ==="
-          tail -50 /tmp/php-server.log || echo "(log not found)"
+          echo "=== Last 30 lines of PHP server log ==="
+          tail -30 /tmp/php-server.log 2>/dev/null || echo "(log not found)"
 
   playwright:
     runs-on: ubuntu-latest

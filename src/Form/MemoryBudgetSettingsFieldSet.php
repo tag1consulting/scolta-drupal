@@ -65,10 +65,9 @@ final class MemoryBudgetSettingsFieldSet {
     $fieldset['chunk_size'] = [
       '#type'          => 'number',
       '#title'         => t('Chunk size'),
-      '#default_value' => $config->chunkSize() ?? '',
+      '#default_value' => $config->chunkSize(),
       '#min'           => 1,
       '#step'          => 1,
-      '#size'          => 8,
       '#description'   => t('Pages per chunk during a PHP build. Leave blank to use the profile default (50 / 200 / 500 for conservative / balanced / aggressive). Lower values reduce peak RSS; higher values reduce merge overhead on large corpora. Can be overridden per-run with @flag on drush scolta:build.', ['@flag' => '--chunk-size']),
     ];
 
