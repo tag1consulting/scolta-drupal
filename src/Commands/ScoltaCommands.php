@@ -16,10 +16,10 @@ use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 use GuzzleHttp\ClientInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
+use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Export\ContentExporter;
-use Tag1\Scolta\Index\BuildIntent;
+use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
-use Tag1\Scolta\Index\MemoryBudget;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 use Tag1\Scolta\SetupCheck;
 
@@ -236,16 +236,18 @@ class ScoltaCommands extends DrushCommands {
     $bundle       = $options['bundle'] ?: '';
     $siteName     = $config->get('site_name') ?: 'Unknown';
     $language     = $config->get('ai_languages')[0] ?? 'en';
-    $savedProfile = $config->get('memory_budget.profile') ?? 'conservative';
-    $budgetStr    = (isset($options['memory-budget']) && $options['memory-budget'] !== NULL)
-      ? (string) $options['memory-budget']
-      : $savedProfile;
-    $savedChunk   = $config->get('memory_budget.chunk_size');
-    $rawChunk     = (isset($options['chunk-size']) && $options['chunk-size'] !== NULL)
-      ? (int) $options['chunk-size']
-      : (($savedChunk !== NULL) ? (int) $savedChunk : NULL);
-    $chunkSize    = ($rawChunk !== NULL && $rawChunk >= 1) ? $rawChunk : NULL;
-    $budget       = MemoryBudget::fromOptions($budgetStr, $chunkSize);
+    $budget = MemoryBudgetConfig::fromCliAndConfig(
+      (isset($options['memory-budget']) && $options['memory-budget'] !== NULL)
+        ? (string) $options['memory-budget']
+        : NULL,
+      (isset($options['chunk-size']) && $options['chunk-size'] !== NULL)
+        ? (string) $options['chunk-size']
+        : NULL,
+      fn() => [
+        'profile'    => $config->get('memory_budget.profile') ?? 'conservative',
+        'chunk_size' => $config->get('memory_budget.chunk_size'),
+      ],
+    );
 
     $resolvedOutputDir = $this->resolvePath(
       $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind'
@@ -277,11 +279,7 @@ class ScoltaCommands extends DrushCommands {
     $resume = (bool) ($options['resume'] ?? FALSE);
     $restart = (bool) ($options['restart'] ?? FALSE);
 
-    $intent = match (TRUE) {
-      $resume  => BuildIntent::resume($budget),
-      $restart => BuildIntent::restart($totalCount, $budget),
-      default  => BuildIntent::fresh($totalCount, $budget),
-    };
+    $intent = BuildIntentFactory::fromFlags($resume, $restart, $totalCount, $budget);
 
     $reporter = new DrushProgressReporter($this->output());
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);

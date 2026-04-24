@@ -262,10 +262,11 @@ class ScoltaCommandsValidationTest extends TestCase {
   }
 
   public function testBuildCommandUsesFromOptions(): void {
+    // Budget resolution is now delegated to MemoryBudgetConfig::fromCliAndConfig().
     $this->assertStringContainsString(
-      'MemoryBudget::fromOptions(',
+      'MemoryBudgetConfig::fromCliAndConfig(',
       $this->commandsContents,
-      'buildWithPhpIndexer() must use MemoryBudget::fromOptions() to apply both budget and chunk size'
+      'buildWithPhpIndexer() must use MemoryBudgetConfig::fromCliAndConfig() to apply budget and chunk size'
     );
   }
 

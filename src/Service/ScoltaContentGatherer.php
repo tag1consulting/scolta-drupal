@@ -68,7 +68,7 @@ class ScoltaContentGatherer {
   /**
    * Gather indexable content as a generator that yields one ContentItem at a time.
    *
-   * Paginates the entity query in batches of 50 and calls resetCache() after
+   * Paginates the entity query in batches of 100 and calls resetCache() after
    * each batch so that entity field data from previous batches is released
    * from RAM. Peak RSS stays bounded regardless of corpus size.
    *
@@ -91,7 +91,7 @@ class ScoltaContentGatherer {
    */
   public function gather(string $entityType, string $bundle, string $siteName): \Generator {
     $storage = $this->entityTypeManager->getStorage($entityType);
-    $batch = 50;
+    $batch = 100;
     $offset = 0;
 
     while (TRUE) {

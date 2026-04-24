@@ -14,8 +14,10 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Tag1\Scolta\Cache\CacheDriverInterface;
 use Tag1\Scolta\Cache\NullCacheDriver;
-use Tag1\Scolta\Http\AiEndpointHandler;
+use Tag1\Scolta\Http\AiControllerTrait;
+use Tag1\Scolta\Prompt\PromptEnricherInterface;
 
 /**
  * Summarizes search results using the configured AI provider.
@@ -25,6 +27,8 @@ use Tag1\Scolta\Http\AiEndpointHandler;
  *   -> {"summary": "Our pricing plans include..."}
  */
 class SummarizeController extends ControllerBase {
+
+  use AiControllerTrait;
 
   public function __construct(
     private readonly ScoltaAiService $aiService,
@@ -56,18 +60,9 @@ class SummarizeController extends ControllerBase {
       return new JsonResponse(['error' => 'Malformed JSON: ' . $e->getMessage()], 400);
     }
 
-    $config = $this->aiService->getConfig();
-    $handler = new AiEndpointHandler(
-      $this->aiService,
-      $config->cacheTtl > 0 ? new DrupalCacheDriver($this->cache) : new NullCacheDriver(),
-      (int) $this->state->get('scolta.generation', 0),
-      $config->cacheTtl,
-      $config->maxFollowUps,
-      new EventDrivenEnricher($this->eventDispatcher),
-      $config->aiLanguages,
-    );
-
-    $result = $handler->handleSummarize($body['query'] ?? '', $body['context'] ?? '');
+    $config  = $this->aiService->getConfig();
+    $handler = $this->createHandler($this->aiService, $config);
+    $result  = $handler->handleSummarize($body['query'] ?? '', $body['context'] ?? '');
 
     if ($result['ok']) {
       return new JsonResponse($result['data']);
@@ -81,6 +76,18 @@ class SummarizeController extends ControllerBase {
     }
 
     return new JsonResponse(['error' => $result['error']], $result['status']);
+  }
+
+  protected function resolveCache(int $cacheTtl): CacheDriverInterface {
+    return $cacheTtl > 0 ? new DrupalCacheDriver($this->cache) : new NullCacheDriver();
+  }
+
+  protected function getCacheGeneration(): int {
+    return (int) $this->state->get('scolta.generation', 0);
+  }
+
+  protected function resolveEnricher(): PromptEnricherInterface {
+    return new EventDrivenEnricher($this->eventDispatcher);
   }
 
 }

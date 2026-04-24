@@ -134,16 +134,17 @@ class ControllerHandlerTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // Controllers delegate to AiEndpointHandler.
+  // Controllers delegate to AiEndpointHandler via AiControllerTrait.
   // -------------------------------------------------------------------
 
   #[\PHPUnit\Framework\Attributes\DataProvider('controllerProvider')]
   public function testControllerUsesAiEndpointHandler(string $className, string $file): void {
     $contents = file_get_contents($file);
+    // Controllers use AiControllerTrait which creates the handler internally.
     $this->assertStringContainsString(
-      'AiEndpointHandler',
+      'AiControllerTrait',
       $contents,
-      "{$className} should delegate to AiEndpointHandler"
+      "{$className} should use AiControllerTrait to delegate to AiEndpointHandler"
     );
   }
 

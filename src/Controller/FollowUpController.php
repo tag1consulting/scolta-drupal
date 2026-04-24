@@ -11,8 +11,10 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Tag1\Scolta\Cache\CacheDriverInterface;
 use Tag1\Scolta\Cache\NullCacheDriver;
-use Tag1\Scolta\Http\AiEndpointHandler;
+use Tag1\Scolta\Http\AiControllerTrait;
+use Tag1\Scolta\Prompt\PromptEnricherInterface;
 
 /**
  * Handles follow-up questions about search results.
@@ -22,6 +24,8 @@ use Tag1\Scolta\Http\AiEndpointHandler;
  *   -> {"response": "Based on the search results...", "remaining": 2}
  */
 class FollowUpController extends ControllerBase {
+
+  use AiControllerTrait;
 
   public function __construct(
     private readonly ScoltaAiService $aiService,
@@ -49,18 +53,9 @@ class FollowUpController extends ControllerBase {
       return new JsonResponse(['error' => 'Malformed JSON: ' . $e->getMessage()], 400);
     }
 
-    $config = $this->aiService->getConfig();
-    $handler = new AiEndpointHandler(
-      $this->aiService,
-      new NullCacheDriver(),
-      0,
-      0,
-      $config->maxFollowUps,
-      new EventDrivenEnricher($this->eventDispatcher),
-      $config->aiLanguages,
-    );
-
-    $result = $handler->handleFollowUp($body['messages'] ?? []);
+    $config  = $this->aiService->getConfig();
+    $handler = $this->createHandler($this->aiService, $config);
+    $result  = $handler->handleFollowUp($body['messages'] ?? []);
 
     if ($result['ok']) {
       return new JsonResponse($result['data']);
@@ -78,6 +73,18 @@ class FollowUpController extends ControllerBase {
       $response['limit'] = $result['limit'];
     }
     return new JsonResponse($response, $result['status']);
+  }
+
+  protected function resolveCache(int $cacheTtl): CacheDriverInterface {
+    return new NullCacheDriver();
+  }
+
+  protected function getCacheGeneration(): int {
+    return 0;
+  }
+
+  protected function resolveEnricher(): PromptEnricherInterface {
+    return new EventDrivenEnricher($this->eventDispatcher);
   }
 
 }

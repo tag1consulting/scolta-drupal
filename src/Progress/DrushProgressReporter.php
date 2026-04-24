@@ -55,9 +55,12 @@ class DrushProgressReporter implements ProgressReporterInterface {
    * @param int $steps
    *   Number of steps completed.
    * @param string|null $detail
-   *   Optional detail (unused).
+   *   Optional chunk detail shown as the progress bar message.
    */
   public function advance(int $steps = 1, ?string $detail = NULL): void {
+    if ($detail !== NULL && $this->bar !== NULL) {
+      $this->bar->setMessage($detail);
+    }
     $this->bar?->advance($steps);
   }
 
