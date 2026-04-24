@@ -166,7 +166,7 @@ jobs:
       - name: Start PHP built-in web server
         working-directory: /tmp/drupal
         run: |
-          php -d display_errors=On -d error_reporting=E_ALL -S localhost:8080 -t . > /tmp/php-server.log 2>&1 &
+          php -S localhost:8080 -t . > /tmp/php-server.log 2>&1 &
           until curl -sf http://localhost:8080/ > /dev/null 2>&1; do sleep 1; done
 
       - name: Run functional tests
@@ -183,37 +183,6 @@ jobs:
             --bootstrap core/tests/bootstrap.php \
             --display-deprecations \
             --testdox
-
-      - name: Dump error info on failure
-        if: failure()
-        working-directory: /tmp/drupal
-        run: |
-          echo "=== PHP server log errors ==="
-          grep -v "^\[.*\] \[::1\]" /tmp/php-server.log 2>/dev/null | head -30 || echo "(none)"
-          echo ""
-          echo "=== Drush eval: test settings form build ==="
-          ./vendor/bin/drush pm:enable scolta search_api --yes 2>&1 | tail -3 || true
-          ./vendor/bin/drush php:eval "
-            try {
-              \$c = \Drupal::config('scolta.settings');
-              \$budget = \Tag1\Scolta\Config\MemoryBudgetConfig::load([
-                'profile' => \$c->get('memory_budget.profile') ?? 'conservative',
-                'chunk_size' => \$c->get('memory_budget.chunk_size'),
-              ]);
-              \$f = \Drupal\scolta\Form\MemoryBudgetSettingsFieldSet::build(\$budget);
-              echo 'OK: chunk_size key present: ' . (isset(\$f['chunk_size']) ? 'yes' : 'no') . PHP_EOL;
-            } catch (\Throwable \$e) {
-              echo 'FORM BUILD ERROR: ' . get_class(\$e) . ': ' . \$e->getMessage() . PHP_EOL;
-              echo \$e->getTraceAsString() . PHP_EOL;
-            }
-          " 2>&1 | head -50 || echo "(drush eval failed)"
-          echo ""
-          echo "=== Hit settings form via curl after login ==="
-          LOGIN_URL=$(./vendor/bin/drush user:login 1 --no-browser 2>&1 | tail -1 | tr -d '\r')
-          curl -c /tmp/dbg-cookies.txt -b /tmp/dbg-cookies.txt -Ls -o /dev/null "$LOGIN_URL" || true
-          curl -s -b /tmp/dbg-cookies.txt "http://localhost:8080/admin/config/search/scolta" 2>/dev/null \
-            | grep -oP '(?<=<p>|Exception:|Recoverable error:)[^<]{10,200}' | head -20 \
-            || echo "(no exception text found in response)"
 
   playwright:
     runs-on: ubuntu-latest
