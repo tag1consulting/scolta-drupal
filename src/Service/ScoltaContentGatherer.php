@@ -32,29 +32,28 @@ class ScoltaContentGatherer {
   ) {}
 
   /**
-   * Gather all indexable content items from a Drupal entity type.
+   * Count published entities without loading their field data.
    *
-   * Queries published entities, extracts body content from common field
-   * names, and returns an array of ContentItem DTOs ready for indexing.
+   * Runs a COUNT-only entity query so that gatherCount() is O(1) in memory.
+   * Use this when you need the total before streaming with gather().
    *
    * @param string $entityType
    *   The entity type to query (e.g. 'node').
    * @param string $bundle
    *   The bundle to filter by, or empty string for all bundles.
-   * @param string $siteName
-   *   The site name used in the ContentItem metadata.
    *
-   * @return \Tag1\Scolta\Export\ContentItem[]
-   *   Array of content items. Empty if no matching entities found.
+   * @return int
+   *   Total count of published entities matching the given type and bundle.
    *
-   * @since 0.2.0
+   * @since 0.3.2
    * @stability experimental
    */
-  public function gather(string $entityType, string $bundle, string $siteName): array {
+  public function gatherCount(string $entityType, string $bundle): int {
     $storage = $this->entityTypeManager->getStorage($entityType);
     $query = $storage->getQuery()
       ->accessCheck(FALSE)
-      ->condition('status', 1);
+      ->condition('status', 1)
+      ->count();
 
     if ($bundle) {
       $bundleKey = $this->entityTypeManager->getDefinition($entityType)->getKey('bundle');
@@ -63,47 +62,95 @@ class ScoltaContentGatherer {
       }
     }
 
-    $ids = $query->execute();
-    if (empty($ids)) {
-      return [];
-    }
+    return (int) $query->execute();
+  }
 
-    $entities = $storage->loadMultiple($ids);
-    $items = [];
+  /**
+   * Gather indexable content as a generator that yields one ContentItem at a time.
+   *
+   * Paginates the entity query in batches of 50 and calls resetCache() after
+   * each batch so that entity field data from previous batches is released
+   * from RAM. Peak RSS stays bounded regardless of corpus size.
+   *
+   * Callers must NOT convert this generator to an array — that restores
+   * the pre-0.3.2 eager-load behaviour. Pass the generator directly to
+   * IndexBuildOrchestrator::build() or ContentExporter::filterItems().
+   *
+   * @param string $entityType
+   *   The entity type to query (e.g. 'node').
+   * @param string $bundle
+   *   The bundle to filter by, or empty string for all bundles.
+   * @param string $siteName
+   *   The site name used in the ContentItem metadata.
+   *
+   * @return \Generator<\Tag1\Scolta\Export\ContentItem>
+   *   Yields one ContentItem per published entity.
+   *
+   * @since 0.3.2
+   * @stability experimental
+   */
+  public function gather(string $entityType, string $bundle, string $siteName): \Generator {
+    $storage = $this->entityTypeManager->getStorage($entityType);
+    $batch = 50;
+    $offset = 0;
 
-    foreach ($entities as $entity) {
-      if (!$entity instanceof FieldableEntityInterface) {
-        continue;
-      }
+    while (TRUE) {
+      $query = $storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('status', 1)
+        ->range($offset, $batch)
+        ->sort('nid', 'ASC');
 
-      // Extract body content — try common field names.
-      $body = '';
-      foreach (['body', 'field_body', 'field_content'] as $field) {
-        if ($entity->hasField($field) && !$entity->get($field)->isEmpty()) {
-          $body = $entity->get($field)->value;
-          break;
+      if ($bundle) {
+        $bundleKey = $this->entityTypeManager->getDefinition($entityType)->getKey('bundle');
+        if ($bundleKey) {
+          $query->condition($bundleKey, $bundle);
         }
       }
 
-      if (empty($body)) {
-        continue;
+      $ids = $query->execute();
+      if (empty($ids)) {
+        break;
       }
 
-      $changedTime = $entity instanceof EntityChangedInterface
-        ? $entity->getChangedTime()
-        : (int) ($entity->get('changed')->value ?? 0);
+      $entities = $storage->loadMultiple($ids);
 
-      $items[] = new ContentItem(
-        id: (string) $entity->id(),
-        title: $entity->label() ?: 'Untitled',
-        bodyHtml: $body,
-        url: $entity->toUrl()->setAbsolute(TRUE)->toString(),
-        date: date('Y-m-d', $changedTime),
-        siteName: $siteName,
-      );
+      foreach ($entities as $entity) {
+        if (!$entity instanceof FieldableEntityInterface) {
+          continue;
+        }
+
+        // Extract body content — try common field names.
+        $body = '';
+        foreach (['body', 'field_body', 'field_content'] as $field) {
+          if ($entity->hasField($field) && !$entity->get($field)->isEmpty()) {
+            $body = $entity->get($field)->value;
+            break;
+          }
+        }
+
+        if (empty($body)) {
+          continue;
+        }
+
+        $changedTime = $entity instanceof EntityChangedInterface
+          ? $entity->getChangedTime()
+          : (int) ($entity->get('changed')->value ?? 0);
+
+        yield new ContentItem(
+          id: (string) $entity->id(),
+          title: $entity->label() ?: 'Untitled',
+          bodyHtml: $body,
+          url: $entity->toUrl()->setAbsolute(TRUE)->toString(),
+          date: date('Y-m-d', $changedTime),
+          siteName: $siteName,
+        );
+      }
+
+      $storage->resetCache($ids);
+      $offset += count($ids);
+      unset($entities);
     }
-
-    return $items;
   }
 
 }

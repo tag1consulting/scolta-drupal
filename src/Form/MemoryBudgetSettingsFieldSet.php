@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Form;
 
+use Tag1\Scolta\Index\MemoryBudgetSuggestion;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
 
 /**
@@ -21,9 +22,9 @@ final class MemoryBudgetSettingsFieldSet {
    *   A Drupal Form API render array.
    */
   public static function build(MemoryBudgetConfig $config): array {
-    $suggestion  = $config->suggest();
-    $limitText   = \Tag1\Scolta\Index\MemoryBudgetSuggestion::getMemoryLimitText();
-    $fit         = \Tag1\Scolta\Index\MemoryBudgetSuggestion::checkProfileFit($config->profile());
+    $suggestion = $config->suggest();
+    $limitText  = MemoryBudgetSuggestion::getMemoryLimitText();
+    $fit        = MemoryBudgetSuggestion::checkProfileFit($config->profile());
 
     $fieldset = [
       '#type'        => 'details',
@@ -71,6 +72,7 @@ final class MemoryBudgetSettingsFieldSet {
    *   The $form_state->getValues() array (or a sub-array).
    *
    * @return \Tag1\Scolta\Config\MemoryBudgetConfig
+   *   The loaded memory budget configuration.
    */
   public static function extract(array $values): MemoryBudgetConfig {
     return MemoryBudgetConfig::load([

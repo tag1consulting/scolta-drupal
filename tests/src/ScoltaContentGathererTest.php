@@ -47,9 +47,34 @@ class ScoltaContentGathererTest extends TestCase {
 
   public function testGatherMethodSignature(): void {
     $this->assertStringContainsString(
-      'public function gather(string $entityType, string $bundle, string $siteName): array',
+      'public function gather(string $entityType, string $bundle, string $siteName): \Generator',
       $this->gathererContents,
-      'gather() must accept entityType, bundle, siteName and return array'
+      'gather() must accept entityType, bundle, siteName and return \\Generator (not array)'
+    );
+  }
+
+  public function testGatherCountMethodExists(): void {
+    $this->assertStringContainsString(
+      'public function gatherCount(string $entityType, string $bundle): int',
+      $this->gathererContents,
+      'gatherCount() must exist with int return type'
+    );
+  }
+
+  public function testGatherDoesNotUseLoadMultipleWithoutPagination(): void {
+    // gather() must use range() pagination, not a single loadMultiple of all IDs.
+    $this->assertStringContainsString(
+      '->range(',
+      $this->gathererContents,
+      'gather() must use range() to paginate instead of loading all entities at once'
+    );
+  }
+
+  public function testGatherResetsEntityCacheBetweenBatches(): void {
+    $this->assertStringContainsString(
+      'resetCache(',
+      $this->gathererContents,
+      'gather() must call resetCache() between batches to release field data from RAM'
     );
   }
 

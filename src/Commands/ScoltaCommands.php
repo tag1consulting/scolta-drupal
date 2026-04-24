@@ -9,6 +9,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\scolta\Progress\DrushProgressReporter;
 use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
@@ -18,9 +19,7 @@ use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\BuildIntent;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
-use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Index\MemoryBudget;
-use Tag1\Scolta\Index\PhpIndexer;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 use Tag1\Scolta\SetupCheck;
 
@@ -257,44 +256,29 @@ class ScoltaCommands extends DrushCommands {
       return;
     }
 
-    $this->logger()->notice('Gathering content (PHP indexer)...');
-    $items = $this->contentGatherer->gather($entityType, $bundle, $siteName);
-
-    if (empty($items)) {
+    $totalCount = $this->contentGatherer->gatherCount($entityType, $bundle);
+    if ($totalCount === 0) {
       $this->logger()->warning('No content found to index.');
       return;
     }
+    $this->logger()->notice('Gathering content (PHP indexer): {count} entities.', ['count' => $totalCount]);
 
+    // Stream content one entity at a time — no full pre-load into RAM.
     $exporter = new ContentExporter($resolvedOutputDir);
-    $filteredItems = $exporter->exportToItems($items);
-    $skipped = count($items) - count($filteredItems);
-    if ($skipped > 0) {
-      $this->logger()->notice('Filtered out {count} items with insufficient content.', ['count' => $skipped]);
-    }
-    if (empty($filteredItems)) {
-      $this->logger()->warning('No items passed content filter.');
-      return;
-    }
+    $items = $exporter->filterItems($this->contentGatherer->gather($entityType, $bundle, $siteName));
 
     $resume = (bool) ($options['resume'] ?? FALSE);
     $restart = (bool) ($options['restart'] ?? FALSE);
 
-    if (!$force && !$resume && !$restart) {
-      $indexer = new PhpIndexer(stateDir: $resolvedStateDir, outputDir: $resolvedOutputDir, language: $language);
-      if ($indexer->shouldBuild($filteredItems) === NULL) {
-        $this->logger()->success('Content unchanged — skipping rebuild. Use --force to override.');
-        return;
-      }
-    }
-
     $intent = match (TRUE) {
       $resume  => BuildIntent::resume($budget),
-      $restart => BuildIntent::restart(count($filteredItems), $budget),
-      default  => BuildIntent::fresh(count($filteredItems), $budget),
+      $restart => BuildIntent::restart($totalCount, $budget),
+      default  => BuildIntent::fresh($totalCount, $budget),
     };
 
+    $reporter = new DrushProgressReporter($this->output());
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
-    $report = $orchestrator->build($intent, $filteredItems);
+    $report = $orchestrator->build($intent, $items, $this->logger(), $reporter);
 
     if ($report->success) {
       $generation = $this->state->get('scolta.generation', 0);
