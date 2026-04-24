@@ -121,10 +121,13 @@ scolta.settings:
       mapping:
         profile:
           type: string
-          label: 'Memory budget profile (conservative, balanced, or aggressive)'
+          label: 'Memory budget profile (conservative, balanced, aggressive, or byte value like 256M)'
         custom_bytes:
           type: integer
           label: 'Custom byte budget (null for named profile)'
+        chunk_size:
+          type: integer
+          label: 'Pages per chunk (null uses profile default)'
     pagefind:
       type: mapping
       label: 'Pagefind configuration'

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Form;
 
-use Tag1\Scolta\Index\MemoryBudgetSuggestion;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
+use Tag1\Scolta\Index\MemoryBudgetSuggestion;
 
 /**
  * Builds and extracts the Memory Budget fieldset for ScoltaSettingsForm.
@@ -62,6 +62,15 @@ final class MemoryBudgetSettingsFieldSet {
       '#description'   => $limitDescription,
     ];
 
+    $fieldset['chunk_size'] = [
+      '#type'          => 'number',
+      '#title'         => t('Chunk size'),
+      '#default_value' => $config->chunkSize(),
+      '#min'           => 1,
+      '#step'          => 1,
+      '#description'   => t('Pages per chunk during a PHP build. Leave blank to use the profile default (50 / 200 / 500 for conservative / balanced / aggressive). Lower values reduce peak RSS; higher values reduce merge overhead on large corpora. Can be overridden per-run with @flag on drush scolta:build.', ['@flag' => '--chunk-size']),
+    ];
+
     return $fieldset;
   }
 
@@ -75,9 +84,11 @@ final class MemoryBudgetSettingsFieldSet {
    *   The loaded memory budget configuration.
    */
   public static function extract(array $values): MemoryBudgetConfig {
+    $chunkRaw = $values['chunk_size'] ?? '';
     return MemoryBudgetConfig::load([
       'profile'      => $values['memory_budget_profile'] ?? 'conservative',
       'custom_bytes' => NULL,
+      'chunk_size'   => ($chunkRaw !== '' && $chunkRaw !== NULL) ? (int) $chunkRaw : NULL,
     ]);
   }
 

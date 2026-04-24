@@ -235,6 +235,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $memoryBudgetConfig = MemoryBudgetConfig::load([
       'profile'      => $config->get('memory_budget.profile') ?? 'conservative',
       'custom_bytes' => $config->get('memory_budget.custom_bytes'),
+      'chunk_size'   => $config->get('memory_budget.chunk_size'),
     ]);
     $form['content']['memory_budget'] = MemoryBudgetSettingsFieldSet::build($memoryBudgetConfig);
 
@@ -730,6 +731,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('indexer', $form_state->getValue('indexer'))
       ->set('memory_budget.profile', $form_state->getValue('memory_budget_profile') ?? 'conservative')
       ->set('memory_budget.custom_bytes', NULL)
+      ->set('memory_budget.chunk_size', ($form_state->getValue('chunk_size') !== '' && $form_state->getValue('chunk_size') !== NULL) ? (int) $form_state->getValue('chunk_size') : NULL)
       // Scoring settings.
       ->set('scoring.title_match_boost', (float) $form_state->getValue('title_match_boost'))
       ->set('scoring.title_all_terms_multiplier', (float) $form_state->getValue('title_all_terms_multiplier'))
