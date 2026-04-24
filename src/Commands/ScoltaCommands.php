@@ -18,7 +18,6 @@ use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\BuildIntent;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
-use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Index\MemoryBudget;
 use Tag1\Scolta\Index\PhpIndexer;
 use Tag1\Scolta\Prompt\DefaultPrompts;
