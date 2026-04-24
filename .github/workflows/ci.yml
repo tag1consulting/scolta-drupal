@@ -104,6 +104,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout scolta-php
+        uses: actions/checkout@v4
+        with:
+          repository: tag1consulting/scolta-php
+          path: scolta-php
+
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -111,11 +117,11 @@ jobs:
           extensions: intl, pdo_sqlite, sqlite3
           coverage: none
 
-      - name: Replace path repo with GitHub VCS repo
+      - name: Strip path-repo entry from scolta-drupal composer.json
         run: |
           php -r '
             $j = json_decode(file_get_contents("composer.json"), true);
-            $j["repositories"] = [["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"]];
+            $j["repositories"] = [];
             $j["require"]["tag1/scolta-php"] = "@dev";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
@@ -129,7 +135,7 @@ jobs:
         working-directory: /tmp/drupal
         run: |
           composer config repositories.scolta-drupal path "$GITHUB_WORKSPACE"
-          composer config repositories.scolta-php vcs https://github.com/tag1consulting/scolta-php.git
+          composer config repositories.scolta-php path "$GITHUB_WORKSPACE/scolta-php"
 
       - name: Install Drupal + scolta + drush
         working-directory: /tmp/drupal
