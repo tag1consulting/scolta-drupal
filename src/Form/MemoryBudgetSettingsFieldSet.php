@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Form;
 
+use Tag1\Scolta\Index\MemoryBudgetSuggestion;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Index\MemoryBudgetSuggestion;
 
