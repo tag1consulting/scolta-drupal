@@ -178,6 +178,12 @@ jobs:
             --display-deprecations \
             --testdox
 
+      - name: Dump PHP server log on failure
+        if: failure()
+        run: |
+          echo "=== PHP built-in server log (last 200 lines) ==="
+          tail -200 /tmp/php-server.log || echo "(log not found)"
+
   playwright:
     runs-on: ubuntu-latest
     steps:
