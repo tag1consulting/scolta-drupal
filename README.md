@@ -2,9 +2,52 @@
 
 [![CI](https://github.com/tag1consulting/scolta-drupal/actions/workflows/ci.yml/badge.svg)](https://github.com/tag1consulting/scolta-drupal/actions/workflows/ci.yml)
 
-Scolta is a scoring, ranking, and AI layer built on [Pagefind](https://pagefind.app/). Pagefind is the search engine — it builds the static index, runs the browser-side WASM search, produces word-position data, and generates excerpts. Scolta takes Pagefind's results and re-ranks them with configurable title/content/recency/priority boosts, then optionally passes them through an AI layer for query expansion, summarization, and follow-up generation. No search server required. "Scolta" is archaic Italian for sentinel — someone watching for what matters.
+Drupal 10/11 Search API backend with Drush commands, admin UI, and AI-powered search — built on Pagefind.
 
-This module is the Drupal adapter. It provides a Search API backend, Drush commands, an admin settings form, a search block, and REST API endpoints.
+## Status
+
+Beta. Scolta is installable and in active use on Drupal sites. The module API documented here will not break within the 0.x minor series without a deprecation notice. Expect breaking changes before 1.0. Test in staging before deploying to production. File bugs at the repo issue tracker.
+
+## What Is Scolta?
+
+Scolta is a scoring, ranking, and AI layer built on [Pagefind](https://pagefind.app/). Pagefind is the search engine: it builds a static inverted index at publish time, runs a browser-side WASM search engine, produces word-position data, and generates highlighted excerpts. Scolta takes Pagefind's result set and re-ranks it with configurable boosts — title match weight, content match weight, recency decay curves, and phrase-proximity multipliers. No search server required. Queries resolve in the visitor's browser against a pre-built static index.
+
+This module is the Drupal adapter. It registers a Search API backend, provides Drush commands for building and maintaining the index, exposes an admin settings form, renders a search block, and offers REST API endpoints for the AI features. The actual scoring, indexing logic, memory management, and AI communication live in [scolta-php](https://github.com/tag1consulting/scolta-php), which this module depends on. Scoring runs client-side via the `scolta.js` browser asset and the pre-built WASM module shipped with scolta-php.
+
+The LLM tier — query expansion, result summarization, follow-up questions — is optional. When enabled, it sends the query text and selected result excerpts to a configured LLM provider (Anthropic, OpenAI, or a self-hosted Ollama endpoint). The base search tier shares nothing with any third party.
+
+## Running Example
+
+The examples in this README and the other Scolta repos use a recipe catalog as the concrete data set. Recipes are a good showcase because recipe vocabulary has genuine cross-dialect mismatches:
+
+- A search for `aubergine parmesan` should surface *Eggplant Parmigiana*.
+- A search for `chinese noodle soup` should surface *Lanzhou Beef Noodles*, *Wonton Soup*, and *Dan Dan Noodles*.
+- A search for `gluten free pasta` should surface *Zucchini Spaghetti with Pesto* and *Rice Noodle Stir-Fry*.
+- A search for `quick dinner under 30 min` should surface *Pad Kra Pao*, *Dan Dan Noodles*, and *Steak Frites*.
+
+Here is how to model this in Drupal and build the index:
+
+**1. Create a `recipe` content type** with fields: `title`, `body` (long text), `field_cuisine` (list/text), `field_diet` (list/text, multi-value), `field_cook_time` (integer).
+
+**2. Add a Search API server** at Admin > Configuration > Search > Search API > Add server. Choose the Scolta backend. Add an index on the Recipe content type.
+
+**3. Index content and build**:
+
+```bash
+drush search-api:index && drush scolta:build
+```
+
+**4. Place the Scolta Search block** at Admin > Structure > Block Layout. Visit the search page and try:
+
+```
+aubergine parmesan
+```
+
+Pagefind's stemmer matches the body text where both regional terms appear. Scolta's title boost surfaces *Eggplant Parmigiana* first — the recipe whose title contains the closest match to the query intent.
+
+**5. Try the AI summary** (requires `SCOLTA_API_KEY`). Run the same query and the search page shows a one-paragraph summary drawn from the top results, plus suggested follow-up queries. The AI receives only the query text and the titles/excerpts of the top 5 results.
+
+The recipe fixture HTML files live in [scolta-php](https://github.com/tag1consulting/scolta-php) at `tests/fixtures/recipes/` if you want to run the example outside Drupal.
 
 ## Quick Install
 
@@ -39,7 +82,7 @@ export SCOLTA_API_KEY=sk-ant-...
 $settings['scolta.api_key'] = 'sk-ant-...';
 ```
 
-With an API key configured, search queries are automatically expanded with related terms, results include an AI summary, and users can ask follow-up questions.
+With an API key configured, search queries are automatically expanded with related terms, results include an AI summary, and visitors can ask follow-up questions.
 
 ## Verify It Works
 
@@ -52,6 +95,45 @@ This verifies PHP version, index directories, indexer selection, AI provider con
 ```bash
 drush scolta:status
 ```
+
+## What Scolta Replaces (and What It Doesn't)
+
+Scolta is a practical replacement for hosted search SaaS (Algolia, Coveo, SearchStax) and for self-hosted Search API backends like Solr or Elasticsearch when your use case is content search on a Drupal site.
+
+Scolta is not a replacement for:
+
+- Drupal core database search or Drupal's full-text PostgreSQL search — those are fine for small sites and have row-level access control that Scolta does not.
+- Solr or Elasticsearch setups with per-document permissions enforced at query time.
+- Log analytics or observability pipelines built on Elasticsearch.
+- Enterprise search with audit logging, retention policies, or SSO-gated content visibility.
+
+If Solr or Elasticsearch is serving Drupal search with basic full-text queries and no per-document ACL, Scolta is a drop-in replacement that costs less to run. If you need complex access control at the search layer, stay with Solr/Elasticsearch.
+
+## Memory and Scale
+
+The default memory profile is `conservative`, which targets a peak RSS under 96 MB and works on shared hosting with a 128 MB PHP `memory_limit`. Scolta never silently upgrades to a larger profile.
+
+The Drupal admin settings page at Admin > Configuration > Search > Scolta shows the detected `memory_limit` and suggests a profile. The profile selection is always left to the admin.
+
+For the Drush CLI, pass `--memory-budget=<profile|bytes>`:
+
+```bash
+drush scolta:build --memory-budget=balanced
+```
+
+Available profiles: `conservative` (default, ≤96 MB), `balanced` (≤200 MB), `aggressive` (≤384 MB). Higher budget means fewer, larger index chunks and faster builds.
+
+Tested ceiling at the `conservative` profile: 50,000 pages. Higher counts likely work; not certified yet.
+
+## AI Features and Privacy
+
+Scolta's AI tier is optional. When enabled:
+
+- The LLM receives: the query text, and the titles and excerpts of the top N results (default: 5, configurable via `ai_summary_top_n`).
+- The LLM does not receive: the full index contents, full page text, user session data, or visitor identity.
+- Which provider receives the query data depends on your `ai_provider` setting: `anthropic`, `openai`, or a self-hosted endpoint via `ai_base_url`.
+
+The base search tier — Pagefind index lookup and Scolta WASM scoring — runs entirely in the visitor's browser with no server-side involvement beyond serving static index files.
 
 ## Configuration
 
@@ -133,6 +215,15 @@ scoring:
   title_all_terms_multiplier: 2.5
 ```
 
+**Recipe catalog** (no recency, title precision matters):
+
+```yaml
+scoring:
+  recency_strategy: none
+  title_match_boost: 1.5
+  title_all_terms_multiplier: 2.0
+```
+
 ### Display
 
 | Setting | Config key | Default | Description |
@@ -147,8 +238,6 @@ scoring:
 | ------- | ---------- | ------- | ----------- |
 | Site name | `site_name` | (empty) | Included in AI prompts so the AI knows what site it's searching |
 | Site description | `site_description` | `website` | Brief description for AI context |
-
-The AI uses your site name and description to give contextually relevant answers. A search on "pricing" will produce very different AI summaries on a SaaS product site vs. a news outlet.
 
 ### Custom Prompts
 
@@ -167,7 +256,7 @@ class PromptEnrichSubscriber implements EventSubscriberInterface {
     public function onPromptEnrich(PromptEnrichEvent $event): void {
         if ($event->getPromptName() === 'summarize') {
             $event->setResolvedPrompt(
-                $event->getResolvedPrompt() . "\n\nAlways mention our 30-day return policy."
+                $event->getResolvedPrompt() . "\n\nFocus on cuisine and dietary information."
             );
         }
     }
@@ -183,8 +272,6 @@ services:
     tags:
       - { name: event_subscriber }
 ```
-
-See [ENRICHMENT.md](../../packages/scolta-php/docs/ENRICHMENT.md) for advanced use cases (vertical examples, multi-tenant, compliance).
 
 ## Debugging
 
@@ -240,10 +327,6 @@ scoring:
 # or: ai_expand_query: false
 ```
 
-### "AI features are slow"
-
-Check which model is configured — smaller models respond faster. Verify cache TTL is not set too low (default 30 days means expansions are cached for 30 days once computed).
-
 ### "No search results"
 
 1. Check index status: `drush scolta:status`
@@ -263,6 +346,7 @@ drush config:export && drush config:import
 ```bash
 drush scolta:build                    # Export content and build Pagefind index
 drush scolta:build --skip-pagefind    # Export HTML without rebuilding index
+drush scolta:build --memory-budget=balanced  # Use balanced memory profile
 drush scolta:export                   # Export content to HTML only
 drush scolta:rebuild-index            # Rebuild Pagefind index from existing HTML
 drush scolta:status                   # Show tracker, content, index, and AI status
@@ -288,13 +372,13 @@ Grant the `use scolta ai` permission to the Anonymous role for public search.
 
 ## Extend Indexed Content
 
-The `ScoltaBackend` exports the rendered view of each entity (`entity_view()`), so any field that renders to HTML is included automatically. To add metadata not in the rendered output, add your field to the entity view mode used for indexing, or implement an event subscriber to modify the export before it is written.
+The `ScoltaBackend` exports the rendered view of each entity (`entity_view()`), so any field that renders to HTML is included automatically. To add metadata not in the rendered output, implement an event subscriber to modify the export before it is written, or add custom fields to the entity view mode used for indexing.
 
 ## Optional Upgrades
 
 ### Upgrade to the Pagefind binary indexer
 
-The module auto-selects the PHP indexer on managed hosts. On hosts that support binaries, the Pagefind binary is 5–10× faster:
+The module auto-selects the PHP indexer on managed hosts. On hosts that support binaries, the Pagefind binary is 5–10× faster. The search experience is identical either way — both indexers produce a Pagefind-compatible index.
 
 ```bash
 drush scolta:download-pagefind
@@ -302,7 +386,9 @@ drush scolta:download-pagefind
 npm install -g pagefind
 ```
 
-Set indexer to "Auto" or "Binary" in the admin settings and rebuild. See [scolta-php README](../scolta-php/README.md) for a full indexer comparison table.
+Set indexer to "Auto" or "Binary" in the admin settings and rebuild.
+
+The PHP indexer works on WP Engine, Kinsta, Flywheel, Pantheon, and other managed hosts where `exec()` is disabled. It supports 14 languages via Snowball stemming. The Pagefind binary supports 33+ languages and is 5–10× faster, but requires Node.js ≥ 18 or a direct binary download.
 
 ## Requirements
 
@@ -381,3 +467,10 @@ Scolta is built on [Pagefind](https://pagefind.app/) by [CloudCannon](https://cl
 ## License
 
 GPL-2.0-or-later
+
+## Related Packages
+
+- [scolta-core](https://github.com/tag1consulting/scolta-core) — Rust/WASM scoring, ranking, and AI layer that runs in the browser.
+- [scolta-php](https://github.com/tag1consulting/scolta-php) — PHP library that indexes content into Pagefind-compatible indexes, plus the shared orchestration and AI client.
+- [scolta-laravel](https://github.com/tag1consulting/scolta-laravel) — Laravel 11/12 package with Artisan commands, a `Searchable` trait for Eloquent models, and a Blade search component.
+- [scolta-wp](https://github.com/tag1consulting/scolta-wp) — WordPress 6.x plugin with WP-CLI commands, Settings API page, and a `[scolta_search]` shortcode.
