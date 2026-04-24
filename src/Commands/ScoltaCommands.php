@@ -123,7 +123,8 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Option(name: 'skip-pagefind', description: 'Export content only, skip Pagefind build')]
   #[CLI\Option(name: 'indexer', description: 'Indexer mode: php, binary, or auto (default: from config)')]
   #[CLI\Option(name: 'force', description: 'Force rebuild even if content has not changed')]
-  #[CLI\Option(name: 'memory-budget', description: 'Memory profile: conservative, balanced, or aggressive (default: conservative)')]
+  #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value for the PHP indexer (e.g. conservative, 256M). Default: from config.')]
+  #[CLI\Option(name: 'chunk-size', description: 'Pages per chunk during a PHP index build. Overrides the profile default and config setting.')]
   #[CLI\Option(name: 'resume', description: 'Resume a previously interrupted PHP index build')]
   #[CLI\Option(name: 'restart', description: 'Discard interrupted state and restart the PHP index build')]
   public function build(
@@ -135,7 +136,8 @@ class ScoltaCommands extends DrushCommands {
       'skip-pagefind' => FALSE,
       'indexer' => '',
       'force' => FALSE,
-      'memory-budget' => 'conservative',
+      'memory-budget' => NULL,
+      'chunk-size' => NULL,
       'resume' => FALSE,
       'restart' => FALSE,
     ],
@@ -235,10 +237,15 @@ class ScoltaCommands extends DrushCommands {
     $siteName = $config->get('site_name') ?: 'Unknown';
     $language = $config->get('ai_languages')[0] ?? 'en';
     $savedProfile = $config->get('memory_budget.profile') ?? 'conservative';
-    $budgetProfile = isset($options['memory-budget']) && $options['memory-budget'] !== NULL
+    $budgetStr    = (isset($options['memory-budget']) && $options['memory-budget'] !== NULL)
       ? (string) $options['memory-budget']
       : $savedProfile;
-    $budget = MemoryBudget::fromString($budgetProfile);
+    $savedChunk = $config->get('memory_budget.chunk_size');
+    $rawChunk   = (isset($options['chunk-size']) && $options['chunk-size'] !== NULL)
+      ? (int) $options['chunk-size']
+      : (($savedChunk !== NULL) ? (int) $savedChunk : NULL);
+    $chunkSize  = ($rawChunk !== NULL && $rawChunk >= 1) ? $rawChunk : NULL;
+    $budget = MemoryBudget::fromOptions($budgetStr, $chunkSize);
 
     $resolvedOutputDir = $this->resolvePath(
       $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind'

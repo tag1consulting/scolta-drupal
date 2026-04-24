@@ -245,6 +245,52 @@ class ScoltaCommandsValidationTest extends TestCase {
     );
   }
 
+  public function testBuildCommandHasMemoryBudgetOption(): void {
+    $this->assertStringContainsString(
+      "'memory-budget'",
+      $this->commandsContents,
+      'Build command should have memory-budget option'
+    );
+  }
+
+  public function testBuildCommandHasChunkSizeOption(): void {
+    $this->assertStringContainsString(
+      "'chunk-size'",
+      $this->commandsContents,
+      'Build command should have chunk-size option'
+    );
+  }
+
+  public function testBuildCommandUsesFromOptions(): void {
+    $this->assertStringContainsString(
+      'MemoryBudget::fromOptions(',
+      $this->commandsContents,
+      'buildWithPhpIndexer() must use MemoryBudget::fromOptions() to apply both budget and chunk size'
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // Config schema includes chunk_size.
+  // -------------------------------------------------------------------
+
+  public function testConfigSchemaHasMemoryBudgetChunkSize(): void {
+    $schema = file_get_contents($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $this->assertStringContainsString(
+      'chunk_size',
+      $schema,
+      'Config schema must declare memory_budget.chunk_size'
+    );
+  }
+
+  public function testConfigInstallHasMemoryBudgetChunkSize(): void {
+    $install = file_get_contents($this->moduleRoot . '/config/install/scolta.settings.yml');
+    $this->assertStringContainsString(
+      'chunk_size',
+      $install,
+      'Default config must include memory_budget.chunk_size'
+    );
+  }
+
   public function testDownloadPagefindCommandHasVersionOption(): void {
     $this->assertStringContainsString(
       "'version'",

@@ -51,15 +51,30 @@ final class MemoryBudgetSettingsFieldSet {
     }
 
     $fieldset['memory_budget_profile'] = [
-      '#type'          => 'select',
-      '#title'         => t('Memory budget profile'),
-      '#options'       => [
-        'conservative' => t('Conservative — ≤ 96 MB peak (default)'),
-        'balanced'     => t('Balanced — ~384 MB'),
-        'aggressive'   => t('Aggressive — ~1 GB'),
-      ],
+      '#type'          => 'textfield',
+      '#title'         => t('Memory budget'),
       '#default_value' => $config->profile(),
       '#description'   => $limitDescription,
+      '#attributes'    => ['list' => 'scolta-memory-budget-list'],
+      '#suffix'        => '<datalist id="scolta-memory-budget-list">'
+        . '<option value="conservative">' . t('Conservative — ≤ 96 MB (default)') . '</option>'
+        . '<option value="balanced">' . t('Balanced — ~384 MB') . '</option>'
+        . '<option value="aggressive">' . t('Aggressive — ~1 GB') . '</option>'
+        . '</datalist>',
+    ];
+
+    $fieldset['chunk_size'] = [
+      '#type'          => 'number',
+      '#title'         => t('Chunk size'),
+      '#default_value' => $config->chunkSize() ?? '',
+      '#min'           => 1,
+      '#step'          => 1,
+      '#size'          => 8,
+      '#description'   => t(
+        'Pages per chunk during a PHP build. Leave blank to use the profile default (50 / 200 / 500 for conservative / balanced / aggressive). '
+        . 'Lower values reduce peak RSS; higher values reduce merge overhead on large corpora. '
+        . 'Can be overridden per-run with <code>--chunk-size</code> on drush scolta:build.'
+      ),
     ];
 
     return $fieldset;
@@ -75,9 +90,11 @@ final class MemoryBudgetSettingsFieldSet {
    *   The loaded memory budget configuration.
    */
   public static function extract(array $values): MemoryBudgetConfig {
+    $chunkRaw = $values['chunk_size'] ?? '';
     return MemoryBudgetConfig::load([
       'profile'      => $values['memory_budget_profile'] ?? 'conservative',
       'custom_bytes' => NULL,
+      'chunk_size'   => ($chunkRaw !== '' && $chunkRaw !== NULL) ? (int) $chunkRaw : NULL,
     ]);
   }
 
