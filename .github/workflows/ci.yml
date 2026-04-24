@@ -178,11 +178,17 @@ jobs:
             --display-deprecations \
             --testdox
 
-      - name: Dump PHP server log on failure
+      - name: Dump error info on failure
         if: failure()
         run: |
-          echo "=== PHP built-in server log (last 200 lines) ==="
-          tail -200 /tmp/php-server.log || echo "(log not found)"
+          echo "=== BrowserTest HTML output (error pages) ==="
+          for f in /tmp/browsertest_output/*.html; do
+            echo "--- $f ---"
+            grep -E "Exception|Fatal|Error|Warning|message" "$f" 2>/dev/null | head -20 || echo "(no matches)"
+          done
+          echo ""
+          echo "=== Last 50 lines of PHP server log ==="
+          tail -50 /tmp/php-server.log || echo "(log not found)"
 
   playwright:
     runs-on: ubuntu-latest
