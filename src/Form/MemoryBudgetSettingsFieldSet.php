@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Form;
 
-use Drupal\Core\Render\Markup;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Index\MemoryBudgetSuggestion;
 
@@ -52,18 +51,15 @@ final class MemoryBudgetSettingsFieldSet {
     }
 
     $fieldset['memory_budget_profile'] = [
-      '#type'          => 'textfield',
-      '#title'         => t('Memory budget'),
+      '#type'          => 'select',
+      '#title'         => t('Memory budget profile'),
+      '#options'       => [
+        'conservative' => t('Conservative — ≤ 96 MB peak (default)'),
+        'balanced'     => t('Balanced — ~384 MB'),
+        'aggressive'   => t('Aggressive — ~1 GB'),
+      ],
       '#default_value' => $config->profile(),
       '#description'   => $limitDescription,
-      '#attributes'    => ['list' => 'scolta-memory-budget-list'],
-      '#suffix'        => Markup::create(
-        '<datalist id="scolta-memory-budget-list">'
-        . '<option value="conservative">Conservative — ≤ 96 MB (default)</option>'
-        . '<option value="balanced">Balanced — ~384 MB</option>'
-        . '<option value="aggressive">Aggressive — ~1 GB</option>'
-        . '</datalist>'
-      ),
     ];
 
     $fieldset['chunk_size'] = [
