@@ -4,16 +4,21 @@ All notable changes to scolta-drupal will be documented in this file.
 
 This project uses [Semantic Versioning](https://semver.org/). Major versions are synchronized across all Scolta packages.
 
-## [Unreleased]
+## [0.3.2] - 2026-04-24
+
+Coordinated release. Ports the streaming gather and CLI wiring pattern from scolta-wp to Drupal.
 
 ### Fixed
-- **Lint**: Removed unused `MemoryBudgetConfig` import in `ScoltaCommands.php`. Fixed alignment, missing use statement, and missing `@return` description in `MemoryBudgetSettingsFieldSet.php`.
-- **Silent CLI during large builds**: `buildWithPhpIndexer()` was passing neither a logger nor a progress reporter to `IndexBuildOrchestrator::build()`. Added `DrushProgressReporter` (wraps Symfony `ProgressBar` via Drush's output interface) and now passes `$this->logger()` (Drush's built-in PSR-3 logger) to `build()`.
+- **Silent CLI during large builds**: `buildWithPhpIndexer()` was passing neither a logger nor a progress reporter to `IndexBuildOrchestrator::build()`. Added `DrushProgressReporter` (wraps Symfony `ProgressBar` via Drush's output interface) and now passes `$this->logger()` (Drush's built-in PSR-3 logger) to `build()`. (#7)
+- **Peak RAM on large corpora**: `ScoltaContentGatherer::gather()` converted from a fully-materialized `ContentItem[]` (loading all entity IDs then `loadMultiple()` on all of them) to a `\Generator` that paginates with `->range()` in batches of 50 and calls `$storage->resetCache()` after each batch. The old code held all entity field data in RAM simultaneously; the new code holds at most one batch. (#7)
+- **Lint**: Removed unused `MemoryBudgetConfig` import in `ScoltaCommands.php`. Fixed alignment, missing use statement, and missing `@return` description in `MemoryBudgetSettingsFieldSet.php`. (#7)
 
 ### Added
 - **Flexible memory budget and chunk size**: `drush scolta:build` now accepts `--memory-budget=<budget>` with profile names *or* raw byte values (`256M`, `1G`), and a new `--chunk-size=<n>` flag to set pages-per-chunk independently of the memory profile. Both values are persisted as admin settings (`memory_budget.profile` and `memory_budget.chunk_size`). The settings form Memory Budget field is now a text input (with datalist suggestions) and a new Chunk Size number field has been added. Config schema and install defaults updated.
-- **`ScoltaContentGatherer::gatherCount(string $entityType, string $bundle): int`**: COUNT-only entity query. Used by `buildWithPhpIndexer()` for early-exit and `BuildIntent` sizing without loading entity field data.
-- **Streaming gather — peak RSS now bounded**: `ScoltaContentGatherer::gather()` converted from a fully-materialized `ContentItem[]` (loading all entity IDs then `loadMultiple()` on all of them) to a `\Generator` that paginates with `->range()` in batches of 50 and calls `$storage->resetCache()` after each batch. The old code held all entity field data in RAM simultaneously; the new code holds at most one batch.
+- **`ScoltaContentGatherer::gatherCount(string $entityType, string $bundle): int`**: COUNT-only entity query. Used by `buildWithPhpIndexer()` for early-exit and `BuildIntent` sizing without loading entity field data. (#7)
+
+### Changed
+- CI now pulls scolta-php at `@dev` rather than the stale `consolidation-0.3.0` branch.
 
 ## [0.3.1] - 2026-04-23
 
