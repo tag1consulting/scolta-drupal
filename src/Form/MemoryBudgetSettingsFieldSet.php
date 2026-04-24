@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Form;
 
-use Tag1\Scolta\Index\MemoryBudgetSuggestion;
+use Drupal\Core\Render\Markup;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
+use Tag1\Scolta\Index\MemoryBudgetSuggestion;
 
 /**
  * Builds and extracts the Memory Budget fieldset for ScoltaSettingsForm.
@@ -56,11 +57,13 @@ final class MemoryBudgetSettingsFieldSet {
       '#default_value' => $config->profile(),
       '#description'   => $limitDescription,
       '#attributes'    => ['list' => 'scolta-memory-budget-list'],
-      '#suffix'        => '<datalist id="scolta-memory-budget-list">'
-        . '<option value="conservative">' . t('Conservative — ≤ 96 MB (default)') . '</option>'
-        . '<option value="balanced">' . t('Balanced — ~384 MB') . '</option>'
-        . '<option value="aggressive">' . t('Aggressive — ~1 GB') . '</option>'
-        . '</datalist>',
+      '#suffix'        => Markup::create(
+        '<datalist id="scolta-memory-budget-list">'
+        . '<option value="conservative">Conservative — ≤ 96 MB (default)</option>'
+        . '<option value="balanced">Balanced — ~384 MB</option>'
+        . '<option value="aggressive">Aggressive — ~1 GB</option>'
+        . '</datalist>'
+      ),
     ];
 
     $fieldset['chunk_size'] = [
@@ -70,11 +73,7 @@ final class MemoryBudgetSettingsFieldSet {
       '#min'           => 1,
       '#step'          => 1,
       '#size'          => 8,
-      '#description'   => t(
-        'Pages per chunk during a PHP build. Leave blank to use the profile default (50 / 200 / 500 for conservative / balanced / aggressive). '
-        . 'Lower values reduce peak RSS; higher values reduce merge overhead on large corpora. '
-        . 'Can be overridden per-run with <code>--chunk-size</code> on drush scolta:build.'
-      ),
+      '#description'   => t('Pages per chunk during a PHP build. Leave blank to use the profile default (50 / 200 / 500 for conservative / balanced / aggressive). Lower values reduce peak RSS; higher values reduce merge overhead on large corpora. Can be overridden per-run with @flag on drush scolta:build.', ['@flag' => '--chunk-size']),
     ];
 
     return $fieldset;

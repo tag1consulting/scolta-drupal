@@ -232,20 +232,20 @@ class ScoltaCommands extends DrushCommands {
    *   Whether to skip the fingerprint check and force a rebuild.
    */
   private function buildWithPhpIndexer(array $options, $config, bool $force): void {
-    $entityType = $options['entity-type'] ?: 'node';
-    $bundle = $options['bundle'] ?: '';
-    $siteName = $config->get('site_name') ?: 'Unknown';
-    $language = $config->get('ai_languages')[0] ?? 'en';
+    $entityType   = $options['entity-type'] ?: 'node';
+    $bundle       = $options['bundle'] ?: '';
+    $siteName     = $config->get('site_name') ?: 'Unknown';
+    $language     = $config->get('ai_languages')[0] ?? 'en';
     $savedProfile = $config->get('memory_budget.profile') ?? 'conservative';
     $budgetStr    = (isset($options['memory-budget']) && $options['memory-budget'] !== NULL)
       ? (string) $options['memory-budget']
       : $savedProfile;
-    $savedChunk = $config->get('memory_budget.chunk_size');
-    $rawChunk   = (isset($options['chunk-size']) && $options['chunk-size'] !== NULL)
+    $savedChunk   = $config->get('memory_budget.chunk_size');
+    $rawChunk     = (isset($options['chunk-size']) && $options['chunk-size'] !== NULL)
       ? (int) $options['chunk-size']
       : (($savedChunk !== NULL) ? (int) $savedChunk : NULL);
-    $chunkSize  = ($rawChunk !== NULL && $rawChunk >= 1) ? $rawChunk : NULL;
-    $budget = MemoryBudget::fromOptions($budgetStr, $chunkSize);
+    $chunkSize    = ($rawChunk !== NULL && $rawChunk >= 1) ? $rawChunk : NULL;
+    $budget       = MemoryBudget::fromOptions($budgetStr, $chunkSize);
 
     $resolvedOutputDir = $this->resolvePath(
       $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind'
