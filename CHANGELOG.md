@@ -7,6 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Added
+- **Config test gap fixes.** Added `custom_stop_words`, `phrase_adjacent_multiplier`, `phrase_near_multiplier`, `phrase_near_window`, and `phrase_window` to `scoringOverrideProvider` in `ScoltaSettingsFormTest`. Fixed array-to-string warning in data provider error messages.
 - **AI configuration tests (Phase 5).** Added `testAiLanguagesPropagateToJsScoringConfig`: multi-language `ai_languages` config flows through `ScoltaConfig::$aiLanguages` and appears as `AI_LANGUAGES` in `toJsScoringConfig()` output.
 - **Scoring behavior tests (Phase 1).** Added `language` and `recency_strategy` to `scoringOverrideProvider` in `ScoltaSettingsFormTest`, confirming that Drupal's scoring config section correctly propagates these fields through `ScoltaConfig`.
 
