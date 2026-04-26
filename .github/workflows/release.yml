@@ -32,6 +32,10 @@ jobs:
           extensions: intl
           coverage: none
 
+      - name: Refresh path-repo lock entry
+        working-directory: package
+        run: composer update tag1/scolta-php --no-dev --no-interaction
+
       - name: Install dependencies (no dev)
         working-directory: package
         run: composer install --no-dev --prefer-dist --no-interaction
