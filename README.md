@@ -390,6 +390,42 @@ Set indexer to "Auto" or "Binary" in the admin settings and rebuild.
 
 The PHP indexer works on WP Engine, Kinsta, Flywheel, Pantheon, and other managed hosts where `exec()` is disabled. It supports 14 languages via Snowball stemming. The Pagefind binary supports 33+ languages and is 5–10× faster, but requires Node.js ≥ 18 or a direct binary download.
 
+### Keeping the Index Fresh
+
+When **auto_rebuild** is enabled in the Search API backend settings (the default), Drupal automatically queues a rebuild whenever content is saved or deleted. The `scolta_rebuild` queue is processed during Drupal's cron run — `ScoltaRebuildWorker` runs for up to 2 minutes per cron execution.
+
+Three paths are available, in order of reliability:
+
+#### Path A: Queue + system cron (recommended)
+
+Keep **auto_rebuild** enabled and run Drupal cron on a regular system cron schedule:
+
+```
+*/15 * * * * cd /var/www/html && vendor/bin/drush cron 2>&1 | logger -t scolta
+```
+
+Content changes queue a rebuild automatically. `drush cron` picks up the queue and runs the rebuild in the background.
+
+#### Path B: Direct rebuild via system cron
+
+Trigger a full rebuild on a fixed schedule, bypassing the queue:
+
+```
+0 2 * * * cd /var/www/html && vendor/bin/drush scolta:build 2>&1 | logger -t scolta
+```
+
+Useful for large sites where you want a predictable nightly rebuild window. You can disable **auto_rebuild** if you prefer this approach exclusively.
+
+#### Path C: Automated Cron module
+
+For sites without SSH access, the [Automated Cron](https://www.drupal.org/docs/administering-a-drupal-site/cron-automated-tasks/automated-cron-module) module (included in Drupal core) triggers cron on page load.
+
+1. Enable: `drush en automated_cron`
+2. Set interval to 15–30 minutes at Admin > Configuration > System > Cron.
+3. Keep **auto_rebuild** enabled so changes are queued and processed each cron run.
+
+**Caveat:** Automated Cron runs on page loads, not the system clock. On low-traffic sites the rebuild may not run on schedule.
+
 ## Requirements
 
 - Drupal 10.3+ or 11
