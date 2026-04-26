@@ -11,6 +11,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 - **`ScoltaContentGatherer::gather()` batch size**: Increased from 50 to 100 entities per page-load, consistent with the WP and Laravel adapters.
 - **`DrushProgressReporter::advance()`**: Now calls `setMessage($detail)` on the Symfony ProgressBar when a detail string is provided, making chunk info visible in verbose Drush output.
 - **`ExpandQueryController`, `SummarizeController`, `FollowUpController`**: Now use `AiControllerTrait` (scolta-php) for `AiEndpointHandler` construction, removing the duplicated 7-argument instantiation block from each controller.
+- **Anti-pattern CI check.** New `antipatterns` CI job catches `IndexBuildOrchestrator` construction without logger/progress.
+- **scolta-php dependency bumped to `^0.3.3`** (atomic manifest writes, CRC32 chunk validation, stale lock detection).
 
 ## [0.3.2] - 2026-04-24
 
