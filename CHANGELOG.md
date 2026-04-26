@@ -7,6 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Added
+- **AI configuration tests (Phase 5).** Added `testAiLanguagesPropagateToJsScoringConfig`: multi-language `ai_languages` config flows through `ScoltaConfig::$aiLanguages` and appears as `AI_LANGUAGES` in `toJsScoringConfig()` output.
 - **Scoring behavior tests (Phase 1).** Added `language` and `recency_strategy` to `scoringOverrideProvider` in `ScoltaSettingsFormTest`, confirming that Drupal's scoring config section correctly propagates these fields through `ScoltaConfig`.
 
 ## [0.3.3] - 2026-04-26

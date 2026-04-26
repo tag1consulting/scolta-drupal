@@ -421,6 +421,22 @@ class ScoltaSettingsFormTest extends TestCase {
     $this->assertEquals('corporate intranet', $modifiedConfig->siteDescription);
   }
 
+  /**
+   * AI languages config propagates to ScoltaConfig and toJsScoringConfig output.
+   */
+  public function testAiLanguagesPropagateToJsScoringConfig(): void {
+    $defaults = $this->getInstallDefaults();
+
+    $modified = $defaults;
+    $modified['ai_languages'] = ['en', 'fr', 'de'];
+
+    $config = $this->simulateGetConfig($modified);
+
+    $this->assertEquals(['en', 'fr', 'de'], $config->aiLanguages);
+    $js = $config->toJsScoringConfig();
+    $this->assertEquals(['en', 'fr', 'de'], $js['AI_LANGUAGES']);
+  }
+
   // -------------------------------------------------------------------
   // Helpers.
   // -------------------------------------------------------------------
