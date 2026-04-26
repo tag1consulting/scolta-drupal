@@ -6,6 +6,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-04-26
+
 ### Changed
 - **`buildWithPhpIndexer()` budget and intent construction**: Delegated to `MemoryBudgetConfig::fromCliAndConfig()` and `BuildIntentFactory::fromFlags()` (scolta-php), removing duplicated precedence logic.
 - **`ScoltaContentGatherer::gather()` batch size**: Increased from 50 to 100 entities per page-load, consistent with the WP and Laravel adapters.
