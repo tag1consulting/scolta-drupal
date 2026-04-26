@@ -265,9 +265,11 @@ jobs:
         run: |
           FAIL=0
 
-          if grep -rn 'new IndexBuildOrchestrator' src/ 2>/dev/null | grep -qvE 'logger|progress'; then
-            echo "FAIL: IndexBuildOrchestrator constructed without logger/progress in src/"
-            grep -rn 'new IndexBuildOrchestrator' src/ | grep -vE 'logger|progress'
+          # IndexBuildOrchestrator::build() must be called with a logger argument.
+          # (Logger/progress go to build()/finalize(), not the constructor.)
+          if grep -rn 'orchestrator->build(' src/ 2>/dev/null | grep -qvE 'logger|Logger'; then
+            echo "FAIL: orchestrator->build() called without a logger argument"
+            grep -rn 'orchestrator->build(' src/ | grep -vE 'logger|Logger'
             FAIL=1
           fi
 
