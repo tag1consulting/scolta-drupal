@@ -239,6 +239,9 @@ class ScoltaSettingsFormTest extends TestCase {
       'recency_penalty_after_days' => ['scoring.recency_penalty_after_days', 90, 'recencyPenaltyAfterDays'],
       'recency_max_penalty' => ['scoring.recency_max_penalty', 0.1, 'recencyMaxPenalty'],
       'expand_primary_weight' => ['scoring.expand_primary_weight', 0.5, 'expandPrimaryWeight'],
+      // Language and recency strategy (present in scoring config section).
+      'language' => ['scoring.language', 'fr', 'language'],
+      'recency_strategy' => ['scoring.recency_strategy', 'linear', 'recencyStrategy'],
     ];
   }
 
