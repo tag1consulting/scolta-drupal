@@ -70,7 +70,7 @@ class PagefindExporter {
     $filename = $this->itemIdToFilename($item->getId());
     $filepath = rtrim($buildDir, '/') . '/' . $filename;
     $this->ensureDirectory(dirname($filepath));
-    if (file_put_contents($filepath, $html) === false) {
+    if (file_put_contents($filepath, $html) === FALSE) {
       throw new \RuntimeException("Failed to write export file: {$filepath}");
     }
   }

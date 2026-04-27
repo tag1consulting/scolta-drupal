@@ -155,7 +155,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase {
         // Write fingerprint for future change detection.
         $fp = PhpIndexer::computeFingerprint($filteredItems);
         $statePath = $outputDir . '/.scolta-state';
-        if (file_put_contents($statePath, $fp) === false) {
+        if (file_put_contents($statePath, $fp) === FALSE) {
           $this->getLogger('scolta')->error('Failed to write index fingerprint to @path', ['@path' => $statePath]);
         }
 
