@@ -6,6 +6,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-04-27
+
 ### Fixed
 - **Hygiene:** Replaced `uniqid('scolta_notice_', TRUE)` with `'scolta_notice_' . bin2hex(random_bytes(8))` in `ScoltaBatchOperations` — avoids period-containing IDs that break downstream sanitizers.
 - **Hygiene:** Added `=== false` error check to `file_put_contents` in `PagefindExporter`; throws `RuntimeException` on write failure instead of silently dropping index artifacts.
