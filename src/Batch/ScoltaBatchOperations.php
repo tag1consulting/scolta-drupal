@@ -106,7 +106,7 @@ class ScoltaBatchOperations {
    */
   public static function buildNoticeData(string $result, string $message): array {
     return [
-      'notice_id' => uniqid('scolta_notice_', TRUE),
+      'notice_id' => 'scolta_notice_' . bin2hex(random_bytes(8)),
       'result'    => $result,
       'message'   => $message,
       'timestamp' => time(),
