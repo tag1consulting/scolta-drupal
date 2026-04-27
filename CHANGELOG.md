@@ -6,6 +6,13 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **Hygiene:** Replaced `uniqid('scolta_notice_', TRUE)` with `'scolta_notice_' . bin2hex(random_bytes(8))` in `ScoltaBatchOperations` — avoids period-containing IDs that break downstream sanitizers.
+- **Hygiene:** Added `=== false` error check to `file_put_contents` in `PagefindExporter`; throws `RuntimeException` on write failure instead of silently dropping index artifacts.
+- **Hygiene:** Added error logging to `file_put_contents` in `ScoltaRebuildWorker` — failed fingerprint writes now appear in logs instead of silently failing.
+- **Hygiene:** Added `JSON_THROW_ON_ERROR` to `json_decode` on GitHub API response in `ScoltaCommands` — malformed API responses now log an error instead of silently producing a null release object.
+- **Hygiene:** Added source-parse tests preventing reintroduction of `uniqid(..., TRUE)`, unchecked `file_put_contents`, and unguarded `json_decode` on remote responses.
+
 ### Added
 - **`DrupalCacheDriver` behavior tests.** New `ScoltaCacheBehaviorTest`: verifies the driver contract (get/set/miss/array values) and end-to-end handler+driver caching — second call to `handleExpandQuery`/`handleSummarize` serves from the Drupal cache backend (AI called once), while `cacheTtl=0` calls the AI service both times. Defines a minimal `CacheBackendInterface` stub in-file so tests run without a Drupal install.
 - **Config test gap fixes.** Added `custom_stop_words`, `phrase_adjacent_multiplier`, `phrase_near_multiplier`, `phrase_near_window`, and `phrase_window` to `scoringOverrideProvider` in `ScoltaSettingsFormTest`. Fixed array-to-string warning in data provider error messages.

@@ -618,7 +618,13 @@ class ScoltaCommands extends DrushCommands {
           ],
           'timeout' => 15,
         ]);
-        $releaseData = json_decode((string) $response->getBody(), TRUE);
+        try {
+          $releaseData = json_decode((string) $response->getBody(), TRUE, 512, JSON_THROW_ON_ERROR);
+        }
+        catch (\JsonException $e) {
+          $this->logger()->error('Failed to parse GitHub API response: ' . $e->getMessage());
+          return;
+        }
         $version = ltrim($releaseData['tag_name'] ?? '', 'v');
         if (empty($version)) {
           $this->logger()->error('Could not determine latest Pagefind version from GitHub.');
