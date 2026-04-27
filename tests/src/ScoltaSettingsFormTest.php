@@ -217,10 +217,11 @@ class ScoltaSettingsFormTest extends TestCase {
     $this->setNestedValue($modified, $configKey, $customValue);
     $modifiedConfig = $this->simulateGetConfig($modified);
 
+    $displayValue = is_array($customValue) ? json_encode($customValue) : (string) $customValue;
     $this->assertNotEquals(
       $defaultValue,
       $modifiedConfig->$propertyName,
-      "Changing config '{$configKey}' to {$customValue} should change ScoltaConfig::\${$propertyName}"
+      "Changing config '{$configKey}' to {$displayValue} should change ScoltaConfig::\${$propertyName}"
     );
     $this->assertEquals(
       $customValue,
@@ -242,6 +243,13 @@ class ScoltaSettingsFormTest extends TestCase {
       // Language and recency strategy (present in scoring config section).
       'language' => ['scoring.language', 'fr', 'language'],
       'recency_strategy' => ['scoring.recency_strategy', 'linear', 'recencyStrategy'],
+      // Custom stop words.
+      'custom_stop_words' => ['scoring.custom_stop_words', ['the', 'a', 'an'], 'customStopWords'],
+      // Phrase proximity (not in Drupal admin UI yet, but flow through ScoltaConfig).
+      'phrase_adjacent_multiplier' => ['scoring.phrase_adjacent_multiplier', 3.0, 'phraseAdjacentMultiplier'],
+      'phrase_near_multiplier' => ['scoring.phrase_near_multiplier', 2.0, 'phraseNearMultiplier'],
+      'phrase_near_window' => ['scoring.phrase_near_window', 8, 'phraseNearWindow'],
+      'phrase_window' => ['scoring.phrase_window', 20, 'phraseWindow'],
     ];
   }
 
