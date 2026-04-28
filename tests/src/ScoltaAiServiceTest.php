@@ -85,7 +85,7 @@ class ScoltaAiServiceTest extends TestCase {
     $this->assertEquals(365, $config->recencyHalfLifeDays);
     $this->assertEquals(1825, $config->recencyPenaltyAfterDays);
     $this->assertEquals(0.3, $config->recencyMaxPenalty);
-    $this->assertEquals(0.7, $config->expandPrimaryWeight);
+    $this->assertEquals(0.5, $config->expandPrimaryWeight);
   }
 
   public function testDisplayConfigFlattensCorrectly(): void {
@@ -95,8 +95,8 @@ class ScoltaAiServiceTest extends TestCase {
     $this->assertEquals(300, $config->excerptLength);
     $this->assertEquals(10, $config->resultsPerPage);
     $this->assertEquals(50, $config->maxPagefindResults);
-    $this->assertEquals(5, $config->aiSummaryTopN);
-    $this->assertEquals(2000, $config->aiSummaryMaxChars);
+    $this->assertEquals(10, $config->aiSummaryTopN);
+    $this->assertEquals(4000, $config->aiSummaryMaxChars);
   }
 
   public function testPagefindConfigIsStripped(): void {
