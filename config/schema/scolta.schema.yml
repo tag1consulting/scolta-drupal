@@ -8,6 +8,9 @@ scolta.settings:
     ai_model:
       type: string
       label: 'AI model'
+    ai_expansion_model:
+      type: string
+      label: 'AI expansion model'
     ai_base_url:
       type: string
       label: 'AI base URL'

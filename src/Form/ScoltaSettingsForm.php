@@ -157,7 +157,14 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('AI Model'),
       '#default_value' => $config->get('ai_model') ?? 'claude-sonnet-4-5-20250929',
-      '#description' => $this->t('Model identifier (e.g., claude-sonnet-4-5-20250929, gpt-4o).'),
+      '#description' => $this->t('Model identifier for summarize and follow-up (e.g., claude-sonnet-4-5-20250929, gpt-4o).'),
+    ];
+
+    $form['ai']['ai_expansion_model'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Expansion Model'),
+      '#default_value' => $config->get('ai_expansion_model') ?? '',
+      '#description' => $this->t('Optional model for query expansion only. Leave blank to use AI Model for all operations. Example: claude-haiku-4-5-20251001'),
     ];
 
     $form['ai']['ai_base_url'] = [
@@ -717,6 +724,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       // AI settings.
       ->set('ai_provider', $form_state->getValue('ai_provider'))
       ->set('ai_model', $form_state->getValue('ai_model'))
+      ->set('ai_expansion_model', $form_state->getValue('ai_expansion_model') ?? '')
       ->set('ai_base_url', $form_state->getValue('ai_base_url'))
       ->set('ai_expand_query', (bool) $form_state->getValue('ai_expand_query'))
       ->set('ai_summarize', (bool) $form_state->getValue('ai_summarize'))

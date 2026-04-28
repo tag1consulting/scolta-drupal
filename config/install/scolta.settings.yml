@@ -1,5 +1,6 @@
 ai_provider: anthropic
 ai_model: 'claude-sonnet-4-5-20250929'
+ai_expansion_model: ''
 ai_base_url: ''
 ai_expand_query: true
 ai_summarize: true
