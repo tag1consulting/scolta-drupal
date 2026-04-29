@@ -6,6 +6,10 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.3.6] - 2026-04-29
+
 ### Fixed
 - **Phrase proximity scoring now works for multi-word queries** — `computeContentWordLocations` replaces Pagefind's `data.locations` (which are not word positions) with real 0-indexed word positions derived from `data.content`. Pages containing adjacent query terms (e.g. "autem comis") now correctly receive the 2.5× `phrase_adjacent_multiplier` boost from scolta-core.
 
