@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **Phrase proximity scoring now works for multi-word queries** — `computeContentWordLocations` replaces Pagefind's `data.locations` (which are not word positions) with real 0-indexed word positions derived from `data.content`. Pages containing adjacent query terms (e.g. "autem comis") now correctly receive the 2.5× `phrase_adjacent_multiplier` boost from scolta-core.
+
 ### Added
 - **`ai_expansion_model` config key** (default `''`): Optional model for query expansion only. When set, expand-query uses this model while summarize and follow-up continue using `ai_model`. Configurable via the AI section of the admin settings form. Leave blank for unchanged single-model behavior.
 
