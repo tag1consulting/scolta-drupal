@@ -6,7 +6,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
-_No changes yet._
+### Fixed
+- **JS/CSS/WASM assets are now committed directly to the package** instead of being gitignored and generated only during local development. Previously, installing from a Composer VCS repository (GitHub release) left `js/scolta.js`, `css/scolta.css`, and `js/wasm/` missing because the post-install-cmd in scolta-drupal's `composer.json` only runs when installing scolta-drupal in isolation, not when it is a dependency of a Drupal project.
 
 ## [0.3.6] - 2026-04-29
 

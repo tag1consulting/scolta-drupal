@@ -1,12 +1,6 @@
 /vendor/
 /.phpunit.cache/
 
-# Copied from scolta-php by composer post-install script.
-# Not source files — regenerated on composer install.
-/js/scolta.js
-/js/wasm/
-/css/scolta.css
-
 # Playwright
 /tests/playwright/node_modules/
 /tests/playwright/package-lock.json

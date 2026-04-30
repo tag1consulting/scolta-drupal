@@ -1,0 +1,392 @@
+/**
+ * Scolta — Base search UI styles.
+ *
+ * All class names prefixed with "scolta-" to avoid conflicts with
+ * host page styles. Colors are neutral (no site-specific branding).
+ *
+ * Platform adapters can override any of these in their own stylesheets.
+ * CSS custom properties are provided for easy theming.
+ */
+
+:root {
+  --scolta-primary: #1a3a5c;
+  --scolta-primary-hover: #0f2a44;
+  --scolta-accent: #4a7fb5;
+  --scolta-bg: #f5f5f5;
+  --scolta-card-bg: #fff;
+  --scolta-text: #333;
+  --scolta-text-muted: #666;
+  --scolta-text-light: #888;
+  --scolta-border: #ddd;
+  --scolta-highlight: #fff3cd;
+  --scolta-summary-bg-start: #f0f7ff;
+  --scolta-summary-bg-mid: #e8f4fe;
+  --scolta-summary-border: #c4d9f2;
+  --scolta-badge-bg: #e8f0fe;
+}
+
+/* Search box */
+.scolta-search-box {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+.scolta-search-input-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.scolta-search-box input[type="text"] {
+  width: 100%;
+  font-size: 1.1rem;
+  padding: 0.75rem 2.2rem 0.75rem 1rem;
+  border: 2px solid var(--scolta-border);
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+.scolta-search-box input[type="text"]:focus {
+  border-color: var(--scolta-primary);
+}
+.scolta-search-clear {
+  position: absolute;
+  right: 0.5rem;
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  color: #999;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  line-height: 1;
+  border-radius: 50%;
+  transition: color 0.15s, background 0.15s;
+}
+.scolta-search-clear:hover { color: var(--scolta-text); background: #eee; }
+.scolta-search-btn {
+  padding: 0.75rem 1.5rem;
+  background: var(--scolta-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.scolta-search-btn:hover { background: var(--scolta-primary-hover); }
+
+/* Layout */
+.scolta-layout {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: 1fr;
+}
+.scolta-layout.has-filters {
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+@media (max-width: 700px) {
+  .scolta-layout.has-filters { grid-template-columns: 1fr; }
+}
+
+/* Filters sidebar */
+.scolta-filters { font-size: 0.9rem; }
+.scolta-filters:empty { display: none; }
+.scolta-filters h3 { margin-bottom: 0.75rem; color: var(--scolta-primary); font-size: 1rem; }
+.scolta-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.scolta-filter-item input { cursor: pointer; }
+.scolta-filter-item.active { font-weight: 600; color: var(--scolta-primary); }
+.scolta-filter-count { color: #999; font-size: 0.8rem; }
+
+/* Results */
+.scolta-results-header {
+  color: var(--scolta-text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.scolta-result-card {
+  background: var(--scolta-card-bg);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  transition: box-shadow 0.2s;
+}
+.scolta-result-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+.scolta-result-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--scolta-primary);
+  text-decoration: none;
+  display: block;
+  margin-bottom: 0.3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scolta-result-title:hover { text-decoration: underline; }
+.scolta-result-meta {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+  flex-wrap: wrap;
+}
+.scolta-site-badge {
+  display: inline-block;
+  background: var(--scolta-badge-bg);
+  color: var(--scolta-primary);
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.scolta-result-date {
+  font-size: 0.8rem;
+  color: var(--scolta-text-light);
+}
+.scolta-result-url {
+  font-size: 0.8rem;
+  color: #0066cc;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  max-width: 100%;
+}
+.scolta-result-url:hover { text-decoration: underline; }
+.scolta-result-excerpt {
+  font-size: 0.9rem;
+  color: #555;
+  line-height: 1.6;
+  margin-top: 0.3rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.scolta-result-excerpt mark {
+  background: var(--scolta-highlight);
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+.scolta-load-more {
+  display: block;
+  width: 100%;
+  padding: 0.75rem;
+  margin-top: 1rem;
+  background: var(--scolta-card-bg);
+  border: 2px solid var(--scolta-border);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  color: var(--scolta-primary);
+}
+.scolta-load-more:hover { border-color: var(--scolta-primary); }
+.scolta-searching { opacity: 0.6; }
+.scolta-no-results {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--scolta-text-muted);
+}
+
+/* AI Summary panel */
+.scolta-ai-summary {
+  background: linear-gradient(135deg, var(--scolta-summary-bg-start) 0%, var(--scolta-summary-bg-mid) 50%, var(--scolta-summary-bg-start) 100%);
+  border: 1px solid var(--scolta-summary-border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--scolta-primary);
+  position: relative;
+  box-shadow: 0 1px 4px rgba(26, 58, 92, 0.06);
+}
+.scolta-ai-summary-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--scolta-accent);
+  margin-bottom: 0.6rem;
+}
+.scolta-ai-summary-label svg { flex-shrink: 0; }
+.scolta-ai-summary-text {
+  color: var(--scolta-text);
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+.scolta-ai-summary-text p { margin: 0 0 0.4rem 0; }
+.scolta-ai-summary-text p:last-child { margin-bottom: 0; }
+.scolta-ai-summary-text strong { color: var(--scolta-primary); font-weight: 600; }
+.scolta-ai-summary-text a {
+  color: var(--scolta-primary);
+  text-decoration: underline;
+  text-decoration-color: var(--scolta-summary-border);
+  text-underline-offset: 2px;
+  transition: text-decoration-color 0.15s;
+}
+.scolta-ai-summary-text a:hover { text-decoration-color: var(--scolta-primary); }
+.scolta-ai-summary-text ul {
+  margin: 0.3rem 0 0.4rem 0;
+  padding-left: 1.25rem;
+  list-style: none;
+}
+.scolta-ai-summary-text li {
+  position: relative;
+  padding-left: 0.2rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.scolta-ai-summary-text li::before {
+  content: "\203A";
+  position: absolute;
+  left: -1rem;
+  color: var(--scolta-accent);
+  font-weight: 700;
+}
+.scolta-ai-summary-text li:last-child { margin-bottom: 0; }
+.scolta-ai-summary-disclaimer {
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(196, 217, 242, 0.5);
+  font-size: 0.7rem;
+  color: #8aa8c8;
+  line-height: 1.4;
+}
+
+/* Follow-up conversation */
+.scolta-ai-followup-thread {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(196, 217, 242, 0.5);
+}
+.scolta-ai-followup-turn { margin-bottom: 0.6rem; }
+.scolta-ai-followup-turn:last-child { margin-bottom: 0; }
+.scolta-ai-followup-question {
+  font-size: 0.85rem;
+  color: var(--scolta-accent);
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+.scolta-ai-followup-answer {
+  font-size: 0.9rem;
+  color: var(--scolta-text);
+  line-height: 1.6;
+}
+.scolta-ai-followup-answer p { margin: 0 0 0.3rem 0; }
+.scolta-ai-followup-answer p:last-child { margin-bottom: 0; }
+.scolta-ai-followup-answer strong { color: var(--scolta-primary); font-weight: 600; }
+.scolta-ai-followup-answer a { color: var(--scolta-primary); text-decoration: underline; text-decoration-color: var(--scolta-summary-border); text-underline-offset: 2px; }
+.scolta-ai-followup-answer a:hover { text-decoration-color: var(--scolta-primary); }
+.scolta-ai-followup-answer ul { margin: 0.2rem 0 0.3rem 0; padding-left: 1.25rem; list-style: none; }
+.scolta-ai-followup-answer li { position: relative; padding-left: 0.2rem; margin-bottom: 0.2rem; font-size: 0.85rem; }
+.scolta-ai-followup-answer li::before { content: "\203A"; position: absolute; left: -1rem; color: var(--scolta-accent); font-weight: 700; }
+.scolta-ai-followup-input {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(196, 217, 242, 0.5);
+}
+.scolta-ai-followup-input input {
+  flex: 1;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--scolta-summary-border);
+  border-radius: 6px;
+  outline: none;
+  background: white;
+  color: var(--scolta-text);
+}
+.scolta-ai-followup-input input:focus { border-color: var(--scolta-accent); }
+.scolta-ai-followup-input input::placeholder { color: #a0b8d0; }
+.scolta-ai-followup-input button {
+  padding: 0.5rem 1rem;
+  background: var(--scolta-primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.scolta-ai-followup-input button:hover { background: var(--scolta-primary-hover); }
+.scolta-ai-followup-input button:disabled { background: #a0b8d0; cursor: default; }
+.scolta-ai-followup-counter {
+  font-size: 0.7rem;
+  color: #8aa8c8;
+  white-space: nowrap;
+  align-self: center;
+}
+.scolta-ai-summary.loading .scolta-ai-summary-text { color: var(--scolta-text-light); }
+
+/* Shimmer animation for loading state */
+@keyframes scolta-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.scolta-ai-shimmer {
+  display: inline-block;
+  height: 0.9em;
+  width: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #dce8f5 25%, #eaf1fa 50%, #dce8f5 75%);
+  background-size: 200% 100%;
+  animation: scolta-shimmer 1.5s infinite;
+  margin-bottom: 0.4rem;
+}
+.scolta-ai-summary.error {
+  background: #fff8f0;
+  border-color: #f0d0a0;
+  color: #886633;
+  font-size: 0.85rem;
+}
+
+/* Spinner dot animation */
+@keyframes scolta-pulse-dot {
+  0%, 80%, 100% { opacity: 0.3; }
+  40% { opacity: 1; }
+}
+.scolta-ai-dots span {
+  animation: scolta-pulse-dot 1.4s infinite;
+  font-size: 1.2em;
+  letter-spacing: 0.15em;
+}
+.scolta-ai-dots span:nth-child(2) { animation-delay: 0.2s; }
+.scolta-ai-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+/* Expanded terms */
+.scolta-expanded-terms {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+.scolta-expanded-term {
+  background: var(--scolta-badge-bg);
+  color: var(--scolta-primary);
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border: 1px solid var(--scolta-summary-border);
+  transition: background 0.15s;
+}
+.scolta-expanded-term:hover { background: #d0e2f7; }
