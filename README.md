@@ -6,7 +6,7 @@ Drupal 10/11 Search API backend with Drush commands, admin UI, and AI-powered se
 
 ## Status
 
-Beta. Scolta is installable and in active use on Drupal sites. The module API documented here will not break within the 0.x minor series without a deprecation notice. Expect breaking changes before 1.0. Test in staging before deploying to production. File bugs at the repo issue tracker.
+Scolta is in active production use on Drupal 10 and 11. The module API documented here is stable within the 0.x minor series — no changes without a deprecation notice and a replacement in place. Some capabilities are still maturing toward a 1.0 release; test in staging when upgrading between minor versions. File bugs at the repo issue tracker.
 
 ## What Is Scolta?
 
@@ -96,18 +96,13 @@ This verifies PHP version, index directories, indexer selection, AI provider con
 drush scolta:status
 ```
 
-## What Scolta Replaces (and What It Doesn't)
+## What Scolta Is Built For
 
-Scolta is a practical replacement for hosted search SaaS (Algolia, Coveo, SearchStax) and for self-hosted Search API backends like Solr or Elasticsearch when your use case is content search on a Drupal site.
+Scolta is designed for content search on Drupal sites: nodes, pages, documentation, and other content types indexed at publish time. Drupal powers enterprise content operations, government and university portals, media publishing platforms, and large-scale community sites — and Scolta is tuned for these content-publishing use cases.
 
-Scolta is not a replacement for:
+The static-index architecture means no Solr or Elasticsearch server to provision and operate. Scolta replaces hosted search SaaS (Algolia, Coveo, SearchStax) and the Solr/Elasticsearch Search API backends for Drupal sites where the search use case is full-text relevance, recency, and phrase matching. It works on managed Drupal hosting (Acquia, Pantheon, Platform.sh) where running a dedicated search server is impractical.
 
-- Drupal core database search or Drupal's full-text PostgreSQL search — those are fine for small sites and have row-level access control that Scolta does not.
-- Solr or Elasticsearch setups with per-document permissions enforced at query time.
-- Log analytics or observability pipelines built on Elasticsearch.
-- Enterprise search with audit logging, retention policies, or SSO-gated content visibility.
-
-If Solr or Elasticsearch is serving Drupal search with basic full-text queries and no per-document ACL, Scolta is a drop-in replacement that costs less to run. If you need complex access control at the search layer, stay with Solr/Elasticsearch.
+Teams migrating from SearchAPI+Solr or SearchAPI+Elasticsearch for basic full-text content search will find Scolta a complete replacement. Drupal's Search API integration is preserved — Scolta registers as a backend, so existing search configurations carry over with minimal changes.
 
 ## Memory and Scale
 
