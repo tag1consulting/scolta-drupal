@@ -4,7 +4,7 @@ All notable changes to scolta-drupal will be documented in this file.
 
 This project uses [Semantic Versioning](https://semver.org/). Major versions are synchronized across all Scolta packages.
 
-## [Unreleased]
+## [0.3.8] - 2026-05-01
 
 ### Added
 - **`ScoltaContentGatherer::gather()` now indexes all translations**: For each entity, the gatherer iterates `getTranslationLanguages()` and yields a separate `ContentItem` per translation. Each item carries the BCP-47 language code so the binary/Pagefind path can emit `<html lang="...">` and filter by language. Single-language entities and English translations keep their original numeric ID for backward compatibility; other language translations get a `-{langcode}` suffix (e.g. `42-es`).
