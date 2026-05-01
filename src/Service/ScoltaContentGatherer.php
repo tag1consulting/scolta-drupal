@@ -132,8 +132,9 @@ class ScoltaContentGatherer {
               $item = $translation->get($field)->first();
               if ($item instanceof TextItemBase) {
                 // ->processed runs text format filters; strip_tags gives clean text.
+                // Cast to string: ->processed returns FilteredMarkup, not a plain string.
                 // Fall back to ->value if the text format is misconfigured.
-                $body = strip_tags($item->processed) ?: strip_tags($item->value);
+                $body = strip_tags((string) $item->processed) ?: strip_tags((string) $item->value);
               }
               else {
                 $body = $item->value;

@@ -94,6 +94,17 @@ class ScoltaContentGathererTest extends TestCase {
     );
   }
 
+  public function testGathererCastsProcessedToStringBeforeStripTags(): void {
+    // Drupal's ->processed returns FilteredMarkup, not a plain string.
+    // PHP 8 strip_tags() throws TypeError on non-string input, so the gatherer
+    // must cast to (string) before calling strip_tags().
+    $this->assertStringContainsString(
+      'strip_tags((string) $item->processed)',
+      $this->gathererContents,
+      'gather() must cast ->processed to string before strip_tags() to handle FilteredMarkup'
+    );
+  }
+
   public function testGathererQueriesPublishedEntities(): void {
     $this->assertStringContainsString(
       "condition('status', 1)",
