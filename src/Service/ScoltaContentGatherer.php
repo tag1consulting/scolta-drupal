@@ -150,8 +150,17 @@ class ScoltaContentGatherer {
             ? $translation->getChangedTime()
             : (int) ($translation->get('changed')->value ?? 0);
 
+          // Single-language entities and English translations keep plain IDs
+          // for backward compatibility. Other languages get a -{langcode} suffix
+          // to avoid filename collisions when the same entity has multiple
+          // translations (e.g. node/42 → "42" for en, "42-es" for es).
+          $languages = $entity->getTranslationLanguages();
+          $itemId = ($langcode === 'en' || count($languages) === 1)
+            ? (string) $entity->id()
+            : $entity->id() . '-' . $langcode;
+
           yield new ContentItem(
-            id: $entity->id() . '-' . $langcode,
+            id: $itemId,
             title: $translation->label() ?: 'Untitled',
             bodyHtml: $body,
             url: $translation->toUrl()->setAbsolute(TRUE)->toString(),
