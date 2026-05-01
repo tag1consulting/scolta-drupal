@@ -1049,7 +1049,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     $cmd = $binary
       . ' --site ' . escapeshellarg($outputDir)
-      . ' --output-path ' . escapeshellarg($outputDir)
+      . ' --output-path ' . escapeshellarg($outputDir . '/pagefind')
       . ' 2>&1';
     $output = [];
     $exitCode = NULL;

@@ -533,9 +533,9 @@ class ScoltaCommands extends DrushCommands {
     else {
       $resolvedDir = $outputDir;
     }
-    if (file_exists($resolvedDir . '/pagefind.js')) {
-      $fragmentCount = count(glob($resolvedDir . '/fragment/*') ?: []);
-      $mtime = filemtime($resolvedDir . '/pagefind.js');
+    if (file_exists($resolvedDir . '/pagefind/pagefind.js')) {
+      $fragmentCount = count(glob($resolvedDir . '/pagefind/fragment/*') ?: []);
+      $mtime = filemtime($resolvedDir . '/pagefind/pagefind.js');
       $this->logger()->notice("  Path:       {$outputDir}");
       $this->logger()->notice("  Fragments:  {$fragmentCount}");
       $this->logger()->notice("  Last built: " . ($mtime ? date('Y-m-d H:i:s', $mtime) : 'unknown'));
