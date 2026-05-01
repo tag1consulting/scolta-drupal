@@ -6,7 +6,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
-_No changes yet._
+### Fixed
+- **Content gatherer now uses `->processed` for formatted text fields** — previously `->value` returned raw stored text, which could include JSON wrappers and unprocessed tokens. Formatted text fields (`TextItemBase` subclasses: `TextItem`, `TextLongItem`, `TextWithSummaryItem`) now use `->processed` (rendered output after text format filters) with `strip_tags()` for clean text indexing. Plain string fields fall back to `->value`. Fixes comparison article excerpts showing `json {"body":"..."}` wrapper text in search results.
 
 ## [0.3.7] - 2026-04-30
 

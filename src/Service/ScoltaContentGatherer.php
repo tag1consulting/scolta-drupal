@@ -7,6 +7,7 @@ namespace Drupal\scolta\Service;
 use Drupal\Core\Entity\EntityChangedInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
+use Drupal\text\Plugin\Field\FieldType\TextItemBase;
 use Tag1\Scolta\Export\ContentItem;
 
 /**
@@ -120,31 +121,45 @@ class ScoltaContentGatherer {
           continue;
         }
 
-        // Extract body content — try common field names.
-        $body = '';
-        foreach (['body', 'field_body', 'field_content'] as $field) {
-          if ($entity->hasField($field) && !$entity->get($field)->isEmpty()) {
-            $body = $entity->get($field)->value;
-            break;
+        // Yield every available translation as a separate indexed page.
+        foreach ($entity->getTranslationLanguages() as $langcode => $language) {
+          $translation = $entity->getTranslation($langcode);
+
+          // Extract body content — try common field names.
+          $body = '';
+          foreach (['body', 'field_body', 'field_content'] as $field) {
+            if ($translation->hasField($field) && !$translation->get($field)->isEmpty()) {
+              $item = $translation->get($field)->first();
+              if ($item instanceof TextItemBase) {
+                // ->processed runs text format filters; strip_tags gives clean text.
+                // Fall back to ->value if the text format is misconfigured.
+                $body = strip_tags($item->processed) ?: strip_tags($item->value);
+              }
+              else {
+                $body = $item->value;
+              }
+              break;
+            }
           }
+
+          if (empty($body)) {
+            continue;
+          }
+
+          $changedTime = $translation instanceof EntityChangedInterface
+            ? $translation->getChangedTime()
+            : (int) ($translation->get('changed')->value ?? 0);
+
+          yield new ContentItem(
+            id: $entity->id() . '-' . $langcode,
+            title: $translation->label() ?: 'Untitled',
+            bodyHtml: $body,
+            url: $translation->toUrl()->setAbsolute(TRUE)->toString(),
+            date: date('Y-m-d', $changedTime),
+            siteName: $siteName,
+            language: $langcode,
+          );
         }
-
-        if (empty($body)) {
-          continue;
-        }
-
-        $changedTime = $entity instanceof EntityChangedInterface
-          ? $entity->getChangedTime()
-          : (int) ($entity->get('changed')->value ?? 0);
-
-        yield new ContentItem(
-          id: (string) $entity->id(),
-          title: $entity->label() ?: 'Untitled',
-          bodyHtml: $body,
-          url: $entity->toUrl()->setAbsolute(TRUE)->toString(),
-          date: date('Y-m-d', $changedTime),
-          siteName: $siteName,
-        );
       }
 
       $storage->resetCache($ids);
