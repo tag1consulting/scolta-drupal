@@ -6,7 +6,11 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+- **`ScoltaContentGatherer::gather()` now indexes all translations**: For each entity, the gatherer iterates `getTranslationLanguages()` and yields a separate `ContentItem` per translation. Each item carries the BCP-47 language code so the binary/Pagefind path can emit `<html lang="...">` and filter by language. Single-language entities and English translations keep their original numeric ID for backward compatibility; other language translations get a `-{langcode}` suffix (e.g. `42-es`).
+
+### Fixed
+- **Content gatherer now uses `->processed` for formatted text fields** — previously `->value` returned raw stored text, which could include JSON wrappers and unprocessed tokens. Formatted text fields (`TextItemBase` subclasses: `TextItem`, `TextLongItem`, `TextWithSummaryItem`) now use `->processed` (rendered output after text format filters) with `strip_tags()` for clean text indexing. Plain string fields fall back to `->value`. Fixes comparison article excerpts showing `json {"body":"..."}` wrapper text in search results.
 
 ## [0.3.7] - 2026-04-30
 
