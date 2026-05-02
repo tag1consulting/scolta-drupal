@@ -772,7 +772,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     // Apply preset values first; explicit form values override below.
     // Keys that live under display.* rather than scoring.*.
-    $displayKeys = ['ai_summary_top_n', 'max_pagefind_results', 'results_per_page', 'excerpt_length', 'ai_summary_max_chars'];
+    $displayKeys = [
+      'ai_summary_top_n',
+      'max_pagefind_results',
+      'results_per_page',
+      'excerpt_length',
+      'ai_summary_max_chars',
+    ];
     if ($presetName !== 'none') {
       foreach (ScoltaConfig::getPresetValues($presetName) as $key => $value) {
         $prefix = in_array($key, $displayKeys, TRUE) ? 'display.' : 'scoring.';
