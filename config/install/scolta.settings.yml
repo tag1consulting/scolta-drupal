@@ -1,3 +1,4 @@
+preset: none
 ai_provider: anthropic
 ai_model: 'claude-sonnet-4-5-20250929'
 ai_expansion_model: ''
