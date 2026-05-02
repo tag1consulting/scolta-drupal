@@ -2,6 +2,9 @@ scolta.settings:
   type: config_object
   label: 'Scolta settings'
   mapping:
+    preset:
+      type: string
+      label: 'Site type preset'
     ai_provider:
       type: string
       label: 'AI provider'
