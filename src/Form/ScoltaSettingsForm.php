@@ -19,6 +19,7 @@ use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
+use Tag1\Scolta\Config\ScoltaConfig;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Export\ContentItem;
 use Tag1\Scolta\Prompt\DefaultPrompts;
@@ -246,11 +247,51 @@ class ScoltaSettingsForm extends ConfigFormBase {
     ]);
     $form['content']['memory_budget'] = MemoryBudgetSettingsFieldSet::build($memoryBudgetConfig);
 
+    // ── Site Type Section ──
+    $presets = ScoltaConfig::getPresets();
+    $currentPreset = $config->get('preset') ?? 'none';
+
+    $presetOptions = [];
+    foreach ($presets as $key => $meta) {
+      $presetOptions[$key] = $meta['label'];
+    }
+
+    $form['site_type'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Site Type'),
+      '#open' => TRUE,
+    ];
+
+    $form['site_type']['site_type_intro'] = [
+      '#type' => 'markup',
+      '#markup' => '<p class="description">' . $this->t('Presets adjust how Scolta ranks search results — how much weight goes to titles vs. page content, whether newer content ranks higher, and how broadly Scolta interprets what you searched for. The preset is a starting point, not a constraint: you can optionally open the Scoring section below to change any individual setting.') . '</p>',
+    ];
+
+    $form['site_type']['preset'] = [
+      '#type' => 'select',
+      '#title' => $this->t('What kind of site is this?'),
+      '#options' => $presetOptions,
+      '#default_value' => $currentPreset,
+    ];
+
+    foreach ($presets as $key => $meta) {
+      $form['site_type']['preset_desc_' . $key] = [
+        '#type' => 'markup',
+        '#markup' => '<p class="description scolta-preset-description scolta-preset-description--' . $key . '"><strong>' . $meta['label'] . ':</strong> ' . $meta['description'] . '</p>',
+      ];
+    }
+
     // ── Scoring Section ──
+    $presetLabel = isset($presets[$currentPreset]) ? $presets[$currentPreset]['label'] : '';
+    $scoringDescription = ($currentPreset !== 'none' && $presetLabel !== '')
+      ? (string) $this->t('These settings were populated by the @label preset. Change any value here and your change takes priority — the preset only fills in what you haven\'t touched.', ['@label' => $presetLabel])
+      : (string) $this->t('Configure each scoring parameter individually.');
+
     $form['scoring'] = [
       '#type' => 'details',
       '#title' => $this->t('Scoring'),
       '#open' => FALSE,
+      '#description' => $scoringDescription,
     ];
 
     $form['scoring']['title_match_boost'] = [
@@ -720,7 +761,23 @@ class ScoltaSettingsForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
-    $this->config('scolta.settings')
+    $presetName = $form_state->getValue('preset') ?? 'none';
+    $validPresets = array_keys(ScoltaConfig::getPresets());
+    if (!in_array($presetName, $validPresets, TRUE)) {
+      $presetName = 'none';
+    }
+
+    $configSave = $this->config('scolta.settings')
+      ->set('preset', $presetName);
+
+    // Apply preset scoring values first; explicit form values override below.
+    if ($presetName !== 'none') {
+      foreach (ScoltaConfig::getPresetValues($presetName) as $key => $value) {
+        $configSave->set('scoring.' . $key, $value);
+      }
+    }
+
+    $configSave
       // AI settings.
       ->set('ai_provider', $form_state->getValue('ai_provider'))
       ->set('ai_model', $form_state->getValue('ai_model'))
