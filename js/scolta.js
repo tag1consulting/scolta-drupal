@@ -404,7 +404,7 @@
       try {
         const contextItems = topN.map(r => ({
           content: stripHtml(r.data.content || r.data.excerpt || ''),
-          url: r.data.meta?.url || '',
+          url: ((u) => u.startsWith('/') ? window.location.origin + u : u)(r.data.meta?.url || ''),
           title: r.data.meta?.title || '',
         }));
         const extractInput = JSON.stringify({
@@ -502,7 +502,7 @@
     const CONFIG = getInstanceConfig();
     return results.map((r, i) => {
       const title = r.data.meta?.title || "Untitled";
-      const url = r.data.meta?.url || "";
+      const _u = r.data.meta?.url || ""; const url = _u.startsWith("/") ? window.location.origin + _u : _u;
       const useFullContent = i < 2;
       const text = useFullContent
         ? stripHtml(r.data.content || r.data.excerpt || "")
