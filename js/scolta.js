@@ -1161,23 +1161,23 @@
     renderFilters();
     renderResults();
 
-    // Phase 2: Expanded searches — asynchronous merge
-    expandPromise.then(expandedTerms => {
+    // Phase 2+3: Expand, merge, then summarize with the final reordered results.
+    // Summarize is intentionally deferred until after expansion so the AI sees
+    // the same ranking the user sees (expanded terms promote more relevant results).
+    expandPromise.then(async expandedTerms => {
       if (!preserveFilters) {
         lastExpandedTerms = expandedTerms;
       }
       renderExpandedTerms(expandedTerms, query);
-      mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version);
-    });
+      await mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version);
 
-    // Phase 3: AI summarization
-    const earlyExpandedTerms = lastExpandedTerms && !preserveFilters
-      ? null
-      : lastExpandedTerms;
-    const expandedLabel = earlyExpandedTerms
-      ? earlyExpandedTerms.filter(t => t.toLowerCase() !== query.toLowerCase())
-      : [];
-    summarizeResults(query, allScoredResults, expandedLabel);
+      if (version !== searchVersion) return;
+
+      const expandedLabel = expandedTerms
+        ? expandedTerms.filter(t => t.toLowerCase() !== query.toLowerCase())
+        : [];
+      summarizeResults(query, allScoredResults, expandedLabel);
+    });
   }
 
   function clearSearch() {
