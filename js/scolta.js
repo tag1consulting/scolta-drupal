@@ -25,7 +25,7 @@
  *   - Title match boost: word-boundary matching, all-terms multiplier
  *   - Content match boost: word-boundary matching against excerpt
  *   - Expanded-term weight decay: 0.7 → 0.65 → 0.60 → ... min 0.4
- *   - Jaccard deduplication: 0.7 threshold on title word overlap
+ *   - Jaccard deduplication: 0.6 threshold on title word overlap
  *   - OR fallback: if AND search returns <5 results, search each term individually
  *   - Parallel data loading: all .data() calls across all searches in one Promise.all()
  *   - Dual scoring: expanded results scored vs source term AND original query, higher wins
@@ -850,12 +850,15 @@
         continue;
       }
 
-      // Check against all kept titles for high overlap (Jaccard >= 0.7)
+      // Check against all kept titles for high overlap (Jaccard >= 0.6)
+      // or predominant overlap (>=3 shared words AND intersection/min >= 0.6)
       let isDuplicate = false;
       for (const seen of seenTitles) {
         const intersection = [...words].filter(w => seen.words.has(w)).length;
         const union = new Set([...words, ...seen.words]).size;
-        if (union > 0 && intersection / union >= 0.7) {
+        const smaller = Math.min(words.size, seen.words.size);
+        if ((union > 0 && intersection / union >= 0.6) ||
+            (intersection >= 3 && intersection / smaller >= 0.6)) {
           isDuplicate = true;
           break;
         }
@@ -901,17 +904,34 @@
       try {
         const output = scoltaWasm.merge_results(input);
         const merged = JSON.parse(output);
+        // WASM may normalize URLs (strip .html, trailing slash, lowercase) before
+        // deduplication, so its output URLs may not match the raw keys from pagefind.
+        // Build a multi-key map with normalized variants so we can always find the
+        // original result object to attach its full data.
+        const normalizeUrl = u => (u || '').replace(/\.html$/, '').replace(/\/$/, '').toLowerCase();
         const dataByUrl = new Map();
         for (const r of [...currentResults, ...newResults]) {
-          const url = r.data.meta?.url || r.data.url || '';
-          if (!dataByUrl.has(url) || r.score > dataByUrl.get(url).score) {
-            dataByUrl.set(url, r);
+          const rawUrl = r.data.meta?.url || r.data.url || '';
+          for (const key of [rawUrl, normalizeUrl(rawUrl), rawUrl.replace(/^\/+/, ''), normalizeUrl(rawUrl).replace(/^\/+/, '')]) {
+            if (key && (!dataByUrl.has(key) || r.score > dataByUrl.get(key).score)) {
+              dataByUrl.set(key, r);
+            }
           }
         }
-        return merged.map(item => ({
-          data: dataByUrl.get(item.url)?.data || item,
-          score: item.score,
-        }));
+        let lookupMisses = 0;
+        const resolvedMerged = merged.map(item => {
+          const iUrl = item.url || '';
+          const found = dataByUrl.get(iUrl)
+            || dataByUrl.get(normalizeUrl(iUrl))
+            || dataByUrl.get(iUrl.replace(/^\/+/, ''))
+            || dataByUrl.get(normalizeUrl(iUrl).replace(/^\/+/, ''));
+          if (!found) lookupMisses++;
+          return { data: found?.data || item, score: item.score };
+        });
+        if (lookupMisses > 0) {
+          console.warn('[scolta:merge] WASM URL lookup missed', lookupMisses, '/', merged.length);
+        }
+        return resolvedMerged;
       } catch (e) {
         console.warn("[scolta] WASM merge_results failed, using fallback:", e.message);
       }
