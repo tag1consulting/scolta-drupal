@@ -493,7 +493,9 @@
   }
 
   function stripHtml(text) {
-    return text.replace(/<[^>]*>/g, "");
+    const div = document.createElement("div");
+    div.innerHTML = text;
+    return div.textContent || div.innerText || "";
   }
 
   // Build LLM context string from an array of scored results.
