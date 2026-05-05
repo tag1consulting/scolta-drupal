@@ -525,7 +525,12 @@
         if (inList) { html += '</ul>'; inList = false; }
         continue;
       }
-      if (trimmed.startsWith('- ')) {
+      const headingMatch = trimmed.match(/^(#{1,3}) (.+)/);
+      if (headingMatch) {
+        if (inList) { html += '</ul>'; inList = false; }
+        const tag = `h${headingMatch[1].length + 2}`;
+        html += `<${tag}>${formatInline(headingMatch[2])}</${tag}>`;
+      } else if (trimmed.startsWith('- ')) {
         if (!inList) { html += '<ul>'; inList = true; }
         html += `<li>${formatInline(trimmed.substring(2))}</li>`;
       } else {
