@@ -6,6 +6,10 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.3.10] - 2026-05-05
+
 ### Fixed
 - **WASM merge URL lookup now handles normalized URL formats** — multi-key Map with normalized variants prevents result stub fallback; misses logged as `[scolta:merge] WASM URL lookup missed`.
 - **Title deduplication threshold lowered to 0.6 Jaccard** — reduces duplicate titles slipping through, with secondary condition for short-title pairs sharing ≥3 words.
