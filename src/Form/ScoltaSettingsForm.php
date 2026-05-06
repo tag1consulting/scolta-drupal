@@ -299,7 +299,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'number',
       '#title' => $this->t('Title match boost'),
       '#default_value' => $config->get('scoring.title_match_boost') ?? 1.0,
-      '#step' => 0.1,
+      '#step' => 'any',
       '#min' => 0,
       '#description' => $this->t('Boost factor for title matches.'),
     ];
@@ -308,7 +308,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'number',
       '#title' => $this->t('Title all terms multiplier'),
       '#default_value' => $config->get('scoring.title_all_terms_multiplier') ?? 1.5,
-      '#step' => 0.1,
+      '#step' => 'any',
       '#min' => 0,
       '#description' => $this->t('Extra multiplier when all search terms appear in the title.'),
     ];
@@ -317,7 +317,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'number',
       '#title' => $this->t('Content match boost'),
       '#default_value' => $config->get('scoring.content_match_boost') ?? 0.4,
-      '#step' => 0.1,
+      '#step' => 'any',
       '#min' => 0,
       '#description' => $this->t('Boost factor for content body matches.'),
     ];
@@ -326,7 +326,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'number',
       '#title' => $this->t('Recency boost maximum'),
       '#default_value' => $config->get('scoring.recency_boost_max') ?? 0.5,
-      '#step' => 0.1,
+      '#step' => 'any',
       '#min' => 0,
       '#description' => $this->t('Maximum boost for recent content.'),
     ];
@@ -351,7 +351,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'number',
       '#title' => $this->t('Recency maximum penalty'),
       '#default_value' => $config->get('scoring.recency_max_penalty') ?? 0.3,
-      '#step' => 0.1,
+      '#step' => 'any',
       '#min' => 0,
       '#description' => $this->t('Maximum recency penalty for old content.'),
     ];
@@ -360,7 +360,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'number',
       '#title' => $this->t('Expanded term primary weight'),
       '#default_value' => $config->get('scoring.expand_primary_weight') ?? 0.7,
-      '#step' => 0.1,
+      '#step' => 'any',
       '#min' => 0,
       '#max' => 1,
       '#description' => $this->t('Weight given to the original query vs. expanded terms (0-1).'),
