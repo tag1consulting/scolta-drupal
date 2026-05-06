@@ -284,7 +284,7 @@ class ScoltaCommands extends DrushCommands {
 
     $reporter = new DrushProgressReporter($this->output());
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
-    $report = $orchestrator->build($intent, $items, $this->logger(), $reporter);
+    $report = $orchestrator->build($intent, $items, $this->logger(), $reporter, force: $force);
 
     if ($report->success) {
       $generation = $this->state->get('scolta.generation', 0);
