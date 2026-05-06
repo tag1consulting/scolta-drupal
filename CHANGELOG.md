@@ -7,7 +7,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Fixed
-- **"Rebuild Index" button now submits when the Scoring details panel is collapsed.** Browser HTML5 validation was blocking the form because number fields inside the closed `<details>` element failed their `min`/`step` constraints without being focusable. Added `formnovalidate` to the button and `#limit_validation_errors => []` to bypass both client-side and server-side validation for fields unrelated to the rebuild action.
+- **Settings form no longer blocked by HTML5 validation on collapsed panels.** Number fields inside a closed `<details>` element fail their `min`/`step` constraints but cannot be focused to display the error, silently blocking both Save and Rebuild Index. Added `novalidate` to the form element — Drupal validates all fields server-side, making browser HTML5 validation redundant on admin forms.
+- **Site description field now accepts up to 512 characters.** Drupal's default `textfield` maxlength of 128 was too short for multi-sentence site descriptions used in AI prompts. Raised to 512.
 
 ### Changed
 - **`drush scolta:build --force` now bypasses the per-item token cache** in addition to the existing fingerprint check. Previously `--force` only skipped the `shouldBuild()` fingerprint comparison; the page-word cache (new in this release) was still consulted. With this change, `--force` triggers a full re-tokenization of every content item.
