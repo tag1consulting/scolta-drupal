@@ -225,6 +225,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Site description'),
       '#default_value' => $config->get('site_description') ?? 'website',
+      '#maxlength' => 512,
       '#description' => $this->t('Brief description used in AI prompts (e.g., "corporate website", "health system websites").'),
     ];
 
@@ -549,13 +550,17 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     $form = parent::buildForm($form, $form_state);
 
+    // Disable browser HTML5 validation: number fields inside a collapsed
+    // <details> cannot be focused when invalid, silently blocking submit.
+    // Drupal handles all validation server-side.
+    $form['#attributes']['novalidate'] = 'novalidate';
+
     $form['actions']['rebuild_index'] = [
       '#type' => 'submit',
       '#value' => $this->t('Rebuild Index'),
       '#name' => 'rebuild_index',
       '#submit' => ['::rebuildSubmit'],
       '#limit_validation_errors' => [],
-      '#attributes' => ['formnovalidate' => 'formnovalidate'],
       '#weight' => 10,
     ];
 
