@@ -554,6 +554,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#value' => $this->t('Rebuild Index'),
       '#name' => 'rebuild_index',
       '#submit' => ['::rebuildSubmit'],
+      '#limit_validation_errors' => [],
+      '#attributes' => ['formnovalidate' => 'formnovalidate'],
       '#weight' => 10,
     ];
 

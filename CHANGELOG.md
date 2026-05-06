@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **"Rebuild Index" button now submits when the Scoring details panel is collapsed.** Browser HTML5 validation was blocking the form because number fields inside the closed `<details>` element failed their `min`/`step` constraints without being focusable. Added `formnovalidate` to the button and `#limit_validation_errors => []` to bypass both client-side and server-side validation for fields unrelated to the rebuild action.
+
 ### Changed
 - **`drush scolta:build --force` now bypasses the per-item token cache** in addition to the existing fingerprint check. Previously `--force` only skipped the `shouldBuild()` fingerprint comparison; the page-word cache (new in this release) was still consulted. With this change, `--force` triggers a full re-tokenization of every content item.
 
