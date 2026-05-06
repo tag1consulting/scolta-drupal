@@ -7,6 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Fixed
+- **Decimal scoring values like `0.05` no longer fail "not a valid number" validation.** Scoring fields used `#step => 0.1`, which rejects any value not a multiple of 0.1 (e.g. `0.05`). Changed all scoring decimal fields to `#step => 'any'` to allow arbitrary precision.
 - **Settings form no longer blocked by HTML5 validation on collapsed panels.** Number fields inside a closed `<details>` element fail their `min`/`step` constraints but cannot be focused to display the error, silently blocking both Save and Rebuild Index. Added `novalidate` to the form element — Drupal validates all fields server-side, making browser HTML5 validation redundant on admin forms.
 - **Site description field now accepts up to 512 characters.** Drupal's default `textfield` maxlength of 128 was too short for multi-sentence site descriptions used in AI prompts. Raised to 512.
 
