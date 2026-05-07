@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **`ScoltaContentGatherer::gather()` no longer holds an entire entity batch in memory during yielding.** The generator previously loaded 100 entities via `loadMultiple()` and then iterated over them with `foreach`, keeping all 100 entity objects (including their raw and processed body HTML — up to 5 MB each for large articles) alive in the generator's stack frame for the entire batch. For Wikipedia-scale corpora this caused 200–500 MB of entity data to be pinned in RAM throughout each batch. The loop now uses `array_shift` so each entity is removed from the array before being processed and freed immediately after its ContentItem(s) are yielded. `drupal_static_reset()` and `gc_collect_cycles()` are called at batch end to clear Drupal's accumulated per-request static caches (URL aliases, typed data instances, access results, etc.) and PHP's circular reference graph.
+
 ### Changed
 - **`indexer: auto` now always uses the PHP indexer.** Previously `auto` tried the Pagefind binary first and fell back to PHP. The PHP indexer works on all Drupal hosting environments without `exec()` or Node.js, uses less memory, and supports fast incremental re-indexing. Use `indexer: binary` to keep the old binary-first behaviour.
 
