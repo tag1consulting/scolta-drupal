@@ -303,9 +303,10 @@ class ScoltaCommands extends DrushCommands {
       return $uri;
     }
     try {
-      return $this->streamWrapperManager->getViaUri($uri)->realpath() ?: $uri;
+      $wrapper = $this->streamWrapperManager->getViaUri($uri);
+      return ($wrapper && ($path = $wrapper->realpath())) ? $path : $uri;
     }
-    catch (\Exception) {
+    catch (\Throwable) {
       return $uri;
     }
   }
