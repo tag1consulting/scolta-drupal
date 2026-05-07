@@ -96,7 +96,10 @@ class ScoltaContentGatherer {
    */
   public function gather(string $entityType, string $bundle, string $siteName): \Generator {
     $storage = $this->entityTypeManager->getStorage($entityType);
-    $batch = 100;
+    // 10 entities per load keeps the per-batch memory spike to ~2.5 MB.
+    // 100 caused 25+ MB spikes on large-article corpora (e.g. Wikipedia) that
+    // PHP's allocator never returns, leading to monotonic heap growth.
+    $batch = 10;
     $offset = 0;
 
     while (TRUE) {
