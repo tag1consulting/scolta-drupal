@@ -183,6 +183,7 @@
 
   // --- Instance state (local to this closure) ---
   let pagefind = null;
+  let pagefindBase = '';   // Set during initPagefind(); used by resolveUrl().
   let allScoredResults = [];
   let displayedCount = 0;
   let activeFilters = new Set();
@@ -271,6 +272,10 @@
     const pagefindPath = (instanceConfig && instanceConfig.pagefindPath) || '/pagefind/pagefind.js';
     pagefind = await import(pagefindPath);
     await pagefind.init();
+    // Pagefind's fullUrl() prepends its base (parent of the pagefind/ dir) to
+    // every stored root-relative path, making data.url wrong for navigation.
+    // Record the base so resolveUrl() can strip it back off.
+    pagefindBase = pagefindPath.replace(/\/pagefind\/pagefind\.js.*$/, '');
     // Warm the index: triggers WASM compilation + fragment download.
     await pagefind.search("");
     console.log("[scolta] Pagefind index preloaded");
@@ -404,7 +409,7 @@
       try {
         const contextItems = topN.map(r => ({
           content: stripHtml(r.data.content || r.data.excerpt || ''),
-          url: ((u) => u.startsWith('/') ? window.location.origin + u : u)(r.data.meta?.url || ''),
+          url: ((u) => u.startsWith('/') ? window.location.origin + u : u)(resolveUrl(r.data.url || '')),
           title: r.data.meta?.title || '',
         }));
         const extractInput = JSON.stringify({
@@ -486,6 +491,20 @@
     }
   }
 
+  // Strip the pagefind base path that fullUrl() prepends to stored paths.
+  // Pagefind resolves root-relative paths like "/faculty/x" against its own
+  // base (/sites/default/files/scolta-pagefind), producing the wrong URL.
+  // This recovers the original root-relative path from data.url.
+  function resolveUrl(raw) {
+    if (!raw) return '';
+    if (/^https?:\/\//.test(raw)) return raw;
+    if (pagefindBase && raw.startsWith(pagefindBase + '/')) {
+      return raw.slice(pagefindBase.length);
+    }
+    if (!raw.startsWith('/')) return '/' + raw;
+    return raw;
+  }
+
   function escapeHtml(text) {
     const div = document.createElement("div");
     div.textContent = text;
@@ -504,7 +523,7 @@
     const CONFIG = getInstanceConfig();
     return results.map((r, i) => {
       const title = r.data.meta?.title || "Untitled";
-      const _u = r.data.meta?.url || ""; const url = _u.startsWith("/") ? window.location.origin + _u : _u;
+      const _u = resolveUrl(r.data.url || ""); const url = _u.startsWith("/") ? window.location.origin + _u : _u;
       const useFullContent = i < 2;
       const text = useFullContent
         ? stripHtml(r.data.content || r.data.excerpt || "")
@@ -760,7 +779,7 @@
         const contentLocations = computeContentWordLocations(data.content || '', queryTerms);
         return {
           title: data.meta?.title || '',
-          url: data.meta?.url || data.url || '',
+          url: resolveUrl(data.url || ''),
           excerpt: data.excerpt || '',
           date: data.meta?.date || '',
           pagefind_index: i,
@@ -786,7 +805,7 @@
         const scored = JSON.parse(output);
         return scored.map(item => ({
           data: loaded[item.pagefind_index] || loaded.find(d =>
-            (d.meta?.url || d.url) === item.url
+            resolveUrl(d.url || '') === item.url
           ) || loaded[0],
           score: item.score * sourceWeight,
         }));
@@ -883,14 +902,14 @@
     if (scoltaWasm) {
       const original = currentResults.map(r => ({
         title: r.data.meta?.title || '',
-        url: r.data.meta?.url || r.data.url || '',
+        url: resolveUrl(r.data.url || ''),
         score: r.score,
         excerpt: r.data.excerpt || '',
         date: r.data.meta?.date || '',
       }));
       const expanded = newResults.map(r => ({
         title: r.data.meta?.title || '',
-        url: r.data.meta?.url || r.data.url || '',
+        url: resolveUrl(r.data.url || ''),
         score: r.score,
         excerpt: r.data.excerpt || '',
         date: r.data.meta?.date || '',
@@ -913,7 +932,7 @@
         const normalizeUrl = u => (u || '').replace(/\.html$/, '').replace(/\/$/, '').toLowerCase();
         const dataByUrl = new Map();
         for (const r of [...currentResults, ...newResults]) {
-          const rawUrl = r.data.meta?.url || r.data.url || '';
+          const rawUrl = resolveUrl(r.data.url || '');
           for (const key of [rawUrl, normalizeUrl(rawUrl), rawUrl.replace(/^\/+/, ''), normalizeUrl(rawUrl).replace(/^\/+/, '')]) {
             if (key && (!dataByUrl.has(key) || r.score > dataByUrl.get(key).score)) {
               dataByUrl.set(key, r);
@@ -941,14 +960,14 @@
     // JS fallback merge
     const urlMap = new Map();
     for (const r of currentResults) {
-      const url = r.data.meta?.url || r.data.url || '';
+      const url = resolveUrl(r.data.url || '');
       const prev = urlMap.get(url);
       if (!prev || r.score > prev.score) {
         urlMap.set(url, r);
       }
     }
     for (const r of newResults) {
-      const url = r.data.meta?.url || r.data.url || '';
+      const url = resolveUrl(r.data.url || '');
       const prev = urlMap.get(url);
       if (!prev || r.score > prev.score) {
         urlMap.set(url, r);
@@ -1169,7 +1188,7 @@
             priorityMap[(pm.url || '').replace(/\/$/, '').toLowerCase()] = pm;
           });
           allScoredResults.forEach(result => {
-            const url = (result.data.meta?.url || result.data.url || '').replace(/\/$/, '').toLowerCase();
+            const url = resolveUrl(result.data.url || '').replace(/\/$/, '').toLowerCase();
             if (priorityMap[url]) {
               result.score = (result.score || 0) + (priorityMap[url].boost || 100);
             }
@@ -1320,7 +1339,7 @@
     for (let i = displayedCount; i < showing; i++) {
       const { data } = filtered[i];
       const title = data.meta?.title || "Untitled";
-      const url = data.meta?.url || data.url || "#";
+      const url = resolveUrl(data.url || '') || "#";
       const site = data.meta?.site || "";
       const date = data.meta?.date || "";
       const excerpt = truncateExcerpt(data.excerpt || "", CONFIG.EXCERPT_LENGTH);
