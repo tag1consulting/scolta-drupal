@@ -69,9 +69,13 @@ class ScoltaContentGatherer {
   /**
    * Gather indexable content as a generator that yields one ContentItem at a time.
    *
-   * Paginates the entity query in batches of 100 and calls resetCache() after
-   * each batch so that entity field data from previous batches is released
-   * from RAM. Peak RSS stays bounded regardless of corpus size.
+   * Paginates the entity query in batches of 100. Each entity is freed via
+   * array_shift immediately after its ContentItem(s) are yielded — the
+   * generator does not hold the full batch in scope across yields. After each
+   * batch, resetCache(), drupal_static_reset(), and gc_collect_cycles() are
+   * called to release Drupal's accumulated per-request static caches (URL
+   * aliases, typed data instances, access results, etc.). Peak RSS stays
+   * bounded regardless of corpus size.
    *
    * Callers must NOT convert this generator to an array — that restores
    * the pre-0.3.2 eager-load behaviour. Pass the generator directly to
@@ -116,8 +120,17 @@ class ScoltaContentGatherer {
 
       $entities = $storage->loadMultiple($ids);
 
-      foreach ($entities as $entity) {
+      // Process one entity at a time using array_shift so each entity object
+      // is released from $entities before we yield — the generator pauses at
+      // every yield, which would otherwise keep all 100 loaded entities alive
+      // in the generator's stack frame simultaneously. For large articles
+      // (e.g. Wikipedia with 2–5 MB of body HTML per node) this was the
+      // primary source of memory exhaustion on large corpora.
+      while ($entities) {
+        $entity = array_shift($entities);
+
         if (!$entity instanceof FieldableEntityInterface) {
+          unset($entity);
           continue;
         }
 
@@ -170,11 +183,17 @@ class ScoltaContentGatherer {
             language: $langcode,
           );
         }
+
+        unset($entity);
       }
 
       $storage->resetCache($ids);
       $offset += count($ids);
-      unset($entities);
+      // Clear Drupal's per-request static caches (URL aliases, access results,
+      // typed data instances, etc.) that accumulate across entity batches and
+      // are never automatically reset during a long-running CLI build.
+      drupal_static_reset();
+      gc_collect_cycles();
     }
   }
 
