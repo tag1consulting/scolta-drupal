@@ -290,9 +290,77 @@ class ScoltaCommands extends DrushCommands {
       ]);
       \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
     }
+    elseif ($report->error === 'index_only_complete') {
+      // PHP heap fragmented after indexing — merge must run in a fresh process.
+      $this->logger()->notice('All {pages} pages indexed ({chunks} chunks on disk). Spawning finalize in a fresh process...', [
+        'pages' => $report->pagesProcessed,
+        'chunks' => $report->chunksWritten,
+      ]);
+      $this->spawnFinalize($resolvedStateDir, $resolvedOutputDir, $budget->totalBudgetBytes());
+    }
     else {
       $this->logger()->error('PHP indexer failed: {error}', ['error' => $report->error ?? 'unknown']);
     }
+  }
+
+  /**
+   * Spawn drush scolta:finalize in a fresh PHP process.
+   *
+   * After large-corpus PHP indexing the heap is too fragmented to run
+   * the merge in-process. This spawns a child drush command so the
+   * merge starts with a clean heap.
+   */
+  private function spawnFinalize(string $stateDir, string $outputDir, int $budgetBytes): void {
+    $drushBin = $this->findDrushBin();
+    if ($drushBin === NULL) {
+      $this->logger()->error('Cannot auto-finalize: drush executable not found. Run manually: drush scolta:finalize');
+      return;
+    }
+
+    $budgetMb = round($budgetBytes / 1_048_576) . 'M';
+    $cmd = escapeshellarg($drushBin)
+      . ' scolta:finalize'
+      . ' --state-dir=' . escapeshellarg($stateDir)
+      . ' --output-dir=' . escapeshellarg($outputDir)
+      . ' --memory-budget=' . escapeshellarg($budgetMb)
+      . ' 2>&1';
+
+    $this->logger()->notice('Running: {cmd}', ['cmd' => $cmd]);
+
+    $handle = proc_open($cmd, [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes);
+    if ($handle === FALSE) {
+      $this->logger()->error('proc_open() failed. Run manually: drush scolta:finalize');
+      return;
+    }
+
+    while (!feof($pipes[1])) {
+      $line = fgets($pipes[1]);
+      if ($line !== FALSE && trim($line) !== '') {
+        $this->logger()->notice(rtrim($line));
+      }
+    }
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $exitCode = proc_close($handle);
+
+    if ($exitCode !== 0) {
+      $this->logger()->error('scolta:finalize exited with code {code}.', ['code' => $exitCode]);
+    }
+  }
+
+  /**
+   * Locate the drush binary.
+   */
+  private function findDrushBin(): ?string {
+    // Vendor bin is the most reliable location in a Composer project.
+    $root = defined('DRUPAL_ROOT') ? dirname(DRUPAL_ROOT) : getcwd();
+    $vendorBin = $root . '/vendor/bin/drush';
+    if (is_executable($vendorBin)) {
+      return $vendorBin;
+    }
+    // Fall back to PATH.
+    $which = trim((string) shell_exec('which drush 2>/dev/null'));
+    return ($which !== '' && is_executable($which)) ? $which : NULL;
   }
 
   /**
@@ -308,6 +376,68 @@ class ScoltaCommands extends DrushCommands {
     }
     catch (\Throwable) {
       return $uri;
+    }
+  }
+
+  /**
+   * Merge committed index chunks into the final Pagefind-compatible index.
+   *
+   * Use this after `scolta:build` exits with "merge deferred" on large
+   * corpora where the PHP heap is too fragmented to merge in-process.
+   * The chunks must already be committed to the build state directory.
+   */
+  #[CLI\Command(name: 'scolta:finalize', aliases: ['sf'])]
+  #[CLI\Option(name: 'state-dir', description: 'Build state directory (default: from config)')]
+  #[CLI\Option(name: 'output-dir', description: 'Output directory for the final index (default: from config)')]
+  #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value (default: from config)')]
+  public function finalize(
+    array $options = [
+      'state-dir' => '',
+      'output-dir' => '',
+      'memory-budget' => NULL,
+    ],
+  ): void {
+    $config = $this->configFactory->get('scolta.settings');
+
+    $resolvedOutputDir = $options['output-dir'] ?: $this->resolvePath(
+      $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind'
+    );
+    $resolvedStateDir = $options['state-dir'] ?: $this->resolvePath(
+      $config->get('pagefind.build_dir') ?? 'private://scolta-build'
+    );
+
+    $budget = MemoryBudgetConfig::fromCliAndConfig(
+      (isset($options['memory-budget']) && $options['memory-budget'] !== NULL)
+        ? (string) $options['memory-budget']
+        : NULL,
+      NULL,
+      fn() => [
+        'profile'    => $config->get('memory_budget.profile') ?? 'conservative',
+        'chunk_size' => $config->get('memory_budget.chunk_size'),
+      ],
+    );
+
+    $this->logger()->notice('Finalizing index: merging chunks from {state} into {out}', [
+      'state' => $resolvedStateDir,
+      'out'   => $resolvedOutputDir,
+    ]);
+
+    $language     = $config->get('ai_languages')[0] ?? 'en';
+    $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
+    $report       = $orchestrator->finalize($budget, $this->logger());
+
+    if ($report->success) {
+      $generation = $this->state->get('scolta.generation', 0);
+      $this->state->set('scolta.generation', $generation + 1);
+      $this->logger()->success('Index finalized: {pages} pages in {time}s ({mem} peak RAM).', [
+        'pages' => $report->pagesProcessed,
+        'time' => $report->durationSeconds,
+        'mem' => $report->peakMemoryMb(),
+      ]);
+      \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
+    }
+    else {
+      $this->logger()->error('Finalize failed: {error}', ['error' => $report->error ?? 'unknown']);
     }
   }
 
