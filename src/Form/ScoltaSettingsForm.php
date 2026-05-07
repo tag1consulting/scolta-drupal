@@ -233,12 +233,12 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'select',
       '#title' => $this->t('Indexer mode'),
       '#options' => [
-        'auto' => $this->t('Auto (use binary if available, otherwise PHP)'),
-        'php' => $this->t('PHP (in-memory, no Pagefind binary needed)'),
+        'auto' => $this->t('Auto (PHP indexer — recommended, works on all hosts)'),
+        'php' => $this->t('PHP (pure-PHP, no binary needed)'),
         'binary' => $this->t('Binary (requires Pagefind CLI)'),
       ],
       '#default_value' => $config->get('indexer') ?? 'auto',
-      '#description' => $this->t('How scolta:build creates the search index. Can be overridden with --indexer on the CLI.'),
+      '#description' => $this->t('How scolta:build creates the search index. Auto uses the PHP indexer, which works on all hosting environments and supports fast incremental re-indexing. Can be overridden with --indexer on the CLI.'),
     ];
 
     $memoryBudgetConfig = MemoryBudgetConfig::load([

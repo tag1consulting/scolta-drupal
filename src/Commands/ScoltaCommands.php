@@ -164,27 +164,21 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Resolve 'auto' indexer mode based on binary availability.
+   * Resolve 'auto' indexer mode.
+   *
+   * Auto always uses the PHP indexer — it works on all PHP hosting
+   * environments without exec() or Node.js, uses less memory, and
+   * supports fast incremental re-indexing. Set indexer: binary to
+   * use the Pagefind binary explicitly.
    *
    * @param \Drupal\Core\Config\ImmutableConfig $config
    *   The Scolta settings config.
    *
    * @return string
-   *   'binary' if the Pagefind binary is available, 'php' otherwise.
+   *   Always 'php'.
    */
   private function resolveAutoIndexer($config): string {
-    $resolver = new PagefindBinary(
-      configuredPath: $config->get('pagefind.binary'),
-      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
-    );
-
-    $binary = $resolver->resolve();
-    if ($binary !== NULL) {
-      $this->logger()->notice('Auto-detected indexer: binary (Pagefind available).');
-      return 'binary';
-    }
-
-    $this->logger()->notice('Auto-detected indexer: php (Pagefind binary not available).');
+    $this->logger()->notice('Auto-detected indexer: php (default).');
     return 'php';
   }
 
@@ -497,23 +491,23 @@ class ScoltaCommands extends DrushCommands {
     );
     $binaryStatus = $resolver->status();
     $indexerSetting = $config->get('indexer') ?: 'auto';
-    if ($indexerSetting === 'php') {
-      $activeIndexer = 'php (forced)';
+    if ($indexerSetting === 'php' || $indexerSetting === 'auto') {
+      $activeIndexer = 'php';
     }
     elseif ($indexerSetting === 'binary') {
       $activeIndexer = $binaryStatus['available'] ? 'binary' : 'binary (not found — check path)';
     }
     else {
-      $activeIndexer = $binaryStatus['available'] ? 'binary (auto-detected)' : 'php (binary not found)';
+      $activeIndexer = 'php';
     }
     $this->logger()->notice("  Active indexer: {$activeIndexer}");
-    if ($binaryStatus['available']) {
-      $this->logger()->notice("  Binary:         {$binaryStatus['message']}");
-    }
-    else {
-      $this->logger()->warning('  Binary:         NOT AVAILABLE');
-      $this->logger()->notice("  {$binaryStatus['message']}");
-      if ($activeIndexer !== 'php (forced)') {
+    if ($indexerSetting === 'binary') {
+      if ($binaryStatus['available']) {
+        $this->logger()->notice("  Binary:         {$binaryStatus['message']}");
+      }
+      else {
+        $this->logger()->warning('  Binary:         NOT AVAILABLE');
+        $this->logger()->notice("  {$binaryStatus['message']}");
         $this->logger()->notice('  To upgrade: npm install -g pagefind  OR  drush scolta:download-pagefind');
       }
     }

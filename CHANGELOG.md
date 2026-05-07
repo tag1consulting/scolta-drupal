@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Changed
+- **`indexer: auto` now always uses the PHP indexer.** Previously `auto` tried the Pagefind binary first and fell back to PHP. The PHP indexer works on all Drupal hosting environments without `exec()` or Node.js, uses less memory, and supports fast incremental re-indexing. Use `indexer: binary` to keep the old binary-first behaviour.
+
 ### Fixed
 - **Decimal scoring values like `0.05` no longer fail "not a valid number" validation.** Scoring fields used `#step => 0.1`, which rejects any value not a multiple of 0.1 (e.g. `0.05`). Changed all scoring decimal fields to `#step => 'any'` to allow arbitrary precision.
 - **Settings form no longer blocked by HTML5 validation on collapsed panels.** Number fields inside a closed `<details>` element fail their `min`/`step` constraints but cannot be focused to display the error, silently blocking both Save and Rebuild Index. Added `novalidate` to the form element — Drupal validates all fields server-side, making browser HTML5 validation redundant on admin forms.

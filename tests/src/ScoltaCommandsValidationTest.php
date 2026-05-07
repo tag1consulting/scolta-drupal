@@ -312,4 +312,35 @@ class ScoltaCommandsValidationTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // Auto indexer always uses PHP (no binary check).
+  // -------------------------------------------------------------------
+
+  public function testResolveAutoIndexerReturnsPHP(): void {
+    // resolveAutoIndexer() must return 'php' without checking binary availability.
+    preg_match('/function resolveAutoIndexer\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s', $this->commandsContents, $m);
+    $body = $m[1] ?? '';
+
+    $this->assertNotEmpty($body, 'Could not locate resolveAutoIndexer() method body');
+    $this->assertStringContainsString(
+      "return 'php';",
+      $body,
+      'resolveAutoIndexer() must return php'
+    );
+    $this->assertStringNotContainsString(
+      'available',
+      $body,
+      "resolveAutoIndexer() must not check binary availability — auto always uses PHP"
+    );
+  }
+
+  public function testAutoIndexerStatusDisplaysPhp(): void {
+    // The status command must not display 'binary (auto-detected)' — auto now always uses PHP.
+    $this->assertStringNotContainsString(
+      'binary (auto-detected)',
+      $this->commandsContents,
+      'Status command must not display "binary (auto-detected)" — auto now always uses PHP'
+    );
+  }
+
 }
