@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Added
+- **`drush scolta:finalize` command** merges pre-committed index chunks into the final Pagefind-compatible index in a fresh PHP process. Use this after `drush scolta:build` exits early with "merge deferred" on large corpora where the PHP heap is too fragmented to run the multi-pass pre-merge in-process. The indexing chunks remain on disk between the two commands; `finalize` reads them and produces the live index. `scolta:build` now automatically spawns `scolta:finalize` in a subprocess when it detects a full-heap condition after indexing.
+
 ### Fixed
 - **`ScoltaContentGatherer::gather()` now loads entities in batches of 10 instead of 100.** `loadMultiple()` allocates all requested entities at once; the previous batch of 100 caused a 25+ MB memory spike per batch (100 entities × ~250 KB each) that PHP's allocator never returns to the OS, producing monotonic heap growth on large corpora like Wikipedia. Reducing to 10 caps the per-batch spike at ~2.5 MB regardless of article size.
 - **`ScoltaContentGatherer::gather()` no longer holds an entire entity batch in memory during yielding.** The generator previously iterated with `foreach`, keeping all loaded entity objects alive in the generator's stack frame for the entire batch. The loop now uses `array_shift` so each entity is freed immediately after its ContentItem(s) are yielded. `drupal_static_reset()` and `gc_collect_cycles()` are called after each batch to clear Drupal's per-request static caches (URL aliases, typed data instances, access results, etc.) and PHP's circular reference graph.
