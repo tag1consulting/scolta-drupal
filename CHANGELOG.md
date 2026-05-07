@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **`drush scolta:build --resume` no longer re-indexes already-processed pages from the beginning.** The generator previously always started at DB offset 0 regardless of resume mode, causing entities 0–N to be written as chunks N–2N and overwriting the correct committed data. On resume, `ScoltaContentGatherer::gather()` now begins at the `pages_processed` offset stored in the build manifest, so each invocation picks up exactly where the previous one left off.
+
 ### Added
 - **`drush scolta:finalize` command** merges pre-committed index chunks into the final Pagefind-compatible index in a fresh PHP process. Use this after `drush scolta:build` exits early with "merge deferred" on large corpora where the PHP heap is too fragmented to run the multi-pass pre-merge in-process. The indexing chunks remain on disk between the two commands; `finalize` reads them and produces the live index. `scolta:build` now automatically spawns `scolta:finalize` in a subprocess when it detects a full-heap condition after indexing.
 

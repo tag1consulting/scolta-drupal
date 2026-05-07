@@ -267,10 +267,6 @@ class ScoltaCommands extends DrushCommands {
     }
     $this->logger()->notice('Gathering content (PHP indexer): {count} entities.', ['count' => $totalCount]);
 
-    // Stream content one entity at a time — no full pre-load into RAM.
-    $exporter = new ContentExporter($resolvedOutputDir);
-    $items = $exporter->filterItems($this->contentGatherer->gather($entityType, $bundle, $siteName));
-
     $resume = (bool) ($options['resume'] ?? FALSE);
     $restart = (bool) ($options['restart'] ?? FALSE);
 
@@ -278,6 +274,24 @@ class ScoltaCommands extends DrushCommands {
 
     $reporter = new DrushProgressReporter($this->output());
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
+
+    // On resume, skip already-indexed pages so the generator picks up from the
+    // correct DB offset instead of restarting at entity 0. pages_processed from
+    // the manifest equals the DB cursor position for corpora without empty-body
+    // entities; for sites with sparse content the gap is bounded and harmless
+    // (filtered items are re-skipped, no duplicate index entries result).
+    $resumeOffset = 0;
+    if ($resume) {
+      $resumeOffset = $orchestrator->coordinator()->buildState()->getPagesProcessed();
+      if ($resumeOffset > 0) {
+        $this->logger()->notice('Resuming from entity offset {offset}.', ['offset' => $resumeOffset]);
+      }
+    }
+
+    // Stream content one entity at a time — no full pre-load into RAM.
+    $exporter = new ContentExporter($resolvedOutputDir);
+    $items = $exporter->filterItems($this->contentGatherer->gather($entityType, $bundle, $siteName, $resumeOffset));
+
     $report = $orchestrator->build($intent, $items, $this->logger(), $reporter, force: $force);
 
     if ($report->success) {
