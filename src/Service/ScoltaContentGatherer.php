@@ -87,6 +87,9 @@ class ScoltaContentGatherer {
    *   The bundle to filter by, or empty string for all bundles.
    * @param string $siteName
    *   The site name used in the ContentItem metadata.
+   * @param int $startPage
+   *   Number of entities to skip before yielding. Used on --resume to restart
+   *   the DB cursor at the previously processed offset rather than page 0.
    *
    * @return \Generator<\Tag1\Scolta\Export\ContentItem>
    *   Yields one ContentItem per published entity.
@@ -94,13 +97,13 @@ class ScoltaContentGatherer {
    * @since 0.3.2
    * @stability experimental
    */
-  public function gather(string $entityType, string $bundle, string $siteName): \Generator {
+  public function gather(string $entityType, string $bundle, string $siteName, int $startPage = 0): \Generator {
     $storage = $this->entityTypeManager->getStorage($entityType);
     // 10 entities per load keeps the per-batch memory spike to ~2.5 MB.
     // 100 caused 25+ MB spikes on large-article corpora (e.g. Wikipedia) that
     // PHP's allocator never returns, leading to monotonic heap growth.
     $batch = 10;
-    $offset = 0;
+    $offset = $startPage;
 
     while (TRUE) {
       $query = $storage->getQuery()

@@ -47,9 +47,9 @@ class ScoltaContentGathererTest extends TestCase {
 
   public function testGatherMethodSignature(): void {
     $this->assertStringContainsString(
-      'public function gather(string $entityType, string $bundle, string $siteName): \Generator',
+      'public function gather(string $entityType, string $bundle, string $siteName, int $startPage = 0): \Generator',
       $this->gathererContents,
-      'gather() must accept entityType, bundle, siteName and return \\Generator (not array)'
+      'gather() must accept entityType, bundle, siteName, optional startPage and return \\Generator (not array)'
     );
   }
 
