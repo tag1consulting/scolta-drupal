@@ -175,12 +175,13 @@ class PagefindExporter {
       'item_id' => $item->getId(),
     ];
 
-    // URL — entities with canonical URLs.
+    // URL — root-relative so Pagefind stores it verbatim in data-pagefind-meta.
+    // Absolute URLs cause doubling on subdirectory installs because Pagefind
+    // strips the domain, stores the path, then its JS resolves that path
+    // against the pagefind base, producing /base/path/drupal/web/node/42.
     if ($entity->hasLinkTemplate('canonical')) {
       try {
-        $meta['url'] = $entity->toUrl('canonical')
-          ->setAbsolute(TRUE)
-          ->toString();
+        $meta['url'] = $entity->toUrl('canonical')->toString();
       }
       catch (\Exception $e) {
         // Some entities may not generate URLs cleanly.

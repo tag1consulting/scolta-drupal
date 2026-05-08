@@ -235,4 +235,24 @@ class ScoltaContentGathererTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // URL must be root-relative, not absolute (issue #40).
+  // -------------------------------------------------------------------
+
+  public function testGatherDoesNotUseAbsoluteUrls(): void {
+    $this->assertStringNotContainsString(
+      'setAbsolute(TRUE)',
+      $this->gathererContents,
+      'gather() must not use setAbsolute(TRUE) — absolute URLs cause path doubling on subdirectory Drupal installs'
+    );
+  }
+
+  public function testGatherUsesRootRelativeUrls(): void {
+    $this->assertMatchesRegularExpression(
+      '/->toUrl\(\)->toString\(\)/',
+      $this->gathererContents,
+      'gather() must call ->toUrl()->toString() to produce root-relative URLs for Pagefind'
+    );
+  }
+
 }

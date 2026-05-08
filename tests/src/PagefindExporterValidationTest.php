@@ -235,4 +235,42 @@ class PagefindExporterValidationTest extends TestCase {
     }
   }
 
+  // -------------------------------------------------------------------
+  // buildMetadata must not use absolute URLs (issue #40).
+  // -------------------------------------------------------------------
+
+  public function testBuildMetadataDoesNotUseSetAbsolute(): void {
+    $contents = file_get_contents($this->exporterFile);
+
+    preg_match(
+      '/protected function buildMetadata\(.*?\{(.*?)\}/s',
+      $contents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringNotContainsString(
+      'setAbsolute(TRUE)',
+      $body,
+      'buildMetadata() must not use setAbsolute(TRUE) — absolute URLs cause path doubling on subdirectory Drupal installs'
+    );
+  }
+
+  public function testBuildMetadataUsesRootRelativeUrl(): void {
+    $contents = file_get_contents($this->exporterFile);
+
+    preg_match(
+      '/protected function buildMetadata\(.*?\{(.*?)\}/s',
+      $contents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      '->toString()',
+      $body,
+      'buildMetadata() must call ->toString() to produce a root-relative URL'
+    );
+  }
+
 }
