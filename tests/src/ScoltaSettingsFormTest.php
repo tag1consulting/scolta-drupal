@@ -510,4 +510,48 @@ class ScoltaSettingsFormTest extends TestCase {
     $current = $value;
   }
 
+  // -------------------------------------------------------------------
+  // PR fix/prompt-drift-cross-adapter-tests — delegation to DefaultPrompts
+  // -------------------------------------------------------------------
+
+  /**
+   * getDefaultPrompt() must delegate to DefaultPrompts::getTemplate(), not
+   * hold its own copy of the prompt text (issue #49).
+   */
+  public function testGetDefaultPromptDelegatesToDefaultPromptsGetTemplate(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $body = $this->extractMethod(file_get_contents($file), 'getDefaultPrompt');
+
+    $this->assertStringContainsString(
+      'DefaultPrompts::getTemplate(',
+      $body,
+      'getDefaultPrompt() must delegate to DefaultPrompts::getTemplate() — no inline prompt copies allowed'
+    );
+  }
+
+  /**
+   * The resolved default for each prompt key matches what DefaultPrompts
+   * produces, so Drupal and WordPress are guaranteed to show identical text.
+   *
+   * @dataProvider allPromptNamesProvider
+   */
+  public function testDefaultPromptMatchesDefaultPromptsResolve(string $name): void {
+    $template = \Tag1\Scolta\Prompt\DefaultPrompts::getTemplate($name);
+    $resolved = \Tag1\Scolta\Prompt\DefaultPrompts::resolve($name, 'Acme', 'tech company');
+
+    $this->assertNotEmpty($template, "Template '{$name}' must not be empty");
+    $this->assertStringContainsString('Acme', $resolved, "Resolved '{$name}' must contain the site name");
+  }
+
+  /**
+   * @return array<string, array{string}>
+   */
+  public static function allPromptNamesProvider(): array {
+    return [
+      'expand_query' => [\Tag1\Scolta\Prompt\DefaultPrompts::EXPAND_QUERY],
+      'summarize'    => [\Tag1\Scolta\Prompt\DefaultPrompts::SUMMARIZE],
+      'follow_up'    => [\Tag1\Scolta\Prompt\DefaultPrompts::FOLLOW_UP],
+    ];
+  }
+
 }

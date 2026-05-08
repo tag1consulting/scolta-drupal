@@ -13,6 +13,9 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 
 ## [Unreleased]
 
+### Tests
+- **Delegation tests added for `getDefaultPrompt()`.** New assertions in `ScoltaSettingsFormTest` verify that `ScoltaSettingsForm::getDefaultPrompt()` delegates to `DefaultPrompts::getTemplate()` (no inline prompt copies) and that resolved prompts match `DefaultPrompts::resolve()` output for all three template keys. Fixes #49 (Drupal side).
+
 ### Fixed
 - **WASM scoring module no longer 404s on subdirectory Drupal installs.** `ScoltaSearchBlock` was constructing the WASM URL with a hardcoded leading `/`, producing paths like `/modules/contrib/scolta/js/wasm/scolta_core.js` regardless of where Drupal is installed. The path is now built with `base_path()`, which returns `/` for root installs and `/drupal/web/` for subdirectory installs. ([#39](https://github.com/tag1consulting/scolta-drupal/issues/39))
 - **`composer require tag1/scolta-drupal` now pulls in `drupal/search_api` automatically.** The module declared `search_api:search_api` as a Drupal dependency in `scolta.info.yml` but omitted `drupal/search_api` from `composer.json`, causing `drush en scolta` to fail immediately after a fresh `composer require`. Added `"drupal/search_api": "^1.0"` to the runtime `require` section. ([#41](https://github.com/tag1consulting/scolta-drupal/issues/41))
