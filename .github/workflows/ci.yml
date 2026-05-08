@@ -34,6 +34,9 @@ jobs:
             $j = json_decode(file_get_contents("composer.json"), true);
             $j["repositories"] = [["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"]];
             $j["require"]["tag1/scolta-php"] = "dev-main@dev";
+            // drupal/search_api requires drupal/core which is not installed in the
+            // unit-test environment. The functional job covers the real install path.
+            unset($j["require"]["drupal/search_api"]);
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
@@ -66,6 +69,9 @@ jobs:
             $j = json_decode(file_get_contents("composer.json"), true);
             $j["repositories"] = [["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"]];
             $j["require"]["tag1/scolta-php"] = "dev-main@dev";
+            // drupal/search_api requires drupal/core which is not installed in the
+            // unit-test environment. The functional job covers the real install path.
+            unset($j["require"]["drupal/search_api"]);
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
@@ -202,6 +208,9 @@ jobs:
             $j = json_decode(file_get_contents("composer.json"), true);
             $j["repositories"] = [["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"]];
             $j["require"]["tag1/scolta-php"] = "dev-main@dev";
+            // drupal/search_api requires drupal/core which is not installed in the
+            // unit-test environment. The functional job covers the real install path.
+            unset($j["require"]["drupal/search_api"]);
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
