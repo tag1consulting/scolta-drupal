@@ -288,9 +288,14 @@ class ScoltaCommands extends DrushCommands {
       }
     }
 
+    // Expose the timestamp manifest to the gatherer so it can skip full entity
+    // loads for unchanged content — the manifest is null-safe, so passing it
+    // on resume/restart is harmless.
+    $tsManifest = $force ? NULL : $orchestrator->getTimestampManifest();
+
     // Stream content one entity at a time — no full pre-load into RAM.
     $exporter = new ContentExporter($resolvedOutputDir);
-    $items = $exporter->filterItems($this->contentGatherer->gather($entityType, $bundle, $siteName, $resumeOffset));
+    $items = $exporter->filterItems($this->contentGatherer->gather($entityType, $bundle, $siteName, $resumeOffset, $tsManifest, $force));
 
     $report = $orchestrator->build($intent, $items, $this->logger(), $reporter, force: $force);
 

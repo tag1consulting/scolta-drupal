@@ -7,6 +7,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Added
+- **Timestamp-based rebuild optimization: skip unchanged entity loads.** `ScoltaContentGatherer::gather()` now accepts an optional `?TimestampManifest $manifest` and `bool $force` parameter. When a manifest is provided and an entity's `changed` timestamp matches the stored value, the gatherer yields a `CachedContentReference` instead of calling `loadMultiple()` — no entity body is loaded, no fields are deserialized. A new `getEntityTimestamps()` method runs a lightweight direct SQL query against the entity's data table (injected `@database` service) to fetch just the `changed` column for a batch of IDs. `ScoltaCommands` now obtains the manifest from `$orchestrator->getTimestampManifest()` and passes it to `gather()`; `--force` passes `null` to bypass the optimization. The `@database` service is now injected into `scolta.content_gatherer` via `scolta.services.yml`.
+
+### Added
 - **Amazee.ai integration for Drupal (Phase 2).** Three new classes and updates to `ScoltaAiService` connecting Drupal's config/state layer to the `tag1/scolta-php` Amazee.ai core:
   - `DrupalConfigStorage` implements `ConfigStorageInterface` using Drupal State (`scolta.amazee.credentials`), keeping LiteLLM tokens out of config sync and version control.
   - `BudgetExceededHandler` shows an admin Messenger warning when the Amazee.ai budget is exhausted, rate-limited to once per 24 hours via State.

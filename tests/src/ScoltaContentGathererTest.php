@@ -46,10 +46,45 @@ class ScoltaContentGathererTest extends TestCase {
   }
 
   public function testGatherMethodSignature(): void {
+    // Core positional parameters must be present.
     $this->assertStringContainsString(
-      'public function gather(string $entityType, string $bundle, string $siteName, int $startPage = 0): \Generator',
+      'public function gather(string $entityType, string $bundle, string $siteName, int $startPage = 0',
       $this->gathererContents,
-      'gather() must accept entityType, bundle, siteName, optional startPage and return \\Generator (not array)'
+      'gather() must accept entityType, bundle, siteName, optional startPage'
+    );
+    // Must return a Generator.
+    $this->assertStringContainsString(
+      '): \Generator',
+      $this->gathererContents,
+      'gather() must return \\Generator'
+    );
+    // TimestampManifest parameter added for incremental optimization.
+    $this->assertStringContainsString(
+      'TimestampManifest',
+      $this->gathererContents,
+      'gather() must accept optional TimestampManifest for timestamp-based optimization'
+    );
+  }
+
+  public function testGathererHasGetEntityTimestamps(): void {
+    $this->assertStringContainsString(
+      'public function getEntityTimestamps(',
+      $this->gathererContents,
+      'ScoltaContentGatherer must have getEntityTimestamps() for lightweight timestamp queries'
+    );
+  }
+
+  public function testGathererInjectsDatabase(): void {
+    $this->assertStringContainsString(
+      'Connection',
+      $this->gathererContents,
+      'ScoltaContentGatherer must inject Drupal\\Core\\Database\\Connection'
+    );
+    $servicesYml = file_get_contents(dirname(__DIR__, 2) . '/scolta.services.yml');
+    $this->assertStringContainsString(
+      '@database',
+      $servicesYml,
+      'scolta.content_gatherer service must inject @database'
     );
   }
 
