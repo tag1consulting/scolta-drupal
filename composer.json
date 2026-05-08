@@ -41,6 +41,8 @@
         "format": "phpcbf",
         "validate-release": "php scripts/validate-release.php"
     },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
     "repositories": [
         {
             "type": "path",

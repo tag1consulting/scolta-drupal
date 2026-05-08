@@ -3,9 +3,17 @@ services:
     parent: logger.channel_base
     arguments: ['scolta']
 
+  scolta.amazee_config_storage:
+    class: Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage
+    arguments: ['@state']
+
+  scolta.amazee_budget_handler:
+    class: Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler
+    arguments: ['@messenger', '@state']
+
   scolta.ai_service:
     class: Drupal\scolta\Service\ScoltaAiService
-    arguments: ['@http_client', '@config.factory', '@logger.channel.scolta']
+    arguments: ['@http_client', '@config.factory', '@logger.channel.scolta', '@state', '@scolta.amazee_budget_handler']
 
   scolta.pagefind_exporter:
     class: Drupal\scolta\Service\PagefindExporter
