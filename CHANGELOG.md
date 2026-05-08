@@ -8,6 +8,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 First stable release — all features from 0.3.x promoted to 1.0 API surface.
 
+### Changed
+- Added `extra.branch-alias` (`dev-main` → `1.0.x-dev`) so consumers can resolve this package with `^1.0@dev` from a VCS repository.
+
 ## [Unreleased]
 
 ### Added
