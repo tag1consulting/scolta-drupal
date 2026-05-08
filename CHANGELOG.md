@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Added
+- **`drush scolta:build` now auto-resumes after a memory abort.** When `IndexBuildOrchestrator` returns `error: 'memory_abort'` (RSS hit the safe threshold mid-build but at least one chunk was committed), `ScoltaCommands` spawns a fresh `drush scolta:build --resume` in the background. The parent process exits, releasing its fragmented heap, and the child starts with clean RSS. This chain repeats until all content is indexed, at which point the final run either completes the merge or spawns `scolta:finalize` as before. Output from each background resume is appended to `/tmp/scolta-resume.log`.
+
 ### Fixed
 - **`drush scolta:build --resume` no longer re-indexes already-processed pages from the beginning.** The generator previously always started at DB offset 0 regardless of resume mode, causing entities 0–N to be written as chunks N–2N and overwriting the correct committed data. On resume, `ScoltaContentGatherer::gather()` now begins at the `pages_processed` offset stored in the build manifest, so each invocation picks up exactly where the previous one left off.
 

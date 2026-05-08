@@ -312,6 +312,24 @@ class ScoltaCommands extends DrushCommands {
       ]);
       $this->spawnFinalize($resolvedStateDir, $resolvedOutputDir, $budget->totalBudgetBytes());
     }
+    elseif ($report->error === 'memory_abort') {
+      // MemoryTelemetry aborted before all pages were indexed. If at least one
+      // chunk was committed, spawn a fresh resume so the chain continues without
+      // manual intervention. The parent process exits first, releasing ~500 MB
+      // of fragmented RSS, so the child starts with a clean heap.
+      if ($report->chunksWritten > 0) {
+        $this->logger()->notice(
+          '{chunks} chunks committed ({pages} pages). Spawning resume in background...',
+          ['chunks' => $report->chunksWritten, 'pages' => $report->pagesProcessed],
+        );
+        $this->spawnResumeBackground($options, $budget->totalBudgetBytes());
+      }
+      else {
+        $this->logger()->error(
+          'Memory limit hit before any chunks were committed. Reduce --chunk-size or increase memory_limit.'
+        );
+      }
+    }
     else {
       $this->logger()->error('PHP indexer failed: {error}', ['error' => $report->error ?? 'unknown']);
     }
@@ -360,6 +378,43 @@ class ScoltaCommands extends DrushCommands {
     if ($exitCode !== 0) {
       $this->logger()->error('scolta:finalize exited with code {code}.', ['code' => $exitCode]);
     }
+  }
+
+  /**
+   * Spawn drush scolta:build --resume in the background.
+   *
+   * Used after a memory_abort to continue indexing in a fresh process. The
+   * background process inherits all relevant options (entity-type, bundle,
+   * memory-budget, chunk-size) and exits independently, freeing the parent's
+   * RSS before allocating its own heap. Output is appended to a temp log file.
+   */
+  private function spawnResumeBackground(array $options, int $budgetBytes): void {
+    $drushBin = $this->findDrushBin();
+    if ($drushBin === NULL) {
+      $this->logger()->warning('Cannot auto-resume: drush not found. Run: drush scolta:build --resume');
+      return;
+    }
+
+    $cmd = escapeshellarg($drushBin) . ' scolta:build --indexer=php --resume';
+
+    $entityType = $options['entity-type'] ?? 'node';
+    if ($entityType !== 'node') {
+      $cmd .= ' --entity-type=' . escapeshellarg($entityType);
+    }
+    if (!empty($options['bundle'])) {
+      $cmd .= ' --bundle=' . escapeshellarg($options['bundle']);
+    }
+    if (isset($options['chunk-size']) && $options['chunk-size'] !== NULL) {
+      $cmd .= ' --chunk-size=' . escapeshellarg((string) $options['chunk-size']);
+    }
+
+    $budgetMb = round($budgetBytes / 1_048_576) . 'M';
+    $cmd .= ' --memory-budget=' . escapeshellarg($budgetMb);
+
+    $logFile = sys_get_temp_dir() . '/scolta-resume.log';
+    exec($cmd . ' >> ' . escapeshellarg($logFile) . ' 2>&1 &');
+
+    $this->logger()->notice('Resume log: {log}', ['log' => $logFile]);
   }
 
   /**
