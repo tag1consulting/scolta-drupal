@@ -14,6 +14,7 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 ## [Unreleased]
 
 ### Fixed
+- **`composer require tag1/scolta-drupal` now pulls in `drupal/search_api` automatically.** The module declared `search_api:search_api` as a Drupal dependency in `scolta.info.yml` but omitted `drupal/search_api` from `composer.json`, causing `drush en scolta` to fail immediately after a fresh `composer require`. Added `"drupal/search_api": "^1.0"` to the runtime `require` section. ([#41](https://github.com/tag1consulting/scolta-drupal/issues/41))
 - **Search result URLs no longer doubled on subdirectory Drupal installs.** `PagefindExporter::buildMetadata()` and `ScoltaContentGatherer::gather()` were calling `->setAbsolute(TRUE)` when generating entity URLs. Pagefind strips the domain from absolute URLs before storing the path, then its JS client resolves that root-relative path against the pagefind base directory — producing doubled paths like `/drupal/web/sites/default/files/scolta-pagefind/drupal/web/node/42` on subdirectory installs. Both methods now call `->toString()` without `setAbsolute()` to produce root-relative URLs that Pagefind stores verbatim. The search JS (`scolta.js`) now also prefers `data.meta?.url` (the verbatim URL from `data-pagefind-meta`) over the Pagefind-resolved `data.url` when rendering result links. ([#40](https://github.com/tag1consulting/scolta-drupal/issues/40))
 
 ### Added
