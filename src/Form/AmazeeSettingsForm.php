@@ -11,6 +11,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeAccountUpgrader;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeApiException;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeClient;
+use Tag1\Scolta\AiProvider\Amazee\AmazeeModelResolver;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeTrialProvisioner;
 
 /**
@@ -47,7 +48,7 @@ class AmazeeSettingsForm extends FormBase {
     return new static(
       $storage,
       $amazeeClient,
-      new AmazeeTrialProvisioner($amazeeClient, $storage),
+      new AmazeeTrialProvisioner($amazeeClient, $storage, NULL, new AmazeeModelResolver($amazeeClient)),
       new AmazeeAccountUpgrader($amazeeClient, $storage),
     );
   }
@@ -245,8 +246,30 @@ class AmazeeSettingsForm extends FormBase {
     $email = $form_state->getValue('email');
 
     try {
-      $this->trialProvisioner->provision($email);
-      $this->messenger()->addStatus($this->t('Connected to Amazee.ai. Your free trial is active.'));
+      $result = $this->trialProvisioner->provision($email);
+
+      if ($result->aiModel !== NULL || $result->aiExpansionModel !== NULL) {
+        $config = $this->configFactory()->getEditable('scolta.settings');
+        $defaultModel = 'claude-sonnet-4-5-20250929';
+
+        if ($result->aiModel !== NULL && $config->get('ai_model') === $defaultModel) {
+          $config->set('ai_model', $result->aiModel);
+        }
+        if ($result->aiExpansionModel !== NULL && ($config->get('ai_expansion_model') ?? '') === '') {
+          $config->set('ai_expansion_model', $result->aiExpansionModel);
+        }
+        $config->save();
+
+        $modelInfo = $result->aiModel ?? $this->t('(default)');
+        $this->messenger()->addStatus($this->t(
+          'Connected to Amazee.ai. Your free trial is active. AI model set to @model.',
+          ['@model' => $modelInfo],
+        ));
+      }
+      else {
+        $this->messenger()->addStatus($this->t('Connected to Amazee.ai. Your free trial is active.'));
+      }
+
       $form_state->setRebuild(TRUE);
     }
     catch (AmazeeApiException $e) {

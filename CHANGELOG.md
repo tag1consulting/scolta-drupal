@@ -7,6 +7,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Added
+- **Amazee.ai auto-configuration: best available Claude model is applied after trial provisioning.** `AmazeeSettingsForm::submitStartTrial()` now applies the auto-selected Sonnet to `scolta.settings ai_model` (if still at the default `claude-sonnet-4-5-20250929`) and Haiku to `ai_expansion_model` (if currently empty). A Drupal Messenger notice reports the selected model name. Model selection delegates to `AmazeeModelResolver` injected into `AmazeeTrialProvisioner`.
+
+### Added
 - **Timestamp-based rebuild optimization: skip unchanged entity loads.** `ScoltaContentGatherer::gather()` now accepts an optional `?TimestampManifest $manifest` and `bool $force` parameter. When a manifest is provided and an entity's `changed` timestamp matches the stored value, the gatherer yields a `CachedContentReference` instead of calling `loadMultiple()` — no entity body is loaded, no fields are deserialized. A new `getEntityTimestamps()` method runs a lightweight direct SQL query against the entity's data table (injected `@database` service) to fetch just the `changed` column for a batch of IDs. `ScoltaCommands` now obtains the manifest from `$orchestrator->getTimestampManifest()` and passes it to `gather()`; `--force` passes `null` to bypass the optimization. The `@database` service is now injected into `scolta.content_gatherer` via `scolta.services.yml`.
 
 ### Added
