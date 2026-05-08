@@ -8,9 +8,12 @@ use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Site\Settings;
+use Drupal\Core\State\StateInterface;
+use Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler;
 use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
 use Tag1\Scolta\AiClient;
+use Tag1\Scolta\AiProvider\Amazee\AmazeeBudgetExceededException;
 use Tag1\Scolta\Config\ScoltaConfig;
 use Tag1\Scolta\Service\AiServiceAdapter;
 
@@ -48,14 +51,33 @@ class ScoltaAiService extends AiServiceAdapter {
    */
   private LoggerInterface $logger;
 
+  /**
+   * The Drupal state service (reads Amazee.ai credentials at request time).
+   *
+   * @var \Drupal\Core\State\StateInterface
+   */
+  private StateInterface $state;
+
+  /**
+   * Handles Amazee.ai budget-exceeded notices. Null when Amazee is not active.
+   *
+   * @var \Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler|null
+   */
+  private ?BudgetExceededHandler $budgetHandler;
+
   public function __construct(
     ClientInterface $httpClient,
     ConfigFactoryInterface $configFactory,
     LoggerInterface $logger,
+    StateInterface $state,
+    ?BudgetExceededHandler $budgetHandler = NULL,
   ) {
     $this->httpClient = $httpClient;
     $this->configFactory = $configFactory;
     $this->logger = $logger;
+    // Assign state before parent::__construct so buildConfig() can read it.
+    $this->state = $state;
+    $this->budgetHandler = $budgetHandler;
 
     parent::__construct($this->buildConfig());
   }
@@ -90,8 +112,17 @@ class ScoltaAiService extends AiServiceAdapter {
     // Remove pagefind config (not relevant to ScoltaConfig).
     unset($values['pagefind']);
 
-    // API key comes from env or settings.php, not exportable config.
-    $values['ai_api_key'] = $this->getApiKey();
+    // Amazee.ai credentials take precedence over env/settings API keys.
+    $amazeeCreds = $this->state->get('scolta.amazee.credentials');
+    if (is_array($amazeeCreds) && !empty($amazeeCreds['litellm_token'])) {
+      $values['ai_provider'] = 'openai';
+      $values['ai_api_key'] = $amazeeCreds['litellm_token'];
+      $values['ai_base_url'] = $amazeeCreds['litellm_api_url'] ?? '';
+    }
+    else {
+      // API key comes from env or settings.php, not exportable config.
+      $values['ai_api_key'] = $this->getApiKey();
+    }
 
     // Site name fallback to Drupal site name.
     if (empty($values['site_name'])) {
@@ -119,9 +150,14 @@ class ScoltaAiService extends AiServiceAdapter {
    * Determine the source of the API key.
    *
    * @return string
-   *   One of 'env', 'settings', or 'none'.
+   *   One of 'amazee', 'env', 'settings', or 'none'.
    */
   public function getApiKeySource(): string {
+    $amazeeCreds = $this->state->get('scolta.amazee.credentials');
+    if (is_array($amazeeCreds) && !empty($amazeeCreds['litellm_token'])) {
+      return 'amazee';
+    }
+
     $envKey = getenv('SCOLTA_API_KEY');
     if ($envKey !== FALSE && $envKey !== '') {
       return 'env';
@@ -133,6 +169,13 @@ class ScoltaAiService extends AiServiceAdapter {
     }
 
     return 'none';
+  }
+
+  /**
+   * Whether Amazee.ai credentials are currently active.
+   */
+  public function isAmazeeActive(): bool {
+    return $this->getApiKeySource() === 'amazee';
   }
 
   /**
@@ -226,6 +269,62 @@ class ScoltaAiService extends AiServiceAdapter {
     ]);
 
     return $response->getNormalized()->getText();
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Intercepts AmazeeBudgetExceededException to show an admin notice before
+   * re-throwing, so callers still get a clean exception.
+   */
+  public function message(string $systemPrompt, string $userMessage, int $maxTokens = 512): string {
+    try {
+      return parent::message($systemPrompt, $userMessage, $maxTokens);
+    }
+    catch (\RuntimeException $e) {
+      $this->handlePossibleBudgetException($e);
+      throw $e;
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function conversation(string $systemPrompt, array $messages, int $maxTokens = 512): string {
+    try {
+      return parent::conversation($systemPrompt, $messages, $maxTokens);
+    }
+    catch (\RuntimeException $e) {
+      $this->handlePossibleBudgetException($e);
+      throw $e;
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function messageForOperation(string $operation, string $systemPrompt, string $userMessage, int $maxTokens = 512): string {
+    try {
+      return parent::messageForOperation($operation, $systemPrompt, $userMessage, $maxTokens);
+    }
+    catch (\RuntimeException $e) {
+      $this->handlePossibleBudgetException($e);
+      throw $e;
+    }
+  }
+
+  /**
+   * Converts a budget-exceeded RuntimeException to AmazeeBudgetExceededException.
+   *
+   * Notifies the handler and re-throws. No-op if the message does not match.
+   */
+  private function handlePossibleBudgetException(\RuntimeException $e): void {
+    if (!str_contains($e->getMessage(), 'Budget has been exceeded!')) {
+      return;
+    }
+    $budgetException = new AmazeeBudgetExceededException($e);
+    $this->budgetHandler?->handle($budgetException);
+    throw $budgetException;
   }
 
   /**

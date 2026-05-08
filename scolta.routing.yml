@@ -1,3 +1,11 @@
+scolta.settings.amazee:
+  path: '/admin/config/search/scolta/amazee'
+  defaults:
+    _form: '\Drupal\scolta\Form\AmazeeSettingsForm'
+    _title: 'Amazee.ai Configuration'
+  requirements:
+    _permission: 'administer scolta'
+
 scolta.dismiss_rebuild_notice:
   path: '/admin/config/search/scolta/dismiss-rebuild-notice'
   defaults:

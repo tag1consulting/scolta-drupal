@@ -6,6 +6,13 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Added
+- **Amazee.ai integration for Drupal (Phase 2).** Three new classes and updates to `ScoltaAiService` connecting Drupal's config/state layer to the `tag1/scolta-php` Amazee.ai core:
+  - `DrupalConfigStorage` implements `ConfigStorageInterface` using Drupal State (`scolta.amazee.credentials`), keeping LiteLLM tokens out of config sync and version control.
+  - `BudgetExceededHandler` shows an admin Messenger warning when the Amazee.ai budget is exhausted, rate-limited to once per 24 hours via State.
+  - `AmazeeSettingsForm` is a multi-step admin form at `/admin/config/search/scolta/amazee` with two connection paths: (1) free trial — one step: email → provision → connected; (2) upgrade — three steps: email → OTP → region selection → connected.
+  - `ScoltaAiService` now accepts `StateInterface` and `BudgetExceededHandler` as constructor arguments. When Amazee credentials are present in State, `buildConfig()` automatically sets `ai_provider: 'openai'`, `ai_api_key`, and `ai_base_url` to the stored LiteLLM endpoint. `getApiKeySource()` returns `'amazee'` when active. `message()`, `conversation()`, and `messageForOperation()` catch "Budget has been exceeded!" errors, convert them to `AmazeeBudgetExceededException`, and delegate to `BudgetExceededHandler`.
+
 ### Fixed
 - **`drush scolta:build --resume` no longer re-indexes already-processed pages from the beginning.** The generator previously always started at DB offset 0 regardless of resume mode, causing entities 0–N to be written as chunks N–2N and overwriting the correct committed data. On resume, `ScoltaContentGatherer::gather()` now begins at the `pages_processed` offset stored in the build manifest, so each invocation picks up exactly where the previous one left off.
 
