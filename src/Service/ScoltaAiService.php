@@ -314,10 +314,9 @@ class ScoltaAiService extends AiServiceAdapter {
   }
 
   /**
-   * Convert a budget-exceeded RuntimeException to AmazeeBudgetExceededException
-   * and notify the handler, then re-throw the typed exception.
+   * Converts a budget-exceeded RuntimeException to AmazeeBudgetExceededException.
    *
-   * No-op if the exception message does not match the Amazee budget signal.
+   * Notifies the handler and re-throws. No-op if the message does not match.
    */
   private function handlePossibleBudgetException(\RuntimeException $e): void {
     if (!str_contains($e->getMessage(), 'Budget has been exceeded!')) {

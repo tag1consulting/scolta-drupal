@@ -7,7 +7,6 @@ namespace Drupal\scolta\Form;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage;
-use GuzzleHttp\ClientInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeAccountUpgrader;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeApiException;
@@ -80,10 +79,9 @@ class AmazeeSettingsForm extends FormBase {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Step builders.
-  // ---------------------------------------------------------------------------
-
+  /**
+   * Builds the initial step: show connected status or start/sign-in options.
+   */
   private function buildStartStep(array $form, FormStateInterface $form_state): array {
     $creds = $this->storage->load();
 
@@ -134,6 +132,9 @@ class AmazeeSettingsForm extends FormBase {
     return $form;
   }
 
+  /**
+   * Builds the verification code entry step.
+   */
   private function buildVerificationStep(array $form, FormStateInterface $form_state): array {
     $email = $form_state->get('amazee_email');
 
@@ -167,6 +168,9 @@ class AmazeeSettingsForm extends FormBase {
     return $form;
   }
 
+  /**
+   * Builds the region selection step.
+   */
   private function buildRegionStep(array $form, FormStateInterface $form_state): array {
     $form['info'] = [
       '#markup' => '<p>' . $this->t('Select the region where your AI requests will be processed.') . '</p>',
