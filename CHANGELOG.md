@@ -13,6 +13,9 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 
 ## [Unreleased]
 
+### Fixed
+- **`getResolvedBuildDir()` and `getResolvedOutputDir()` no longer fatal on standard Drupal installs where `private://` is unconfigured.** Both methods chained `->realpath()` directly onto `getViaUri()`, which returns `false` when the stream wrapper scheme is not registered. The call is now guarded: if `getViaUri()` returns `false` or `realpath()` fails, the original URI string is returned as the path. ([#35](https://github.com/tag1consulting/scolta-drupal/issues/35))
+
 ### Added
 - **Amazee.ai auto-configuration: best available Claude model is applied after trial provisioning.** `AmazeeSettingsForm::submitStartTrial()` now applies the auto-selected Sonnet to `scolta.settings ai_model` (if still at the default `claude-sonnet-4-5-20250929`) and Haiku to `ai_expansion_model` (if currently empty). A Drupal Messenger notice reports the selected model name. Model selection delegates to `AmazeeModelResolver` injected into `AmazeeTrialProvisioner`.
 
