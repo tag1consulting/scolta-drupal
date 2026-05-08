@@ -13,6 +13,9 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 
 ## [Unreleased]
 
+### Fixed
+- **Search result URLs no longer doubled on subdirectory Drupal installs.** `PagefindExporter::buildMetadata()` and `ScoltaContentGatherer::gather()` were calling `->setAbsolute(TRUE)` when generating entity URLs. Pagefind strips the domain from absolute URLs before storing the path, then its JS client resolves that root-relative path against the pagefind base directory — producing doubled paths like `/drupal/web/sites/default/files/scolta-pagefind/drupal/web/node/42` on subdirectory installs. Both methods now call `->toString()` without `setAbsolute()` to produce root-relative URLs that Pagefind stores verbatim. The search JS (`scolta.js`) now also prefers `data.meta?.url` (the verbatim URL from `data-pagefind-meta`) over the Pagefind-resolved `data.url` when rendering result links. ([#40](https://github.com/tag1consulting/scolta-drupal/issues/40))
+
 ### Added
 - **Search API backend form now exposes indexer mode (auto/PHP/binary).** The `indexer` setting was silently ignored in the Search API server configuration — admins on shared hosting had no way to switch to the PHP indexer from the UI. A select field now appears in the backend config form. When PHP or auto is selected, the Pagefind binary path field is hidden and binary validation is skipped. `triggerRebuild()` also respects the setting: binary mode is only invoked when `indexer: binary` is configured. ([#36](https://github.com/tag1consulting/scolta-drupal/issues/36))
 

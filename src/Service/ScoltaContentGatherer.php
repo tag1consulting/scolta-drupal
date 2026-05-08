@@ -287,7 +287,7 @@ class ScoltaContentGatherer {
               id: $itemId,
               title: $translation->label() ?: 'Untitled',
               bodyHtml: $body,
-              url: $translation->toUrl()->setAbsolute(TRUE)->toString(),
+              url: $translation->toUrl()->toString(),
               date: date('Y-m-d', $entityTs),
               siteName: $siteName,
               language: $langcode,

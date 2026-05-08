@@ -235,4 +235,68 @@ class PagefindExporterValidationTest extends TestCase {
     }
   }
 
+  // -------------------------------------------------------------------
+  // buildMetadata must not use absolute URLs (issue #40).
+  // -------------------------------------------------------------------
+
+  public function testBuildMetadataDoesNotUseSetAbsolute(): void {
+    $contents = file_get_contents($this->exporterFile);
+
+    preg_match(
+      '/protected function buildMetadata\(.*?\{(.*?)\}/s',
+      $contents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringNotContainsString(
+      'setAbsolute(TRUE)',
+      $body,
+      'buildMetadata() must not use setAbsolute(TRUE) — absolute URLs cause path doubling on subdirectory Drupal installs'
+    );
+  }
+
+  public function testBuildMetadataUsesRootRelativeUrl(): void {
+    $contents = file_get_contents($this->exporterFile);
+
+    preg_match(
+      '/protected function buildMetadata\(.*?\{(.*?)\}/s',
+      $contents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      '->toString()',
+      $body,
+      'buildMetadata() must call ->toString() to produce a root-relative URL'
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // scolta.js must prefer data.meta?.url for display links.
+  // -------------------------------------------------------------------
+
+  public function testScoltaJsUsesMetaUrlForDisplayLinks(): void {
+    $jsFile = $this->moduleRoot . '/js/scolta.js';
+    $jsContents = file_get_contents($jsFile);
+
+    $this->assertStringContainsString(
+      'data.meta?.url',
+      $jsContents,
+      'scolta.js must prefer data.meta?.url (verbatim from data-pagefind-meta) for display links to avoid path doubling on subdirectory installs'
+    );
+  }
+
+  public function testScoltaJsMetaUrlTakesPrecedenceOverResolveUrl(): void {
+    $jsFile = $this->moduleRoot . '/js/scolta.js';
+    $jsContents = file_get_contents($jsFile);
+
+    $this->assertMatchesRegularExpression(
+      '/data\.meta\?\.url\s*\|\|\s*resolveUrl\(/',
+      $jsContents,
+      'scolta.js must use data.meta?.url || resolveUrl() so the verbatim meta URL takes precedence over Pagefind\'s resolved data.url'
+    );
+  }
+
 }
