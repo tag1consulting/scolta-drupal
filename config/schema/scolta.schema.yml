@@ -173,3 +173,6 @@ search_api.backend.plugin.scolta_pagefind:
     view_mode:
       type: string
       label: 'Entity view mode'
+    indexer:
+      type: string
+      label: 'Indexer mode (auto, php, or binary)'

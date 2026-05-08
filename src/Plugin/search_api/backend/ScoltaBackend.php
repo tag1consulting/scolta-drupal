@@ -88,6 +88,7 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
       'auto_rebuild' => TRUE,
       'auto_rebuild_delay' => 300,
       'view_mode' => 'search_index',
+      'indexer' => 'auto',
     ];
   }
 
@@ -111,12 +112,29 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
       '#required' => TRUE,
     ];
 
+    $form['indexer'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Indexer mode'),
+      '#description' => $this->t('How the search index is built after content is exported. <strong>Auto / PHP</strong> works on all hosting environments — no exec() or Node.js required. <strong>Binary</strong> invokes the Pagefind CLI; requires a binary installed on the server.'),
+      '#options' => [
+        'auto' => $this->t('Auto (PHP indexer)'),
+        'php' => $this->t('PHP indexer'),
+        'binary' => $this->t('Pagefind binary'),
+      ],
+      '#default_value' => $this->configuration['indexer'] ?? 'auto',
+    ];
+
     $form['pagefind_binary'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Pagefind binary path'),
-      '#description' => $this->t('Path to the pagefind binary. Use "pagefind" if installed globally, "npx pagefind" for npm, or an absolute path.'),
+      '#description' => $this->t('Path to the pagefind binary. Use "pagefind" if installed globally, "npx pagefind" for npm, or an absolute path. Only used when indexer mode is set to "Binary".'),
       '#default_value' => $this->configuration['pagefind_binary'],
-      '#required' => TRUE,
+      '#required' => FALSE,
+      '#states' => [
+        'visible' => [
+          ':input[name="backend_config[indexer]"]' => ['value' => 'binary'],
+        ],
+      ],
     ];
 
     $form['view_mode'] = [
@@ -156,13 +174,20 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
    * {@inheritdoc}
    */
   public function validateConfigurationForm(array &$form, FormStateInterface $form_state): void {
-    // Validate pagefind binary is reachable.
-    $binary = $form_state->getValue('pagefind_binary');
-    if ($binary && !str_contains($binary, 'npx')) {
-      // Only check direct binary paths, not npx commands.
-      $result = $this->builder->checkBinary($binary);
-      if (!$result['available']) {
-        $form_state->setErrorByName('pagefind_binary', $this->t('Pagefind binary not found at @path. Install via npm (npm install -g pagefind) or provide the correct path.', ['@path' => $binary]));
+    $indexer = $form_state->getValue('indexer') ?: 'auto';
+
+    // Validate pagefind binary only when binary indexer mode is selected.
+    if ($indexer === 'binary') {
+      $binary = $form_state->getValue('pagefind_binary');
+      if (empty($binary)) {
+        $form_state->setErrorByName('pagefind_binary', $this->t('Pagefind binary path is required when using binary indexer mode.'));
+      }
+      elseif (!str_contains($binary, 'npx')) {
+        // Only check direct binary paths, not npx commands.
+        $result = $this->builder->checkBinary($binary);
+        if (!$result['available']) {
+          $form_state->setErrorByName('pagefind_binary', $this->t('Pagefind binary not found at @path. Install via npm (npm install -g pagefind) or provide the correct path.', ['@path' => $binary]));
+        }
       }
     }
 
@@ -183,6 +208,7 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
     $this->configuration['view_mode'] = $form_state->getValue('view_mode');
     $this->configuration['auto_rebuild'] = (bool) $form_state->getValue('auto_rebuild');
     $this->configuration['auto_rebuild_delay'] = max(60, min(3600, (int) $form_state->getValue('auto_rebuild_delay')));
+    $this->configuration['indexer'] = $form_state->getValue('indexer') ?: 'auto';
   }
 
   /**
@@ -258,6 +284,15 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
    * Trigger a Pagefind index rebuild.
    */
   public function triggerRebuild(): bool {
+    $indexer = $this->configuration['indexer'] ?? 'auto';
+
+    if ($indexer !== 'binary') {
+      $this->scoltaLogger->info('Indexer mode is "@mode" — skipping automatic binary rebuild after indexing. Run drush scolta:build to update the search index.', [
+        '@mode' => $indexer,
+      ]);
+      return TRUE;
+    }
+
     $buildDir = $this->getResolvedBuildDir();
     $outputDir = $this->getResolvedOutputDir();
     $binary = $this->configuration['pagefind_binary'];

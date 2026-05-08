@@ -13,6 +13,9 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 
 ## [Unreleased]
 
+### Added
+- **Search API backend form now exposes indexer mode (auto/PHP/binary).** The `indexer` setting was silently ignored in the Search API server configuration — admins on shared hosting had no way to switch to the PHP indexer from the UI. A select field now appears in the backend config form. When PHP or auto is selected, the Pagefind binary path field is hidden and binary validation is skipped. `triggerRebuild()` also respects the setting: binary mode is only invoked when `indexer: binary` is configured. ([#36](https://github.com/tag1consulting/scolta-drupal/issues/36))
+
 ### Fixed
 - **`getResolvedBuildDir()` and `getResolvedOutputDir()` no longer fatal on standard Drupal installs where `private://` is unconfigured.** Both methods chained `->realpath()` directly onto `getViaUri()`, which returns `false` when the stream wrapper scheme is not registered. The call is now guarded: if `getViaUri()` returns `false` or `realpath()` fails, the original URI string is returned as the path. ([#35](https://github.com/tag1consulting/scolta-drupal/issues/35))
 
