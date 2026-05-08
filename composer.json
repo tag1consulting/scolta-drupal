@@ -59,6 +59,11 @@
             "Drupal\\scolta\\Tests\\": "tests/src/"
         }
     },
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    },
     "config": {
         "sort-packages": true,
         "allow-plugins": {
