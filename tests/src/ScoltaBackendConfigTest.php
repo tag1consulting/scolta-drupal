@@ -237,4 +237,119 @@ class ScoltaBackendConfigTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // indexer mode — form, validation, submit, runtime
+  // -------------------------------------------------------------------
+
+  public function testDefaultConfigurationIncludesIndexer(): void {
+    preg_match(
+      '/public function defaultConfiguration\(\): array \{(.*?)\}/s',
+      $this->backendContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      "'indexer'",
+      $body,
+      'defaultConfiguration() must include indexer key'
+    );
+    $this->assertStringContainsString(
+      "'indexer' => 'auto'",
+      $body,
+      'defaultConfiguration() must default indexer to "auto"'
+    );
+  }
+
+  public function testBuildConfigurationFormHasIndexerSelect(): void {
+    $this->assertStringContainsString(
+      "'#type' => 'select'",
+      $this->backendContents,
+      'buildConfigurationForm() must include a select field (for indexer mode)'
+    );
+    $this->assertStringContainsString(
+      "'indexer'",
+      $this->backendContents,
+      'buildConfigurationForm() must define an indexer field'
+    );
+  }
+
+  public function testIndexerFormFieldHasAllThreeOptions(): void {
+    $this->assertStringContainsString(
+      "'auto'",
+      $this->backendContents,
+      'Indexer select must include "auto" option'
+    );
+    $this->assertStringContainsString(
+      "'php'",
+      $this->backendContents,
+      'Indexer select must include "php" option'
+    );
+    $this->assertStringContainsString(
+      "'binary'",
+      $this->backendContents,
+      'Indexer select must include "binary" option'
+    );
+  }
+
+  public function testPagfindBinaryFieldNotUnconditionallyRequired(): void {
+    preg_match(
+      '/\$form\[\'pagefind_binary\'\]\s*=\s*\[(.*?)\];/s',
+      $this->backendContents,
+      $match
+    );
+    $fieldDef = $match[1] ?? '';
+
+    $this->assertDoesNotMatchRegularExpression(
+      "/'#required'\s*=>\s*TRUE/",
+      $fieldDef,
+      'pagefind_binary field must not be unconditionally required — it is only required when indexer=binary'
+    );
+  }
+
+  public function testValidateConfigurationFormOnlyChecksBinaryWhenIndexerIsBinary(): void {
+    preg_match(
+      '/public function validateConfigurationForm\(.*?\{(.*?)\/\/ Clamp/s',
+      $this->backendContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      "=== 'binary'",
+      $body,
+      'validateConfigurationForm() must gate binary validation on indexer === "binary"'
+    );
+  }
+
+  public function testSubmitConfigurationFormSavesIndexer(): void {
+    preg_match(
+      '/public function submitConfigurationForm\(.*?\{(.*?)\}/s',
+      $this->backendContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      "configuration['indexer']",
+      $body,
+      'submitConfigurationForm() must save the indexer setting'
+    );
+  }
+
+  public function testTriggerRebuildSkipsBinaryWhenIndexerIsNotBinary(): void {
+    preg_match(
+      '/public function triggerRebuild\(\): bool \{(.*?)\}/s',
+      $this->backendContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      "!== 'binary'",
+      $body,
+      'triggerRebuild() must skip binary build when indexer mode is not "binary"'
+    );
+  }
+
 }
