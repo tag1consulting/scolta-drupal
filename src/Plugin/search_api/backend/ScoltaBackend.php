@@ -286,7 +286,8 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
   protected function getResolvedBuildDir(): string {
     $dir = $this->configuration['build_dir'];
     if (str_contains($dir, '://')) {
-      $dir = $this->streamWrapperManager->getViaUri($dir)->realpath() ?: $dir;
+      $wrapper = $this->streamWrapperManager->getViaUri($dir);
+      $dir = ($wrapper && ($realpath = $wrapper->realpath()) !== FALSE) ? $realpath : $dir;
     }
     return $dir;
   }
@@ -297,7 +298,8 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
   protected function getResolvedOutputDir(): string {
     $dir = $this->configuration['output_dir'];
     if (str_contains($dir, '://')) {
-      $dir = $this->streamWrapperManager->getViaUri($dir)->realpath() ?: $dir;
+      $wrapper = $this->streamWrapperManager->getViaUri($dir);
+      $dir = ($wrapper && ($realpath = $wrapper->realpath()) !== FALSE) ? $realpath : $dir;
     }
     return $dir;
   }

@@ -150,4 +150,91 @@ class ScoltaBackendConfigTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // getResolvedBuildDir() / getResolvedOutputDir() — null-safe wrapper
+  // -------------------------------------------------------------------
+
+  /**
+   * Ensures getResolvedBuildDir() does not chain ->realpath() directly onto
+   * getViaUri(), which returns false when the stream wrapper is not registered
+   * (e.g. private:// with no file_private_path configured).
+   */
+  public function testGetResolvedBuildDirGuardsAgainstFalseWrapper(): void {
+    $this->assertDoesNotMatchRegularExpression(
+      '/getViaUri\([^)]+\)->realpath\(\)/',
+      $this->backendContents,
+      'getResolvedBuildDir() and getResolvedOutputDir() must not chain ->realpath() directly on getViaUri() — getViaUri() returns false when the scheme is unregistered'
+    );
+  }
+
+  public function testGetResolvedBuildDirChecksWrapperBeforeRealpath(): void {
+    preg_match(
+      '/protected function getResolvedBuildDir\(\): string \{(.*?)\}/s',
+      $this->backendContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      'getViaUri(',
+      $body,
+      'getResolvedBuildDir() must call getViaUri()'
+    );
+    $this->assertMatchesRegularExpression(
+      '/\$wrapper\s*&&/',
+      $body,
+      'getResolvedBuildDir() must guard with $wrapper && before calling ->realpath()'
+    );
+  }
+
+  public function testGetResolvedOutputDirChecksWrapperBeforeRealpath(): void {
+    preg_match(
+      '/protected function getResolvedOutputDir\(\): string \{(.*?)\}/s',
+      $this->backendContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      'getViaUri(',
+      $body,
+      'getResolvedOutputDir() must call getViaUri()'
+    );
+    $this->assertMatchesRegularExpression(
+      '/\$wrapper\s*&&/',
+      $body,
+      'getResolvedOutputDir() must guard with $wrapper && before calling ->realpath()'
+    );
+  }
+
+  public function testGetResolvedBuildDirFallsBackToOriginalUri(): void {
+    preg_match(
+      '/protected function getResolvedBuildDir\(\): string \{(.*?)\}/s',
+      $this->backendContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      ': $dir',
+      $body,
+      'getResolvedBuildDir() must fall back to the original $dir when the wrapper is unavailable'
+    );
+  }
+
+  public function testGetResolvedOutputDirFallsBackToOriginalUri(): void {
+    preg_match(
+      '/protected function getResolvedOutputDir\(\): string \{(.*?)\}/s',
+      $this->backendContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      ': $dir',
+      $body,
+      'getResolvedOutputDir() must fall back to the original $dir when the wrapper is unavailable'
+    );
+  }
+
 }
