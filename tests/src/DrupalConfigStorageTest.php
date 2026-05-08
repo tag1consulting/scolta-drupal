@@ -44,9 +44,9 @@ class DrupalConfigStorageTest extends TestCase {
       'use Tag1\\Scolta\\AiProvider\\Amazee\\ConfigStorageInterface',
       $contents,
     );
-    // The interface class must exist in scolta-php.
-    $interfaceFile = $this->moduleRoot . '/../scolta-php/src/AiProvider/Amazee/ConfigStorageInterface.php';
-    $this->assertFileExists($interfaceFile, 'ConfigStorageInterface must exist in scolta-php');
+    // The interface class must exist in the installed scolta-php vendor copy.
+    $interfaceFile = $this->moduleRoot . '/vendor/tag1/scolta-php/src/AiProvider/Amazee/ConfigStorageInterface.php';
+    $this->assertFileExists($interfaceFile, 'ConfigStorageInterface must exist in installed tag1/scolta-php');
   }
 
   public function testHasRequiredMethods(): void {
