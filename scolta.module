@@ -89,6 +89,44 @@ function scolta_page_top(array &$page_top) {
 }
 
 /**
+ * Implements hook_form_FORM_ID_alter() for search_api_index_fields.
+ *
+ * Adds a notice to the Search API "Manage fields" form explaining that field
+ * configuration is optional when Scolta is the backend — Scolta indexes the
+ * full rendered entity view, not individual Search API fields.
+ */
+function scolta_form_search_api_index_fields_alter(array &$form, \Drupal\Core\Form\FormStateInterface $form_state, string $form_id): void {
+  $form_object = $form_state->getFormObject();
+  if (!method_exists($form_object, 'getEntity')) {
+    return;
+  }
+
+  /** @var \Drupal\search_api\IndexInterface $index */
+  $index = $form_object->getEntity();
+
+  try {
+    $server = $index->getServer();
+    if ($server === NULL || $server->getBackendId() !== 'scolta_pagefind') {
+      return;
+    }
+  }
+  catch (\Exception $e) {
+    return;
+  }
+
+  $form['scolta_fields_notice'] = [
+    '#type' => 'html_tag',
+    '#tag' => 'div',
+    '#attributes' => [
+      'class' => ['messages', 'messages--info'],
+      'role' => 'contentinfo',
+    ],
+    '#value' => (string) t('Scolta indexes the full rendered content of each entity. Individual field selection is not required — fields configured here are not used by the Scolta indexer.'),
+    '#weight' => -100,
+  ];
+}
+
+/**
  * Check if auto-rebuild should be triggered for the given entity.
  *
  * Enqueues a rebuild request when a node is inserted or updated
