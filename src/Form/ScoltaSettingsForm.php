@@ -862,7 +862,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
    */
   public function rebuildSubmit(array &$form, FormStateInterface $form_state): void {
     $config = $this->config('scolta.settings');
-    $siteName = $config->get('site_name') ?: '';
+    $siteName = $config->get('site_name') ?: ($this->config('system.site')->get('name') ?? '');
 
     // Clear any previous notice so a fresh notice_id is used after this rebuild.
     $this->state->delete('scolta.rebuild_notice');

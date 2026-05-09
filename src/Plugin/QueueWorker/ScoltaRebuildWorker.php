@@ -78,7 +78,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase {
       }
 
       // Gather content from published nodes.
-      $siteName = $config->get('site_name') ?? '';
+      $siteName = $config->get('site_name') ?: (\Drupal::config('system.site')->get('name') ?? '');
       $entityStorage = \Drupal::entityTypeManager()->getStorage('node');
       $ids = $entityStorage->getQuery()
         ->accessCheck(FALSE)
