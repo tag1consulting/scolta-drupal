@@ -279,4 +279,35 @@ class ScoltaSearchBlockTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // WASM path — subdirectory install support.
+  // -------------------------------------------------------------------
+
+  public function testWasmPathUsesBasePath(): void {
+    $this->assertStringContainsString(
+      'base_path()',
+      $this->blockContents,
+      'wasmPath must use base_path() so subdirectory Drupal installs resolve the WASM URL correctly'
+    );
+  }
+
+  public function testWasmPathDoesNotHardcodeLeadingSlash(): void {
+    $this->assertStringNotContainsString(
+      "= '/' . \$modulePath",
+      $this->blockContents,
+      'wasmPath must not use a hardcoded leading slash; use base_path() instead'
+    );
+  }
+
+  public function testWasmPathConcatenatesModulePath(): void {
+    // base_path() . $modulePath produces the correct path for both root
+    // (base_path() = '/') and subdirectory (base_path() = '/drupal/web/')
+    // installs. Verify the concatenation pattern is present.
+    $this->assertStringContainsString(
+      'base_path() . $modulePath',
+      $this->blockContents,
+      'wasmPath must concatenate base_path() with $modulePath'
+    );
+  }
+
 }

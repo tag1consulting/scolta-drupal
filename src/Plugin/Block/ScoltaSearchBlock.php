@@ -94,7 +94,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     // Build the window.scolta configuration for the JS frontend.
     // Resolve the WASM glue JS path for client-side scoring.
     $modulePath = \Drupal::service('extension.list.module')->getPath('scolta');
-    $wasmPath = '/' . $modulePath . '/js/wasm/scolta_core.js';
+    $wasmPath = base_path() . $modulePath . '/js/wasm/scolta_core.js';
 
     $scoltaSettings = [
       'scoring' => $config->toJsScoringConfig(),
