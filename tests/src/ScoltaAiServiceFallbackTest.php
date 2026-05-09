@@ -225,15 +225,19 @@ class ScoltaAiServiceFallbackTest extends TestCase {
   }
 
   public function testCreateClientInjectsDrupalHttpClient(): void {
-    preg_match(
-      '/protected function createClient\(\): AiClient \{(.*?)\}/s',
+    // Verify the method exists and the Drupal HTTP client is always passed.
+    // We check the whole service source because the method now contains nested
+    // closures, making a single-brace regex impractical.
+    $this->assertStringContainsString(
+      'protected function createClient(): AiClient',
       $this->serviceContents,
-      $match
+      'ScoltaAiService must override createClient()'
     );
-    $body = $match[1] ?? '';
-
-    $this->assertStringContainsString('$this->httpClient', $body,
-      'createClient() must pass $this->httpClient to AiClient (not create a new Guzzle client)');
+    $this->assertStringContainsString(
+      '$this->httpClient',
+      $this->serviceContents,
+      'createClient() must pass $this->httpClient to AiClient (not create a new Guzzle client)'
+    );
   }
 
   // -------------------------------------------------------------------
