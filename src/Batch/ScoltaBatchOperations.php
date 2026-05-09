@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Batch;
 
+use Drupal\Core\Entity\EntityChangedInterface;
+use Drupal\Core\Entity\FieldableEntityInterface;
+use Tag1\Scolta\Export\ContentExporter;
+use Tag1\Scolta\Export\ContentItem;
 use Tag1\Scolta\Index\PhpIndexer;
 
 /**
@@ -16,6 +20,81 @@ use Tag1\Scolta\Index\PhpIndexer;
  * @stability experimental
  */
 class ScoltaBatchOperations {
+
+  /**
+   * Load entity IDs, convert to ContentItems, filter, and index one chunk.
+   *
+   * This is the batch callback used by "Index Now". Each batch step receives
+   * a small slice of entity IDs, loads only those entities, and processes them
+   * so that no single web request has to load the full corpus into memory.
+   *
+   * @param int $chunkIdx
+   *   The zero-based chunk index (used as the PhpIndexer chunk position).
+   * @param array $entityIds
+   *   Entity IDs to load and process in this step.
+   * @param int $totalCount
+   *   Total entity ID count across all chunks (used as totalPages estimate).
+   * @param string $siteName
+   *   Site name for ContentItem metadata.
+   * @param array $config
+   *   Configuration array with state_dir, output_dir, hmac_secret, language.
+   * @param array $context
+   *   The batch context array.
+   */
+  public static function loadAndProcessChunk(int $chunkIdx, array $entityIds, int $totalCount, string $siteName, array $config, array &$context): void {
+    $storage = \Drupal::entityTypeManager()->getStorage('node');
+    $entities = $storage->loadMultiple($entityIds);
+
+    $items = [];
+    foreach ($entities as $entity) {
+      if (!$entity instanceof FieldableEntityInterface) {
+        continue;
+      }
+
+      $body = '';
+      foreach (['body', 'field_body', 'field_content'] as $field) {
+        if ($entity->hasField($field) && !$entity->get($field)->isEmpty()) {
+          $body = $entity->get($field)->value;
+          break;
+        }
+      }
+
+      if (empty($body)) {
+        continue;
+      }
+
+      $changedTime = $entity instanceof EntityChangedInterface
+        ? $entity->getChangedTime()
+        : (int) ($entity->get('changed')->value ?? 0);
+
+      $items[] = new ContentItem(
+        id: (string) $entity->id(),
+        title: $entity->label() ?: 'Untitled',
+        bodyHtml: $body,
+        url: $entity->toUrl()->toString(),
+        date: date('Y-m-d', $changedTime),
+        siteName: $siteName,
+      );
+    }
+
+    if (!empty($items)) {
+      $exporter = new ContentExporter($config['output_dir']);
+      $filtered = iterator_to_array($exporter->filterItems($items));
+
+      if (!empty($filtered)) {
+        $indexer = new PhpIndexer(
+          $config['state_dir'],
+          $config['output_dir'],
+          $config['hmac_secret'] ?? NULL,
+          $config['language'] ?? 'en'
+        );
+        $indexer->processChunk($filtered, $chunkIdx, $totalCount);
+      }
+    }
+
+    $context['results']['completed_chunks'] = ($context['results']['completed_chunks'] ?? 0) + 1;
+    $context['message'] = t('Indexed chunk @num', ['@num' => $chunkIdx + 1]);
+  }
 
   /**
    * Process a chunk of content items.
