@@ -13,6 +13,9 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 
 ## [Unreleased]
 
+### Added
+- **Search API "Manage fields" form now shows a help notice when Scolta is the backend.** Field configuration has no effect on Scolta indexing — Scolta indexes the full rendered entity view, not individual Search API fields. Admins were spending time configuring fields that were silently ignored. A `hook_form_FORM_ID_alter` implementation now injects an info notice at the top of the fields form when the index uses the `scolta_pagefind` backend, explaining that field selection is not required. ([#42](https://github.com/tag1consulting/scolta-drupal/issues/42))
+
 ### Fixed
 - **"Index Now" no longer times out on shared hosting for non-trivial corpora.** `rebuildSubmit()` was calling `gatherContentItems()` which called `loadMultiple()` on all published nodes synchronously within the web request, exhausting memory and hitting the request timeout before any Batch API work was dispatched. The PHP indexer path now queries only entity IDs in the submit handler (a lightweight DB call) and defers all entity loading, content extraction, and filtering to `ScoltaBatchOperations::loadAndProcessChunk()` — a new static batch callback that loads one chunk of entities per batch step. The binary indexer path is unchanged (binary mode requires `exec()` and is not used on shared hosting). Also fixes a `setAbsolute(TRUE)` URL bug in `gatherContentItems()` that was causing doubled paths on subdirectory Drupal installs (same root cause as #40). ([#37](https://github.com/tag1consulting/scolta-drupal/issues/37))
 
