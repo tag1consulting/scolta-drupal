@@ -7,6 +7,8 @@ namespace Drupal\scolta\Plugin\Block;
 use Drupal\Core\Block\BlockBase;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Url;
 use Drupal\scolta\Service\ScoltaAiService;
@@ -34,6 +36,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     private readonly ScoltaAiService $aiService,
     private readonly FileUrlGeneratorInterface $fileUrlGenerator,
     private readonly ConfigFactoryInterface $configFactory,
+    private readonly LanguageManagerInterface $languageManager,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -49,6 +52,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       $container->get('scolta.ai_service'),
       $container->get('file_url_generator'),
       $container->get('config.factory'),
+      $container->get('language_manager'),
     );
   }
 
@@ -96,6 +100,10 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     $modulePath = \Drupal::service('extension.list.module')->getPath('scolta');
     $wasmPath = base_path() . $modulePath . '/js/wasm/scolta_core.js';
 
+    $currentLanguage = $this->languageManager
+      ->getCurrentLanguage(LanguageInterface::TYPE_CONTENT)
+      ->getId();
+
     $scoltaSettings = [
       'scoring' => $config->toJsScoringConfig(),
       'endpoints' => [
@@ -109,6 +117,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       'container' => '#scolta-search',
       'allowedLinkDomains' => [],
       'disclaimer' => '',
+      'currentLanguage' => $currentLanguage,
     ];
 
     return [

@@ -14,6 +14,8 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 ## [Unreleased]
 
 ### Added
+- **`ScoltaSearchBlock` now passes the current content language to the JS frontend.** `LanguageManager::getCurrentLanguage(TYPE_CONTENT)->getId()` is called at render time and passed to `drupalSettings.scolta.currentLanguage`. On multilingual sites using URL-prefix negotiation, `/es/` pages receive `currentLanguage: 'es'` and `/fr/` pages receive `currentLanguage: 'fr'`. The JS frontend (scolta-php) uses this to pre-filter search results to the page language; users can uncheck the language facet to search all languages. Requires scolta-php with auto-language-filter support.
+
 - **Search API "Manage fields" form now shows a help notice when Scolta is the backend.** Field configuration has no effect on Scolta indexing — Scolta indexes the full rendered entity view, not individual Search API fields. Admins were spending time configuring fields that were silently ignored. A `hook_form_FORM_ID_alter` implementation now injects an info notice at the top of the fields form when the index uses the `scolta_pagefind` backend, explaining that field selection is not required. ([#42](https://github.com/tag1consulting/scolta-drupal/issues/42))
 
 ### Fixed
