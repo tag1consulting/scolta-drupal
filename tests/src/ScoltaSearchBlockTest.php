@@ -127,6 +127,14 @@ class ScoltaSearchBlockTest extends TestCase {
     );
   }
 
+  public function testCreateInjectsLanguageManager(): void {
+    $this->assertStringContainsString(
+      "'language_manager'",
+      $this->blockContents,
+      'create() must inject language_manager for current content language detection'
+    );
+  }
+
   // -------------------------------------------------------------------
   // build() method and render array.
   // -------------------------------------------------------------------
@@ -234,6 +242,22 @@ class ScoltaSearchBlockTest extends TestCase {
     );
   }
 
+  public function testSettingsIncludesCurrentLanguage(): void {
+    $this->assertStringContainsString(
+      "'currentLanguage'",
+      $this->blockContents,
+      'drupalSettings should include currentLanguage for JS auto-language filtering'
+    );
+  }
+
+  public function testCurrentLanguageUsesContentLanguageType(): void {
+    $this->assertStringContainsString(
+      'LanguageInterface::TYPE_CONTENT',
+      $this->blockContents,
+      'getCurrentLanguage() must use TYPE_CONTENT so URL-prefix negotiation applies'
+    );
+  }
+
   // -------------------------------------------------------------------
   // Constructor accepts expected types.
   // -------------------------------------------------------------------
@@ -243,6 +267,7 @@ class ScoltaSearchBlockTest extends TestCase {
       'ScoltaAiService',
       'FileUrlGeneratorInterface',
       'ConfigFactoryInterface',
+      'LanguageManagerInterface',
     ];
 
     foreach ($expectedTypes as $type) {
