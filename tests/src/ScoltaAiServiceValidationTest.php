@@ -385,6 +385,22 @@ class ScoltaAiServiceValidationTest extends TestCase {
     );
   }
 
+  public function testBuildConfigSiteNameFallbackUsesFalsyCheck(): void {
+    // The fallback must trigger on empty string, not just null.
+    // `?: system.site` (falsy) is correct; `?? system.site` (null-coalescing)
+    // would silently pass an explicitly-stored empty string through.
+    preg_match('/function buildConfig\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s', $this->serviceContents, $m);
+    $body = $m[1] ?? '';
+    $this->assertNotEmpty($body, 'Could not locate buildConfig() method body');
+    // The system.site lookup must appear in the same expression as site_name,
+    // confirming it is actually the fallback rather than an unrelated read.
+    $this->assertMatchesRegularExpression(
+      '/site_name.*system\.site|system\.site.*site_name/s',
+      $body,
+      "buildConfig() must reference 'system.site' in the same expression that reads 'site_name'"
+    );
+  }
+
   // -------------------------------------------------------------------
   // createClient uses Drupal HTTP client.
   // -------------------------------------------------------------------

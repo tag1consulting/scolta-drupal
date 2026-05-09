@@ -446,6 +446,32 @@ class ScoltaSettingsFormTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
+  // site_name fallback to system.site in rebuildSubmit().
+  // -------------------------------------------------------------------
+
+  public function testRebuildSubmitFallsBackToSystemSiteName(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $source = file_get_contents($file);
+    $this->assertStringContainsString(
+      'system.site',
+      $source,
+      'rebuildSubmit() must fall back to system.site when site_name is empty'
+    );
+  }
+
+  public function testRebuildSubmitDoesNotUseEmptyStringDefault(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $source = file_get_contents($file);
+    // Old code: `$config->get('site_name') ?: ''` — silently used empty string,
+    // preventing the system.site fallback from ever kicking in.
+    $this->assertStringNotContainsString(
+      "get('site_name') ?: ''",
+      $source,
+      "rebuildSubmit() must not default site_name to '' — use the system.site fallback instead"
+    );
+  }
+
+  // -------------------------------------------------------------------
   // Helpers.
   // -------------------------------------------------------------------
 

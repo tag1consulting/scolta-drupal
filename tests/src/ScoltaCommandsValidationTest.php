@@ -343,4 +343,38 @@ class ScoltaCommandsValidationTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // Site name fallback to system.site when scolta site_name is empty.
+  // -------------------------------------------------------------------
+
+  public function testExportFallsBackToSystemSiteName(): void {
+    $this->assertStringContainsString(
+      "system.site",
+      $this->commandsContents,
+      'export() must fall back to system.site when site_name is empty'
+    );
+  }
+
+  public function testExportDoesNotHardcodeUnknownSiteName(): void {
+    // Both export() and buildWithPhpIndexer() previously defaulted to 'Unknown'
+    // instead of reading the real site name from system.site.
+    $this->assertStringNotContainsString(
+      "'Unknown'",
+      $this->commandsContents,
+      "Commands must not fall back to hard-coded 'Unknown' — use system.site name instead"
+    );
+  }
+
+  public function testBuildWithPhpIndexerFallsBackToSystemSiteName(): void {
+    // Verify the system.site fallback pattern is used in buildWithPhpIndexer().
+    preg_match('/function buildWithPhpIndexer\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s', $this->commandsContents, $m);
+    $body = $m[1] ?? '';
+    $this->assertNotEmpty($body, 'Could not locate buildWithPhpIndexer() method body');
+    $this->assertStringContainsString(
+      'system.site',
+      $body,
+      'buildWithPhpIndexer() must fall back to system.site when site_name is empty'
+    );
+  }
+
 }

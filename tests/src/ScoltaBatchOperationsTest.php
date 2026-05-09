@@ -91,4 +91,37 @@ class ScoltaBatchOperationsTest extends TestCase {
     }
   }
 
+  /**
+   * ScoltaRebuildWorker must fall back to system.site when site_name is empty.
+   *
+   * Without the fallback, queue-based rebuilds embed an empty site_name in
+   * every ContentItem, which breaks the site-name filter in AI prompts.
+   */
+  public function testRebuildWorkerFallsBackToSystemSiteName(): void {
+    $source = file_get_contents(__DIR__ . '/../../src/Plugin/QueueWorker/ScoltaRebuildWorker.php');
+    $this->assertStringContainsString(
+      'system.site',
+      $source,
+      'ScoltaRebuildWorker::processItem() must fall back to system.site when site_name is empty'
+    );
+  }
+
+  /**
+   * ScoltaRebuildWorker must not use an empty string as the silent default.
+   *
+   * The old code used `$config->get('site_name') ?? ''` which silently passed
+   * an empty site name through to the index. The fix must use `?:` (falsy check)
+   * so an explicitly-stored empty string also triggers the fallback.
+   */
+  public function testRebuildWorkerSiteNameUsesFalsyFallback(): void {
+    $source = file_get_contents(__DIR__ . '/../../src/Plugin/QueueWorker/ScoltaRebuildWorker.php');
+    // Old pattern: `$config->get('site_name') ?? ''`  — null-coalescing misses empty string.
+    // New pattern must use ?: so empty string also falls through.
+    $this->assertStringNotContainsString(
+      "get('site_name') ?? ''",
+      $source,
+      "ScoltaRebuildWorker must use ?: (falsy fallback) for site_name, not ?? '' (null-coalescing), so stored empty strings also trigger the system.site lookup"
+    );
+  }
+
 }

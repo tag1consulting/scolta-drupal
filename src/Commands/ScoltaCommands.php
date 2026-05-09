@@ -85,7 +85,7 @@ class ScoltaCommands extends DrushCommands {
     $config = $this->configFactory->get('scolta.settings');
     $outputDir = $options['output-dir'] ?: '/var/www/html/pagefind-site';
     $bundle = $options['bundle'] ?: '';
-    $siteName = $config->get('site_name') ?: 'Unknown';
+    $siteName = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
 
     $exporter = new ContentExporter($outputDir);
     $exporter->prepareOutputDir();
@@ -228,7 +228,7 @@ class ScoltaCommands extends DrushCommands {
   private function buildWithPhpIndexer(array $options, $config, bool $force): void {
     $entityType = $options['entity-type'] ?: 'node';
     $bundle     = $options['bundle'] ?: '';
-    $siteName   = $config->get('site_name') ?: 'Unknown';
+    $siteName   = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
     $language   = $config->get('ai_languages')[0] ?? 'en';
 
     $budget = MemoryBudgetConfig::fromCliAndConfig(
