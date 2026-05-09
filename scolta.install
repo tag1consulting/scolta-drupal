@@ -11,11 +11,58 @@
 function scolta_install() {
   _scolta_deploy_assets();
 
+  // Attempt Amazee.ai auto-provisioning so search AI works out of the box.
+  _scolta_auto_provision_amazee();
+
   \Drupal::queue('scolta_rebuild')->createItem(['type' => 'install']);
   \Drupal::messenger()->addStatus(t(
     'Scolta installed. Your search index will be built on the next cron run. '
     . 'To build immediately: <code>drush scolta:build</code>'
   ));
+}
+
+/**
+ * Attempt Amazee.ai trial provisioning at module install time.
+ *
+ * No-op when the user has an explicit API key configured, or when
+ * credentials are already stored. Failures are silenced — the install
+ * succeeds regardless.
+ */
+function _scolta_auto_provision_amazee(): void {
+  /** @var \Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface $storage */
+  $storage = \Drupal::service('scolta.amazee_config_storage');
+
+  \Tag1\Scolta\AiProvider\Amazee\AutoProvisioner::ensureAiAvailable(
+    $storage,
+    hasExplicitApiKey: _scolta_has_explicit_api_key(),
+    onModelsResolved: function (string $aiModel, string $aiExpansionModel): void {
+      $config = \Drupal::configFactory()->getEditable('scolta.settings');
+      if ($aiModel !== '') {
+        $config->set('ai_model', $aiModel);
+      }
+      if ($aiExpansionModel !== '') {
+        $config->set('ai_expansion_model', $aiExpansionModel);
+      }
+      $config->save();
+    },
+  );
+}
+
+/**
+ * Check whether the site has an explicit Scolta API key configured.
+ *
+ * Returns TRUE when SCOLTA_API_KEY env var or scolta.api_key in settings.php
+ * is non-empty, meaning the user has their own provider and auto-provisioning
+ * should be skipped.
+ */
+function _scolta_has_explicit_api_key(): bool {
+  $envKey = getenv('SCOLTA_API_KEY');
+  if ($envKey !== FALSE && $envKey !== '') {
+    return TRUE;
+  }
+
+  $settingsKey = \Drupal\Core\Site\Settings::get('scolta.api_key', '');
+  return !empty($settingsKey);
 }
 
 /**

@@ -14,6 +14,7 @@ use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
 use Tag1\Scolta\AiClient;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeBudgetExceededException;
+use Tag1\Scolta\AiProvider\Amazee\AutoProvisioner;
 use Tag1\Scolta\Config\ScoltaConfig;
 use Tag1\Scolta\Service\AiServiceAdapter;
 
@@ -89,7 +90,7 @@ class ScoltaAiService extends AiServiceAdapter {
    * for ScoltaConfig::fromArray(), removes pagefind settings (not needed
    * by the AI client), and injects the API key and site name.
    */
-  private function buildConfig(): ScoltaConfig {
+  protected function buildConfig(): ScoltaConfig {
     $drupalConfig = $this->configFactory->get('scolta.settings');
     $values = $drupalConfig->getRawData();
 
@@ -329,8 +330,33 @@ class ScoltaAiService extends AiServiceAdapter {
 
   /**
    * {@inheritdoc}
+   *
+   * Attempts lazy auto-provisioning when no API key is configured. This
+   * covers cases where the install-hook provisioning attempt failed (e.g.
+   * no network at install time). If provisioning succeeds, the client is
+   * built with the freshly stored credentials.
    */
   protected function createClient(): AiClient {
+    if ($this->getApiKeySource() === 'none') {
+      /** @var \Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface $storage */
+      $storage = \Drupal::service('scolta.amazee_config_storage');
+      AutoProvisioner::ensureAiAvailable(
+        $storage,
+        hasExplicitApiKey: FALSE,
+        onModelsResolved: function (string $aiModel, string $aiExpansionModel): void {
+          $config = $this->configFactory->getEditable('scolta.settings');
+          if ($aiModel !== '') {
+            $config->set('ai_model', $aiModel);
+          }
+          if ($aiExpansionModel !== '') {
+            $config->set('ai_expansion_model', $aiExpansionModel);
+          }
+          $config->save();
+        },
+      );
+      // Re-read state in case provisioning just stored new credentials.
+      return new AiClient($this->buildConfig()->toAiClientConfig(), $this->httpClient);
+    }
     return new AiClient($this->getConfig()->toAiClientConfig(), $this->httpClient);
   }
 
