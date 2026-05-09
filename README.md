@@ -6,7 +6,7 @@ Drupal 10/11 Search API backend with Drush commands, admin UI, and AI-powered se
 
 ## Status
 
-Scolta is in active production use on Drupal 10 and 11. The module API documented here is stable within the 0.x minor series — no changes without a deprecation notice and a replacement in place. Some capabilities are still maturing toward a 1.0 release; test in staging when upgrading between minor versions. File bugs at the repo issue tracker.
+Scolta 1.0 — the module API documented here is stable. Breaking changes follow semantic versioning: no removal or signature change without a major version bump and a deprecation cycle. File bugs at the repo issue tracker.
 
 ## What Is Scolta?
 
@@ -53,7 +53,7 @@ The recipe fixture HTML files live in [scolta-php](https://github.com/tag1consul
 
 ```bash
 # 1. Install
-composer require tag1/scolta-drupal tag1/scolta-php
+composer require tag1/scolta-drupal:^1.0 tag1/scolta-php:^1.0
 
 # 2. Enable
 drush en scolta
@@ -503,5 +503,5 @@ GPL-2.0-or-later
 
 - [scolta-core](https://github.com/tag1consulting/scolta-core) — Rust/WASM scoring, ranking, and AI layer that runs in the browser.
 - [scolta-php](https://github.com/tag1consulting/scolta-php) — PHP library that indexes content into Pagefind-compatible indexes, plus the shared orchestration and AI client.
-- [scolta-laravel](https://github.com/tag1consulting/scolta-laravel) — Laravel 11/12 package with Artisan commands, a `Searchable` trait for Eloquent models, and a Blade search component.
+- [scolta-laravel](https://github.com/tag1consulting/scolta-laravel) — Laravel 11/12/13 package with Artisan commands, a `Searchable` trait for Eloquent models, and a Blade search component.
 - [scolta-wp](https://github.com/tag1consulting/scolta-wp) — WordPress 6.x plugin with WP-CLI commands, Settings API page, and a `[scolta_search]` shortcode.
