@@ -13,6 +13,9 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 
 ## [Unreleased]
 
+### Documentation
+- **Added shared hosting and large-corpus guidance.** README now covers SSH disconnect resilience (`nohup`, `screen`, `tmux`), when to use `drush scolta:build` instead of `drush search-api:index` for initial/full builds, the `--resume` and `--restart` flags for recovering interrupted builds, and `drush scolta:finalize` for deferred-merge scenarios on very large corpora. The Drush commands table now lists all build flags (`--resume`, `--restart`, `--force`, `--chunk-size`, `--indexer`). The "No search results" debugging tip no longer recommends `drush search-api:index` for a full rebuild. ([#38](https://github.com/tag1consulting/scolta-drupal/issues/38))
+
 ### Tests
 - **Delegation tests added for `getDefaultPrompt()`.** New assertions in `ScoltaSettingsFormTest` verify that `ScoltaSettingsForm::getDefaultPrompt()` delegates to `DefaultPrompts::getTemplate()` (no inline prompt copies) and that resolved prompts match `DefaultPrompts::resolve()` output for all three template keys. Fixes #49 (Drupal side).
 

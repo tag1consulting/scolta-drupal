@@ -120,6 +120,83 @@ Available profiles: `conservative` (default, ≤96 MB), `balanced` (≤200 MB), 
 
 Tested ceiling at the `conservative` profile: 50,000 pages. Higher counts likely work; not certified yet.
 
+## Large Corpora and Shared Hosting
+
+**Use `drush scolta:build` for initial and full index builds — not `drush search-api:index`.**
+
+`drush scolta:build` is Scolta's own indexing command. It manages chunking, memory budgets, and resume/restart automatically. `drush search-api:index` is the generic Search API command; it works for incremental updates but is not designed for large full-corpus builds on shared hosting.
+
+### SSH disconnect resilience
+
+Shared hosting SSH sessions time out, and a killed SSH connection takes the Drush process with it. On any build expected to run longer than a few minutes, wrap the command so it survives a disconnect:
+
+**`nohup` (simplest):**
+
+```bash
+nohup drush scolta:build > /tmp/scolta-build.log 2>&1 &
+tail -f /tmp/scolta-build.log
+```
+
+**`screen` (reattachable session):**
+
+```bash
+screen -S scolta-build
+drush scolta:build
+# Ctrl+A then D to detach; screen -r scolta-build to reattach
+```
+
+**`tmux` (reattachable session):**
+
+```bash
+tmux new -s scolta-build
+drush scolta:build
+# Ctrl+B then D to detach; tmux attach -t scolta-build to reattach
+```
+
+### Resuming an interrupted build
+
+If a build is killed mid-run (memory limit, SSH disconnect, host process killer), the next invocation can pick up where it left off instead of restarting from entity 0:
+
+```bash
+drush scolta:build --resume
+```
+
+To discard an interrupted state and restart clean:
+
+```bash
+drush scolta:build --restart
+```
+
+Use `--restart` if the interrupted run ended before committing any chunks, or if the index is in an inconsistent state.
+
+### Large corpora (10k–50k+ nodes)
+
+For very large corpora, combine the memory and resume flags:
+
+```bash
+# Initial build with SSH protection and logging
+nohup drush scolta:build --memory-budget=conservative > /tmp/scolta-build.log 2>&1 &
+
+# If that run is killed, resume it:
+nohup drush scolta:build --resume --memory-budget=conservative > /tmp/scolta-build.log 2>&1 &
+```
+
+On hosts where PHP heap fragmentation prevents the merge step from running in-process, Scolta automatically spawns `drush scolta:finalize` in a fresh process. You can also run it manually after indexing completes:
+
+```bash
+drush scolta:finalize
+```
+
+### Day-to-day rebuilds
+
+After the initial full index, incremental rebuilds are much faster. The timestamp-based optimization skips unchanged entities, so a nightly rebuild of a 25k-node corpus where 100 nodes changed re-indexes only those 100 nodes. The queue worker (`ScoltaRebuildWorker`) also handles incremental rebuilds automatically on content save.
+
+For daily nightly rebuilds via system cron:
+
+```bash
+0 2 * * * cd /var/www/html && nohup vendor/bin/drush scolta:build > /tmp/scolta-nightly.log 2>&1
+```
+
 ## AI Features and Privacy
 
 Scolta's AI tier is optional. When enabled:
@@ -325,7 +402,7 @@ scoring:
 ### "No search results"
 
 1. Check index status: `drush scolta:status`
-2. Run a full rebuild: `drush search-api:index && drush scolta:build`
+2. Run a full rebuild: `drush scolta:build` (use `nohup drush scolta:build` on shared hosting — see [Large Corpora and Shared Hosting](#large-corpora-and-shared-hosting))
 3. Confirm the Pagefind output directory is web-accessible (must be under `public://`)
 4. Verify the Search API index has the Scolta backend selected and is enabled
 
@@ -339,15 +416,28 @@ drush config:export && drush config:import
 ## Drush Commands
 
 ```bash
-drush scolta:build                    # Export content and build Pagefind index
-drush scolta:build --skip-pagefind    # Export HTML without rebuilding index
-drush scolta:build --memory-budget=balanced  # Use balanced memory profile
-drush scolta:export                   # Export content to HTML only
-drush scolta:rebuild-index            # Rebuild Pagefind index from existing HTML
-drush scolta:status                   # Show tracker, content, index, and AI status
-drush scolta:clear-cache              # Clear Scolta AI response caches
-drush scolta:download-pagefind        # Download the Pagefind binary for your platform
-drush scolta:check-setup              # Verify PHP, indexer, and configuration
+# Build the search index
+drush scolta:build                          # Build index (PHP indexer, conservative memory)
+drush scolta:build --memory-budget=balanced # Use balanced memory profile
+drush scolta:build --resume                 # Resume an interrupted build
+drush scolta:build --restart                # Discard interrupted state and restart
+drush scolta:build --force                  # Force rebuild even if content is unchanged
+drush scolta:build --indexer=binary         # Use Pagefind binary instead of PHP indexer
+drush scolta:build --chunk-size=500         # Override chunk size (pages per chunk)
+drush scolta:build --skip-pagefind          # Export HTML only, skip index build
+
+# Finalize (after a deferred merge on large corpora)
+drush scolta:finalize                       # Merge committed chunks into the final index
+
+# Content export only
+drush scolta:export                         # Export content to HTML only
+
+# Maintenance
+drush scolta:rebuild-index                  # Rebuild index from existing exported HTML
+drush scolta:status                         # Show index, indexer, and AI provider status
+drush scolta:clear-cache                    # Clear Scolta AI response caches
+drush scolta:check-setup                    # Verify PHP, indexer, and configuration
+drush scolta:download-pagefind              # Download the Pagefind binary for your platform
 ```
 
 ## API Endpoints
