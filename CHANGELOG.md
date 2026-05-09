@@ -13,6 +13,9 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 
 ## [Unreleased]
 
+### Tests
+- **Delegation tests added for `getDefaultPrompt()`.** New assertions in `ScoltaSettingsFormTest` verify that `ScoltaSettingsForm::getDefaultPrompt()` delegates to `DefaultPrompts::getTemplate()` (no inline prompt copies) and that resolved prompts match `DefaultPrompts::resolve()` output for all three template keys. Fixes #49 (Drupal side).
+
 ### Fixed
 - **`site_name` now falls back to the Drupal system site name when not explicitly configured.** Four code paths in the index-building pipeline — `ScoltaRebuildWorker::processItem()`, `ScoltaCommands::export()`, `ScoltaCommands::buildWithPhpIndexer()`, and `ScoltaSettingsForm::rebuildSubmit()` — were reading `site_name` directly from `scolta.settings` without a fallback. If the admin had never entered a site name in the Scolta settings form, every `ContentItem` was indexed with an empty `siteName`, causing the AI prompt to omit the site name. All four paths now fall back to `\Drupal::config('system.site')->get('name')` (or `$this->configFactory->get('system.site')` where the factory is injected) when the Scolta-specific value is empty or null. ([#43](https://github.com/tag1consulting/scolta-drupal/issues/43))
 - **WASM scoring module no longer 404s on subdirectory Drupal installs.** `ScoltaSearchBlock` was constructing the WASM URL with a hardcoded leading `/`, producing paths like `/modules/contrib/scolta/js/wasm/scolta_core.js` regardless of where Drupal is installed. The path is now built with `base_path()`, which returns `/` for root installs and `/drupal/web/` for subdirectory installs. ([#39](https://github.com/tag1consulting/scolta-drupal/issues/39))
