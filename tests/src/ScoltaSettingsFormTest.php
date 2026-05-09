@@ -449,6 +449,36 @@ class ScoltaSettingsFormTest extends TestCase {
   // site_name fallback to system.site in rebuildSubmit().
   // -------------------------------------------------------------------
 
+  // -------------------------------------------------------------------
+  // rebuildSubmit dispatches to Batch API without pre-loading entities.
+  // -------------------------------------------------------------------
+
+  public function testRebuildSubmitUsesLoadAndProcessChunkCallback(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $source = file_get_contents($file);
+    $this->assertStringContainsString(
+      'loadAndProcessChunk',
+      $source,
+      'rebuildSubmit() must route through loadAndProcessChunk (entity-ID batch dispatch), not processChunk'
+    );
+  }
+
+  public function testGatherContentItemsUrlDoesNotUseSetAbsolute(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $source = file_get_contents($file);
+    // setAbsolute(TRUE) was the cause of doubled URLs on subdirectory installs
+    // (issue #40). Verify gatherContentItems() uses ->toString() without it.
+    $this->assertStringNotContainsString(
+      'setAbsolute(TRUE)',
+      $source,
+      'gatherContentItems() must not call setAbsolute(TRUE) — use ->toString() to produce root-relative URLs'
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // site_name fallback to system.site in rebuildSubmit().
+  // -------------------------------------------------------------------
+
   public function testRebuildSubmitFallsBackToSystemSiteName(): void {
     $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
     $source = file_get_contents($file);

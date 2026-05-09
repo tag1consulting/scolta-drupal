@@ -13,6 +13,9 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 
 ## [Unreleased]
 
+### Fixed
+- **"Index Now" no longer times out on shared hosting for non-trivial corpora.** `rebuildSubmit()` was calling `gatherContentItems()` which called `loadMultiple()` on all published nodes synchronously within the web request, exhausting memory and hitting the request timeout before any Batch API work was dispatched. The PHP indexer path now queries only entity IDs in the submit handler (a lightweight DB call) and defers all entity loading, content extraction, and filtering to `ScoltaBatchOperations::loadAndProcessChunk()` — a new static batch callback that loads one chunk of entities per batch step. The binary indexer path is unchanged (binary mode requires `exec()` and is not used on shared hosting). Also fixes a `setAbsolute(TRUE)` URL bug in `gatherContentItems()` that was causing doubled paths on subdirectory Drupal installs (same root cause as #40). ([#37](https://github.com/tag1consulting/scolta-drupal/issues/37))
+
 ### Documentation
 - **Added shared hosting and large-corpus guidance.** README now covers SSH disconnect resilience (`nohup`, `screen`, `tmux`), when to use `drush scolta:build` instead of `drush search-api:index` for initial/full builds, the `--resume` and `--restart` flags for recovering interrupted builds, and `drush scolta:finalize` for deferred-merge scenarios on very large corpora. The Drush commands table now lists all build flags (`--resume`, `--restart`, `--force`, `--chunk-size`, `--indexer`). The "No search results" debugging tip no longer recommends `drush search-api:index` for a full rebuild. ([#38](https://github.com/tag1consulting/scolta-drupal/issues/38))
 

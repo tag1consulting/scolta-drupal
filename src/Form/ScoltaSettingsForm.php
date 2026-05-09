@@ -867,34 +867,50 @@ class ScoltaSettingsForm extends ConfigFormBase {
     // Clear any previous notice so a fresh notice_id is used after this rebuild.
     $this->state->delete('scolta.rebuild_notice');
 
-    // Gather content items from published nodes.
-    $items = $this->gatherContentItems($siteName);
-
-    if (empty($items)) {
-      $this->messenger()->addWarning($this->t('No content found to index.'));
-      return;
-    }
-
-    // Filter through ContentExporter.
-    $outputDir = $this->resolveOutputDir($config);
-    $exporter = new ContentExporter($outputDir);
-    $filteredItems = $exporter->exportToItems($items);
-
-    if (empty($filteredItems)) {
-      $this->messenger()->addWarning($this->t('No items passed content filter.'));
-      return;
-    }
-
-    // Resolve indexer mode.
+    // Resolve indexer mode up front so we choose the right gather strategy.
     $indexerMode = $config->get('indexer') ?: 'auto';
     if ($indexerMode === 'auto') {
       $indexerMode = $this->resolveAutoIndexer($config);
     }
 
     if ($indexerMode === 'php') {
-      $this->rebuildWithBatch($filteredItems, $config);
+      // For the PHP indexer, only query entity IDs here. Entity loading and
+      // content filtering happen inside each batch step so that no single web
+      // request has to load the full corpus into memory. This prevents the
+      // "Index Now" button from timing out on shared hosting at any corpus size.
+      $storage = $this->entityTypeManager->getStorage('node');
+      $ids = array_values($storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('status', 1)
+        ->execute());
+
+      if (empty($ids)) {
+        $this->messenger()->addWarning($this->t('No content found to index.'));
+        return;
+      }
+
+      $this->rebuildWithBatch($ids, $siteName, $config);
     }
     else {
+      // Binary mode requires exec(), which is not available on shared hosting.
+      // Loading all content synchronously is acceptable here since binary mode
+      // is only used on hosts that support long-running processes.
+      $items = $this->gatherContentItems($siteName);
+
+      if (empty($items)) {
+        $this->messenger()->addWarning($this->t('No content found to index.'));
+        return;
+      }
+
+      $outputDir = $this->resolveOutputDir($config);
+      $exporter = new ContentExporter($outputDir);
+      $filteredItems = $exporter->exportToItems($items);
+
+      if (empty($filteredItems)) {
+        $this->messenger()->addWarning($this->t('No items passed content filter.'));
+        return;
+      }
+
       $this->rebuildWithBinary($filteredItems, $config);
     }
   }
@@ -948,7 +964,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
         id: (string) $entity->id(),
         title: $entity->label() ?: 'Untitled',
         bodyHtml: $body,
-        url: $entity->toUrl()->setAbsolute(TRUE)->toString(),
+        url: $entity->toUrl()->toString(),
         date: date('Y-m-d', $changedTime),
         siteName: $siteName,
       );
@@ -1027,12 +1043,18 @@ class ScoltaSettingsForm extends ConfigFormBase {
   /**
    * Rebuild using Batch API with the PHP indexer.
    *
-   * @param \Tag1\Scolta\Export\ContentItem[] $items
-   *   The filtered content items.
+   * Accepts entity IDs rather than pre-loaded ContentItems so that no single
+   * web request ever loads the full corpus. Entity loading, content extraction,
+   * and filtering all happen inside each batch step.
+   *
+   * @param array $entityIds
+   *   Flat array of published node IDs to index.
+   * @param string $siteName
+   *   Site name passed to each ContentItem.
    * @param \Drupal\Core\Config\ImmutableConfig $config
    *   The Scolta settings config.
    */
-  protected function rebuildWithBatch(array $items, $config): void {
+  protected function rebuildWithBatch(array $entityIds, string $siteName, $config): void {
     $stateDir = $this->resolveStateDir($config);
     $outputDir = $this->resolveOutputDir($config);
     $language = $config->get('ai_languages')[0] ?? 'en';
@@ -1053,14 +1075,14 @@ class ScoltaSettingsForm extends ConfigFormBase {
     ];
 
     $chunkSize = 100;
-    $chunks = array_chunk($items, $chunkSize);
-    $totalPages = count($items);
+    $idChunks = array_chunk($entityIds, $chunkSize);
+    $totalCount = count($entityIds);
 
     $operations = [];
-    foreach ($chunks as $idx => $chunk) {
+    foreach ($idChunks as $idx => $idChunk) {
       $operations[] = [
-        [ScoltaBatchOperations::class, 'processChunk'],
-        [$idx, $chunk, $totalPages, $batchConfig],
+        [ScoltaBatchOperations::class, 'loadAndProcessChunk'],
+        [$idx, $idChunk, $totalCount, $siteName, $batchConfig],
       ];
     }
 

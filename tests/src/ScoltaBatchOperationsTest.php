@@ -91,6 +91,125 @@ class ScoltaBatchOperationsTest extends TestCase {
     }
   }
 
+  // -------------------------------------------------------------------
+  // loadAndProcessChunk — the "Index Now" batch callback.
+  // -------------------------------------------------------------------
+
+  /**
+   * loadAndProcessChunk must exist as a public static method.
+   *
+   * rebuildWithBatch() registers it as the batch callback for each ID chunk,
+   * so it must be callable by Drupal's Batch API.
+   */
+  public function testLoadAndProcessChunkExists(): void {
+    $this->assertTrue(
+      method_exists(ScoltaBatchOperations::class, 'loadAndProcessChunk'),
+      'ScoltaBatchOperations must have a loadAndProcessChunk() static method'
+    );
+  }
+
+  public function testLoadAndProcessChunkIsPublicAndStatic(): void {
+    $ref = new \ReflectionMethod(ScoltaBatchOperations::class, 'loadAndProcessChunk');
+    $this->assertTrue($ref->isPublic(), 'loadAndProcessChunk must be public');
+    $this->assertTrue($ref->isStatic(), 'loadAndProcessChunk must be static (Batch API callback)');
+  }
+
+  /**
+   * loadAndProcessChunk signature: (chunkIdx, entityIds, totalCount, siteName, config, &context).
+   *
+   * Drupal's Batch API passes the &$context reference as the final argument,
+   * and the other parameters come from the operations array. The signature
+   * must accept entity IDs (not pre-loaded ContentItems) so that entity
+   * loading stays inside the batch request, not in the initial web request.
+   */
+  public function testLoadAndProcessChunkAcceptsEntityIds(): void {
+    $source = file_get_contents(__DIR__ . '/../../src/Batch/ScoltaBatchOperations.php');
+
+    // The method must accept an array of entity IDs (not ContentItem[]).
+    // Verify the parameter name signals that intent.
+    $this->assertStringContainsString(
+      'array $entityIds',
+      $source,
+      'loadAndProcessChunk() must accept $entityIds (not $chunk or $items) to make the entity-loading intent explicit'
+    );
+  }
+
+  /**
+   * loadAndProcessChunk must load entities inside the batch step.
+   *
+   * The whole point of this callback is to defer entity loading to the batch
+   * request. Verify that it calls entityTypeManager()->getStorage() rather
+   * than receiving pre-loaded entities.
+   */
+  public function testLoadAndProcessChunkLoadsEntitiesInternally(): void {
+    $source = file_get_contents(__DIR__ . '/../../src/Batch/ScoltaBatchOperations.php');
+
+    // Locate the method body to scope the assertion.
+    preg_match('/function loadAndProcessChunk\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s', $source, $m);
+    $body = $m[1] ?? '';
+    $this->assertNotEmpty($body, 'Could not locate loadAndProcessChunk() body');
+    $this->assertStringContainsString(
+      'entityTypeManager',
+      $body,
+      'loadAndProcessChunk() must call entityTypeManager()->getStorage() to load entities inside the batch step'
+    );
+  }
+
+  /**
+   * rebuildWithBatch must dispatch loadAndProcessChunk — not processChunk.
+   *
+   * processChunk receives pre-loaded ContentItems and was the old callback
+   * that caused the timeout: all entities were loaded before batch dispatch.
+   * The new callback (loadAndProcessChunk) receives entity IDs only.
+   */
+  public function testRebuildWithBatchUsesLoadAndProcessChunkCallback(): void {
+    $source = file_get_contents(__DIR__ . '/../../src/Form/ScoltaSettingsForm.php');
+
+    preg_match('/function rebuildWithBatch\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s', $source, $m);
+    $body = $m[1] ?? '';
+    $this->assertNotEmpty($body, 'Could not locate rebuildWithBatch() body');
+
+    $this->assertStringContainsString(
+      'loadAndProcessChunk',
+      $body,
+      'rebuildWithBatch() must dispatch loadAndProcessChunk (entity-ID-based) not processChunk (pre-loaded ContentItems)'
+    );
+    $this->assertStringNotContainsString(
+      "'processChunk'",
+      $body,
+      "rebuildWithBatch() must not dispatch processChunk — that callback accepts pre-loaded ContentItems which causes the initial timeout"
+    );
+  }
+
+  /**
+   * rebuildSubmit (PHP indexer path) must not call loadMultiple before batching.
+   *
+   * The original bug: rebuildSubmit() called gatherContentItems() which called
+   * loadMultiple($allIds), loading the entire corpus into memory before the
+   * batch was dispatched. On shared hosting this request itself timed out.
+   *
+   * The fix: for the PHP indexer path, rebuildSubmit() may only call execute()
+   * (the ID query) and then dispatch the batch. loadMultiple must not appear
+   * in the method body for the PHP path.
+   */
+  public function testRebuildSubmitDoesNotLoadMultipleForPhpIndexer(): void {
+    $source = file_get_contents(__DIR__ . '/../../src/Form/ScoltaSettingsForm.php');
+
+    // Locate just the rebuildSubmit method body.
+    preg_match('/function rebuildSubmit\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s', $source, $m);
+    $body = $m[1] ?? '';
+    $this->assertNotEmpty($body, 'Could not locate rebuildSubmit() body');
+
+    // The PHP indexer branch is identified by the dispatch to rebuildWithBatch.
+    // loadMultiple must not appear anywhere in the method — the only storage
+    // call allowed in rebuildSubmit() is ->execute() to fetch IDs.
+    $this->assertStringNotContainsString(
+      'loadMultiple',
+      $body,
+      'rebuildSubmit() must not call loadMultiple() — entity loading must happen inside batch steps to prevent timeout on large corpora'
+    );
+  }
+
   /**
    * ScoltaRebuildWorker must fall back to system.site when site_name is empty.
    *
