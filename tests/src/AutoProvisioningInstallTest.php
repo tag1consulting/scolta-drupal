@@ -82,6 +82,14 @@ class AutoProvisioningInstallTest extends TestCase {
     );
   }
 
+  public function testHasExplicitApiKeyChecksDrupalConfig(): void {
+    $this->assertStringContainsString(
+      "config('scolta.settings')",
+      $this->installSource,
+      '_scolta_has_explicit_api_key() must check Drupal config for ai_api_key'
+    );
+  }
+
   public function testAutoProvisionPassesExplicitApiKeyFlag(): void {
     $this->assertStringContainsString(
       'hasExplicitApiKey: _scolta_has_explicit_api_key()',
@@ -91,22 +99,17 @@ class AutoProvisioningInstallTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // onModelsResolved persists model choices.
+  // Auto-provisioner must NOT overwrite user model settings.
   // -------------------------------------------------------------------
 
-  public function testOnModelsResolvedSavesAiModel(): void {
-    $this->assertStringContainsString(
-      "'ai_model'",
+  public function testAutoProvisionDoesNotPassOnModelsResolved(): void {
+    // The onModelsResolved callback must not be passed to ensureAiAvailable()
+    // in the install hook — it would silently overwrite user model settings
+    // with Amazee-resolved defaults (Haiku for expansion query).
+    $this->assertStringNotContainsString(
+      'onModelsResolved:',
       $this->installSource,
-      'onModelsResolved must persist the ai_model setting'
-    );
-  }
-
-  public function testOnModelsResolvedSavesAiExpansionModel(): void {
-    $this->assertStringContainsString(
-      "'ai_expansion_model'",
-      $this->installSource,
-      'onModelsResolved must persist the ai_expansion_model setting'
+      '_scolta_auto_provision_amazee() must not pass an onModelsResolved callback'
     );
   }
 

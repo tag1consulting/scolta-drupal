@@ -85,6 +85,21 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
     $this->assertStringContainsString('public function messageForOperation(string $operation', $contents);
   }
 
+  public function testBuildConfigChecksExplicitKeyBeforeAmazee(): void {
+    // Regression: buildConfig() must check getApiKey() before Amazee creds
+    // so users who have an env/settings key are never silently rerouted.
+    $contents = file_get_contents($this->serviceFile);
+    $explicitKeyPos = strpos($contents, '$explicitKey = $this->getApiKey()');
+    $amazeeCredsPos = strpos($contents, 'scolta.amazee.credentials');
+    $this->assertNotFalse($explicitKeyPos, 'buildConfig() must check getApiKey() as explicit key guard');
+    $this->assertNotFalse($amazeeCredsPos, 'buildConfig() must still check scolta.amazee.credentials');
+    $this->assertLessThan(
+      $amazeeCredsPos,
+      $explicitKeyPos,
+      'Explicit key check must appear before Amazee credentials check in buildConfig()'
+    );
+  }
+
   public function testServicesYamlHasAmazeeServices(): void {
     $yaml = file_get_contents(dirname(__DIR__, 2) . '/scolta.services.yml');
     $this->assertStringContainsString('scolta.amazee_config_storage', $yaml);

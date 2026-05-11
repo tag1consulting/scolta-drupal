@@ -35,25 +35,15 @@ function _scolta_auto_provision_amazee(): void {
   \Tag1\Scolta\AiProvider\Amazee\AutoProvisioner::ensureAiAvailable(
     $storage,
     hasExplicitApiKey: _scolta_has_explicit_api_key(),
-    onModelsResolved: function (string $aiModel, string $aiExpansionModel): void {
-      $config = \Drupal::configFactory()->getEditable('scolta.settings');
-      if ($aiModel !== '') {
-        $config->set('ai_model', $aiModel);
-      }
-      if ($aiExpansionModel !== '') {
-        $config->set('ai_expansion_model', $aiExpansionModel);
-      }
-      $config->save();
-    },
   );
 }
 
 /**
  * Check whether the site has an explicit Scolta API key configured.
  *
- * Returns TRUE when SCOLTA_API_KEY env var or scolta.api_key in settings.php
- * is non-empty, meaning the user has their own provider and auto-provisioning
- * should be skipped.
+ * Returns TRUE when SCOLTA_API_KEY env var, scolta.api_key in settings.php,
+ * or scolta.settings ai_api_key in Drupal config is non-empty, meaning the
+ * user has their own provider and auto-provisioning should be skipped.
  */
 function _scolta_has_explicit_api_key(): bool {
   $envKey = getenv('SCOLTA_API_KEY');
@@ -62,7 +52,13 @@ function _scolta_has_explicit_api_key(): bool {
   }
 
   $settingsKey = \Drupal\Core\Site\Settings::get('scolta.api_key', '');
-  return !empty($settingsKey);
+  if (!empty($settingsKey)) {
+    return TRUE;
+  }
+
+  // Drupal config-stored key (e.g. set via config import or admin UI path).
+  $configKey = \Drupal::config('scolta.settings')->get('ai_api_key') ?? '';
+  return $configKey !== '';
 }
 
 /**

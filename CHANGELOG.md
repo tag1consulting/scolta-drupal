@@ -6,7 +6,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
-_No changes yet._
+### Fixed
+- **CRITICAL: Amazee auto-provisioning no longer silently overrides users who configured their API key.** `_scolta_has_explicit_api_key()` now checks the Drupal config-stored key in addition to env vars and settings.php, so all key sources are correctly detected. `buildConfig()` now checks `getApiKey()` first and only falls back to Amazee credentials when no explicit key is configured — previously it unconditionally overrode the configured provider when Amazee credentials existed. The `onModelsResolved` callback has been removed from `_scolta_auto_provision_amazee()` so query expansion model is no longer silently downgraded at install time.
 
 ## [1.0.0-rc1] - 2026-05-11
 
