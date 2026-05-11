@@ -18,6 +18,9 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 - **Amazee.ai API token is now encrypted at rest in Drupal State** using AES-256-CBC with a key derived from `hash_salt`. Existing plain-text tokens are read transparently as a migration path and re-encrypted on the next `store()` call.
 
 ### Fixed
+- **`build_dir` now falls back to `public://scolta-build` when `private://` is not configured.** The default `private://scolta-build` silently failed on standard Drupal installs without `file_private_path` set, returning the raw stream wrapper URI as the directory path. `ScoltaBackend::getResolvedBuildDir()` now detects this and falls back to `public://scolta-build`, logging a notice. The backend configuration form also displays an inline warning when the configured `build_dir` uses `private://` and the private file system is not available.
+
+### Fixed
 - **Settings page now correctly shows "Connected to Amazee.ai" status** when auto-provisioning has run. Previously `buildApiKeyStatus()` had no `'amazee'` case, so it fell through to the "No API key configured" warning even when Amazee credentials were active. The status now links to the Amazee.ai configuration page.
 
 ### Added

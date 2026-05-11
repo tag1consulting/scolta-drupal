@@ -96,11 +96,23 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
    * {@inheritdoc}
    */
   public function buildConfigurationForm(array $form, FormStateInterface $form_state): array {
+    $buildDir = $this->configuration['build_dir'];
+    $buildDirDescription = $this->t('Where exported HTML files are written before Pagefind indexes them. Supports stream wrappers (private://, public://) or absolute paths.');
+
+    // Warn when the default private:// path is selected but private file system
+    // is not configured. The backend will fall back to public://scolta-build.
+    if (str_starts_with($buildDir, 'private://')) {
+      $privateWrapper = $this->streamWrapperManager->getViaUri('private://');
+      if (!$privateWrapper || $privateWrapper->realpath() === FALSE) {
+        $buildDirDescription = $this->t('Private file system is not configured on this site. The build directory will use <code>public://scolta-build</code> instead. For better security, configure a private file path in settings.php.');
+      }
+    }
+
     $form['build_dir'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Build directory'),
-      '#description' => $this->t('Where exported HTML files are written before Pagefind indexes them. Supports stream wrappers (private://, public://) or absolute paths.'),
-      '#default_value' => $this->configuration['build_dir'],
+      '#description' => $buildDirDescription,
+      '#default_value' => $buildDir,
       '#required' => TRUE,
     ];
 
@@ -317,12 +329,26 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
 
   /**
    * Resolve the build directory path (handle stream wrappers).
+   *
+   * Falls back to public://scolta-build when the configured directory uses
+   * private:// and the private file system is not configured on this site.
    */
   protected function getResolvedBuildDir(): string {
     $dir = $this->configuration['build_dir'];
     if (str_contains($dir, '://')) {
       $wrapper = $this->streamWrapperManager->getViaUri($dir);
-      $dir = ($wrapper && ($realpath = $wrapper->realpath()) !== FALSE) ? $realpath : $dir;
+      $resolved = ($wrapper && ($realpath = $wrapper->realpath()) !== FALSE) ? $realpath : $dir;
+
+      // When private:// is unavailable, fall back to public://scolta-build.
+      if ($resolved === $dir && str_starts_with($dir, 'private://')) {
+        $this->scoltaLogger->notice('Private file system not configured; using public://scolta-build for index storage.');
+        $publicWrapper = $this->streamWrapperManager->getViaUri('public://scolta-build');
+        if ($publicWrapper && ($publicRealpath = $publicWrapper->realpath()) !== FALSE) {
+          return $publicRealpath;
+        }
+      }
+
+      return $resolved;
     }
     return $dir;
   }
