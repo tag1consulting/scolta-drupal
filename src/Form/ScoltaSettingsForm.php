@@ -13,6 +13,7 @@ use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\Core\Url;
 use Drupal\scolta\Batch\ScoltaBatchOperations;
 use Drupal\scolta\Service\PagefindBuilder;
 use Drupal\scolta\Service\ScoltaAiService;
@@ -574,6 +575,12 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $source = $this->aiService->getApiKeySource();
 
     switch ($source) {
+      case 'amazee':
+        $amazee_url = Url::fromRoute('scolta.settings.amazee')->toString();
+        $message = $this->t('Connected to <a href="@url">Amazee.ai</a> (auto-provisioned free trial).', ['@url' => $amazee_url]);
+        $class = 'color--success';
+        break;
+
       case 'env':
         $message = $this->t('API key configured via SCOLTA_API_KEY environment variable.');
         $class = 'color--success';
