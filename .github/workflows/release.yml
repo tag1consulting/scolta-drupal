@@ -28,13 +28,13 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: '8.4'
           extensions: intl
           coverage: none
 
       - name: Refresh path-repo lock entry
         working-directory: package
-        run: composer update tag1/scolta-php --no-dev --no-interaction --ignore-platform-reqs
+        run: composer update tag1/scolta-php --no-dev --no-interaction
 
       - name: Install dependencies (no dev)
         working-directory: package
