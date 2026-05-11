@@ -27,6 +27,15 @@ The `version` field in `composer.json` is always either a tagged release (`0.2.0
 - Config schema (`config/schema/`) MUST match install defaults (`config/install/`).
 - Route controllers MUST exist and have the referenced methods.
 
+## scolta.js — DO NOT EDIT DIRECTLY
+
+`js/scolta.js` is a copy of the canonical source in `scolta-php/assets/js/scolta.js`. **Never edit it in this repo.** All JS changes go to scolta-php first, then the copy is updated here. CI verifies the checksum matches — direct edits will fail CI.
+
+To update after a scolta-php change:
+```
+cp vendor/tag1/scolta-php/assets/js/scolta.js js/scolta.js
+```
+
 ## Testing
 
 - Run: `./vendor/bin/phpunit`
