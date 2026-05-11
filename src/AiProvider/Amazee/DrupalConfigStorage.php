@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\AiProvider\Amazee;
 
+use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
 use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
 
 /**
- * Stores Amazee.ai credentials in Drupal State.
+ * Stores Amazee.ai credentials in Drupal State, encrypted at rest.
  *
  * State is used rather than Config Management (CMI) because LiteLLM tokens
  * are secrets that must not be exported to config sync or version control.
+ * The token is encrypted with AES-256-CBC using a key derived from hash_salt.
  *
  * @since 0.4.0
  * @stability experimental
@@ -19,6 +21,8 @@ use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
 final class DrupalConfigStorage implements ConfigStorageInterface {
 
   private const STATE_KEY = 'scolta.amazee.credentials';
+  private const CIPHER = 'AES-256-CBC';
+  private const IV_LENGTH = 16;
 
   public function __construct(private readonly StateInterface $state) {}
 
@@ -27,7 +31,7 @@ final class DrupalConfigStorage implements ConfigStorageInterface {
    */
   public function store(string $litellmToken, string $litellmApiUrl, string $region): void {
     $this->state->set(self::STATE_KEY, [
-      'litellm_token' => $litellmToken,
+      'litellm_token' => $this->encrypt($litellmToken),
       'litellm_api_url' => $litellmApiUrl,
       'region' => $region,
     ]);
@@ -41,7 +45,13 @@ final class DrupalConfigStorage implements ConfigStorageInterface {
     if (!is_array($data) || empty($data['litellm_token'])) {
       return NULL;
     }
-    return $data;
+
+    $token = $this->decrypt($data['litellm_token']);
+    if ($token === NULL) {
+      return NULL;
+    }
+
+    return array_merge($data, ['litellm_token' => $token]);
   }
 
   /**
@@ -49,6 +59,53 @@ final class DrupalConfigStorage implements ConfigStorageInterface {
    */
   public function clear(): void {
     $this->state->delete(self::STATE_KEY);
+  }
+
+  /**
+   * Encrypt the token using AES-256-CBC with a hash_salt-derived key.
+   *
+   * Output format: base64(iv . ciphertext)
+   */
+  private function encrypt(string $plaintext): string {
+    $key = $this->deriveKey();
+    $iv = random_bytes(self::IV_LENGTH);
+    $ciphertext = openssl_encrypt($plaintext, self::CIPHER, $key, OPENSSL_RAW_DATA, $iv);
+    return base64_encode($iv . $ciphertext);
+  }
+
+  /**
+   * Decrypt a token previously encrypted with encrypt().
+   *
+   * Returns NULL if decryption fails. For unencrypted legacy tokens (which
+   * cannot be base64-decoded into 16+ bytes of IV), returns the raw value so
+   * existing installations continue to work after upgrading.
+   */
+  private function decrypt(string $stored): ?string {
+    $raw = base64_decode($stored, strict: TRUE);
+    if ($raw === FALSE || strlen($raw) <= self::IV_LENGTH) {
+      // Legacy plain-text token — return as-is so existing installations work.
+      return $stored;
+    }
+
+    $key = $this->deriveKey();
+    $iv = substr($raw, 0, self::IV_LENGTH);
+    $ciphertext = substr($raw, self::IV_LENGTH);
+    $plaintext = openssl_decrypt($ciphertext, self::CIPHER, $key, OPENSSL_RAW_DATA, $iv);
+
+    if ($plaintext === FALSE) {
+      // Decryption failed — could be a plain-text token that happens to be
+      // valid base64. Return the stored value as-is (legacy path).
+      return $stored;
+    }
+
+    return $plaintext;
+  }
+
+  /**
+   * Derive a 32-byte AES key from Drupal's hash_salt.
+   */
+  private function deriveKey(): string {
+    return hash('sha256', Settings::getHashSalt(), binary: TRUE);
   }
 
 }

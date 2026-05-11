@@ -145,14 +145,30 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#open' => TRUE,
     ];
 
+    $defaultProvider = $this->aiService->isAmazeeActive()
+      ? 'amazee'
+      : ($config->get('ai_provider') ?? 'anthropic');
+
     $form['ai']['ai_provider'] = [
       '#type' => 'select',
       '#title' => $this->t('AI Provider'),
       '#options' => [
         'anthropic' => $this->t('Anthropic (Claude)'),
         'openai' => $this->t('OpenAI'),
+        'amazee' => $this->t('Amazee.ai (managed gateway)'),
       ],
-      '#default_value' => $config->get('ai_provider') ?? 'anthropic',
+      '#default_value' => $defaultProvider,
+    ];
+
+    $amazee_url = Url::fromRoute('scolta.settings.amazee')->toString();
+    $form['ai']['ai_provider_amazee_info'] = [
+      '#type' => 'item',
+      '#markup' => $this->t('Amazee.ai provides a managed AI gateway with a free trial. <a href="@url">Configure Amazee.ai settings</a>.', ['@url' => $amazee_url]),
+      '#states' => [
+        'visible' => [
+          ':input[name="ai_provider"]' => ['value' => 'amazee'],
+        ],
+      ],
     ];
 
     $form['ai']['ai_model'] = [

@@ -13,6 +13,10 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 
 ## [Unreleased]
 
+### Added
+- **Amazee.ai appears as a named option in the AI Provider dropdown.** Selecting it shows a link to the Amazee.ai configuration page. The dropdown auto-detects the active provider: when Amazee credentials are stored, the dropdown defaults to "Amazee.ai" instead of showing the previously-configured manual provider.
+- **Amazee.ai API token is now encrypted at rest in Drupal State** using AES-256-CBC with a key derived from `hash_salt`. Existing plain-text tokens are read transparently as a migration path and re-encrypted on the next `store()` call.
+
 ### Fixed
 - **Settings page now correctly shows "Connected to Amazee.ai" status** when auto-provisioning has run. Previously `buildApiKeyStatus()` had no `'amazee'` case, so it fell through to the "No API key configured" warning even when Amazee credentials were active. The status now links to the Amazee.ai configuration page.
 
