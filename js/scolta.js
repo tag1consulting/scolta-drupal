@@ -207,6 +207,12 @@
   // multiple independent search widgets on one page. The backward-compatible
   // Scolta.init() creates a default instance internally.
 
+  // Pagefind uses a SharedWorker that persists across navigations; calling
+  // pagefind.init() a second time corrupts the WASM pointer permanently for
+  // the tab, producing "No pointer" errors. Cache the initialized module here
+  // so every createInstance() call shares it without re-calling init().
+  let pagefindInstance = null;
+
   function createInstance(containerSelector, instanceConfig) {
 
   // --- Instance state (local to this closure) ---
@@ -313,8 +319,19 @@
   // Initialize Pagefind and preload the WASM index.
   async function initPagefind() {
     const pagefindPath = (instanceConfig && instanceConfig.pagefindPath) || '/pagefind/pagefind.js';
+
+    if (pagefindInstance) {
+      pagefind = pagefindInstance;
+      const base = pagefindPath.replace(/\/pagefind\/pagefind\.js.*$/, '');
+      try {
+        pagefindBase = base.startsWith('http') ? new URL(base).pathname : base;
+      } catch (_) { pagefindBase = base; }
+      return;
+    }
+
     pagefind = await import(pagefindPath);
     await pagefind.init();
+    pagefindInstance = pagefind;
 
     // Record the path-only base so resolveUrl() can strip it back off.
     // pagefind's fullUrl() prepends baseUrl to every stored root-relative URL.
