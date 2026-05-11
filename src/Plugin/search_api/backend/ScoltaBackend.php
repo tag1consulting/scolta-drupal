@@ -248,7 +248,9 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
     }
 
     if (!empty($indexed) && $this->configuration['auto_rebuild']) {
-      $this->triggerRebuild();
+      if (!$this->triggerRebuild()) {
+        throw new \RuntimeException('Pagefind binary build failed after indexing items. The HTML files were exported but the search index was not updated. Check the Scolta logs for details.');
+      }
     }
 
     return $indexed;

@@ -14,6 +14,9 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 ## [Unreleased]
 
 ### Fixed
+- **`ScoltaBackend::indexItems()` now propagates Pagefind binary build failure to a non-zero drush exit code.** When `triggerRebuild()` returns `false` (binary build failed), `indexItems()` was ignoring the failure and returning the list of indexed item IDs anyway. Search API then marked all items as indexed, drush exited 0, and the UI showed 100% indexed with an empty search index. Now throws `\RuntimeException` when `triggerRebuild()` fails so Search API does not mark items as indexed and `drush search-api:index` exits non-zero. Only affects binary indexer mode; php/auto mode is unaffected.
+
+### Fixed
 - **Reconciled `js/scolta.js` from canonical scolta-php source.** The copy was 169 lines behind: missing multi-dimensional filters, multilingual index merging, language auto-filter via `currentLanguage`/`<html lang>`, URL filter state persistence (`f_` params), `LANGUAGE_NAMES`/`FILTER_LABELS`, and `TypeError` catch guards. This explains why language facets didn't render on Drupal despite the PHP indexer fix from May 6.
 - **`cleanBrokenMarkdown()` added** — repairs truncated AI summary markdown (broken links, unclosed bold/italic/backtick) before `formatSummary()` renders to HTML.
 
