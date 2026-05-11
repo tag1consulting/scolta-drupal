@@ -301,7 +301,9 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
     $indexer = $this->configuration['indexer'] ?? 'auto';
 
     if ($indexer !== 'binary') {
-      $this->scoltaLogger->info('Indexer mode is "@mode" — skipping automatic binary rebuild after indexing. Run drush scolta:build to update the search index.', [
+      // PHP pipeline (auto or php): queue a background rebuild via cron.
+      \Drupal::queue('scolta_rebuild')->createItem(['triggered_by' => 'search_api_indexing']);
+      $this->scoltaLogger->info('Queued background PHP index rebuild after Search API indexing (indexer mode: @mode).', [
         '@mode' => $indexer,
       ]);
       return TRUE;

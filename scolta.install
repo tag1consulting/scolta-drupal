@@ -125,7 +125,8 @@ function scolta_requirements(string $phase): array {
     $config = \Drupal::config('scolta.settings');
     $indexer = $config->get('indexer') ?? 'auto';
 
-    if ($indexer !== 'php') {
+    if ($indexer === 'binary') {
+      // Only check binary availability when explicitly configured to use it.
       $binary_path = $config->get('pagefind_binary') ?? 'pagefind';
       $resolver = new \Tag1\Scolta\Binary\PagefindBinary(
         configuredPath: $binary_path !== 'pagefind' ? $binary_path : NULL,
@@ -136,12 +137,12 @@ function scolta_requirements(string $phase): array {
       if (!$status['available']) {
         $requirements['scolta_pagefind_binary'] = [
           'title' => t('Scolta Search Indexer'),
-          'value' => t('PHP indexer (fallback)'),
+          'value' => t('Pagefind binary (not found)'),
           'description' => t(
-            'Pagefind binary not found. Scolta is using the PHP indexer, which is slower and supports English only. '
-            . 'For 10× faster indexing and 15-language support, install Pagefind: <code>npm install -g pagefind</code>'
+            'Indexer is set to "binary" but the Pagefind binary was not found. '
+            . 'Install Pagefind (<code>npm install -g pagefind</code>) or change indexer to "auto" in Scolta settings.'
           ),
-          'severity' => REQUIREMENT_WARNING,
+          'severity' => REQUIREMENT_ERROR,
         ];
       }
       else {
@@ -151,6 +152,14 @@ function scolta_requirements(string $phase): array {
           'severity' => REQUIREMENT_OK,
         ];
       }
+    }
+    else {
+      // auto or php: PHP indexer is active, no binary needed.
+      $requirements['scolta_pagefind_binary'] = [
+        'title' => t('Scolta Search Indexer'),
+        'value' => t('PHP indexer (active)'),
+        'severity' => REQUIREMENT_OK,
+      ];
     }
   }
 

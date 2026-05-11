@@ -1045,22 +1045,20 @@ class ScoltaSettingsForm extends ConfigFormBase {
   }
 
   /**
-   * Resolve 'auto' indexer mode based on binary availability.
+   * Resolve 'auto' indexer mode.
+   *
+   * Auto always uses the PHP indexer — it works on all PHP hosting
+   * environments without exec() or Node.js. Set indexer: binary to
+   * use the Pagefind binary explicitly.
    *
    * @param \Drupal\Core\Config\ImmutableConfig $config
-   *   The Scolta settings config.
+   *   The Scolta settings config (unused, kept for API consistency).
    *
    * @return string
-   *   'binary' if the Pagefind binary is available, 'php' otherwise.
+   *   Always 'php'.
    */
   protected function resolveAutoIndexer($config): string {
-    $resolver = new PagefindBinary(
-      configuredPath: $config->get('pagefind.binary'),
-      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
-    );
-
-    $binary = $resolver->resolve();
-    return $binary !== NULL ? 'binary' : 'php';
+    return 'php';
   }
 
   /**
