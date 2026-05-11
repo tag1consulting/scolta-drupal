@@ -21,6 +21,8 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 - **`build_dir` now falls back to `public://scolta-build` when `private://` is not configured.** The default `private://scolta-build` silently failed on standard Drupal installs without `file_private_path` set, returning the raw stream wrapper URI as the directory path. `ScoltaBackend::getResolvedBuildDir()` now detects this and falls back to `public://scolta-build`, logging a notice. The backend configuration form also displays an inline warning when the configured `build_dir` uses `private://` and the private file system is not available.
 
 ### Fixed
+- **Pagefind WASM no longer crashes with "No pointer" on multilingual language switch.** `initPagefind()` now uses a module-level `pagefindInstance` guard so `pagefind.init()` is called only once per page. Previously, Drupal behavior re-attachment on language switch caused a second `init()` call on Pagefind's SharedWorker, permanently corrupting the WASM pointer for the tab.
+- **Summarize no longer returns HTTP 400 with large result sets.** `summarizeResults()` now truncates the context string to 49,000 characters before sending to the summarize endpoint. Previously, 300+ search results could produce a context blob exceeding the server's limit, causing HTTP 400 with no useful error shown to the user.
 - **Settings page now correctly shows "Connected to Amazee.ai" status** when auto-provisioning has run. Previously `buildApiKeyStatus()` had no `'amazee'` case, so it fell through to the "No API key configured" warning even when Amazee credentials were active. The status now links to the Amazee.ai configuration page.
 
 ### Added
