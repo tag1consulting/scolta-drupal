@@ -50,7 +50,8 @@ jobs:
             --exclude "scolta-drupal/.git*" \
             --exclude "scolta-drupal/tests/*" \
             --exclude "scolta-drupal/node_modules/*" \
-            --exclude "scolta-drupal/.claude/*"
+            --exclude "scolta-drupal/.claude/*" \
+            --exclude "scolta-drupal/vendor/drupal/*"
 
       - name: Extract CHANGELOG entry
         run: |

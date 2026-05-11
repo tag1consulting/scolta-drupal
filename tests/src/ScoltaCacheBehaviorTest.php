@@ -9,13 +9,13 @@ declare(strict_types=1);
 namespace Drupal\Core\Cache {
     if (!interface_exists(\Drupal\Core\Cache\CacheBackendInterface::class)) {
         interface CacheBackendInterface {
-            public function get(string $cid, bool $allow_invalid = false);
-            public function set(string $cid, mixed $data, int $expire = -1, array $tags = []): void;
-            public function delete(string $cid): void;
-            public function deleteAll(): void;
-            public function invalidate(string $cid): void;
-            public function invalidateAll(): void;
-            public function garbageCollection(): void;
+            public function get($cid, $allow_invalid = false);
+            public function set($cid, $data, $expire = -1, array $tags = []);
+            public function delete($cid);
+            public function deleteAll();
+            public function invalidate($cid);
+            public function invalidateAll();
+            public function garbageCollection();
         }
     }
 }
@@ -135,7 +135,7 @@ namespace Drupal\scolta\Tests {
         /** @var array<string, mixed> */
         private array $store = [];
 
-        public function get( string $cid, bool $allow_invalid = false ): object|false {
+        public function get( $cid, $allow_invalid = false ): object|false {
             if ( ! array_key_exists( $cid, $this->store ) ) {
                 return false;
             }
@@ -144,11 +144,11 @@ namespace Drupal\scolta\Tests {
             return $item;
         }
 
-        public function set( string $cid, mixed $data, int $expire = -1, array $tags = [] ): void {
+        public function set( $cid, $data, $expire = -1, array $tags = [] ): void {
             $this->store[$cid] = $data;
         }
 
-        public function delete( string $cid ): void {
+        public function delete( $cid ): void {
             unset( $this->store[$cid] );
         }
 
@@ -156,11 +156,39 @@ namespace Drupal\scolta\Tests {
             $this->store = [];
         }
 
-        public function invalidate( string $cid ): void {}
+        public function invalidate( $cid ): void {}
+
+        public function getMultiple( &$cids, $allow_invalid = false ): array {
+            $result = [];
+            foreach ( $cids as $key => $cid ) {
+                $item = $this->get( $cid );
+                if ( $item !== false ) {
+                    $result[$cid] = $item;
+                    unset( $cids[$key] );
+                }
+            }
+            return $result;
+        }
+
+        public function setMultiple( array $items ): void {
+            foreach ( $items as $item ) {
+                $this->set( $item['cid'], $item['data'], $item['expire'] ?? -1, $item['tags'] ?? [] );
+            }
+        }
+
+        public function deleteMultiple( array $cids ): void {
+            foreach ( $cids as $cid ) {
+                $this->delete( $cid );
+            }
+        }
+
+        public function invalidateMultiple( array $cids ): void {}
 
         public function invalidateAll(): void {}
 
         public function garbageCollection(): void {}
+
+        public function removeBin(): void {}
 
     }
 

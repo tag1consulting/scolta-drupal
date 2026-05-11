@@ -92,6 +92,8 @@
 .scolta-filters { font-size: 0.9rem; }
 .scolta-filters:empty { display: none; }
 .scolta-filters h3 { margin-bottom: 0.75rem; color: var(--scolta-primary); font-size: 1rem; }
+.scolta-filter-group { margin-bottom: 1rem; }
+.scolta-filter-group:last-child { margin-bottom: 0; }
 .scolta-filter-item {
   display: flex;
   align-items: center;
@@ -112,6 +114,14 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.5rem;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+.scolta-results-header span:first-child {
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 .scolta-result-card {
   background: var(--scolta-card-bg);
