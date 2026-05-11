@@ -13,6 +13,7 @@ use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\Core\Url;
 use Drupal\scolta\Batch\ScoltaBatchOperations;
 use Drupal\scolta\Service\PagefindBuilder;
 use Drupal\scolta\Service\ScoltaAiService;
@@ -575,7 +576,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     switch ($source) {
       case 'amazee':
-        $amazee_url = \Drupal\Core\Url::fromRoute('scolta.settings.amazee')->toString();
+        $amazee_url = Url::fromRoute('scolta.settings.amazee')->toString();
         $message = $this->t('Connected to <a href="@url">Amazee.ai</a> (auto-provisioned free trial).', ['@url' => $amazee_url]);
         $class = 'color--success';
         break;
