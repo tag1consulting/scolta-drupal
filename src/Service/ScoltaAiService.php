@@ -113,16 +113,20 @@ class ScoltaAiService extends AiServiceAdapter {
     // Remove pagefind config (not relevant to ScoltaConfig).
     unset($values['pagefind']);
 
-    // Amazee.ai credentials take precedence over env/settings API keys.
-    $amazeeCreds = $this->state->get('scolta.amazee.credentials');
-    if (is_array($amazeeCreds) && !empty($amazeeCreds['litellm_token'])) {
-      $values['ai_provider'] = 'openai';
-      $values['ai_api_key'] = $amazeeCreds['litellm_token'];
-      $values['ai_base_url'] = $amazeeCreds['litellm_api_url'] ?? '';
+    // Explicit key (env / settings.php) takes priority over Amazee credentials
+    // so users who configured their own provider are never silently rerouted.
+    $explicitKey = $this->getApiKey();
+    if ($explicitKey !== '') {
+      $values['ai_api_key'] = $explicitKey;
     }
     else {
-      // API key comes from env or settings.php, not exportable config.
-      $values['ai_api_key'] = $this->getApiKey();
+      // Only use Amazee when no explicit key is configured.
+      $amazeeCreds = $this->state->get('scolta.amazee.credentials');
+      if (is_array($amazeeCreds) && !empty($amazeeCreds['litellm_token'])) {
+        $values['ai_provider'] = 'openai';
+        $values['ai_api_key'] = $amazeeCreds['litellm_token'];
+        $values['ai_base_url'] = $amazeeCreds['litellm_api_url'] ?? '';
+      }
     }
 
     // Site name fallback to Drupal site name.

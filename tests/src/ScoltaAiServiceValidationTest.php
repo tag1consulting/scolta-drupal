@@ -96,10 +96,11 @@ class ScoltaAiServiceValidationTest extends TestCase {
   }
 
   public function testBuildConfigInjectsApiKey(): void {
+    // The explicit-key guard reads via getApiKey() before checking Amazee creds.
     $this->assertStringContainsString(
-      "['ai_api_key'] = \$this->getApiKey()",
+      '$explicitKey = $this->getApiKey()',
       $this->serviceContents,
-      'buildConfig must inject API key from getApiKey()'
+      'buildConfig must check getApiKey() as an explicit-key guard before falling back to Amazee'
     );
   }
 
