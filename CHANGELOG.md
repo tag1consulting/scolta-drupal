@@ -13,6 +13,9 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 
 ## [Unreleased]
 
+### Fixed
+- **Settings page now correctly shows "Connected to Amazee.ai" status** when auto-provisioning has run. Previously `buildApiKeyStatus()` had no `'amazee'` case, so it fell through to the "No API key configured" warning even when Amazee credentials were active. The status now links to the Amazee.ai configuration page.
+
 ### Added
 - **Amazee.ai trial is provisioned automatically at module install time.** `scolta_install()` calls `_scolta_auto_provision_amazee()` after asset deployment. The helper uses `AutoProvisioner::ensureAiAvailable()` from scolta-php with the `scolta.amazee_config_storage` service. It is a no-op when a `SCOLTA_API_KEY` env var or `scolta.api_key` in settings.php is already configured, or when credentials are already stored. On success, the `ai_model` and `ai_expansion_model` config keys are updated via the `onModelsResolved` callback. `ScoltaAiService::createClient()` also attempts lazy provisioning on the first AI request as a fallback for install environments without network access; credentials are refreshed by calling `buildConfig()` (now `protected`) after provisioning.
 

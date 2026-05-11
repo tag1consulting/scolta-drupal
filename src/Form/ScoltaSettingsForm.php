@@ -574,6 +574,12 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $source = $this->aiService->getApiKeySource();
 
     switch ($source) {
+      case 'amazee':
+        $amazee_url = \Drupal\Core\Url::fromRoute('scolta.settings.amazee')->toString();
+        $message = $this->t('Connected to <a href="@url">Amazee.ai</a> (auto-provisioned free trial).', ['@url' => $amazee_url]);
+        $class = 'color--success';
+        break;
+
       case 'env':
         $message = $this->t('API key configured via SCOLTA_API_KEY environment variable.');
         $class = 'color--success';
