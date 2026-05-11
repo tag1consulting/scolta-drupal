@@ -46,6 +46,24 @@ jobs:
       - name: Install dependencies
         run: composer update --no-interaction --prefer-dist --ignore-platform-req=php
 
+      - name: Verify scolta.js matches canonical (scolta-php)
+        run: |
+          SHA256_FILE=vendor/tag1/scolta-php/assets/js/scolta.js.sha256
+          if [ -f "$SHA256_FILE" ]; then
+            EXPECTED=$(cat "$SHA256_FILE")
+            ACTUAL=$(sha256sum js/scolta.js | awk '{print $1}')
+            if [ "$EXPECTED" != "$ACTUAL" ]; then
+              echo "ERROR: js/scolta.js is out of sync with canonical source (scolta-php)."
+              echo "Expected: $EXPECTED"
+              echo "Actual:   $ACTUAL"
+              echo "Run: cp vendor/tag1/scolta-php/assets/js/scolta.js js/scolta.js"
+              exit 1
+            fi
+            echo "scolta.js checksum matches canonical."
+          else
+            echo "SKIP: $SHA256_FILE not found (scolta-php version predates checksum enforcement)."
+          fi
+
       - name: Lint (Drupal coding standards)
         if: matrix.lint
         run: ./vendor/bin/phpcs --warning-severity=0

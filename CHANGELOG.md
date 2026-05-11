@@ -13,6 +13,13 @@ First stable release — all features from 0.3.x promoted to 1.0 API surface.
 
 ## [Unreleased]
 
+### Fixed
+- **Reconciled `js/scolta.js` from canonical scolta-php source.** The copy was 169 lines behind: missing multi-dimensional filters, multilingual index merging, language auto-filter via `currentLanguage`/`<html lang>`, URL filter state persistence (`f_` params), `LANGUAGE_NAMES`/`FILTER_LABELS`, and `TypeError` catch guards. This explains why language facets didn't render on Drupal despite the PHP indexer fix from May 6.
+- **`cleanBrokenMarkdown()` added** — repairs truncated AI summary markdown (broken links, unclosed bold/italic/backtick) before `formatSummary()` renders to HTML.
+
+### Added
+- **CI step verifies `js/scolta.js` checksum matches canonical source (scolta-php).** Direct edits to the Drupal copy will fail CI with a clear error message pointing to the canonical source.
+
 ### Added
 - **Amazee.ai appears as a named option in the AI Provider dropdown.** Selecting it shows a link to the Amazee.ai configuration page. The dropdown auto-detects the active provider: when Amazee credentials are stored, the dropdown defaults to "Amazee.ai" instead of showing the previously-configured manual provider.
 - **Amazee.ai API token is now encrypted at rest in Drupal State** using AES-256-CBC with a key derived from `hash_salt`. Existing plain-text tokens are read transparently as a migration path and re-encrypted on the next `store()` call.
