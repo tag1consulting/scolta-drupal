@@ -49,20 +49,21 @@ jobs:
       - name: Verify scolta.js matches canonical (scolta-php)
         run: |
           SHA256_FILE=vendor/tag1/scolta-php/assets/js/scolta.js.sha256
-          if [ -f "$SHA256_FILE" ]; then
-            EXPECTED=$(cat "$SHA256_FILE")
-            ACTUAL=$(sha256sum js/scolta.js | awk '{print $1}')
-            if [ "$EXPECTED" != "$ACTUAL" ]; then
-              echo "ERROR: js/scolta.js is out of sync with canonical source (scolta-php)."
-              echo "Expected: $EXPECTED"
-              echo "Actual:   $ACTUAL"
-              echo "Run: cp vendor/tag1/scolta-php/assets/js/scolta.js js/scolta.js"
-              exit 1
-            fi
-            echo "scolta.js checksum matches canonical."
-          else
-            echo "SKIP: $SHA256_FILE not found (scolta-php version predates checksum enforcement)."
+          if [ ! -f "$SHA256_FILE" ]; then
+            echo "ERROR: $SHA256_FILE not found. scolta-php must include a checksum file."
+            echo "Generate it in scolta-php: sha256sum assets/js/scolta.js | awk '{print \$1}' > assets/js/scolta.js.sha256"
+            exit 1
           fi
+          EXPECTED=$(cat "$SHA256_FILE")
+          ACTUAL=$(sha256sum js/scolta.js | awk '{print $1}')
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "ERROR: js/scolta.js is out of sync with canonical source (scolta-php)."
+            echo "Expected: $EXPECTED"
+            echo "Actual:   $ACTUAL"
+            echo "Run: cp vendor/tag1/scolta-php/assets/js/scolta.js js/scolta.js"
+            exit 1
+          fi
+          echo "OK: js/scolta.js checksum matches canonical (scolta-php)."
 
       - name: Lint (Drupal coding standards)
         if: matrix.lint

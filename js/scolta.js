@@ -273,6 +273,7 @@
       EXPAND_PRIMARY_WEIGHT: s.EXPAND_PRIMARY_WEIGHT ?? 0.7,
       AI_MAX_FOLLOWUPS: s.AI_MAX_FOLLOWUPS ?? 3,
       AI_LANGUAGES: s.AI_LANGUAGES ?? ['en'],
+      AUTO_LANGUAGE_FILTER: s.AUTO_LANGUAGE_FILTER ?? false,
       LANGUAGE: s.LANGUAGE ?? 'en',
       CUSTOM_STOP_WORDS: s.CUSTOM_STOP_WORDS ?? [],
       RECENCY_STRATEGY: s.RECENCY_STRATEGY ?? 'exponential',
@@ -1251,7 +1252,7 @@
     followUpCount = 0;
     if (!preserveFilters) {
       var effectiveFilters = initialFilters ? Object.assign({}, initialFilters) : {};
-      if (!effectiveFilters.language && defaultLangCode) {
+      if (!effectiveFilters.language && defaultLangCode && CONFIG.AUTO_LANGUAGE_FILTER) {
         var langs = CONFIG.AI_LANGUAGES || [];
         if (langs.length > 1 && langs.includes(defaultLangCode)) {
           effectiveFilters.language = new Set([defaultLangCode]);
@@ -1350,9 +1351,7 @@
     }
 
     if (!preserveFilters) {
-      // Pagefind exposes aggregate filter counts on the search response object,
-      // not on individual result.data() objects. Use them directly.
-      filterCounts = primarySearch.filters || {};
+      filterCounts = computeFilterCounts(allScoredResults);
     }
 
     renderFilters();

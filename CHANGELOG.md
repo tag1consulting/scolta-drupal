@@ -7,6 +7,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Fixed
+- **`js/scolta.js` synced from canonical scolta-php source.** Includes the `pagefindInstance` guard (prevents WASM double-init / "No pointer" errors on Drupal behavior re-attachment), the `AUTO_LANGUAGE_FILTER` opt-in flag, and filter sidebar counts restored via `computeFilterCounts(allScoredResults)`.
+- **CI checksum enforcement is now mandatory.** The "SKIP: sha256 file not found" fallback has been replaced with a hard failure. Missing checksum means scolta-php is misconfigured, not a version compatibility excuse.
 - **CRITICAL: Admin "Rebuild" button now uses PHP pipeline when indexer is `auto`.** `ScoltaSettingsForm::resolveAutoIndexer()` previously probed for the Pagefind binary and returned `binary` when found, causing the admin rebuild to use the wrong pipeline while `drush scolta:build` correctly used PHP. Method now always returns `php`, matching the Drush command's behavior.
 - **CRITICAL: Search API auto-rebuild now triggers a PHP index rebuild when indexer is `auto` or `php`.** `ScoltaBackend::triggerRebuild()` previously logged and skipped entirely for non-binary indexers, so the search index was never updated after Search API content indexing. It now queues a `scolta_rebuild` background job for PHP/auto modes.
 - **Status report no longer warns about missing Pagefind binary when indexer is `auto`.** `scolta_requirements()` now only checks binary availability when indexer is explicitly set to `binary`; `auto` and `php` display "PHP indexer (active)" with OK severity instead of a misleading warning.
