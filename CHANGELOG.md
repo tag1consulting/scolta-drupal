@@ -6,6 +6,10 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [1.0.0-rc2] - 2026-05-12
+
 ### Fixed
 - **`js/scolta.js` synced from canonical scolta-php source.** Includes the `pagefindInstance` guard (prevents WASM double-init / "No pointer" errors on Drupal behavior re-attachment), the `AUTO_LANGUAGE_FILTER` opt-in flag, and filter sidebar counts restored via `computeFilterCounts(allScoredResults)`.
 - **CI checksum enforcement is now mandatory.** The "SKIP: sha256 file not found" fallback has been replaced with a hard failure. Missing checksum means scolta-php is misconfigured, not a version compatibility excuse.
