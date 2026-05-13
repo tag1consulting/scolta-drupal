@@ -90,7 +90,8 @@ jobs:
               ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
             ];
             $j["require"]["tag1/scolta-php"] = "dev-main@dev";
-            $j["provide"]["drupal/core"] = "11.2.0";
+            // Do NOT provide drupal/core here — PHPStan needs the actual source
+            // files to analyze against. Unlike the test job, we let core install.
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
       - run: composer update --no-interaction --prefer-dist --ignore-platform-req=php
