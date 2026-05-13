@@ -240,10 +240,16 @@ class StructuralIntegrityTest extends TestCase {
   // PHPStan configuration
   // -------------------------------------------------------------------
 
-  public function testPhpstanConfigIncludesDrupalExtension(): void {
+  public function testPhpstanConfigIncludesDeprecationRules(): void {
     $neon = file_get_contents($this->moduleRoot . '/phpstan.neon');
-    $this->assertStringContainsString('mglaman/phpstan-drupal/extension.neon', $neon,
-      'phpstan.neon must include mglaman/phpstan-drupal extension for Drupal-aware analysis');
+    $this->assertStringContainsString('phpstan-deprecation-rules/rules.neon', $neon,
+      'phpstan.neon must include phpstan-deprecation-rules for deprecation detection');
+  }
+
+  public function testPhpstanConfigDocumentsMglamanExtension(): void {
+    $neon = file_get_contents($this->moduleRoot . '/phpstan.neon');
+    $this->assertStringContainsString('mglaman/phpstan-drupal', $neon,
+      'phpstan.neon must document the mglaman/phpstan-drupal extension (even if excluded in standalone mode)');
   }
 
   public function testPhpstanBaselineExists(): void {

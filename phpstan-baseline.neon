@@ -7,76 +7,16 @@ parameters:
 			path: src/AiProvider/Amazee/DrupalConfigStorage.php
 
 		-
-			message: '#^Instanceof between Drupal\\node\\Entity\\Node and Drupal\\Core\\Entity\\EntityChangedInterface will always evaluate to true\.$#'
-			identifier: instanceof.alwaysTrue
-			count: 1
-			path: src/Batch/ScoltaBatchOperations.php
-
-		-
-			message: '#^Instanceof between Drupal\\node\\Entity\\Node and Drupal\\Core\\Entity\\FieldableEntityInterface will always evaluate to true\.$#'
-			identifier: instanceof.alwaysTrue
-			count: 1
-			path: src/Batch/ScoltaBatchOperations.php
-
-		-
-			message: '#^Attribute class Drush\\Attributes\\Argument does not exist\.$#'
-			identifier: attribute.notFound
-			count: 1
-			path: src/Commands/ScoltaCommands.php
-
-		-
-			message: '#^Attribute class Drush\\Attributes\\Command does not exist\.$#'
-			identifier: attribute.notFound
-			count: 8
-			path: src/Commands/ScoltaCommands.php
-
-		-
-			message: '#^Attribute class Drush\\Attributes\\Option does not exist\.$#'
-			identifier: attribute.notFound
-			count: 20
-			path: src/Commands/ScoltaCommands.php
-
-		-
-			message: '#^Attribute class Drush\\Attributes\\Usage does not exist\.$#'
-			identifier: attribute.notFound
-			count: 4
-			path: src/Commands/ScoltaCommands.php
-
-		-
-			message: '#^Call to an undefined method Drupal\\scolta\\Commands\\ScoltaCommands\:\:logger\(\)\.$#'
-			identifier: method.notFound
-			count: 76
-			path: src/Commands/ScoltaCommands.php
-
-		-
-			message: '#^Call to an undefined method Drupal\\scolta\\Commands\\ScoltaCommands\:\:output\(\)\.$#'
-			identifier: method.notFound
-			count: 1
-			path: src/Commands/ScoltaCommands.php
-
-		-
-			message: '#^Call to method loadMultiple\(\) on an unknown class Drupal\\search_api\\Entity\\SearchApiConfigEntityStorage\.$#'
+			message: '#^Call to method set\(\) on an unknown class Drupal\\user\\UserDataInterface\.$#'
 			identifier: class.notFound
 			count: 1
-			path: src/Commands/ScoltaCommands.php
+			path: src/Controller/DismissRebuildNoticeController.php
 
 		-
-			message: '#^Drupal\\scolta\\Commands\\ScoltaCommands\:\:__construct\(\) calls parent\:\:__construct\(\) but Drupal\\scolta\\Commands\\ScoltaCommands does not extend any class\.$#'
-			identifier: class.noParent
+			message: '#^PHPDoc tag @var for variable \$user_data contains unknown class Drupal\\user\\UserDataInterface\.$#'
+			identifier: class.notFound
 			count: 1
-			path: src/Commands/ScoltaCommands.php
-
-		-
-			message: '#^Strict comparison using \!\=\= between mixed and null will always evaluate to true\.$#'
-			identifier: notIdentical.alwaysTrue
-			count: 4
-			path: src/Commands/ScoltaCommands.php
-
-		-
-			message: '#^Variable \$items in empty\(\) always exists and is not falsy\.$#'
-			identifier: empty.variable
-			count: 1
-			path: src/Commands/ScoltaCommands.php
+			path: src/Controller/DismissRebuildNoticeController.php
 
 		-
 			message: '#^Offset ''exception'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
@@ -157,26 +97,20 @@ parameters:
 			path: src/Form/MemoryBudgetSettingsFieldSet.php
 
 		-
-			message: '#^Call to method loadByProperties\(\) on an unknown class Drupal\\search_api\\Entity\\SearchApiConfigEntityStorage\.$#'
-			identifier: class.notFound
-			count: 1
+			message: '#^Call to an undefined method Drupal\\Core\\Entity\\EntityInterface\:\:getServerId\(\)\.$#'
+			identifier: method.notFound
+			count: 2
 			path: src/Form/ScoltaSettingsForm.php
 
 		-
-			message: '#^Call to method loadMultiple\(\) on an unknown class Drupal\\search_api\\Entity\\SearchApiConfigEntityStorage\.$#'
-			identifier: class.notFound
-			count: 1
+			message: '#^Call to an undefined method Drupal\\Core\\Entity\\EntityInterface\:\:status\(\)\.$#'
+			identifier: method.notFound
+			count: 2
 			path: src/Form/ScoltaSettingsForm.php
 
 		-
-			message: '#^Instanceof between Drupal\\node\\Entity\\Node and Drupal\\Core\\Entity\\EntityChangedInterface will always evaluate to true\.$#'
-			identifier: instanceof.alwaysTrue
-			count: 1
-			path: src/Form/ScoltaSettingsForm.php
-
-		-
-			message: '#^Instanceof between Drupal\\node\\Entity\\Node and Drupal\\Core\\Entity\\FieldableEntityInterface will always evaluate to true\.$#'
-			identifier: instanceof.alwaysTrue
+			message: '#^Function batch_set not found\.$#'
+			identifier: function.notFound
 			count: 1
 			path: src/Form/ScoltaSettingsForm.php
 
@@ -185,6 +119,12 @@ parameters:
 			identifier: new.static
 			count: 1
 			path: src/Form/ScoltaSettingsForm.php
+
+		-
+			message: '#^Function base_path not found\.$#'
+			identifier: function.notFound
+			count: 1
+			path: src/Plugin/Block/ScoltaSearchBlock.php
 
 		-
 			message: '#^Unsafe usage of new static\(\)\.$#'
@@ -197,72 +137,6 @@ parameters:
 			identifier: method.notFound
 			count: 1
 			path: src/Plugin/QueueWorker/ScoltaRebuildWorker.php
-
-		-
-			message: '#^Instanceof between Drupal\\node\\Entity\\Node and Drupal\\Core\\Entity\\EntityChangedInterface will always evaluate to true\.$#'
-			identifier: instanceof.alwaysTrue
-			count: 1
-			path: src/Plugin/QueueWorker/ScoltaRebuildWorker.php
-
-		-
-			message: '#^Instanceof between Drupal\\node\\Entity\\Node and Drupal\\Core\\Entity\\FieldableEntityInterface will always evaluate to true\.$#'
-			identifier: instanceof.alwaysTrue
-			count: 1
-			path: src/Plugin/QueueWorker/ScoltaRebuildWorker.php
-
-		-
-			message: '#^Access to an undefined property Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:\$configuration\.$#'
-			identifier: property.notFound
-			count: 13
-			path: src/Plugin/search_api/backend/ScoltaBackend.php
-
-		-
-			message: '#^Call to an undefined method Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:t\(\)\.$#'
-			identifier: method.notFound
-			count: 20
-			path: src/Plugin/search_api/backend/ScoltaBackend.php
-
-		-
-			message: '#^Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:create\(\) calls parent\:\:create\(\) but Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend does not extend any class\.$#'
-			identifier: class.noParent
-			count: 1
-			path: src/Plugin/search_api/backend/ScoltaBackend.php
-
-		-
-			message: '#^Parameter \$index of method Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:deleteAllIndexItems\(\) has invalid type Drupal\\search_api\\IndexInterface\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Plugin/search_api/backend/ScoltaBackend.php
-
-		-
-			message: '#^Parameter \$index of method Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:deleteItems\(\) has invalid type Drupal\\search_api\\IndexInterface\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Plugin/search_api/backend/ScoltaBackend.php
-
-		-
-			message: '#^Parameter \$index of method Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:indexItems\(\) has invalid type Drupal\\search_api\\IndexInterface\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Plugin/search_api/backend/ScoltaBackend.php
-
-		-
-			message: '#^Parameter \$query of method Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:search\(\) has invalid type Drupal\\search_api\\Query\\QueryInterface\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Plugin/search_api/backend/ScoltaBackend.php
-
-		-
-			message: '#^Strict comparison using \!\=\= between string and false will always evaluate to true\.$#'
-			identifier: notIdentical.alwaysTrue
-			count: 3
-			path: src/Plugin/search_api/backend/ScoltaBackend.php
-
-		-
-			message: '#^Strict comparison using \=\=\= between string and false will always evaluate to false\.$#'
-			identifier: identical.alwaysFalse
-			count: 1
-			path: src/Plugin/search_api/backend/ScoltaBackend.php
 
 		-
 			message: '#^Call to method getDatasourceId\(\) on an unknown class Drupal\\search_api\\Item\\ItemInterface\.$#'
@@ -325,6 +199,18 @@ parameters:
 			path: src/Service/ScoltaAiService.php
 
 		-
+			message: '#^Access to property \$processed on an unknown class Drupal\\text\\Plugin\\Field\\FieldType\\TextItemBase\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/ScoltaContentGatherer.php
+
+		-
+			message: '#^Access to property \$value on an unknown class Drupal\\text\\Plugin\\Field\\FieldType\\TextItemBase\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/ScoltaContentGatherer.php
+
+		-
 			message: '#^Call to an undefined method Drupal\\Core\\Entity\\FieldableEntityInterface\:\:getTranslation\(\)\.$#'
 			identifier: method.notFound
 			count: 1
@@ -334,4 +220,10 @@ parameters:
 			message: '#^Call to an undefined method Drupal\\Core\\Entity\\FieldableEntityInterface\:\:getTranslationLanguages\(\)\.$#'
 			identifier: method.notFound
 			count: 2
+			path: src/Service/ScoltaContentGatherer.php
+
+		-
+			message: '#^Class Drupal\\text\\Plugin\\Field\\FieldType\\TextItemBase not found\.$#'
+			identifier: class.notFound
+			count: 1
 			path: src/Service/ScoltaContentGatherer.php

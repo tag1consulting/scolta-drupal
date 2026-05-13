@@ -1,7 +1,11 @@
 includes:
   - vendor/phpstan/phpstan-deprecation-rules/rules.neon
-  - vendor/mglaman/phpstan-drupal/extension.neon
   - phpstan-baseline.neon
+  # mglaman/phpstan-drupal/extension.neon is intentionally excluded here.
+  # It requires a full Drupal root (drupal/core installed as root project) to
+  # bootstrap its autoloader. When this module runs PHPStan in isolation (CI),
+  # drupal/core is only "provided" — not installed — so the extension crashes.
+  # Use mglaman/phpstan-drupal from within your Drupal project's phpstan config.
 
 parameters:
   level: 4
