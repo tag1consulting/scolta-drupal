@@ -93,7 +93,7 @@ jobs:
             $j["provide"]["drupal/core"] = "11.2.0";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
-      - run: composer install --no-progress
+      - run: composer update --no-interaction --prefer-dist --ignore-platform-req=php
       - run: ./vendor/bin/phpstan analyse --no-progress --memory-limit=512M
 
   coverage:

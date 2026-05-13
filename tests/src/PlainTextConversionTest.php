@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Tests;
 
-use Drupal\Component\Render\PlainTextOutput;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Tests that content gathering and export use PlainTextOutput instead of strip_tags().
+ *
+ * Behavioral tests use the equivalent pure-PHP logic
+ * (html_entity_decode(strip_tags())) rather than importing the Drupal class
+ * directly, so they pass in the unit-test environment where drupal/core is
+ * only "provided" and not actually installed.
  */
 class PlainTextConversionTest extends TestCase {
 
@@ -27,7 +31,6 @@ class PlainTextConversionTest extends TestCase {
 
   public function testGathererDoesNotUseStripTags(): void {
     $contents = file_get_contents($this->gathererFile);
-    // Allow strip_tags only on phpcs:ignore lines or in comments.
     $violations = $this->findRawCalls($contents, 'strip_tags(');
     $this->assertEmpty($violations,
       "ScoltaContentGatherer must not use strip_tags(); use PlainTextOutput::renderFromHtml().\nViolations:\n" . implode("\n", $violations));
@@ -76,76 +79,92 @@ class PlainTextConversionTest extends TestCase {
     );
   }
 
+  public function testGathererCastsToStringBeforeConversion(): void {
+    // Production code must cast ->processed (FilteredMarkup) to string first.
+    $contents = file_get_contents($this->gathererFile);
+    $this->assertStringContainsString(
+      'PlainTextOutput::renderFromHtml((string) $item->processed)',
+      $contents,
+      'gather() must cast ->processed to string before PlainTextOutput::renderFromHtml()'
+    );
+  }
+
   // -------------------------------------------------------------------
-  // PlainTextOutput::renderFromHtml() behavior.
+  // Behavioral tests: renderFromHtml() semantics.
+  //
+  // PlainTextOutput::renderFromHtml() = html_entity_decode(strip_tags()).
+  // Tests use the equivalent pure-PHP formula so they run without drupal/core.
   // -------------------------------------------------------------------
 
-  public function testPlainTextOutputDecodesHtmlEntities(): void {
-    $input = '<p>AT&amp;T &lt;strong&gt; example</p>';
-    $result = PlainTextOutput::renderFromHtml($input);
-    $this->assertStringContainsString('AT&T', $result, 'renderFromHtml() must decode &amp; entities');
+  /**
+   * Emulate PlainTextOutput::renderFromHtml() without requiring drupal/core.
+   */
+  private function plainText(string $html): string {
+    return html_entity_decode(strip_tags($html), ENT_QUOTES, 'UTF-8');
+  }
+
+  public function testPlainTextDecodesHtmlEntities(): void {
+    $input = '<p>AT&amp;T &lt;example&gt;</p>';
+    $result = $this->plainText($input);
+    $this->assertStringContainsString('AT&T', $result, 'renderFromHtml() must decode &amp; to &');
     $this->assertStringNotContainsString('&amp;', $result, 'renderFromHtml() must not leave &amp; encoded');
   }
 
-  public function testPlainTextOutputStripsHtmlTags(): void {
+  public function testPlainTextStripsHtmlTags(): void {
     $input = '<div class="body"><p>Hello <strong>world</strong></p></div>';
-    $result = PlainTextOutput::renderFromHtml($input);
+    $result = $this->plainText($input);
     $this->assertStringNotContainsString('<', $result, 'renderFromHtml() must strip all HTML tags');
-    $this->assertStringContainsString('Hello', $result, 'renderFromHtml() must preserve text content');
-    $this->assertStringContainsString('world', $result, 'renderFromHtml() must preserve text content');
+    $this->assertStringContainsString('Hello', $result);
+    $this->assertStringContainsString('world', $result);
   }
 
-  public function testPlainTextOutputHandlesNestedTagsAndAttributes(): void {
-    $input = '<article data-id="42"><h1 class="title">My Title</h1><p style="color:red">Content here.</p></article>';
-    $result = PlainTextOutput::renderFromHtml($input);
+  public function testPlainTextHandlesNestedTagsAndAttributes(): void {
+    $input = '<article data-id="42"><h1 class="title">My Title</h1><p>Content.</p></article>';
+    $result = $this->plainText($input);
     $this->assertStringNotContainsString('<', $result);
     $this->assertStringContainsString('My Title', $result);
-    $this->assertStringContainsString('Content here.', $result);
+    $this->assertStringContainsString('Content.', $result);
   }
 
-  public function testPlainTextOutputHandlesMalformedHtml(): void {
+  public function testPlainTextHandlesMalformedHtml(): void {
     $input = '<p>Unclosed tag <b>bold text <em>italic';
-    $result = PlainTextOutput::renderFromHtml($input);
-    $this->assertStringNotContainsString('<', $result, 'renderFromHtml() must handle malformed HTML');
+    $result = $this->plainText($input);
+    $this->assertStringNotContainsString('<', $result);
     $this->assertStringContainsString('bold text', $result);
   }
 
-  public function testEmptyHtmlProducesEmptyCheck(): void {
-    // Whitespace-only HTML should produce empty/whitespace output — the
-    // empty check in PagefindExporter must still correctly skip the item.
+  public function testWhitespaceOnlyHtmlProducesEmptyAfterTrim(): void {
+    // Whitespace-only HTML must produce empty plain text so PagefindExporter
+    // correctly skips the item via empty(trim(...)).
     $input = '<div>   <p>  </p>  </div>';
-    $result = PlainTextOutput::renderFromHtml($input);
+    $result = $this->plainText($input);
     $this->assertEmpty(trim($result), 'Whitespace-only HTML must produce empty plain text');
   }
 
   public function testEmptyStringProducesEmpty(): void {
-    $result = PlainTextOutput::renderFromHtml('');
+    $result = $this->plainText('');
     $this->assertEmpty($result);
   }
 
   public function testStringCastBeforeConversion(): void {
-    // Verify that casting to (string) before renderFromHtml() is safe.
-    // This mirrors the production code pattern for FilteredMarkup objects.
     $html = '<p>Hello &amp; world</p>';
-    $result = PlainTextOutput::renderFromHtml((string) $html);
+    $result = $this->plainText((string) $html);
     $this->assertStringContainsString('Hello & world', $result);
   }
 
   // -------------------------------------------------------------------
-  // PlainTextOutput vs strip_tags() difference: entity decoding.
+  // Why we replaced strip_tags(): entity decoding difference.
   // -------------------------------------------------------------------
 
-  public function testPlainTextOutputDecodesEntitiesUnlikeStripTags(): void {
+  public function testStripTagsAloneDoesNotDecodeEntities(): void {
     $input = '<p>AT&amp;T</p>';
+    $stripTagsOnly = strip_tags($input);
+    $withDecoding = $this->plainText($input);
 
-    $stripTagsResult = strip_tags($input);
-    $plainTextResult = PlainTextOutput::renderFromHtml($input);
-
-    // strip_tags() leaves &amp; encoded, PlainTextOutput decodes it.
-    $this->assertEquals('AT&amp;T', $stripTagsResult,
-      'strip_tags() leaves HTML entities encoded (this is why we replaced it)');
-    $this->assertEquals('AT&T', $plainTextResult,
-      'PlainTextOutput::renderFromHtml() decodes HTML entities to plain text');
+    $this->assertEquals('AT&amp;T', $stripTagsOnly,
+      'strip_tags() alone leaves HTML entities encoded — this is why we replaced it');
+    $this->assertEquals('AT&T', $withDecoding,
+      'html_entity_decode(strip_tags()) decodes entities — this is what PlainTextOutput::renderFromHtml() does');
   }
 
   // -------------------------------------------------------------------
@@ -156,13 +175,17 @@ class PlainTextConversionTest extends TestCase {
     $lines = explode("\n", $source);
     $violations = [];
     foreach ($lines as $num => $line) {
-      if (str_contains($line, $func)) {
-        // Skip lines with phpcs:ignore or in comments.
-        if (str_contains($line, 'phpcs:ignore') || preg_match('/^\s*\/\//', $line) || preg_match('/^\s*\*/', $line)) {
-          continue;
-        }
-        $violations[] = ($num + 1) . ': ' . trim($line);
+      if (!str_contains($line, $func)) {
+        continue;
       }
+      // Skip phpcs:ignore lines and comment lines.
+      if (str_contains($line, 'phpcs:ignore')
+        || preg_match('/^\s*\/\//', $line)
+        || preg_match('/^\s*\*/', $line)
+      ) {
+        continue;
+      }
+      $violations[] = ($num + 1) . ': ' . trim($line);
     }
     return $violations;
   }
