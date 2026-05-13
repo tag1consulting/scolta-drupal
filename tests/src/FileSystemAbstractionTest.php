@@ -1,0 +1,212 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\scolta\Tests;
+
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\Yaml\Yaml;
+
+/**
+ * Tests that service classes use FileSystemInterface rather than raw PHP calls.
+ *
+ * These tests do not require a Drupal bootstrap — they verify structural
+ * contracts via file inspection and reflection.
+ */
+class FileSystemAbstractionTest extends TestCase {
+
+  private string $moduleRoot;
+
+  protected function setUp(): void {
+    $this->moduleRoot = dirname(__DIR__, 2);
+  }
+
+  // -------------------------------------------------------------------
+  // PagefindExporter: FileSystemInterface injected and used.
+  // -------------------------------------------------------------------
+
+  public function testPagefindExporterHasFileSystemInConstructor(): void {
+    $file = $this->moduleRoot . '/src/Service/PagefindExporter.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('FileSystemInterface', $contents,
+      'PagefindExporter must type-hint FileSystemInterface in its constructor');
+  }
+
+  public function testPagefindExporterDeletesViaFileSystem(): void {
+    $file = $this->moduleRoot . '/src/Service/PagefindExporter.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('$this->fileSystem->delete(', $contents,
+      'PagefindExporter::deleteItem() must use $this->fileSystem->delete() not unlink()');
+  }
+
+  public function testPagefindExporterDeleteAllUsesFileSystem(): void {
+    $file = $this->moduleRoot . '/src/Service/PagefindExporter.php';
+    $contents = file_get_contents($file);
+    // deleteAll() should call $this->fileSystem->delete() for each file.
+    $this->assertStringContainsString('$this->fileSystem->delete($file)', $contents,
+      'PagefindExporter::deleteAll() must delete files via $this->fileSystem->delete()');
+  }
+
+  public function testPagefindExporterFileWriteHasPhpcsIgnore(): void {
+    $file = $this->moduleRoot . '/src/Service/PagefindExporter.php';
+    $lines = file($file);
+    foreach ($lines as $num => $line) {
+      if (str_contains($line, 'file_put_contents(')) {
+        // The line or an adjacent line must have phpcs:ignore.
+        $context = implode('', array_slice($lines, max(0, $num - 1), 3));
+        $this->assertStringContainsString('phpcs:ignore', $context,
+          "file_put_contents() on line " . ($num + 1) . " must have a phpcs:ignore comment explaining why it can't use saveData()");
+        return;
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // PagefindBuilder: FileSystemInterface injected and used.
+  // -------------------------------------------------------------------
+
+  public function testPagefindBuilderHasFileSystemInConstructor(): void {
+    $file = $this->moduleRoot . '/src/Service/PagefindBuilder.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('FileSystemInterface', $contents,
+      'PagefindBuilder must inject FileSystemInterface in its constructor');
+  }
+
+  public function testPagefindBuilderCreatesDirectoryViaFileSystem(): void {
+    $file = $this->moduleRoot . '/src/Service/PagefindBuilder.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('$this->fileSystem->mkdir(', $contents,
+      'PagefindBuilder must create output directory via $this->fileSystem->mkdir()');
+  }
+
+  public function testPagefindBuilderServiceHasTwoArguments(): void {
+    $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml');
+    $args = $services['services']['scolta.pagefind_builder']['arguments'] ?? [];
+    $this->assertCount(2, $args,
+      'scolta.pagefind_builder service must have 2 arguments (logger, file_system)');
+    $this->assertContains('@file_system', $args,
+      'scolta.pagefind_builder service must inject @file_system');
+  }
+
+  // -------------------------------------------------------------------
+  // ScoltaRebuildWorker: FileSystemInterface used (procedural style).
+  // -------------------------------------------------------------------
+
+  public function testRebuildWorkerUsesFileSystemForMkdir(): void {
+    $file = $this->moduleRoot . '/src/Plugin/QueueWorker/ScoltaRebuildWorker.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('$fileSystem->mkdir(', $contents,
+      'ScoltaRebuildWorker must create directories via $fileSystem->mkdir()');
+  }
+
+  public function testRebuildWorkerGetsFileSystemFromContainer(): void {
+    $file = $this->moduleRoot . '/src/Plugin/QueueWorker/ScoltaRebuildWorker.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString("\Drupal::service('file_system')", $contents,
+      "ScoltaRebuildWorker must obtain file_system via \\Drupal::service('file_system')");
+  }
+
+  // -------------------------------------------------------------------
+  // ScoltaCommands: FileSystemInterface injected and used.
+  // -------------------------------------------------------------------
+
+  public function testScoltaCommandsHasFileSystemConstructorParam(): void {
+    $file = $this->moduleRoot . '/src/Commands/ScoltaCommands.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('FileSystemInterface $fileSystem', $contents,
+      'ScoltaCommands constructor must accept FileSystemInterface');
+  }
+
+  public function testScoltaCommandsServiceHasFileSystemArgument(): void {
+    $drush = Yaml::parseFile($this->moduleRoot . '/drush.services.yml');
+    $args = $drush['services']['scolta.commands']['arguments'] ?? [];
+    $this->assertContains('@file_system', $args,
+      'scolta.commands drush service must inject @file_system');
+  }
+
+  public function testScoltaCommandsUsesFileSystemMkdir(): void {
+    $file = $this->moduleRoot . '/src/Commands/ScoltaCommands.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('$this->fileSystem->mkdir(', $contents,
+      'ScoltaCommands must create directories via $this->fileSystem->mkdir()');
+  }
+
+  public function testScoltaCommandsUsesFileSystemChmod(): void {
+    $file = $this->moduleRoot . '/src/Commands/ScoltaCommands.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('$this->fileSystem->chmod(', $contents,
+      'ScoltaCommands must set permissions via $this->fileSystem->chmod()');
+  }
+
+  public function testScoltaCommandsUsesFileSystemDelete(): void {
+    $file = $this->moduleRoot . '/src/Commands/ScoltaCommands.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('$this->fileSystem->delete(', $contents,
+      'ScoltaCommands must delete files via $this->fileSystem->delete()');
+  }
+
+  // -------------------------------------------------------------------
+  // ScoltaSettingsForm: FileSystemInterface injected and used.
+  // -------------------------------------------------------------------
+
+  public function testSettingsFormHasFileSystemProperty(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('FileSystemInterface $fileSystem', $contents,
+      'ScoltaSettingsForm constructor must accept FileSystemInterface');
+  }
+
+  public function testSettingsFormUsesFileSystemMkdir(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('$this->fileSystem->mkdir(', $contents,
+      'ScoltaSettingsForm must create directories via $this->fileSystem->mkdir()');
+  }
+
+  public function testSettingsFormCreateGetsFileSystem(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString("'file_system'", $contents,
+      "ScoltaSettingsForm::create() must request 'file_system' from container");
+  }
+
+  // -------------------------------------------------------------------
+  // scolta.install: FileSystemInterface used procedurally.
+  // -------------------------------------------------------------------
+
+  public function testInstallHookUsesFileSystemForMkdir(): void {
+    $file = $this->moduleRoot . '/scolta.install';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('$fileSystem->mkdir(', $contents,
+      '_scolta_deploy_assets() must use $fileSystem->mkdir() not raw mkdir()');
+  }
+
+  public function testInstallHookUsesFileSystemForCopy(): void {
+    $file = $this->moduleRoot . '/scolta.install';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('$fileSystem->copy(', $contents,
+      '_scolta_deploy_assets() must use $fileSystem->copy() not raw copy()');
+  }
+
+  public function testInstallHookImportsFileExists(): void {
+    $file = $this->moduleRoot . '/scolta.install';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('use Drupal\Core\File\FileExists;', $contents,
+      'scolta.install must import Drupal\Core\File\FileExists for the copy() FileExists::Replace argument');
+  }
+
+  public function testUninstallHookUsesFileSystemForDelete(): void {
+    $file = $this->moduleRoot . '/scolta.install';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('$fileSystem->delete(', $contents,
+      'scolta_uninstall() must use $fileSystem->delete() not raw unlink()');
+  }
+
+  public function testUninstallHookUsesFileSystemForRmdir(): void {
+    $file = $this->moduleRoot . '/scolta.install';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('$fileSystem->rmdir(', $contents,
+      'scolta_uninstall() must use $fileSystem->rmdir() not raw rmdir()');
+  }
+
+}

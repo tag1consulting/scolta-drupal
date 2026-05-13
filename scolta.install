@@ -5,6 +5,8 @@
  * Install and uninstall hooks for the Scolta module.
  */
 
+use Drupal\Core\File\FileExists;
+
 /**
  * Implements hook_install().
  */
@@ -100,6 +102,8 @@ function _scolta_deploy_assets(): void {
     'wasm/scolta_core_bg.wasm' => 'js/wasm/scolta_core_bg.wasm',
   ];
 
+  $fileSystem = \Drupal::service('file_system');
+
   foreach ($assets as $src => $dest) {
     $srcPath = $assetsDir . '/' . $src;
     $destPath = $modulePath . '/' . $dest;
@@ -109,9 +113,9 @@ function _scolta_deploy_assets(): void {
     }
     $destDir = dirname($destPath);
     if (!is_dir($destDir)) {
-      mkdir($destDir, 0755, TRUE);
+      $fileSystem->mkdir($destDir, 0755, TRUE);
     }
-    copy($srcPath, $destPath);
+    $fileSystem->copy($srcPath, $destPath, FileExists::Replace);
   }
 }
 
@@ -172,6 +176,7 @@ function scolta_requirements(string $phase): array {
 function scolta_uninstall() {
   // Remove deployed assets from the module directory.
   $modulePath = \Drupal::root() . '/' . \Drupal::service('extension.list.module')->getPath('scolta');
+  $fileSystem = \Drupal::service('file_system');
   $deployed = [
     'js/scolta.js',
     'css/scolta.css',
@@ -181,12 +186,13 @@ function scolta_uninstall() {
   foreach ($deployed as $asset) {
     $path = $modulePath . '/' . $asset;
     if (file_exists($path)) {
-      unlink($path);
+      $fileSystem->delete($path);
     }
   }
   $wasmDir = $modulePath . '/js/wasm';
+  // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- scandir() used for a simple emptiness check; scanDirectory() returns objects and is heavier for this purpose.
   if (is_dir($wasmDir) && count(array_diff(scandir($wasmDir), ['.', '..'])) === 0) {
-    rmdir($wasmDir);
+    $fileSystem->rmdir($wasmDir);
   }
 
   // Clean up the rebuild queue.

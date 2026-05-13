@@ -10,5 +10,6 @@ services:
       - '@scolta.ai_service'
       - '@stream_wrapper_manager'
       - '@scolta.content_gatherer'
+      - '@file_system'
     tags:
       - { name: drush.command }

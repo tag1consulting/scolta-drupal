@@ -6,7 +6,19 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
-_No changes yet._
+### Changed
+- **Replace `strip_tags()` with `PlainTextOutput::renderFromHtml()`** in `ScoltaContentGatherer` and `PagefindExporter`. The Drupal-native utility correctly decodes HTML entities (e.g., `&amp;` → `&`) in addition to stripping tags.
+- **Replace raw PHP filesystem calls with `FileSystemInterface`** across `PagefindExporter`, `PagefindBuilder`, `ScoltaSettingsForm`, `ScoltaCommands`, `ScoltaRebuildWorker`, and `scolta.install`. Raw calls that cannot use stream wrappers retain `phpcs:ignore` comments explaining why.
+- **Add `mglaman/phpstan-drupal` to PHPStan config.** The Drupal extension was installed as a dev dependency but not included in `phpstan.neon`.
+- **Add PHPStan to CI pipeline** as a dedicated `phpstan` job on PHP 8.3.
+- **Add `composer analyse` script** for local PHPStan analysis.
+- **Add `.gitattributes`** to exclude dev-only files (`.github/`, `tests/`, `phpstan*.neon`, `phpunit*.xml`, `phpcs.xml.dist`, `scripts/`) from distribution archives.
+- **Add PHPStan baseline** (`phpstan-baseline.neon`) for pre-existing errors unrelated to this PR; `Commands/ScoltaCommands.php` and `Plugin/search_api/backend/ScoltaBackend.php` are excluded from analysis because they depend on optional runtime packages (Drush, full Drupal core) not available in the unit-test environment.
+
+### Tests
+- Add `PlainTextConversionTest`: verifies `PlainTextOutput::renderFromHtml()` behavior (entity decoding, tag stripping, empty-check) and that `strip_tags()` is absent from production paths.
+- Add `FileSystemAbstractionTest`: structural tests verifying `FileSystemInterface` injection and usage across all six affected files.
+- Extend `StructuralIntegrityTest` with: PHPStan config validation, `.gitattributes` coverage check, and a regression guard that prevents raw filesystem function calls from re-entering `src/`.
 
 ## [1.0.0-rc2] - 2026-05-12
 

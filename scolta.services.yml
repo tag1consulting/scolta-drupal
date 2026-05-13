@@ -21,7 +21,7 @@ services:
 
   scolta.pagefind_builder:
     class: Drupal\scolta\Service\PagefindBuilder
-    arguments: ['@logger.channel.scolta']
+    arguments: ['@logger.channel.scolta', '@file_system']
 
   scolta.content_gatherer:
     class: Drupal\scolta\Service\ScoltaContentGatherer

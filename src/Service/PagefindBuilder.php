@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Service;
 
+use Drupal\Core\File\FileSystemInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Process\Process;
@@ -19,6 +20,7 @@ class PagefindBuilder {
 
   public function __construct(
     protected readonly LoggerInterface $logger,
+    protected readonly FileSystemInterface $fileSystem,
   ) {}
 
   /**
@@ -47,6 +49,7 @@ class PagefindBuilder {
     }
 
     // Count HTML files to provide a sanity check.
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- glob() used for pattern matching; scanDirectory() cannot match *.html without iterating all files.
     $htmlFiles = glob($buildDir . '/*.html');
     $fileCount = $htmlFiles ? count($htmlFiles) : 0;
 
@@ -62,7 +65,7 @@ class PagefindBuilder {
 
     // Ensure output directory exists.
     if (!is_dir($outputDir)) {
-      if (!mkdir($outputDir, 0755, TRUE)) {
+      if (!$this->fileSystem->mkdir($outputDir, 0755, TRUE)) {
         return [
           'success' => FALSE,
           'output' => '',
@@ -180,6 +183,7 @@ class PagefindBuilder {
 
     return [
       'exists' => TRUE,
+      // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- glob() used for counting fragments; scanDirectory() would be heavier for a simple count.
       'file_count' => count(glob($outputDir . '/fragment/*') ?: []),
       'index_size' => $this->formatBytes($size),
       'last_built' => $mtime ? date('Y-m-d H:i:s', $mtime) : NULL,

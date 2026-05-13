@@ -1,0 +1,229 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Method Drupal\\scolta\\AiProvider\\Amazee\\DrupalConfigStorage\:\:decrypt\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: src/AiProvider/Amazee/DrupalConfigStorage.php
+
+		-
+			message: '#^Call to method set\(\) on an unknown class Drupal\\user\\UserDataInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Controller/DismissRebuildNoticeController.php
+
+		-
+			message: '#^PHPDoc tag @var for variable \$user_data contains unknown class Drupal\\user\\UserDataInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Controller/DismissRebuildNoticeController.php
+
+		-
+			message: '#^Offset ''exception'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
+			identifier: isset.offset
+			count: 1
+			path: src/Controller/ExpandQueryController.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Controller/ExpandQueryController.php
+
+		-
+			message: '#^Offset ''exception'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
+			identifier: isset.offset
+			count: 1
+			path: src/Controller/FollowUpController.php
+
+		-
+			message: '#^Offset ''limit'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
+			identifier: isset.offset
+			count: 1
+			path: src/Controller/FollowUpController.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Controller/FollowUpController.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Controller/HealthController.php
+
+		-
+			message: '#^Offset ''exception'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
+			identifier: isset.offset
+			count: 1
+			path: src/Controller/SummarizeController.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Controller/SummarizeController.php
+
+		-
+			message: '#^Offset ''id'' on array\{id\: string, name\: string, url\: string\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/Form/AmazeeSettingsForm.php
+
+		-
+			message: '#^Offset ''name'' on array\{id\: string, name\: string, url\: string\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/Form/AmazeeSettingsForm.php
+
+		-
+			message: '#^Property Drupal\\scolta\\Form\\AmazeeSettingsForm\:\:\$amazeeClient is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Form/AmazeeSettingsForm.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Form/AmazeeSettingsForm.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between mixed and null will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: src/Form/MemoryBudgetSettingsFieldSet.php
+
+		-
+			message: '#^Call to an undefined method Drupal\\Core\\Entity\\EntityInterface\:\:getServerId\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/Form/ScoltaSettingsForm.php
+
+		-
+			message: '#^Call to an undefined method Drupal\\Core\\Entity\\EntityInterface\:\:status\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/Form/ScoltaSettingsForm.php
+
+		-
+			message: '#^Function batch_set not found\.$#'
+			identifier: function.notFound
+			count: 1
+			path: src/Form/ScoltaSettingsForm.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Form/ScoltaSettingsForm.php
+
+		-
+			message: '#^Function base_path not found\.$#'
+			identifier: function.notFound
+			count: 1
+			path: src/Plugin/Block/ScoltaSearchBlock.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Plugin/Block/ScoltaSearchBlock.php
+
+		-
+			message: '#^Call to an undefined method Drupal\\scolta\\Plugin\\QueueWorker\\ScoltaRebuildWorker\:\:getLogger\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Plugin/QueueWorker/ScoltaRebuildWorker.php
+
+		-
+			message: '#^Call to method getDatasourceId\(\) on an unknown class Drupal\\search_api\\Item\\ItemInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/PagefindExporter.php
+
+		-
+			message: '#^Call to method getId\(\) on an unknown class Drupal\\search_api\\Item\\ItemInterface\.$#'
+			identifier: class.notFound
+			count: 5
+			path: src/Service/PagefindExporter.php
+
+		-
+			message: '#^Call to method getOriginalObject\(\) on an unknown class Drupal\\search_api\\Item\\ItemInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/PagefindExporter.php
+
+		-
+			message: '#^Parameter \$item of method Drupal\\scolta\\Service\\PagefindExporter\:\:buildMetadata\(\) has invalid type Drupal\\search_api\\Item\\ItemInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/PagefindExporter.php
+
+		-
+			message: '#^Parameter \$item of method Drupal\\scolta\\Service\\PagefindExporter\:\:exportItem\(\) has invalid type Drupal\\search_api\\Item\\ItemInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Service/PagefindExporter.php
+
+		-
+			message: '#^Parameter \$item of method Drupal\\scolta\\Service\\PagefindExporter\:\:extractEntity\(\) has invalid type Drupal\\search_api\\Item\\ItemInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/PagefindExporter.php
+
+		-
+			message: '#^Call to method createInstance\(\) on an unknown class Drupal\\ai\\AiProviderPluginManager\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Service/ScoltaAiService.php
+
+		-
+			message: '#^Instantiated class Drupal\\ai\\OperationType\\Chat\\ChatInput not found\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Service/ScoltaAiService.php
+
+		-
+			message: '#^Instantiated class Drupal\\ai\\OperationType\\Chat\\ChatMessage not found\.$#'
+			identifier: class.notFound
+			count: 4
+			path: src/Service/ScoltaAiService.php
+
+		-
+			message: '#^PHPDoc tag @var for variable \$aiProvider contains unknown class Drupal\\ai\\AiProviderPluginManager\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Service/ScoltaAiService.php
+
+		-
+			message: '#^Access to property \$processed on an unknown class Drupal\\text\\Plugin\\Field\\FieldType\\TextItemBase\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/ScoltaContentGatherer.php
+
+		-
+			message: '#^Access to property \$value on an unknown class Drupal\\text\\Plugin\\Field\\FieldType\\TextItemBase\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/ScoltaContentGatherer.php
+
+		-
+			message: '#^Call to an undefined method Drupal\\Core\\Entity\\FieldableEntityInterface\:\:getTranslation\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Service/ScoltaContentGatherer.php
+
+		-
+			message: '#^Call to an undefined method Drupal\\Core\\Entity\\FieldableEntityInterface\:\:getTranslationLanguages\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/Service/ScoltaContentGatherer.php
+
+		-
+			message: '#^Class Drupal\\text\\Plugin\\Field\\FieldType\\TextItemBase not found\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/ScoltaContentGatherer.php
