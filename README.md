@@ -2,6 +2,8 @@
 
 AI-powered search for Drupal — semantic relevance scoring, AI summaries, and natural language query expansion on top of Drupal's Search API.
 
+Built and maintained by [Tag1 Consulting](https://tag1.com/) — technology leadership since 2007. [Tag1 offers AI strategy, architecture, and implementation consulting](https://tag1.com/services/ai/) for organizations evaluating or deploying AI-powered products.
+
 ## Requirements
 
 - Drupal 10.3+ or Drupal 11
@@ -100,6 +102,12 @@ Visit *Administration → Configuration → Search and Metadata → Scolta AI Se
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for a full list of changes.
+
+## About Tag1 Consulting
+
+Scolta is designed, built, and maintained by [Tag1 Consulting](https://tag1.com/). Tag1 has been delivering technology leadership since 2007 and is one of the leading open-source consulting firms in the world.
+
+Tag1 offers [AI strategy, architecture, and implementation consulting](https://tag1.com/services/ai/) — from evaluating whether AI search is right for your organization, to production deployment and ongoing tuning. If you need help integrating Scolta, customizing scoring for your content model, or connecting it to your AI provider of choice, [get in touch](https://tag1.com/contact/).
 
 ## License
 
