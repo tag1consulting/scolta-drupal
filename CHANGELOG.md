@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **`expand_primary_weight` now correctly weights original vs. expansion results** (via updated `scolta.js` copy from scolta-php). See [scolta-php#86](https://github.com/tag1consulting/scolta-php/issues/86).
+
 ### Changed
 - **Replace `strip_tags()` with `PlainTextOutput::renderFromHtml()`** in `ScoltaContentGatherer` and `PagefindExporter`. The Drupal-native utility correctly decodes HTML entities (e.g., `&amp;` → `&`) in addition to stripping tags.
 - **Replace raw PHP filesystem calls with `FileSystemInterface`** across `PagefindExporter`, `PagefindBuilder`, `ScoltaSettingsForm`, `ScoltaCommands`, `ScoltaRebuildWorker`, and `scolta.install`. Raw calls that cannot use stream wrappers retain `phpcs:ignore` comments explaining why.
