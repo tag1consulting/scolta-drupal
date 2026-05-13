@@ -5,4 +5,5 @@ core_version_requirement: ^10.3 || ^11
 package: Search
 dependencies:
   - search_api:search_api
+version: '1.0.0-rc3'
 lifecycle: stable

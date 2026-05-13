@@ -6,6 +6,10 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [1.0.0-rc3] - 2026-05-13
+
 ### Fixed
 - **`expand_primary_weight` now correctly weights original vs. expansion results** (via updated `scolta.js` copy from scolta-php). See [scolta-php#86](https://github.com/tag1consulting/scolta-php/issues/86).
 
