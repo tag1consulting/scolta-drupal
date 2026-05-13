@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "0ac8f2f1c5b92fe4066401a214bf8052",
+    "content-hash": "e3a868d3611a040d1ea8f396d27d62df",
     "packages": [
         {
             "name": "asm89/stack-cors",
@@ -4589,11 +4589,11 @@
         },
         {
             "name": "tag1/scolta-php",
-            "version": "1.0.0-rc1",
+            "version": "1.0.0-rc2",
             "dist": {
                 "type": "path",
                 "url": "../scolta-php",
-                "reference": "3600779740bfc853b0e60d2025ef0762cf14664f"
+                "reference": "b5dcce7b9ee4063c79e00ec78e69d0d576c07b11"
             },
             "require": {
                 "guzzlehttp/guzzle": "^7.0",
@@ -4636,6 +4636,9 @@
                 ],
                 "update-browser-wasm": [
                     "cp ../scolta-core/pkg/scolta_core_bg.wasm assets/wasm/ && cp ../scolta-core/pkg/scolta_core.js assets/wasm/"
+                ],
+                "update-js-checksum": [
+                    "sha256sum assets/js/scolta.js | awk '{print $1}' > assets/js/scolta.js.sha256"
                 ],
                 "validate-release": [
                     "php scripts/validate-release.php"
