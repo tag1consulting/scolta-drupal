@@ -72,6 +72,30 @@ jobs:
       - name: Run tests
         run: composer test
 
+  phpstan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: intl
+          coverage: none
+      - name: Replace path repo with GitHub VCS repo
+        run: |
+          php -r '
+            $j = json_decode(file_get_contents("composer.json"), true);
+            $j["repositories"] = [
+              ["type" => "composer", "url" => "https://packages.drupal.org/8"],
+              ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
+            ];
+            $j["require"]["tag1/scolta-php"] = "dev-main@dev";
+            $j["provide"]["drupal/core"] = "11.2.0";
+            file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+          '
+      - run: composer install --no-progress
+      - run: ./vendor/bin/phpstan analyse --no-progress --memory-limit=512M
+
   coverage:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

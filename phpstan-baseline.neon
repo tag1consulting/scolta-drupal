@@ -1,0 +1,337 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Method Drupal\\scolta\\AiProvider\\Amazee\\DrupalConfigStorage\:\:decrypt\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: src/AiProvider/Amazee/DrupalConfigStorage.php
+
+		-
+			message: '#^Instanceof between Drupal\\node\\Entity\\Node and Drupal\\Core\\Entity\\EntityChangedInterface will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Batch/ScoltaBatchOperations.php
+
+		-
+			message: '#^Instanceof between Drupal\\node\\Entity\\Node and Drupal\\Core\\Entity\\FieldableEntityInterface will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Batch/ScoltaBatchOperations.php
+
+		-
+			message: '#^Attribute class Drush\\Attributes\\Argument does not exist\.$#'
+			identifier: attribute.notFound
+			count: 1
+			path: src/Commands/ScoltaCommands.php
+
+		-
+			message: '#^Attribute class Drush\\Attributes\\Command does not exist\.$#'
+			identifier: attribute.notFound
+			count: 8
+			path: src/Commands/ScoltaCommands.php
+
+		-
+			message: '#^Attribute class Drush\\Attributes\\Option does not exist\.$#'
+			identifier: attribute.notFound
+			count: 20
+			path: src/Commands/ScoltaCommands.php
+
+		-
+			message: '#^Attribute class Drush\\Attributes\\Usage does not exist\.$#'
+			identifier: attribute.notFound
+			count: 4
+			path: src/Commands/ScoltaCommands.php
+
+		-
+			message: '#^Call to an undefined method Drupal\\scolta\\Commands\\ScoltaCommands\:\:logger\(\)\.$#'
+			identifier: method.notFound
+			count: 76
+			path: src/Commands/ScoltaCommands.php
+
+		-
+			message: '#^Call to an undefined method Drupal\\scolta\\Commands\\ScoltaCommands\:\:output\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Commands/ScoltaCommands.php
+
+		-
+			message: '#^Call to method loadMultiple\(\) on an unknown class Drupal\\search_api\\Entity\\SearchApiConfigEntityStorage\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Commands/ScoltaCommands.php
+
+		-
+			message: '#^Drupal\\scolta\\Commands\\ScoltaCommands\:\:__construct\(\) calls parent\:\:__construct\(\) but Drupal\\scolta\\Commands\\ScoltaCommands does not extend any class\.$#'
+			identifier: class.noParent
+			count: 1
+			path: src/Commands/ScoltaCommands.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between mixed and null will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 4
+			path: src/Commands/ScoltaCommands.php
+
+		-
+			message: '#^Variable \$items in empty\(\) always exists and is not falsy\.$#'
+			identifier: empty.variable
+			count: 1
+			path: src/Commands/ScoltaCommands.php
+
+		-
+			message: '#^Offset ''exception'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
+			identifier: isset.offset
+			count: 1
+			path: src/Controller/ExpandQueryController.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Controller/ExpandQueryController.php
+
+		-
+			message: '#^Offset ''exception'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
+			identifier: isset.offset
+			count: 1
+			path: src/Controller/FollowUpController.php
+
+		-
+			message: '#^Offset ''limit'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
+			identifier: isset.offset
+			count: 1
+			path: src/Controller/FollowUpController.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Controller/FollowUpController.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Controller/HealthController.php
+
+		-
+			message: '#^Offset ''exception'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
+			identifier: isset.offset
+			count: 1
+			path: src/Controller/SummarizeController.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Controller/SummarizeController.php
+
+		-
+			message: '#^Offset ''id'' on array\{id\: string, name\: string, url\: string\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/Form/AmazeeSettingsForm.php
+
+		-
+			message: '#^Offset ''name'' on array\{id\: string, name\: string, url\: string\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/Form/AmazeeSettingsForm.php
+
+		-
+			message: '#^Property Drupal\\scolta\\Form\\AmazeeSettingsForm\:\:\$amazeeClient is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Form/AmazeeSettingsForm.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Form/AmazeeSettingsForm.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between mixed and null will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: src/Form/MemoryBudgetSettingsFieldSet.php
+
+		-
+			message: '#^Call to method loadByProperties\(\) on an unknown class Drupal\\search_api\\Entity\\SearchApiConfigEntityStorage\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Form/ScoltaSettingsForm.php
+
+		-
+			message: '#^Call to method loadMultiple\(\) on an unknown class Drupal\\search_api\\Entity\\SearchApiConfigEntityStorage\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Form/ScoltaSettingsForm.php
+
+		-
+			message: '#^Instanceof between Drupal\\node\\Entity\\Node and Drupal\\Core\\Entity\\EntityChangedInterface will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Form/ScoltaSettingsForm.php
+
+		-
+			message: '#^Instanceof between Drupal\\node\\Entity\\Node and Drupal\\Core\\Entity\\FieldableEntityInterface will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Form/ScoltaSettingsForm.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Form/ScoltaSettingsForm.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Plugin/Block/ScoltaSearchBlock.php
+
+		-
+			message: '#^Call to an undefined method Drupal\\scolta\\Plugin\\QueueWorker\\ScoltaRebuildWorker\:\:getLogger\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Plugin/QueueWorker/ScoltaRebuildWorker.php
+
+		-
+			message: '#^Instanceof between Drupal\\node\\Entity\\Node and Drupal\\Core\\Entity\\EntityChangedInterface will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Plugin/QueueWorker/ScoltaRebuildWorker.php
+
+		-
+			message: '#^Instanceof between Drupal\\node\\Entity\\Node and Drupal\\Core\\Entity\\FieldableEntityInterface will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Plugin/QueueWorker/ScoltaRebuildWorker.php
+
+		-
+			message: '#^Access to an undefined property Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:\$configuration\.$#'
+			identifier: property.notFound
+			count: 13
+			path: src/Plugin/search_api/backend/ScoltaBackend.php
+
+		-
+			message: '#^Call to an undefined method Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:t\(\)\.$#'
+			identifier: method.notFound
+			count: 20
+			path: src/Plugin/search_api/backend/ScoltaBackend.php
+
+		-
+			message: '#^Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:create\(\) calls parent\:\:create\(\) but Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend does not extend any class\.$#'
+			identifier: class.noParent
+			count: 1
+			path: src/Plugin/search_api/backend/ScoltaBackend.php
+
+		-
+			message: '#^Parameter \$index of method Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:deleteAllIndexItems\(\) has invalid type Drupal\\search_api\\IndexInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Plugin/search_api/backend/ScoltaBackend.php
+
+		-
+			message: '#^Parameter \$index of method Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:deleteItems\(\) has invalid type Drupal\\search_api\\IndexInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Plugin/search_api/backend/ScoltaBackend.php
+
+		-
+			message: '#^Parameter \$index of method Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:indexItems\(\) has invalid type Drupal\\search_api\\IndexInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Plugin/search_api/backend/ScoltaBackend.php
+
+		-
+			message: '#^Parameter \$query of method Drupal\\scolta\\Plugin\\search_api\\backend\\ScoltaBackend\:\:search\(\) has invalid type Drupal\\search_api\\Query\\QueryInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Plugin/search_api/backend/ScoltaBackend.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between string and false will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 3
+			path: src/Plugin/search_api/backend/ScoltaBackend.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between string and false will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: src/Plugin/search_api/backend/ScoltaBackend.php
+
+		-
+			message: '#^Call to method getDatasourceId\(\) on an unknown class Drupal\\search_api\\Item\\ItemInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/PagefindExporter.php
+
+		-
+			message: '#^Call to method getId\(\) on an unknown class Drupal\\search_api\\Item\\ItemInterface\.$#'
+			identifier: class.notFound
+			count: 5
+			path: src/Service/PagefindExporter.php
+
+		-
+			message: '#^Call to method getOriginalObject\(\) on an unknown class Drupal\\search_api\\Item\\ItemInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/PagefindExporter.php
+
+		-
+			message: '#^Parameter \$item of method Drupal\\scolta\\Service\\PagefindExporter\:\:buildMetadata\(\) has invalid type Drupal\\search_api\\Item\\ItemInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/PagefindExporter.php
+
+		-
+			message: '#^Parameter \$item of method Drupal\\scolta\\Service\\PagefindExporter\:\:exportItem\(\) has invalid type Drupal\\search_api\\Item\\ItemInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Service/PagefindExporter.php
+
+		-
+			message: '#^Parameter \$item of method Drupal\\scolta\\Service\\PagefindExporter\:\:extractEntity\(\) has invalid type Drupal\\search_api\\Item\\ItemInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/PagefindExporter.php
+
+		-
+			message: '#^Call to method createInstance\(\) on an unknown class Drupal\\ai\\AiProviderPluginManager\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Service/ScoltaAiService.php
+
+		-
+			message: '#^Instantiated class Drupal\\ai\\OperationType\\Chat\\ChatInput not found\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Service/ScoltaAiService.php
+
+		-
+			message: '#^Instantiated class Drupal\\ai\\OperationType\\Chat\\ChatMessage not found\.$#'
+			identifier: class.notFound
+			count: 4
+			path: src/Service/ScoltaAiService.php
+
+		-
+			message: '#^PHPDoc tag @var for variable \$aiProvider contains unknown class Drupal\\ai\\AiProviderPluginManager\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Service/ScoltaAiService.php
+
+		-
+			message: '#^Call to an undefined method Drupal\\Core\\Entity\\FieldableEntityInterface\:\:getTranslation\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Service/ScoltaContentGatherer.php
+
+		-
+			message: '#^Call to an undefined method Drupal\\Core\\Entity\\FieldableEntityInterface\:\:getTranslationLanguages\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/Service/ScoltaContentGatherer.php

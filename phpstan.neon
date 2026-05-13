@@ -1,7 +1,15 @@
 includes:
   - vendor/phpstan/phpstan-deprecation-rules/rules.neon
+  - vendor/mglaman/phpstan-drupal/extension.neon
+  - phpstan-baseline.neon
 
 parameters:
   level: 4
   paths:
     - src
+  excludePaths:
+    # Drush commands require drush/drush which is not a dev dependency.
+    - src/Commands/ScoltaCommands.php
+    # ScoltaBackend extends BackendPluginBase which extends Drupal core plugin
+    # classes unavailable in the unit-test environment (core is only "provided").
+    - src/Plugin/search_api/backend/ScoltaBackend.php

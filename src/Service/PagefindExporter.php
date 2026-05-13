@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Service;
 
+use Drupal\Component\Render\PlainTextOutput;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -53,7 +54,7 @@ class PagefindExporter {
 
     // Render the entity using Drupal's view builder.
     $renderedHtml = $this->renderEntity($entity, $viewMode);
-    if (empty(trim(strip_tags($renderedHtml)))) {
+    if (empty(trim(PlainTextOutput::renderFromHtml($renderedHtml)))) {
       $this->logger->notice('Item @id rendered to empty content, skipping.', [
         '@id' => $item->getId(),
       ]);
@@ -70,6 +71,7 @@ class PagefindExporter {
     $filename = $this->itemIdToFilename($item->getId());
     $filepath = rtrim($buildDir, '/') . '/' . $filename;
     $this->ensureDirectory(dirname($filepath));
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- absolute path outside Drupal stream wrappers; saveData() requires a URI scheme.
     if (file_put_contents($filepath, $html) === FALSE) {
       throw new \RuntimeException("Failed to write export file: {$filepath}");
     }
@@ -82,7 +84,7 @@ class PagefindExporter {
     $filename = $this->itemIdToFilename($itemId);
     $filepath = rtrim($buildDir, '/') . '/' . $filename;
     if (file_exists($filepath)) {
-      unlink($filepath);
+      $this->fileSystem->delete($filepath);
     }
   }
 
@@ -102,19 +104,21 @@ class PagefindExporter {
     if ($datasourceId) {
       // Delete only files matching the datasource prefix.
       $prefix = str_replace([':', '/'], ['-', '-'], $datasourceId);
+      // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- glob() used for pattern matching; scanDirectory() cannot match mid-name wildcards like prefix-*.html.
       $files = glob($buildDir . '/' . $prefix . '-*.html');
       if ($files) {
         foreach ($files as $file) {
-          unlink($file);
+          $this->fileSystem->delete($file);
         }
       }
     }
     else {
       // Delete all HTML files.
+      // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- glob() used for pattern matching; scanDirectory() cannot match *.html without iterating all files.
       $files = glob($buildDir . '/*.html');
       if ($files) {
         foreach ($files as $file) {
-          unlink($file);
+          $this->fileSystem->delete($file);
         }
       }
     }

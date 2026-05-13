@@ -7,6 +7,7 @@ namespace Drupal\scolta\Commands;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Progress\DrushProgressReporter;
@@ -52,6 +53,8 @@ class ScoltaCommands extends DrushCommands {
    *   The stream wrapper manager.
    * @param \Drupal\scolta\Service\ScoltaContentGatherer $contentGatherer
    *   The content gatherer service.
+   * @param \Drupal\Core\File\FileSystemInterface $fileSystem
+   *   The file system service.
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -62,6 +65,7 @@ class ScoltaCommands extends DrushCommands {
     private readonly ScoltaAiService $aiService,
     private readonly StreamWrapperManagerInterface $streamWrapperManager,
     private readonly ScoltaContentGatherer $contentGatherer,
+    private readonly FileSystemInterface $fileSystem,
   ) {
     parent::__construct();
   }
@@ -251,11 +255,11 @@ class ScoltaCommands extends DrushCommands {
       $config->get('pagefind.build_dir') ?? 'private://scolta-build'
     );
 
-    if (!is_dir($resolvedStateDir) && !mkdir($resolvedStateDir, 0755, TRUE)) {
+    if (!is_dir($resolvedStateDir) && !$this->fileSystem->mkdir($resolvedStateDir, 0755, TRUE)) {
       $this->logger()->error('Failed to create state directory: {dir}', ['dir' => $resolvedStateDir]);
       return;
     }
-    if (!is_dir($resolvedOutputDir) && !mkdir($resolvedOutputDir, 0755, TRUE)) {
+    if (!is_dir($resolvedOutputDir) && !$this->fileSystem->mkdir($resolvedOutputDir, 0755, TRUE)) {
       $this->logger()->error('Failed to create output directory: {dir}', ['dir' => $resolvedOutputDir]);
       return;
     }
@@ -364,12 +368,14 @@ class ScoltaCommands extends DrushCommands {
 
     $this->logger()->notice('Running: {cmd}', ['cmd' => $cmd]);
 
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required for pagefind subprocess execution with real-time output streaming.
     $handle = proc_open($cmd, [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes);
     if ($handle === FALSE) {
       $this->logger()->error('proc_open() failed. Run manually: drush scolta:finalize');
       return;
     }
 
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- feof/fgets/fclose/proc_close required for subprocess pipe operations.
     while (!feof($pipes[1])) {
       $line = fgets($pipes[1]);
       if ($line !== FALSE && trim($line) !== '') {
@@ -733,6 +739,7 @@ class ScoltaCommands extends DrushCommands {
       $resolvedDir = $outputDir;
     }
     if (file_exists($resolvedDir . '/pagefind/pagefind.js')) {
+      // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- glob() used for counting fragment files; scanDirectory() would be heavier for a simple count.
       $fragmentCount = count(glob($resolvedDir . '/pagefind/fragment/*') ?: []);
       $mtime = filemtime($resolvedDir . '/pagefind/pagefind.js');
       $this->logger()->notice("  Path:       {$outputDir}");
@@ -865,7 +872,7 @@ class ScoltaCommands extends DrushCommands {
 
     // Extract the binary.
     if (!is_dir($dest)) {
-      mkdir($dest, 0755, TRUE);
+      $this->fileSystem->mkdir($dest, 0755, TRUE);
     }
 
     try {
@@ -893,12 +900,12 @@ class ScoltaCommands extends DrushCommands {
     // Make binary executable on Unix.
     $binaryPath = rtrim($dest, '/') . '/pagefind';
     if ($os !== 'Windows' && file_exists($binaryPath)) {
-      chmod($binaryPath, 0755);
+      $this->fileSystem->chmod($binaryPath, 0755);
     }
 
     // Clean up temp file.
     if (file_exists($tempFile)) {
-      unlink($tempFile);
+      $this->fileSystem->delete($tempFile);
     }
 
     $this->logger()->success("Pagefind v{$version} installed to {$dest}/");

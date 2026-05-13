@@ -68,11 +68,11 @@ class ScoltaRebuildWorker extends QueueWorkerBase {
       }
 
       // Ensure directories exist.
-      if (!is_dir($stateDir) && !mkdir($stateDir, 0755, TRUE)) {
+      if (!is_dir($stateDir) && !$fileSystem->mkdir($stateDir, 0755, TRUE)) {
         \Drupal::logger('scolta')->error('Failed to create state directory: @dir', ['@dir' => $stateDir]);
         return;
       }
-      if (!is_dir($outputDir) && !mkdir($outputDir, 0755, TRUE)) {
+      if (!is_dir($outputDir) && !$fileSystem->mkdir($outputDir, 0755, TRUE)) {
         \Drupal::logger('scolta')->error('Failed to create output directory: @dir', ['@dir' => $outputDir]);
         return;
       }
@@ -155,6 +155,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase {
         // Write fingerprint for future change detection.
         $fp = PhpIndexer::computeFingerprint($filteredItems);
         $statePath = $outputDir . '/.scolta-state';
+        // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- absolute path outside Drupal stream wrappers; saveData() requires a URI scheme.
         if (file_put_contents($statePath, $fp) === FALSE) {
           $this->getLogger('scolta')->error('Failed to write index fingerprint to @path', ['@path' => $statePath]);
         }

@@ -9,6 +9,7 @@ use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Entity\EntityChangedInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
+use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\State\StateInterface;
@@ -69,6 +70,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
   protected StateInterface $state;
 
   /**
+   * The file system service.
+   *
+   * @var \Drupal\Core\File\FileSystemInterface
+   */
+  protected FileSystemInterface $fileSystem;
+
+  /**
    * Constructs a ScoltaSettingsForm object.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -85,6 +93,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
    *   The entity type manager.
    * @param \Drupal\Core\State\StateInterface $state
    *   The state service.
+   * @param \Drupal\Core\File\FileSystemInterface $fileSystem
+   *   The file system service.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
@@ -94,6 +104,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     StreamWrapperManagerInterface $streamWrapperManager,
     EntityTypeManagerInterface $entityTypeManager,
     StateInterface $state,
+    FileSystemInterface $fileSystem,
   ) {
     parent::__construct($configFactory, $typedConfigManager);
     $this->aiService = $aiService;
@@ -101,6 +112,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $this->streamWrapperManager = $streamWrapperManager;
     $this->entityTypeManager = $entityTypeManager;
     $this->state = $state;
+    $this->fileSystem = $fileSystem;
   }
 
   /**
@@ -115,6 +127,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $container->get('stream_wrapper_manager'),
       $container->get('entity_type.manager'),
       $container->get('state'),
+      $container->get('file_system'),
     );
   }
 
@@ -1082,10 +1095,10 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     // Ensure directories exist.
     if (!is_dir($stateDir)) {
-      mkdir($stateDir, 0755, TRUE);
+      $this->fileSystem->mkdir($stateDir, 0755, TRUE);
     }
     if (!is_dir($outputDir)) {
-      mkdir($outputDir, 0755, TRUE);
+      $this->fileSystem->mkdir($outputDir, 0755, TRUE);
     }
 
     $batchConfig = [
@@ -1138,10 +1151,10 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     // Ensure directories exist.
     if (!is_dir($stateDir)) {
-      mkdir($stateDir, 0755, TRUE);
+      $this->fileSystem->mkdir($stateDir, 0755, TRUE);
     }
     if (!is_dir($outputDir)) {
-      mkdir($outputDir, 0755, TRUE);
+      $this->fileSystem->mkdir($outputDir, 0755, TRUE);
     }
 
     // Export HTML files for the binary.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Service;
 
+use Drupal\Component\Render\PlainTextOutput;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityChangedInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -252,10 +253,10 @@ class ScoltaContentGatherer {
               if ($translation->hasField($field) && !$translation->get($field)->isEmpty()) {
                 $item = $translation->get($field)->first();
                 if ($item instanceof TextItemBase) {
-                  // ->processed runs text format filters; strip_tags gives clean text.
+                  // ->processed runs text format filters; PlainTextOutput decodes HTML entities.
                   // Cast to string: ->processed returns FilteredMarkup, not a plain string.
                   // Fall back to ->value if the text format is misconfigured.
-                  $body = strip_tags((string) $item->processed) ?: strip_tags((string) $item->value);
+                  $body = PlainTextOutput::renderFromHtml((string) $item->processed) ?: PlainTextOutput::renderFromHtml((string) $item->value);
                 }
                 else {
                   $body = $item->value;

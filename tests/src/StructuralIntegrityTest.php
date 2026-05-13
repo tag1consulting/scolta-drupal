@@ -236,4 +236,112 @@ class StructuralIntegrityTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // PHPStan configuration
+  // -------------------------------------------------------------------
+
+  public function testPhpstanConfigIncludesDrupalExtension(): void {
+    $neon = file_get_contents($this->moduleRoot . '/phpstan.neon');
+    $this->assertStringContainsString('mglaman/phpstan-drupal/extension.neon', $neon,
+      'phpstan.neon must include mglaman/phpstan-drupal extension for Drupal-aware analysis');
+  }
+
+  public function testPhpstanBaselineExists(): void {
+    $this->assertFileExists($this->moduleRoot . '/phpstan-baseline.neon',
+      'phpstan-baseline.neon must exist to track pre-existing errors');
+  }
+
+  // -------------------------------------------------------------------
+  // .gitattributes covers dev files
+  // -------------------------------------------------------------------
+
+  public function testGitattributesExcludesDevFiles(): void {
+    $path = $this->moduleRoot . '/.gitattributes';
+    $this->assertFileExists($path,
+      '.gitattributes must exist to exclude dev files from distribution archives');
+    $content = file_get_contents($path);
+    $this->assertStringContainsString('tests/', $content,
+      '.gitattributes must exclude /tests/ from distribution');
+    $this->assertStringContainsString('export-ignore', $content,
+      '.gitattributes must use export-ignore directives');
+    $this->assertStringContainsString('.github/', $content,
+      '.gitattributes must exclude /.github/ from distribution');
+    $this->assertStringContainsString('phpstan.neon', $content,
+      '.gitattributes must exclude phpstan.neon from distribution');
+  }
+
+  // -------------------------------------------------------------------
+  // No raw filesystem calls in src/ (regression guard)
+  // -------------------------------------------------------------------
+
+  /**
+   * Verify no raw PHP filesystem functions exist in src/ without phpcs:ignore.
+   *
+   * Method calls via FileSystemInterface (->mkdir, ->delete, etc.) are allowed.
+   * Only plain PHP function calls (mkdir(), unlink(), etc.) are flagged.
+   *
+   * Allowed exceptions:
+   * - Any line with a phpcs:ignore comment (including the line above)
+   * - proc_open/feof/fgets/fclose/fread (subprocess pipe operations)
+   * - Method calls: ->mkdir(, ->delete(, etc.
+   */
+  public function testNoRawFilesystemCalls(): void {
+    $srcDir = $this->moduleRoot . '/src/';
+    // Raw PHP function names to check — only flag bare calls, not method calls.
+    $forbidden = [
+      'strip_tags(',
+      'file_put_contents(',
+      'unlink(',
+      'rmdir(',
+      'mkdir(',
+      'copy(',
+      'chmod(',
+    ];
+    // Patterns that make a line acceptable even if it matches a forbidden func.
+    $allowed = ['phpcs:ignore', 'proc_open', 'feof', 'fgets', 'fclose', 'fread'];
+
+    $violations = [];
+    $iterator = new \RecursiveIteratorIterator(
+      new \RecursiveDirectoryIterator($srcDir, \FilesystemIterator::SKIP_DOTS)
+    );
+
+    foreach ($iterator as $file) {
+      if ($file->getExtension() !== 'php') {
+        continue;
+      }
+      $lines = file($file->getPathname());
+      foreach ($lines as $num => $line) {
+        foreach ($forbidden as $func) {
+          if (!str_contains($line, $func)) {
+            continue;
+          }
+          // Skip method calls: ->mkdir(, ->copy(, etc.
+          $funcName = rtrim($func, '(');
+          if (preg_match('/->\\s*' . preg_quote($funcName, '/') . '\\s*\\(/', $line)) {
+            continue;
+          }
+          // Skip static calls: FileSystemInterface::mkdir( etc.
+          if (preg_match('/::' . preg_quote($funcName, '/') . '\\s*\\(/', $line)) {
+            continue;
+          }
+          // Check this line and the previous line for phpcs:ignore.
+          $context = $line . ($lines[$num - 1] ?? '');
+          $isAllowed = FALSE;
+          foreach ($allowed as $exception) {
+            if (str_contains($context, $exception)) {
+              $isAllowed = TRUE;
+              break;
+            }
+          }
+          if (!$isAllowed) {
+            $violations[] = $file->getPathname() . ':' . ($num + 1) . ' — ' . trim($line);
+          }
+        }
+      }
+    }
+
+    $this->assertEmpty($violations,
+      "Raw filesystem calls found in src/ (add phpcs:ignore with explanation if intentional):\n" . implode("\n", $violations));
+  }
+
 }
