@@ -231,7 +231,6 @@
   let usedOrFallback = false;
   let pagefindBase = '';   // Set during initPagefind(); used by resolveUrl().
   let currentSortOverride = null;    // { field, direction } or null — active sort override
-  let preOverrideResults = null;     // snapshot of allScoredResults before sort_override filtering
 
   // Detect default language filter from instanceConfig.currentLanguage or <html lang>.
   // Applied on every fresh search unless the URL already specifies f_language.
@@ -874,35 +873,6 @@
     doSearch();
   }
 
-  // Apply a sort override to allScoredResults, sorting by a metadata field value.
-  // Returns true if the override was applied, false when the field is absent from
-  // all results (caller should treat this as a silent fallback to relevance sort).
-  function applySortOverride(override) {
-    if (!override || !override.field) return false;
-    const field = override.field;
-    const desc = override.direction === 'desc';
-    const withField = allScoredResults.filter(r => {
-      const v = r.data.meta?.[field];
-      return v !== undefined && v !== null && v !== '';
-    });
-    if (withField.length === 0) {
-      console.log('[scolta:sort] sort_override field "' + field + '" absent from all results, using relevance sort');
-      return false;
-    }
-    withField.sort((a, b) => {
-      const av = a.data.meta[field];
-      const bv = b.data.meta[field];
-      const an = parseFloat(av);
-      const bn = parseFloat(bv);
-      let cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : String(av || '').localeCompare(String(bv || ''));
-      if (desc) cmp = -cmp;
-      return cmp !== 0 ? cmp : b.score - a.score;
-    });
-    preOverrideResults = allScoredResults;
-    allScoredResults = withField;
-    return true;
-  }
-
   function renderSortIndicator(override) {
     const el = els.sortIndicator;
     if (!override || !override.field) {
@@ -919,19 +889,16 @@
 
   function dismissSortOverride() {
     currentSortOverride = null;
-    if (preOverrideResults) {
-      allScoredResults = preOverrideResults;
-      preOverrideResults = null;
-    }
-    allScoredResults.sort((a, b) => b.score - a.score);
-    displayedCount = 0;
     renderSortIndicator(null);
-    renderResults(lastExpandedTerms && lastExpandedTerms.terms && lastExpandedTerms.terms.length > 0);
+    // Re-run the full search without sort so all matching docs are reconsidered
+    // by BM25 relevance. We can't simply swap arrays — the sorted result set
+    // excluded pages that lacked price metadata, so the relevance set is different.
+    doSearch(true);
   }
 
   // --- Pagefind search helper ---
 
-  async function pagefindSearch(query, filters) {
+  async function pagefindSearch(query, filters, sortHint) {
     const searchOpts = {};
     if (filters && typeof filters === 'object') {
       const pagefindFilters = {};
@@ -944,6 +911,9 @@
       if (Object.keys(pagefindFilters).length > 0) {
         searchOpts.filters = pagefindFilters;
       }
+    }
+    if (sortHint && sortHint.field && sortHint.direction) {
+      searchOpts.sort = { [sortHint.field]: sortHint.direction };
     }
     return pagefind.search(query, searchOpts);
   }
@@ -1243,12 +1213,13 @@
 
   async function mergeExpandedSearchResults(expandedTerms, originalQuery, searchQuery, preserveFilters, version, sortOverride) {
     const CONFIG = getInstanceConfig();
-    if (!expandedTerms || expandedTerms.length === 0) return;
+    const validTerms = expandedTerms
+      ? expandedTerms.filter(t => t.toLowerCase() !== originalQuery.toLowerCase())
+      : [];
 
-    const validTerms = expandedTerms.filter(
-      t => t.toLowerCase() !== originalQuery.toLowerCase()
-    );
-    if (validTerms.length === 0) return;
+    // For the relevance path we need expanded terms; for the sort path we proceed
+    // even with none (we still run the primary query with native sort).
+    if (validTerms.length === 0 && !sortOverride) return;
 
     if (version !== searchVersion) {
       console.log('[scolta:expand] Discarding stale expansion (version', version, 'vs current', searchVersion, ')');
@@ -1263,48 +1234,109 @@
       }
     }
 
-    const queries = [];
-    let weightIndex = 0;
-    // Per-term scores are scaled by (1 - expand_primary_weight) so that expansion terms
-    // start at the correct base weight relative to the primary query results.
-    const expandBase = 1.0 - CONFIG.EXPAND_PRIMARY_WEIGHT;
-    for (const term of validTerms) {
-      const weight = Math.max(expandBase - (weightIndex * 0.05), 0.1);
-      queries.push({ term, weight });
-      weightIndex++;
-
-      const words = extractSearchTerms(term);
-      if (words.length > 1) {
-        for (const word of words) {
-          if (word.length > 2 && !queries.some(q => q.term === word)) {
-            const wordWeight = Math.max(expandBase - (weightIndex * 0.05), 0.1);
-            queries.push({ term: word, weight: wordWeight });
-            weightIndex++;
+    if (sortOverride && sortOverride.field && sortOverride.direction) {
+      // Native sort path: pass sort to Pagefind so it sorts ALL matching documents
+      // at the index level before returning. We load the top N from each already-sorted
+      // result set, then merge by URL dedup and sort the merged set by the sort field.
+      // This avoids the old bug where BM25 selected the top-50 first, then we tried
+      // to sort those 50 — expensive items outside the top-50 were never loaded.
+      const termSet = new Set([searchQuery]);
+      for (const term of validTerms) {
+        termSet.add(term);
+        const words = extractSearchTerms(term);
+        if (words.length > 1) {
+          for (const word of words) {
+            if (word.length > 2) termSet.add(word);
           }
         }
       }
-    }
 
-    const expandedResults = await searchAndLoadParallel(queries, activeFilters, searchQuery);
+      const searches = await Promise.all(
+        [...termSet].map(t => pagefindSearch(t, activeFilters, sortOverride))
+      );
 
-    if (version !== searchVersion) {
-      console.log('[scolta:expand] Discarding stale expansion after load (version', version, 'vs current', searchVersion, ')');
-      return;
-    }
-
-    allScoredResults = mergeResults(
-      allScoredResults,
-      expandedResults,
-      CONFIG.EXPAND_PRIMARY_WEIGHT,
-      1.0 - CONFIG.EXPAND_PRIMARY_WEIGHT
-    );
-    allScoredResults.sort((a, b) => b.score - a.score);
-    allScoredResults = deduplicateByTitle(allScoredResults);
-
-    if (sortOverride) {
-      if (!applySortOverride(sortOverride)) {
-        currentSortOverride = null;
+      if (version !== searchVersion) {
+        console.log('[scolta:expand] Discarding stale expansion after sort search (version', version, 'vs current', searchVersion, ')');
+        return;
       }
+
+      // Load top N from each search and merge by URL (first occurrence wins — searches
+      // are already sorted by the sort field, so first-seen is already the best match).
+      const urlMap = new Map();
+      await Promise.all(searches.map(async (search) => {
+        const toLoad = Math.min(search.results.length, CONFIG.MAX_PAGEFIND_RESULTS);
+        if (toLoad === 0) return;
+        const loaded = await Promise.all(search.results.slice(0, toLoad).map(r => r.data()));
+        for (const data of loaded) {
+          const url = resolveUrl(data.url || '');
+          if (!urlMap.has(url)) urlMap.set(url, data);
+        }
+      }));
+
+      if (version !== searchVersion) {
+        console.log('[scolta:expand] Discarding stale expansion after sort load (version', version, 'vs current', searchVersion, ')');
+        return;
+      }
+
+      const field = sortOverride.field;
+      const desc = sortOverride.direction === 'desc';
+      const withField = [...urlMap.values()].filter(data => {
+        const v = data.meta?.[field];
+        return v !== undefined && v !== null && v !== '';
+      });
+
+      if (withField.length === 0) {
+        console.log('[scolta:sort] Sort field "' + field + '" absent from all results, falling back to relevance');
+        currentSortOverride = null;
+      } else {
+        withField.sort((a, b) => {
+          const av = parseFloat(a.meta[field]);
+          const bv = parseFloat(b.meta[field]);
+          const cmp = (!isNaN(av) && !isNaN(bv))
+            ? av - bv
+            : String(a.meta[field] || '').localeCompare(String(b.meta[field] || ''));
+          return desc ? -cmp : cmp;
+        });
+        allScoredResults = withField.map(data => ({ data, score: 0 }));
+      }
+
+    } else {
+      // Relevance path: existing multi-term expand-and-merge behavior.
+      const queries = [];
+      let weightIndex = 0;
+      const expandBase = 1.0 - CONFIG.EXPAND_PRIMARY_WEIGHT;
+      for (const term of validTerms) {
+        const weight = Math.max(expandBase - (weightIndex * 0.05), 0.1);
+        queries.push({ term, weight });
+        weightIndex++;
+
+        const words = extractSearchTerms(term);
+        if (words.length > 1) {
+          for (const word of words) {
+            if (word.length > 2 && !queries.some(q => q.term === word)) {
+              const wordWeight = Math.max(expandBase - (weightIndex * 0.05), 0.1);
+              queries.push({ term: word, weight: wordWeight });
+              weightIndex++;
+            }
+          }
+        }
+      }
+
+      const expandedResults = await searchAndLoadParallel(queries, activeFilters, searchQuery);
+
+      if (version !== searchVersion) {
+        console.log('[scolta:expand] Discarding stale expansion after load (version', version, 'vs current', searchVersion, ')');
+        return;
+      }
+
+      allScoredResults = mergeResults(
+        allScoredResults,
+        expandedResults,
+        CONFIG.EXPAND_PRIMARY_WEIGHT,
+        1.0 - CONFIG.EXPAND_PRIMARY_WEIGHT
+      );
+      allScoredResults.sort((a, b) => b.score - a.score);
+      allScoredResults = deduplicateByTitle(allScoredResults);
     }
 
     displayedCount = 0;
@@ -1314,7 +1346,7 @@
     }
 
     renderResults(true);
-    console.log(`[scolta:expand] Merged ${allScoredResults.length} results from primary + ${validTerms.length} expanded terms`);
+    console.log(`[scolta:expand] ${sortOverride ? 'Native sort' : 'Merged'}: ${allScoredResults.length} results`);
   }
 
   // --- Main search ---
@@ -1454,7 +1486,6 @@
       if (!preserveFilters) {
         lastExpandedTerms = expansion;
         currentSortOverride = sortHint;
-        preOverrideResults = null;
       }
       renderExpandedTerms(expandedTerms, query);
       await mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version, currentSortOverride);
@@ -1487,7 +1518,6 @@
     followUpCount = 0;
     activeFilters = {};
     currentSortOverride = null;
-    preOverrideResults = null;
 
     // Remove search query and filter params from URL.
     try {
