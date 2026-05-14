@@ -230,6 +230,8 @@
   let searchVersion = 0;
   let usedOrFallback = false;
   let pagefindBase = '';   // Set during initPagefind(); used by resolveUrl().
+  let currentSortOverride = null;    // { field, direction } or null — active sort override
+  let preOverrideResults = null;     // snapshot of allScoredResults before sort_override filtering
 
   // Detect default language filter from instanceConfig.currentLanguage or <html lang>.
   // Applied on every fresh search unless the URL already specifies f_language.
@@ -479,8 +481,16 @@
       }
       const data = await resp.json();
       console.log("[scolta:expand] response:", data);
-      const terms = Array.isArray(data) ? data : (Array.isArray(data?.terms) ? data.terms : null);
-      return terms;
+      if (Array.isArray(data)) {
+        return { terms: data, sort_hint: null };
+      }
+      const terms = Array.isArray(data?.terms) ? data.terms : null;
+      if (!terms) return null;
+      const sh = data.sort_hint;
+      const sort_hint = (sh && typeof sh.field === 'string' && sh.field &&
+                         (sh.direction === 'asc' || sh.direction === 'desc'))
+        ? { field: sh.field, direction: sh.direction } : null;
+      return { terms, sort_hint };
     } catch (e) {
       if (e.name === 'AbortError') return null;
       if (e instanceof TypeError) return null;
@@ -864,6 +874,61 @@
     doSearch();
   }
 
+  // Apply a sort override to allScoredResults, sorting by a metadata field value.
+  // Returns true if the override was applied, false when the field is absent from
+  // all results (caller should treat this as a silent fallback to relevance sort).
+  function applySortOverride(override) {
+    if (!override || !override.field) return false;
+    const field = override.field;
+    const desc = override.direction === 'desc';
+    const withField = allScoredResults.filter(r => {
+      const v = r.data.meta?.[field];
+      return v !== undefined && v !== null && v !== '';
+    });
+    if (withField.length === 0) {
+      console.log('[scolta:sort] sort_override field "' + field + '" absent from all results, using relevance sort');
+      return false;
+    }
+    withField.sort((a, b) => {
+      const av = a.data.meta[field];
+      const bv = b.data.meta[field];
+      const an = parseFloat(av);
+      const bn = parseFloat(bv);
+      let cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : String(av || '').localeCompare(String(bv || ''));
+      if (desc) cmp = -cmp;
+      return cmp !== 0 ? cmp : b.score - a.score;
+    });
+    preOverrideResults = allScoredResults;
+    allScoredResults = withField;
+    return true;
+  }
+
+  function renderSortIndicator(override) {
+    const el = els.sortIndicator;
+    if (!override || !override.field) {
+      el.style.display = 'none';
+      el.innerHTML = '';
+      return;
+    }
+    const dirLabel = override.direction === 'desc' ? 'highest first' : 'lowest first';
+    el.style.display = 'block';
+    el.innerHTML = '<span class="scolta-sort-badge">Sorted by: ' + escapeHtml(override.field) +
+      ' (' + dirLabel + ') ' +
+      '<button class="scolta-sort-dismiss" data-scolta-sort-dismiss aria-label="Remove sort">×</button></span>';
+  }
+
+  function dismissSortOverride() {
+    currentSortOverride = null;
+    if (preOverrideResults) {
+      allScoredResults = preOverrideResults;
+      preOverrideResults = null;
+    }
+    allScoredResults.sort((a, b) => b.score - a.score);
+    displayedCount = 0;
+    renderSortIndicator(null);
+    renderResults(lastExpandedTerms && lastExpandedTerms.terms && lastExpandedTerms.terms.length > 0);
+  }
+
   // --- Pagefind search helper ---
 
   async function pagefindSearch(query, filters) {
@@ -1176,7 +1241,7 @@
     return results;
   }
 
-  async function mergeExpandedSearchResults(expandedTerms, originalQuery, searchQuery, preserveFilters, version) {
+  async function mergeExpandedSearchResults(expandedTerms, originalQuery, searchQuery, preserveFilters, version, sortOverride) {
     const CONFIG = getInstanceConfig();
     if (!expandedTerms || expandedTerms.length === 0) return;
 
@@ -1235,6 +1300,13 @@
     );
     allScoredResults.sort((a, b) => b.score - a.score);
     allScoredResults = deduplicateByTitle(allScoredResults);
+
+    if (sortOverride) {
+      if (!applySortOverride(sortOverride)) {
+        currentSortOverride = null;
+      }
+    }
+
     displayedCount = 0;
 
     if (!preserveFilters) {
@@ -1374,14 +1446,22 @@
     // Phase 2+3: Expand, merge, then summarize with the final reordered results.
     // Summarize is intentionally deferred until after expansion so the AI sees
     // the same ranking the user sees (expanded terms promote more relevant results).
-    expandPromise.then(async expandedTerms => {
+    expandPromise.then(async expansion => {
+      // expansion is { terms, sort_hint } or null (or a plain array for legacy cache hits).
+      const expandedTerms = Array.isArray(expansion) ? expansion : (expansion?.terms ?? null);
+      const sortHint = Array.isArray(expansion) ? null : (expansion?.sort_hint ?? null);
+
       if (!preserveFilters) {
-        lastExpandedTerms = expandedTerms;
+        lastExpandedTerms = expansion;
+        currentSortOverride = sortHint;
+        preOverrideResults = null;
       }
       renderExpandedTerms(expandedTerms, query);
-      await mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version);
+      await mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version, currentSortOverride);
 
       if (version !== searchVersion) return;
+
+      renderSortIndicator(currentSortOverride);
 
       const expandedLabel = expandedTerms
         ? expandedTerms.filter(t => t.toLowerCase() !== query.toLowerCase())
@@ -1399,11 +1479,15 @@
     els.expandedTerms.style.display = "none";
     els.aiSummary.style.display = "none";
     els.noResults.style.display = "none";
+    els.sortIndicator.style.display = "none";
+    els.sortIndicator.innerHTML = '';
     allScoredResults = [];
     displayedCount = 0;
     conversationMessages = [];
     followUpCount = 0;
     activeFilters = {};
+    currentSortOverride = null;
+    preOverrideResults = null;
 
     // Remove search query and filter params from URL.
     try {
@@ -1573,7 +1657,8 @@
   }
 
   function showMore() {
-    renderResults(lastExpandedTerms && lastExpandedTerms.length > 0);
+    const terms = Array.isArray(lastExpandedTerms) ? lastExpandedTerms : lastExpandedTerms?.terms;
+    renderResults(terms && terms.length > 0);
   }
 
   // ==========================================================================
@@ -1605,6 +1690,7 @@
         <aside class="scolta-filters" id="scolta-filters"></aside>
         <div>
           <div id="scolta-ai-summary" style="display:none;"></div>
+          <div id="scolta-sort-indicator" style="display:none;"></div>
           <div class="scolta-results-header" id="scolta-results-header"></div>
           <div id="scolta-results"></div>
           <button class="scolta-load-more" id="scolta-load-more" style="display:none;">Show more results</button>
@@ -1626,6 +1712,7 @@
       layout: root.querySelector('#scolta-layout'),
       filters: root.querySelector('#scolta-filters'),
       aiSummary: root.querySelector('#scolta-ai-summary'),
+      sortIndicator: root.querySelector('#scolta-sort-indicator'),
       resultsHeader: root.querySelector('#scolta-results-header'),
       results: root.querySelector('#scolta-results'),
       loadMore: root.querySelector('#scolta-load-more'),
@@ -1654,6 +1741,11 @@
       const termEl = e.target.closest("[data-scolta-search-term]");
       if (termEl) {
         searchTerm(termEl.dataset.scoltaSearchTerm);
+        return;
+      }
+      // Sort indicator dismiss → fall back to relevance sort
+      if (e.target.closest("[data-scolta-sort-dismiss]")) {
+        dismissSortOverride();
         return;
       }
       // Follow-up submit button

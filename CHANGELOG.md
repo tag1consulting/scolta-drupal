@@ -6,7 +6,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+- **Sort hint wired into search flow** (via updated `scolta.js` copy from scolta-php). When the expand-query endpoint returns a `sort_hint`, results are sorted by the named metadata field with a dismissible badge above results. See [scolta-php#93](https://github.com/tag1consulting/scolta-php/issues/93).
 
 ## [1.0.0-rc3] - 2026-05-13
 
