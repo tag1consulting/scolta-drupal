@@ -259,6 +259,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Brief description used in AI prompts (e.g., "corporate website", "health system websites").'),
     ];
 
+    $form['content']['sortable_fields'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Sortable fields'),
+      '#default_value' => implode(', ', $config->get('sortable_fields') ?? []),
+      '#description' => $this->t('Comma-separated list of fields available for sorting (e.g., "date, price"). When non-empty, the AI can detect sort intent and return a sort hint.'),
+    ];
+
     $form['content']['indexer'] = [
       '#type' => 'select',
       '#title' => $this->t('Indexer mode'),
@@ -845,6 +852,10 @@ class ScoltaSettingsForm extends ConfigFormBase {
       // Content settings.
       ->set('site_name', $form_state->getValue('site_name'))
       ->set('site_description', $form_state->getValue('site_description'))
+      ->set('sortable_fields', array_values(array_filter(array_map(
+        'trim',
+        explode(',', $form_state->getValue('sortable_fields') ?? '')
+      ))))
       ->set('indexer', $form_state->getValue('indexer'))
       ->set('memory_budget.profile', $form_state->getValue('memory_budget_profile') ?? 'conservative')
       ->set('memory_budget.custom_bytes', NULL)
