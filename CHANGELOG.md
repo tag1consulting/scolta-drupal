@@ -7,6 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Fixed
+- **Sort override no longer loses the subject filter** (via updated `scolta.js` from [scolta-php#105](https://github.com/tag1consulting/scolta-php/pull/105)). "Most expensive tooth" now returns tooth/dental items sorted by price — previously OR-matched common terms dominated the price-sorted set. The LLM returns `subject_terms` alongside `sort_hint`; `scolta.js` runs a parallel subject-only search and intersects with sorted results.
 - **Sort-by-price now uses Pagefind native sort** (via updated `scolta.js` from [scolta-php#101](https://github.com/tag1consulting/scolta-php/pull/101)). The previous client-side sort after BM25 truncation could not see expensive items outside the top-N. Pagefind native sort operates at the index level before returning results. Dismiss button re-runs search without sort.
 
 ### Added
