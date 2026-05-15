@@ -127,6 +127,34 @@ function scolta_form_search_api_index_fields_alter(array &$form, \Drupal\Core\Fo
 }
 
 /**
+ * @defgroup scolta_hooks Scolta module hooks
+ * @{
+ * Hooks for extending Scolta content gathering and indexing.
+ * @}
+ */
+
+/**
+ * Alter a ContentItem before it is yielded for indexing.
+ *
+ * Invoked in ScoltaContentGatherer::gather() after each ContentItem is
+ * constructed from an entity translation. Use this hook to populate custom
+ * sortable fields, add metadata, or override content for specific bundles.
+ *
+ * The $item parameter is a ContentItem object. Because ContentItem is a
+ * readonly class, use $item->cloneWith(['sortable' => [...]]) to return a
+ * modified copy and reassign it to $item.
+ *
+ * @param \Tag1\Scolta\Export\ContentItem &$item
+ *   The ContentItem to be indexed. Reassign to modify.
+ * @param \Drupal\Core\Entity\FieldableEntityInterface $entity
+ *   The entity translation that was used to build the ContentItem.
+ *
+ * @ingroup scolta_hooks
+ */
+function hook_scolta_content_item_alter(\Tag1\Scolta\Export\ContentItem &$item, \Drupal\Core\Entity\FieldableEntityInterface $entity): void {
+}
+
+/**
  * Check if auto-rebuild should be triggered for the given entity.
  *
  * Enqueues a rebuild request when a node is inserted or updated

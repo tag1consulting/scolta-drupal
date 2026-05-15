@@ -7,6 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Added
+- **`hook_scolta_content_item_alter()` extension point for custom sortable fields.** `ScoltaContentGatherer::gather()` now invokes `hook_scolta_content_item_alter(&$item, $entity)` after constructing each `ContentItem`. Modules can implement this hook to populate `ContentItem::$sortable` (and `$metadata`) from entity fields — use `$item->cloneWith(['sortable' => [...]])` since `ContentItem` is readonly. The manifest entry for each item now stores `sortable` so that incremental builds via `CachedContentReference` preserve sort values across rebuilds. `@module_handler` injected into `ScoltaContentGatherer` service.
 - **Sync `js/scolta.js` with scolta-php#108.** Updates the committed copy to include filter intent badge UI (dismissable `.scolta-filter-badge` elements when the LLM detects filter intent). The previous copy was stamped before scolta-php#108 landed on `main`.
 - **Sortable field descriptions and filter fields in admin form.** The Content section of the settings form gains four new fields: "Sortable field descriptions" (textarea, one `field_name|Description` per line), "Filter fields" (comma-separated dimension names), and "Filter field descriptions" (textarea). These map to the new `ScoltaConfig::$sortableFieldDescriptions`, `$filterFields`, and `$filterFieldDescriptions` properties introduced in scolta-php. Config schema updated accordingly. ([feature/generic-sort-filter-prompts])
 
