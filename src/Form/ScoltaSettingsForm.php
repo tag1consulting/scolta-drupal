@@ -266,6 +266,39 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Comma-separated list of fields available for sorting (e.g., "date, price"). When non-empty, the AI can detect sort intent and return a sort hint.'),
     ];
 
+    $sortableDescRaw = $config->get('sortable_field_descriptions') ?? [];
+    $sortableDescDisplay = '';
+    foreach ($sortableDescRaw as $field => $desc) {
+      $sortableDescDisplay .= "{$field}|{$desc}\n";
+    }
+    $form['content']['sortable_field_descriptions'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Sortable field descriptions'),
+      '#default_value' => trim($sortableDescDisplay),
+      '#rows' => 4,
+      '#description' => $this->t('One <code>field_name|Description</code> per line. Descriptions help the AI map natural language to field names. Example: <code>word_count|Article length in words — higher means more comprehensive coverage</code>.'),
+    ];
+
+    $form['content']['filter_fields'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Filter fields'),
+      '#default_value' => implode(', ', $config->get('filter_fields') ?? []),
+      '#description' => $this->t('Comma-separated list of filter dimension names (e.g., "topic, era, region"). Must match the filter names used in data-pagefind-filter attributes.'),
+    ];
+
+    $filterDescRaw = $config->get('filter_field_descriptions') ?? [];
+    $filterDescDisplay = '';
+    foreach ($filterDescRaw as $field => $desc) {
+      $filterDescDisplay .= "{$field}|{$desc}\n";
+    }
+    $form['content']['filter_field_descriptions'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Filter field descriptions'),
+      '#default_value' => trim($filterDescDisplay),
+      '#rows' => 4,
+      '#description' => $this->t('One <code>dimension|Description</code> per line. Listing valid values helps the AI map user queries to filter values. Example: <code>topic|Subject area or domain. Values: Science, History, Biography, Geography, Arts</code>.'),
+    ];
+
     $form['content']['indexer'] = [
       '#type' => 'select',
       '#title' => $this->t('Indexer mode'),
@@ -856,6 +889,12 @@ class ScoltaSettingsForm extends ConfigFormBase {
         'trim',
         explode(',', $form_state->getValue('sortable_fields') ?? '')
       ))))
+      ->set('sortable_field_descriptions', $this->parseKeyValueLines($form_state->getValue('sortable_field_descriptions') ?? ''))
+      ->set('filter_fields', array_values(array_filter(array_map(
+        'trim',
+        explode(',', $form_state->getValue('filter_fields') ?? '')
+      ))))
+      ->set('filter_field_descriptions', $this->parseKeyValueLines($form_state->getValue('filter_field_descriptions') ?? ''))
       ->set('indexer', $form_state->getValue('indexer'))
       ->set('memory_budget.profile', $form_state->getValue('memory_budget_profile') ?? 'conservative')
       ->set('memory_budget.custom_bytes', NULL)
@@ -1212,6 +1251,35 @@ class ScoltaSettingsForm extends ConfigFormBase {
       'ok',
       (string) $this->t('Search index rebuilt successfully (binary).')
     ));
+  }
+
+  /**
+   * Parse a multi-line "key|value" textarea into an associative array.
+   *
+   * Each line should be in "field_name|Description text" format. Lines that
+   * do not contain a pipe character are silently skipped.
+   *
+   * @param string $raw
+   *   The raw textarea value.
+   *
+   * @return array<string, string>
+   *   Associative array of field name → description.
+   */
+  protected function parseKeyValueLines(string $raw): array {
+    $result = [];
+    foreach (explode("\n", $raw) as $line) {
+      $line = trim($line);
+      if ($line === '' || !str_contains($line, '|')) {
+        continue;
+      }
+      [$key, $value] = explode('|', $line, 2);
+      $key = trim($key);
+      $value = trim($value);
+      if ($key !== '' && $value !== '') {
+        $result[$key] = $value;
+      }
+    }
+    return $result;
   }
 
 }
