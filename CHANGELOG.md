@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **Sort-by-price now uses Pagefind native sort** (via updated `scolta.js` from [scolta-php#101](https://github.com/tag1consulting/scolta-php/pull/101)). The previous client-side sort after BM25 truncation could not see expensive items outside the top-N. Pagefind native sort operates at the index level before returning results. Dismiss button re-runs search without sort.
+
 ### Added
 - **Sort hint wired into search flow** (via updated `scolta.js` copy from scolta-php). When the expand-query endpoint returns a `sort_hint`, results are sorted by the named metadata field with a dismissible badge above results. See [scolta-php#93](https://github.com/tag1consulting/scolta-php/issues/93).
 
