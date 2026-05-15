@@ -10,6 +10,7 @@ ai_languages:
 max_follow_ups: 3
 site_name: ''
 site_description: 'website'
+sortable_fields: []
 scoring:
   title_match_boost: 1.0
   title_all_terms_multiplier: 1.5
