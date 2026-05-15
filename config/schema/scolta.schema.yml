@@ -38,6 +38,12 @@ scolta.settings:
     site_description:
       type: string
       label: 'Site description'
+    sortable_fields:
+      type: sequence
+      label: 'Sortable fields'
+      sequence:
+        type: string
+        label: 'Field name'
     scoring:
       type: mapping
       label: 'Scoring configuration'
