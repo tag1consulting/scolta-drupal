@@ -44,6 +44,26 @@ scolta.settings:
       sequence:
         type: string
         label: 'Field name'
+    sortable_field_descriptions:
+      type: mapping
+      label: 'Sortable field descriptions'
+      mapping:
+        '*':
+          type: string
+          label: 'Field description'
+    filter_fields:
+      type: sequence
+      label: 'Filter fields'
+      sequence:
+        type: string
+        label: 'Filter dimension name'
+    filter_field_descriptions:
+      type: mapping
+      label: 'Filter field descriptions'
+      mapping:
+        '*':
+          type: string
+          label: 'Filter field description'
     scoring:
       type: mapping
       label: 'Scoring configuration'
