@@ -9,6 +9,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityChangedInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\text\Plugin\Field\FieldType\TextItemBase;
 use Tag1\Scolta\Export\ContentItem;
 use Tag1\Scolta\Index\CachedContentReference;
@@ -42,10 +43,13 @@ class ScoltaContentGatherer {
    *   The entity type manager.
    * @param \Drupal\Core\Database\Connection $database
    *   The database connection (used for lightweight timestamp queries).
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
+   *   The module handler (used to invoke hook_scolta_content_item_alter).
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly Connection $database,
+    private readonly ModuleHandlerInterface $moduleHandler,
   ) {}
 
   /**
@@ -212,6 +216,7 @@ class ScoltaContentGatherer {
                 siteName: $itemData['siteName'],
                 language: $itemData['language'],
                 filters: $itemData['filters'] ?? [],
+                sortable: $itemData['sortable'] ?? [],
               );
             }
           }
@@ -294,6 +299,8 @@ class ScoltaContentGatherer {
               language: $langcode,
             );
 
+            $this->moduleHandler->alter('scolta_content_item', $contentItem, $translation);
+
             if ($manifest !== NULL && !$force) {
               $hash = PhpIndexer::contentHash($contentItem);
               $itemsForManifest[] = [
@@ -304,6 +311,7 @@ class ScoltaContentGatherer {
                 'siteName' => $contentItem->siteName,
                 'language' => $contentItem->language,
                 'filters'  => $contentItem->filters,
+                'sortable' => $contentItem->sortable,
               ];
             }
 
