@@ -231,6 +231,7 @@
   let usedOrFallback = false;
   let pagefindBase = '';   // Set during initPagefind(); used by resolveUrl().
   let currentSortOverride = null;    // { field, direction } or null — active sort override
+  let llmAppliedFilters = {};        // { dimension: value } — filters injected by LLM expansion
 
   // Detect default language filter from instanceConfig.currentLanguage or <html lang>.
   // Applied on every fresh search unless the URL already specifies f_language.
@@ -481,7 +482,7 @@
       const data = await resp.json();
       console.log("[scolta:expand] response:", data);
       if (Array.isArray(data)) {
-        return { terms: data, sort_hint: null, subject_terms: null };
+        return { terms: data, sort_hint: null, subject_terms: null, filter_hint: null };
       }
       const terms = Array.isArray(data?.terms) ? data.terms : null;
       if (!terms) return null;
@@ -490,7 +491,10 @@
                          (sh.direction === 'asc' || sh.direction === 'desc'))
         ? { field: sh.field, direction: sh.direction } : null;
       const subject_terms = Array.isArray(data?.subject_terms) ? data.subject_terms : null;
-      return { terms, sort_hint, subject_terms };
+      const fh = data.filter_hint;
+      const filter_hint = (fh && typeof fh === 'object' && !Array.isArray(fh))
+        ? fh : null;
+      return { terms, sort_hint, subject_terms, filter_hint };
     } catch (e) {
       if (e.name === 'AbortError') return null;
       if (e instanceof TypeError) return null;
@@ -894,6 +898,39 @@
     // Re-run the full search without sort so all matching docs are reconsidered
     // by BM25 relevance. We can't simply swap arrays — the sorted result set
     // excluded pages that lacked price metadata, so the relevance set is different.
+    doSearch(true);
+  }
+
+  function renderFilterBadges() {
+    const el = els.filterIndicator;
+    if (!el) return;
+    if (Object.keys(llmAppliedFilters).length === 0) {
+      el.style.display = 'none';
+      el.innerHTML = '';
+      return;
+    }
+    el.style.display = 'block';
+    let html = '';
+    for (const [dim, val] of Object.entries(llmAppliedFilters)) {
+      html += '<span class="scolta-filter-badge">Filtered: ' + escapeHtml(dim) + ' = ' + escapeHtml(val) +
+        ' <button class="scolta-filter-dismiss" data-scolta-filter-dismiss="' + escapeHtml(dim) +
+        '" aria-label="Remove filter">×</button></span> ';
+    }
+    el.innerHTML = html;
+  }
+
+  function dismissLlmFilter(dim) {
+    const val = llmAppliedFilters[dim];
+    if (val !== undefined) {
+      delete llmAppliedFilters[dim];
+      if (activeFilters[dim]) {
+        activeFilters[dim].delete(val);
+        if (activeFilters[dim].size === 0) {
+          delete activeFilters[dim];
+        }
+      }
+    }
+    renderFilterBadges();
     doSearch(true);
   }
 
@@ -1524,14 +1561,28 @@
     // Summarize is intentionally deferred until after expansion so the AI sees
     // the same ranking the user sees (expanded terms promote more relevant results).
     expandPromise.then(async expansion => {
-      // expansion is { terms, sort_hint, subject_terms } or null (or a plain array for legacy cache hits).
+      // expansion is { terms, sort_hint, subject_terms, filter_hint } or null (or a plain array for legacy cache hits).
       const expandedTerms = Array.isArray(expansion) ? expansion : (expansion?.terms ?? null);
       const sortHint = Array.isArray(expansion) ? null : (expansion?.sort_hint ?? null);
       const subjectTerms = Array.isArray(expansion) ? null : (Array.isArray(expansion?.subject_terms) ? expansion.subject_terms : null);
+      const filterHint = Array.isArray(expansion) ? null : (expansion?.filter_hint ?? null);
 
       if (!preserveFilters) {
         lastExpandedTerms = expansion;
         currentSortOverride = sortHint;
+        // Apply LLM-detected filter intent by merging into activeFilters.
+        llmAppliedFilters = {};
+        if (filterHint) {
+          for (const [dim, val] of Object.entries(filterHint)) {
+            if (typeof dim === 'string' && dim && typeof val === 'string' && val) {
+              llmAppliedFilters[dim] = val;
+              if (!activeFilters[dim]) {
+                activeFilters[dim] = new Set();
+              }
+              activeFilters[dim].add(val);
+            }
+          }
+        }
       }
       renderExpandedTerms(expandedTerms, query);
       await mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version, currentSortOverride, subjectTerms);
@@ -1539,6 +1590,7 @@
       if (version !== searchVersion) return;
 
       renderSortIndicator(currentSortOverride);
+      renderFilterBadges();
 
       const expandedLabel = expandedTerms
         ? expandedTerms.filter(t => t.toLowerCase() !== query.toLowerCase())
@@ -1558,12 +1610,17 @@
     els.noResults.style.display = "none";
     els.sortIndicator.style.display = "none";
     els.sortIndicator.innerHTML = '';
+    if (els.filterIndicator) {
+      els.filterIndicator.style.display = "none";
+      els.filterIndicator.innerHTML = '';
+    }
     allScoredResults = [];
     displayedCount = 0;
     conversationMessages = [];
     followUpCount = 0;
     activeFilters = {};
     currentSortOverride = null;
+    llmAppliedFilters = {};
 
     // Remove search query and filter params from URL.
     try {
@@ -1767,6 +1824,7 @@
         <div>
           <div id="scolta-ai-summary" style="display:none;"></div>
           <div id="scolta-sort-indicator" style="display:none;"></div>
+          <div id="scolta-filter-indicator" style="display:none;"></div>
           <div class="scolta-results-header" id="scolta-results-header"></div>
           <div id="scolta-results"></div>
           <button class="scolta-load-more" id="scolta-load-more" style="display:none;">Show more results</button>
@@ -1789,6 +1847,7 @@
       filters: root.querySelector('#scolta-filters'),
       aiSummary: root.querySelector('#scolta-ai-summary'),
       sortIndicator: root.querySelector('#scolta-sort-indicator'),
+      filterIndicator: root.querySelector('#scolta-filter-indicator'),
       resultsHeader: root.querySelector('#scolta-results-header'),
       results: root.querySelector('#scolta-results'),
       loadMore: root.querySelector('#scolta-load-more'),
@@ -1822,6 +1881,12 @@
       // Sort indicator dismiss → fall back to relevance sort
       if (e.target.closest("[data-scolta-sort-dismiss]")) {
         dismissSortOverride();
+        return;
+      }
+      // Filter badge dismiss → remove that LLM-applied filter
+      const filterDismissEl = e.target.closest("[data-scolta-filter-dismiss]");
+      if (filterDismissEl) {
+        dismissLlmFilter(filterDismissEl.dataset.scoltaFilterDismiss);
         return;
       }
       // Follow-up submit button

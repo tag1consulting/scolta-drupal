@@ -7,6 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Added
+- **Sync `js/scolta.js` with scolta-php#108.** Updates the committed copy to include filter intent badge UI (dismissable `.scolta-filter-badge` elements when the LLM detects filter intent). The previous copy was stamped before scolta-php#108 landed on `main`.
 - **Sortable field descriptions and filter fields in admin form.** The Content section of the settings form gains four new fields: "Sortable field descriptions" (textarea, one `field_name|Description` per line), "Filter fields" (comma-separated dimension names), and "Filter field descriptions" (textarea). These map to the new `ScoltaConfig::$sortableFieldDescriptions`, `$filterFields`, and `$filterFieldDescriptions` properties introduced in scolta-php. Config schema updated accordingly. ([feature/generic-sort-filter-prompts])
 
 ### Fixed
