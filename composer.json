@@ -13,7 +13,7 @@
     "require": {
         "php": ">=8.1",
         "drupal/search_api": "^1.0",
-        "tag1/scolta-php": "^1.0"
+        "tag1/scolta-php": "^1.0@dev"
     },
     "require-dev": {
         "drupal/coder": "^9.0",

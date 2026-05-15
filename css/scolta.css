@@ -400,3 +400,54 @@
   transition: background 0.15s;
 }
 .scolta-expanded-term:hover { background: #d0e2f7; }
+
+/* Sort indicator */
+#scolta-sort-indicator { margin-bottom: 0.5rem; }
+.scolta-sort-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--scolta-badge-bg);
+  color: var(--scolta-primary);
+  padding: 0.25rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  border: 1px solid var(--scolta-summary-border);
+}
+.scolta-sort-dismiss {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+  margin-left: 0.1rem;
+}
+.scolta-sort-dismiss:hover { color: var(--scolta-primary); opacity: 0.7; }
+
+/* Filter indicator (LLM-applied filter badges) */
+#scolta-filter-indicator { margin-bottom: 0.5rem; }
+.scolta-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--scolta-badge-bg);
+  color: var(--scolta-primary);
+  padding: 0.25rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  border: 1px solid var(--scolta-summary-border);
+  margin-right: 0.25rem;
+}
+.scolta-filter-dismiss {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+  margin-left: 0.1rem;
+}
+.scolta-filter-dismiss:hover { color: var(--scolta-primary); opacity: 0.7; }
