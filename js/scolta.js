@@ -481,7 +481,7 @@
       const data = await resp.json();
       console.log("[scolta:expand] response:", data);
       if (Array.isArray(data)) {
-        return { terms: data, sort_hint: null };
+        return { terms: data, sort_hint: null, subject_terms: null };
       }
       const terms = Array.isArray(data?.terms) ? data.terms : null;
       if (!terms) return null;
@@ -489,7 +489,8 @@
       const sort_hint = (sh && typeof sh.field === 'string' && sh.field &&
                          (sh.direction === 'asc' || sh.direction === 'desc'))
         ? { field: sh.field, direction: sh.direction } : null;
-      return { terms, sort_hint };
+      const subject_terms = Array.isArray(data?.subject_terms) ? data.subject_terms : null;
+      return { terms, sort_hint, subject_terms };
     } catch (e) {
       if (e.name === 'AbortError') return null;
       if (e instanceof TypeError) return null;
@@ -1211,7 +1212,7 @@
     return results;
   }
 
-  async function mergeExpandedSearchResults(expandedTerms, originalQuery, searchQuery, preserveFilters, version, sortOverride) {
+  async function mergeExpandedSearchResults(expandedTerms, originalQuery, searchQuery, preserveFilters, version, sortOverride, subjectTerms) {
     const CONFIG = getInstanceConfig();
     const validTerms = expandedTerms
       ? expandedTerms.filter(t => t.toLowerCase() !== originalQuery.toLowerCase())
@@ -1251,17 +1252,23 @@
         }
       }
 
-      const searches = await Promise.all(
-        [...termSet].map(t => pagefindSearch(t, activeFilters, sortOverride))
-      );
+      // Run sorted searches and subject-only search in parallel.
+      const subjectSearchP = (subjectTerms && subjectTerms.length > 0)
+        ? pagefindSearch(subjectTerms.join(' '), activeFilters)
+        : Promise.resolve(null);
+
+      const [searches, subjectSearch] = await Promise.all([
+        Promise.all([...termSet].map(t => pagefindSearch(t, activeFilters, sortOverride))),
+        subjectSearchP,
+      ]);
 
       if (version !== searchVersion) {
         console.log('[scolta:expand] Discarding stale expansion after sort search (version', version, 'vs current', searchVersion, ')');
         return;
       }
 
-      // Load top N from each search and merge by URL (first occurrence wins — searches
-      // are already sorted by the sort field, so first-seen is already the best match).
+      // Load top N from each sorted search and merge by URL (first occurrence wins —
+      // searches are already sorted by the sort field, so first-seen is the best match).
       const urlMap = new Map();
       await Promise.all(searches.map(async (search) => {
         const toLoad = Math.min(search.results.length, CONFIG.MAX_PAGEFIND_RESULTS);
@@ -1272,6 +1279,19 @@
           if (!urlMap.has(url)) urlMap.set(url, data);
         }
       }));
+
+      // Load subject-filter results for intersection.
+      let subjectUrlSet = null;
+      if (subjectSearch && subjectSearch.results.length > 0) {
+        const subjectToLoad = Math.min(subjectSearch.results.length, CONFIG.MAX_PAGEFIND_RESULTS);
+        const subjectLoaded = await Promise.all(
+          subjectSearch.results.slice(0, subjectToLoad).map(r => r.data())
+        );
+        const normUrl = u => (u || '').replace(/\.html$/, '').replace(/\/$/, '').toLowerCase();
+        subjectUrlSet = new Set(subjectLoaded.map(d => normUrl(resolveUrl(d.url || ''))));
+      } else if (subjectTerms && subjectTerms.length > 0) {
+        subjectUrlSet = new Set(); // subject search ran but returned nothing
+      }
 
       if (version !== searchVersion) {
         console.log('[scolta:expand] Discarding stale expansion after sort load (version', version, 'vs current', searchVersion, ')');
@@ -1297,7 +1317,32 @@
             : String(a.meta[field] || '').localeCompare(String(b.meta[field] || ''));
           return desc ? -cmp : cmp;
         });
-        allScoredResults = withField.map(data => ({ data, score: 0 }));
+
+        // Dual-search intersection: when subject terms are available, keep only
+        // sorted results whose URL also appears in the subject-only search.
+        // This prevents OR-matched common terms (e.g. "expensive") from dominating
+        // results when the user's actual subject (e.g. "tooth") is rarer.
+        if (subjectUrlSet && subjectUrlSet.size > 0) {
+          const normUrl = u => (u || '').replace(/\.html$/, '').replace(/\/$/, '').toLowerCase();
+          const intersection = withField.filter(d => subjectUrlSet.has(normUrl(resolveUrl(d.url || ''))));
+          if (intersection.length >= 3) {
+            allScoredResults = intersection.map(data => ({ data, score: 0 }));
+          } else if (intersection.length > 0) {
+            // Intersection too small — prepend subject-matched items, append the rest.
+            const intNorms = new Set(intersection.map(d => normUrl(resolveUrl(d.url || ''))));
+            const remainder = withField.filter(d => !intNorms.has(normUrl(resolveUrl(d.url || ''))));
+            allScoredResults = [...intersection, ...remainder].map(data => ({ data, score: 0 }));
+          } else {
+            console.warn('[scolta:sort] Subject filter intersection empty, using sorted results');
+            allScoredResults = withField.map(data => ({ data, score: 0 }));
+          }
+        } else if (subjectUrlSet !== null) {
+          // Subject search returned no results — fall back to sorted results.
+          console.warn('[scolta:sort] Subject filter search returned no results, using sorted results');
+          allScoredResults = withField.map(data => ({ data, score: 0 }));
+        } else {
+          allScoredResults = withField.map(data => ({ data, score: 0 }));
+        }
       }
 
     } else {
@@ -1479,16 +1524,17 @@
     // Summarize is intentionally deferred until after expansion so the AI sees
     // the same ranking the user sees (expanded terms promote more relevant results).
     expandPromise.then(async expansion => {
-      // expansion is { terms, sort_hint } or null (or a plain array for legacy cache hits).
+      // expansion is { terms, sort_hint, subject_terms } or null (or a plain array for legacy cache hits).
       const expandedTerms = Array.isArray(expansion) ? expansion : (expansion?.terms ?? null);
       const sortHint = Array.isArray(expansion) ? null : (expansion?.sort_hint ?? null);
+      const subjectTerms = Array.isArray(expansion) ? null : (Array.isArray(expansion?.subject_terms) ? expansion.subject_terms : null);
 
       if (!preserveFilters) {
         lastExpandedTerms = expansion;
         currentSortOverride = sortHint;
       }
       renderExpandedTerms(expandedTerms, query);
-      await mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version, currentSortOverride);
+      await mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version, currentSortOverride, subjectTerms);
 
       if (version !== searchVersion) return;
 
