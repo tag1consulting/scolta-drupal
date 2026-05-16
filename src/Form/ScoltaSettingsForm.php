@@ -721,6 +721,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
    */
   protected function buildStatusInfo(): array {
     $items = [];
+    $config = $this->config('scolta.settings');
 
     // AI provider status.
     $activeProvider = $config->get('ai_provider') ?? 'anthropic';
@@ -739,7 +740,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
     }
 
     // Pagefind binary status.
-    $config = $this->config('scolta.settings');
     $resolver = new PagefindBinary(
       configuredPath: $config->get('pagefind.binary'),
       projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
