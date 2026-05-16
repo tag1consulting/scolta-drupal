@@ -42,7 +42,11 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests that AI endpoints require the 'use scolta ai' permission.
+   * GET requests to POST-only endpoints must return 4xx, not 200 or 500.
+   *
+   * Verifies method enforcement on the AI API routes. These are POST-only;
+   * a GET by any user (anonymous or authenticated) must be rejected with
+   * 403, 404, or 405 — never 200 or 500.
    */
   public function testEndpointsRequirePermission(): void {
     $endpoints = [
@@ -53,11 +57,38 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
 
     foreach ($endpoints as $endpoint) {
       $this->drupalGet($endpoint);
-      // POST endpoints accessed via GET should return 4xx (403 or 405).
       $statusCode = $this->getSession()->getStatusCode();
       $this->assertTrue(
         $statusCode >= 400 && $statusCode < 500,
-        "Endpoint {$endpoint} should reject anonymous access, got {$statusCode}"
+        "GET to POST-only endpoint {$endpoint} should return 4xx, got {$statusCode}"
+      );
+    }
+  }
+
+  /**
+   * Anonymous users must be able to reach AI endpoints out of the box.
+   *
+   * hook_install() grants 'use scolta ai' to anonymous and authenticated roles
+   * so that search visitors receive AI overviews without any admin action.
+   * A POST with an invalid body should return 400 (bad request), not 403
+   * (forbidden), confirming that the permission check passes for anonymous.
+   */
+  public function testAiEndpointsAllowAnonymousByDefault(): void {
+    $endpoints = [
+      '/api/scolta/v1/expand-query',
+      '/api/scolta/v1/summarize',
+      '/api/scolta/v1/followup',
+    ];
+
+    foreach ($endpoints as $endpoint) {
+      $response = $this->makeJsonPost($endpoint, []);
+      $this->assertNotEquals(
+        403, $response['status'],
+        "Anonymous POST to {$endpoint} should not be forbidden — 'use scolta ai' is granted at install"
+      );
+      $this->assertNotEquals(
+        500, $response['status'],
+        "Anonymous POST to {$endpoint} must not crash"
       );
     }
   }

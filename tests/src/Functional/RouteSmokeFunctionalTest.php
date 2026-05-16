@@ -74,15 +74,27 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Every GET route with a permission requirement must deny anonymous access.
+   * GET routes whose permission is not granted to anonymous must deny access.
    *
    * Ensures permissions.yml and routing.yml stay consistent: a route that
-   * declares _permission must block unauthenticated requests with 302 or 403,
-   * not silently serve content (200) or crash (500).
+   * declares _permission must block unauthenticated requests with 302 or 403
+   * when anonymous does not hold that permission. Routes where the permission
+   * is explicitly granted to the anonymous role (e.g. 'use scolta ai') are
+   * skipped — those are intentionally public.
    */
   public function testPermissionedGetRoutesDenyAnonymous(): void {
+    $anonymousRole = \Drupal::entityTypeManager()
+      ->getStorage('user_role')
+      ->load('anonymous');
+    $anonymousPermissions = $anonymousRole ? $anonymousRole->getPermissions() : [];
+
     foreach ($this->loadGetRoutes() as $routeName => [$path, $permission]) {
       if ($permission === '') {
+        continue;
+      }
+      // Skip routes whose permission is granted to anonymous — those are
+      // intentionally public and will return 200, not 302/403.
+      if (in_array($permission, $anonymousPermissions, TRUE)) {
         continue;
       }
       $this->drupalGet($path);

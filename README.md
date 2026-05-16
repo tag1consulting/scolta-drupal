@@ -151,7 +151,9 @@ If you have previously run `drush search-api:index`, that is not sufficient — 
 
 ### Permissions
 
-Users must have the **Use Scolta search** permission. Grant it at *Administration → People → Permissions*.
+Scolta defines a **Use Scolta AI features** permission (`use scolta ai`) that gates the AI API endpoints. This permission is granted to the **anonymous** and **authenticated** roles automatically at module install, so search visitors receive AI overviews out of the box with no admin action required.
+
+To restrict AI features to specific roles (e.g. authenticated users only), revoke the permission from the anonymous role at *Administration → People → Permissions*.
 
 ### Configuration
 

@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **AI endpoints no longer return 403 for anonymous users.** `hook_install()` now grants the `use scolta ai` permission to the anonymous and authenticated roles by default, matching WordPress and Laravel behavior. Site admins can revoke the permission from the anonymous role at *Administration → People → Permissions* to restrict AI features to specific roles. ([#84](https://github.com/tag1consulting/scolta-drupal/issues/84))
+
 ### Added
 - **Sync scolta.js: AI Overview context now includes structured metadata and sort/filter indicators.** See [scolta-php#114](https://github.com/tag1consulting/scolta-php/pull/114).
 
