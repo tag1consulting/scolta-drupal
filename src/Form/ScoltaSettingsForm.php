@@ -158,18 +158,28 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#open' => TRUE,
     ];
 
-    $defaultProvider = $this->aiService->isAmazeeActive()
-      ? 'amazee'
-      : ($config->get('ai_provider') ?? 'anthropic');
+    // Respect an explicit 'drupal_ai' selection even when Amazee is active.
+    $storedProvider = $config->get('ai_provider') ?? 'anthropic';
+    if ($storedProvider === 'drupal_ai') {
+      $defaultProvider = 'drupal_ai';
+    }
+    else {
+      $defaultProvider = $this->aiService->isAmazeeActive() ? 'amazee' : $storedProvider;
+    }
+
+    $providerOptions = [
+      'anthropic' => $this->t('Anthropic (Claude)'),
+      'openai' => $this->t('OpenAI'),
+      'amazee' => $this->t('Amazee.ai (managed gateway)'),
+    ];
+    if ($this->aiService->hasDrupalAiModule()) {
+      $providerOptions['drupal_ai'] = $this->t('Drupal AI module');
+    }
 
     $form['ai']['ai_provider'] = [
       '#type' => 'select',
       '#title' => $this->t('AI Provider'),
-      '#options' => [
-        'anthropic' => $this->t('Anthropic (Claude)'),
-        'openai' => $this->t('OpenAI'),
-        'amazee' => $this->t('Amazee.ai (managed gateway)'),
-      ],
+      '#options' => $providerOptions,
       '#default_value' => $defaultProvider,
     ];
 
@@ -184,11 +194,28 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ],
     ];
 
+    $form['ai']['ai_provider_drupal_ai_info'] = [
+      '#type' => 'item',
+      '#markup' => $this->t('Scolta will use the default AI provider and model configured in the <a href="@url">Drupal AI module</a>. Model, API key, and base URL fields below are managed by the Drupal AI module and are hidden when this provider is selected.', [
+        '@url' => '/admin/config/ai/providers',
+      ]),
+      '#states' => [
+        'visible' => [
+          ':input[name="ai_provider"]' => ['value' => 'drupal_ai'],
+        ],
+      ],
+    ];
+
     $form['ai']['ai_model'] = [
       '#type' => 'textfield',
       '#title' => $this->t('AI Model'),
       '#default_value' => $config->get('ai_model') ?? 'claude-sonnet-4-5-20250929',
       '#description' => $this->t('Model identifier for summarize and follow-up (e.g., claude-sonnet-4-5-20250929, gpt-4o).'),
+      '#states' => [
+        'invisible' => [
+          ':input[name="ai_provider"]' => ['value' => 'drupal_ai'],
+        ],
+      ],
     ];
 
     $form['ai']['ai_expansion_model'] = [
@@ -196,6 +223,11 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#title' => $this->t('Expansion Model'),
       '#default_value' => $config->get('ai_expansion_model') ?? '',
       '#description' => $this->t('Optional model for query expansion only. Leave blank to use AI Model for all operations. Example: claude-haiku-4-5-20251001'),
+      '#states' => [
+        'invisible' => [
+          ':input[name="ai_provider"]' => ['value' => 'drupal_ai'],
+        ],
+      ],
     ];
 
     $form['ai']['ai_base_url'] = [
@@ -203,6 +235,11 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#title' => $this->t('AI Base URL'),
       '#default_value' => $config->get('ai_base_url') ?? '',
       '#description' => $this->t('Override the default API URL. Leave blank to use provider defaults.'),
+      '#states' => [
+        'invisible' => [
+          ':input[name="ai_provider"]' => ['value' => 'drupal_ai'],
+        ],
+      ],
     ];
 
     $form['ai']['ai_expand_query'] = [
@@ -235,7 +272,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Maximum number of follow-up questions per search session.'),
     ];
 
-    $form['ai']['api_key_status'] = $this->buildApiKeyStatus();
+    $apiKeyStatus = $this->buildApiKeyStatus();
+    $apiKeyStatus['#states'] = [
+      'invisible' => [
+        ':input[name="ai_provider"]' => ['value' => 'drupal_ai'],
+      ],
+    ];
+    $form['ai']['api_key_status'] = $apiKeyStatus;
 
     // ── Content Section ──
     $form['content'] = [
@@ -680,11 +723,19 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $items = [];
 
     // AI provider status.
-    if ($this->aiService->hasDrupalAiModule()) {
-      $items[] = $this->t('AI provider: Drupal AI module detected — requests will route through ai.provider service.');
+    $activeProvider = $config->get('ai_provider') ?? 'anthropic';
+    if ($activeProvider === 'drupal_ai') {
+      if ($this->aiService->hasDrupalAiModule()) {
+        $items[] = $this->t('AI provider: Drupal AI module (routing through configured default provider).');
+      }
+      else {
+        $items[] = $this->t('AI provider: Drupal AI module selected but not installed — falling back to built-in AiClient. Install the AI module (ai:ai) or select a different provider.');
+      }
     }
     else {
-      $items[] = $this->t('AI provider: Built-in AiClient (direct HTTP). Install the AI module (ai:ai) for enhanced provider management.');
+      $items[] = $this->t('AI provider: Built-in AiClient (@provider). <a href="/admin/config/ai/providers">Install the Drupal AI module</a> for 48+ provider support with Key module integration.', [
+        '@provider' => $activeProvider,
+      ]);
     }
 
     // Pagefind binary status.

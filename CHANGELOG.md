@@ -9,8 +9,13 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ### Fixed
 - **Amazee.ai AI requests no longer incorrectly route through the Drupal AI module when both are present.** Amazee.ai always uses its own managed gateway. ([#89](https://github.com/tag1consulting/scolta-drupal/issues/89))
 
+### Added
+- **New "Drupal AI module" provider option.** When selected, Scolta routes AI requests through the Drupal AI module's plugin manager using the site's configured default provider, gaining access to 48+ providers with Key module integration, rate limiting, and token tracking. The option only appears when `drupal/ai` is installed. ([#90](https://github.com/tag1consulting/scolta-drupal/issues/90))
+- **Model, API key, expansion model, and base URL fields are hidden when "Drupal AI module" is selected.** These settings are managed by the Drupal AI module when using that provider. ([#90](https://github.com/tag1consulting/scolta-drupal/issues/90))
+
 ### Changed
 - **Drupal AI module integration is now opt-in.** Select "Drupal AI module" in AI provider settings to route through it. Previously, merely installing `drupal/ai` silently rerouted all AI requests, which broke Amazee.ai and other explicitly configured providers. ([#89](https://github.com/tag1consulting/scolta-drupal/issues/89))
+- **Drupal AI integration now uses `getDefaultProviderForOperationType('chat')` instead of `createInstance($config->aiProvider)`.** This correctly routes through the Drupal AI module's configured default provider and model, rather than trying to create a provider with Scolta's own config (which would fail at runtime since `'drupal_ai'` is not a valid provider plugin ID). ([#90](https://github.com/tag1consulting/scolta-drupal/issues/90))
 
 ### Added
 - **`hook_scolta_content_item_alter()` extension point for custom sortable fields.** `ScoltaContentGatherer::gather()` now invokes `hook_scolta_content_item_alter(&$item, $entity)` after constructing each `ContentItem`. Modules can implement this hook to populate `ContentItem::$sortable` (and `$metadata`) from entity fields — use `$item->cloneWith(['sortable' => [...]])` since `ContentItem` is readonly. The manifest entry for each item now stores `sortable` so that incremental builds via `CachedContentReference` preserve sort values across rebuilds. `@module_handler` injected into `ScoltaContentGatherer` service.
