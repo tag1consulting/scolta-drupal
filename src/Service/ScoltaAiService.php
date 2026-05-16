@@ -255,35 +255,47 @@ class ScoltaAiService extends AiServiceAdapter {
   }
 
   /**
-   * Send a single message via the Drupal AI module.
+   * Send a single message via the Drupal AI module's service layer.
+   *
+   * Uses the site's configured default AI provider for chat operations
+   * (from the Drupal AI module's settings), not Scolta's own provider config.
+   * This respects the Drupal AI module's rate limiting, Key module integration,
+   * and hooks.
    */
   protected function messageViaDrupalAi(string $systemPrompt, string $userMessage, int $maxTokens): string {
-    /** @var \Drupal\ai\AiProviderPluginManager $aiProvider */
-    $aiProvider = \Drupal::service('ai.provider');
+    /** @var \Drupal\ai\AiProviderPluginManager $pluginManager */
+    $pluginManager = \Drupal::service('ai.provider');
 
-    $config = $this->getConfig();
+    $defaultProviderId = $pluginManager->getDefaultProviderForOperationType('chat');
+    if (empty($defaultProviderId)) {
+      throw new \RuntimeException('No default AI provider configured in the Drupal AI module for chat operations. Configure a provider at /admin/config/ai/providers.');
+    }
 
     $input = new ChatInput([
       new ChatMessage('system', $systemPrompt),
       new ChatMessage('user', $userMessage),
     ]);
 
-    $provider = $aiProvider->createInstance($config->aiProvider);
-    $response = $provider->chat($input, $config->aiModel, [
-      'max_tokens' => $maxTokens,
-    ]);
+    $provider = $pluginManager->createInstance($defaultProviderId);
+    $response = $provider->chat($input, '', ['max_tokens' => $maxTokens]);
 
     return $response->getNormalized()->getText();
   }
 
   /**
-   * Send a multi-turn conversation via the Drupal AI module.
+   * Send a multi-turn conversation via the Drupal AI module's service layer.
+   *
+   * Uses the site's configured default AI provider for chat operations.
+   * See messageViaDrupalAi() for details on the service-layer approach.
    */
   protected function conversationViaDrupalAi(string $systemPrompt, array $messages, int $maxTokens): string {
-    /** @var \Drupal\ai\AiProviderPluginManager $aiProvider */
-    $aiProvider = \Drupal::service('ai.provider');
+    /** @var \Drupal\ai\AiProviderPluginManager $pluginManager */
+    $pluginManager = \Drupal::service('ai.provider');
 
-    $config = $this->getConfig();
+    $defaultProviderId = $pluginManager->getDefaultProviderForOperationType('chat');
+    if (empty($defaultProviderId)) {
+      throw new \RuntimeException('No default AI provider configured in the Drupal AI module for chat operations. Configure a provider at /admin/config/ai/providers.');
+    }
 
     $chatMessages = [
       new ChatMessage('system', $systemPrompt),
@@ -294,10 +306,8 @@ class ScoltaAiService extends AiServiceAdapter {
 
     $input = new ChatInput($chatMessages);
 
-    $provider = $aiProvider->createInstance($config->aiProvider);
-    $response = $provider->chat($input, $config->aiModel, [
-      'max_tokens' => $maxTokens,
-    ]);
+    $provider = $pluginManager->createInstance($defaultProviderId);
+    $response = $provider->chat($input, '', ['max_tokens' => $maxTokens]);
 
     return $response->getNormalized()->getText();
   }
