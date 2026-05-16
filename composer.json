@@ -15,6 +15,9 @@
         "drupal/search_api": "^1.0",
         "tag1/scolta-php": "^1.0@dev"
     },
+    "suggest": {
+        "drupal/ai": "For enhanced multi-provider AI support via the Drupal AI Initiative module (48+ providers, Key module integration, rate limiting, token tracking)"
+    },
     "require-dev": {
         "drupal/coder": "^9.0",
         "mglaman/phpstan-drupal": "^2.0",
