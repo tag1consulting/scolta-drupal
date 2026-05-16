@@ -24,10 +24,17 @@ use Tag1\Scolta\Service\AiServiceAdapter;
  * Registered as the 'scolta.ai_service' service. Controllers and
  * commands use this instead of constructing AiClient directly.
  *
- * Supports a dual-path AI strategy:
- * 1. If the Drupal AI module (ai:ai) is installed and has a provider,
- *    route requests through its abstraction layer.
- * 2. Otherwise, fall back to the built-in AiClient with direct HTTP calls.
+ * Supports a three-path AI strategy:
+ * 1. Amazee.ai (zero-config default): When Amazee credentials are stored in
+ *    Drupal State and no explicit key or 'drupal_ai' provider is configured,
+ *    buildConfig() injects the Amazee LiteLLM token and routes through the
+ *    built-in AiClient as an OpenAI-compatible endpoint.
+ * 2. Drupal AI module (opt-in): When the admin explicitly selects 'drupal_ai'
+ *    as the provider, tryFrameworkAi() routes through the Drupal AI module's
+ *    plugin manager. Amazee credentials are NOT injected in this path —
+ *    the Drupal AI module manages its own provider, key, and model.
+ * 3. Built-in AiClient (fallback): When neither of the above applies, direct
+ *    HTTP calls are made with the configured provider and API key.
  */
 class ScoltaAiService extends AiServiceAdapter {
 
@@ -119,8 +126,9 @@ class ScoltaAiService extends AiServiceAdapter {
     if ($explicitKey !== '') {
       $values['ai_api_key'] = $explicitKey;
     }
-    else {
-      // Only use Amazee when no explicit key is configured.
+    elseif (($values['ai_provider'] ?? '') !== 'drupal_ai') {
+      // Only inject Amazee credentials for built-in providers. When 'drupal_ai'
+      // is selected the Drupal AI module manages its own provider, key, and model.
       $amazeeCreds = $this->state->get('scolta.amazee.credentials');
       if (is_array($amazeeCreds) && !empty($amazeeCreds['litellm_token'])) {
         $values['ai_provider'] = 'openai';
@@ -192,9 +200,19 @@ class ScoltaAiService extends AiServiceAdapter {
 
   /**
    * {@inheritdoc}
+   *
+   * Only routes through the Drupal AI module when the admin has explicitly
+   * selected 'drupal_ai' as the provider. Merely having the module installed
+   * does not change routing — this prevents Amazee.ai and other built-in
+   * providers from being silently hijacked by the Drupal AI module.
    */
   protected function tryFrameworkAi(string $systemPrompt, string $userMessage, int $maxTokens): ?string {
+    if ($this->getConfig()->aiProvider !== 'drupal_ai') {
+      return NULL;
+    }
+
     if (!$this->hasDrupalAiModule()) {
+      $this->logger->warning('Drupal AI provider selected but ai module is not installed. Falling back to built-in client.');
       return NULL;
     }
 
@@ -211,9 +229,17 @@ class ScoltaAiService extends AiServiceAdapter {
 
   /**
    * {@inheritdoc}
+   *
+   * Only routes through the Drupal AI module when the admin has explicitly
+   * selected 'drupal_ai' as the provider. See tryFrameworkAi() for rationale.
    */
   protected function tryFrameworkConversation(string $systemPrompt, array $messages, int $maxTokens): ?string {
+    if ($this->getConfig()->aiProvider !== 'drupal_ai') {
+      return NULL;
+    }
+
     if (!$this->hasDrupalAiModule()) {
+      $this->logger->warning('Drupal AI provider selected but ai module is not installed. Falling back to built-in client.');
       return NULL;
     }
 
