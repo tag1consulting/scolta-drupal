@@ -6,6 +6,7 @@
  */
 
 use Drupal\Core\File\FileExists;
+use Drupal\user\RoleInterface;
 
 /**
  * Implements hook_install().
@@ -15,6 +16,13 @@ function scolta_install() {
 
   // Attempt Amazee.ai auto-provisioning so search AI works out of the box.
   _scolta_auto_provision_amazee();
+
+  // Grant 'use scolta ai' to anonymous and authenticated by default so that
+  // visitors can reach AI overviews, expansion, and follow-up out of the box.
+  // Site admins can revoke this at Administration › People › Permissions to
+  // restrict AI features to specific roles.
+  user_role_grant_permissions(RoleInterface::ANONYMOUS_ID, ['use scolta ai']);
+  user_role_grant_permissions(RoleInterface::AUTHENTICATED_ID, ['use scolta ai']);
 
   \Drupal::queue('scolta_rebuild')->createItem(['type' => 'install']);
   \Drupal::messenger()->addStatus(t(
