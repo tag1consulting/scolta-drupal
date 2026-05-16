@@ -7,6 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Fixed
+- **Saving scoring configuration now immediately invalidates Drupal's page cache.** `ScoltaSearchBlock::build()` now declares `config:scolta.settings` as a cache tag, so Drupal automatically purges cached search pages whenever scoring weights or recency settings are saved. Previously, stale scoring config remained in cached `drupalSettings` until the cache expired or was cleared manually. ([#85](https://github.com/tag1consulting/scolta-drupal/issues/85))
 - **AI endpoints no longer return 403 for anonymous users.** `hook_install()` now grants the `use scolta ai` permission to the anonymous and authenticated roles by default, matching WordPress and Laravel behavior. Site admins can revoke the permission from the anonymous role at *Administration → People → Permissions* to restrict AI features to specific roles. ([#84](https://github.com/tag1consulting/scolta-drupal/issues/84))
 
 ### Added

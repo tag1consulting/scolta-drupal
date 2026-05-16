@@ -131,6 +131,9 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
           'scolta' => $scoltaSettings,
         ],
       ],
+      '#cache' => [
+        'tags' => ['config:scolta.settings', 'scolta_search_index'],
+      ],
     ];
   }
 
