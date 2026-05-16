@@ -503,7 +503,7 @@
     }
   }
 
-  async function summarizeResults(query, results, expandedTerms = []) {
+  async function summarizeResults(query, results, expandedTerms = [], sortHint = null, filterHint = null) {
     const CONFIG = getInstanceConfig();
     const endpoints = getInstanceEndpoints();
     if (!CONFIG.AI_SUMMARIZE || results.length === 0) return null;
@@ -542,15 +542,32 @@
           },
         });
         const extractOutput = JSON.parse(scoltaWasm.batch_extract_context(extractInput));
-        context = extractOutput.map((item, i) =>
-          `[${i + 1}] ${item.title}\n${item.url}\n${item.context}`
-        ).join('\n\n');
+        context = extractOutput.map((item, i) => {
+          const metaLine = buildMetadataLine(topN[i], sortHint, filterHint);
+          return `[${i + 1}] ${item.title}\n${item.url}\n${metaLine}${item.context}`;
+        }).join('\n\n');
       } catch (e) {
         console.warn('[scolta] WASM context extraction failed, using fallback', e);
-        context = buildLLMContext(topN);
+        context = buildLLMContext(topN, sortHint, filterHint);
       }
     } else {
-      context = buildLLMContext(topN);
+      context = buildLLMContext(topN, sortHint, filterHint);
+    }
+
+    let contextHeader = '';
+    if (sortHint) {
+      contextHeader += `[Results are sorted by "${sortHint.field}" in ${sortHint.direction === 'desc' ? 'descending' : 'ascending'} order]\n`;
+    }
+    if (filterHint) {
+      const filterParts = Object.entries(filterHint)
+        .filter(([dim, val]) => dim && val)
+        .map(([dim, val]) => `"${dim}: ${val}"`);
+      if (filterParts.length > 0) {
+        contextHeader += `[Results are filtered by ${filterParts.join(', ')}]\n`;
+      }
+    }
+    if (contextHeader) {
+      context = contextHeader + '\n' + context;
     }
 
     try {
@@ -626,9 +643,30 @@
     return div.textContent || div.innerText || "";
   }
 
+  // Build a metadata annotation line from a result's meta fields.
+  // Annotates the sort field with direction and filter fields with ← markers.
+  function buildMetadataLine(r, sortHint = null, filterHint = null) {
+    const metaParts = [];
+    if (r.data.meta) {
+      for (const [key, value] of Object.entries(r.data.meta)) {
+        if (key === 'title' || value === undefined || value === null || value === '') continue;
+        const strVal = String(value).substring(0, 100);
+        let annotation = '';
+        if (sortHint && sortHint.field === key) {
+          annotation = ` ← SORTED BY THIS FIELD (${sortHint.direction === 'desc' ? 'descending' : 'ascending'})`;
+        }
+        if (filterHint && filterHint[key]) {
+          annotation += ` ← FILTERED BY THIS FIELD`;
+        }
+        metaParts.push(`${key}: ${strVal}${annotation}`);
+      }
+    }
+    return metaParts.length > 0 ? `Metadata: ${metaParts.join(' | ')}\n` : '';
+  }
+
   // Build LLM context string from an array of scored results.
   // Top 2 results get full page content for depth; remaining get excerpts.
-  function buildLLMContext(results) {
+  function buildLLMContext(results, sortHint = null, filterHint = null) {
     const CONFIG = getInstanceConfig();
     return results.map((r, i) => {
       const title = r.data.meta?.title || "Untitled";
@@ -638,7 +676,8 @@
         ? stripHtml(r.data.content || r.data.excerpt || "")
         : stripHtml(r.data.excerpt || "");
       const trimmed = text.substring(0, CONFIG.AI_SUMMARY_MAX_CHARS);
-      return `[${i + 1}] ${title}\n${url}\n${trimmed}`;
+      const metaLine = buildMetadataLine(r, sortHint, filterHint);
+      return `[${i + 1}] ${title}\n${url}\n${metaLine}${trimmed}`;
     }).join("\n\n");
   }
 
@@ -1595,7 +1634,7 @@
       const expandedLabel = expandedTerms
         ? expandedTerms.filter(t => t.toLowerCase() !== query.toLowerCase())
         : [];
-      summarizeResults(query, allScoredResults, expandedLabel);
+      summarizeResults(query, allScoredResults, expandedLabel, sortHint, filterHint);
     });
   }
 
