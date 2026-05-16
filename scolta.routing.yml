@@ -29,7 +29,7 @@ scolta.expand:
     _controller: '\Drupal\scolta\Controller\ExpandQueryController::handle'
   methods: [POST]
   requirements:
-    _permission: 'use scolta ai'
+    _permission: 'access content'
 
 scolta.summarize:
   path: '/api/scolta/v1/summarize'
@@ -37,7 +37,7 @@ scolta.summarize:
     _controller: '\Drupal\scolta\Controller\SummarizeController::handle'
   methods: [POST]
   requirements:
-    _permission: 'use scolta ai'
+    _permission: 'access content'
 
 scolta.followup:
   path: '/api/scolta/v1/followup'
@@ -45,7 +45,7 @@ scolta.followup:
     _controller: '\Drupal\scolta\Controller\FollowUpController::handle'
   methods: [POST]
   requirements:
-    _permission: 'use scolta ai'
+    _permission: 'access content'
 
 scolta.health:
   path: '/api/scolta/v1/health'
@@ -53,4 +53,4 @@ scolta.health:
     _controller: '\Drupal\scolta\Controller\HealthController::handle'
   methods: [GET]
   requirements:
-    _permission: 'use scolta ai'
+    _permission: 'access content'

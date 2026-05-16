@@ -253,24 +253,21 @@ class YamlIntegrityTest extends TestCase {
 
   public function testApiRoutesRequireCorrectPermission(): void {
     $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
-    $permissions = Yaml::parseFile($this->moduleRoot . '/scolta.permissions.yml');
 
     // Admin route requires 'administer scolta'.
     $this->assertEquals(
       'administer scolta',
       $routing['scolta.settings']['requirements']['_permission']
     );
-    $this->assertArrayHasKey('administer scolta', $permissions);
 
-    // API routes require 'use scolta ai'.
-    foreach (['scolta.expand', 'scolta.summarize', 'scolta.followup'] as $route) {
+    // AI API routes use 'access content' so anonymous visitors can reach them.
+    foreach (['scolta.expand', 'scolta.summarize', 'scolta.followup', 'scolta.health'] as $route) {
       $this->assertEquals(
-        'use scolta ai',
+        'access content',
         $routing[$route]['requirements']['_permission'],
-        "Route {$route} should require 'use scolta ai'"
+        "Route {$route} should use 'access content' to allow anonymous access"
       );
     }
-    $this->assertArrayHasKey('use scolta ai', $permissions);
   }
 
   // -------------------------------------------------------------------

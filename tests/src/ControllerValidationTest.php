@@ -212,9 +212,9 @@ class ControllerValidationTest extends TestCase {
 
     foreach (['scolta.expand', 'scolta.summarize', 'scolta.followup'] as $route) {
       $this->assertEquals(
-        'use scolta ai',
+        'access content',
         $routing[$route]['requirements']['_permission'],
-        "Route {$route} must require 'use scolta ai' permission"
+        "Route {$route} must use 'access content' to allow anonymous access"
       );
     }
   }

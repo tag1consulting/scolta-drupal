@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **AI endpoints no longer return 403 for anonymous users.** Routes `/api/scolta/v1/expand-query`, `/api/scolta/v1/summarize`, `/api/scolta/v1/followup`, and `/api/scolta/v1/health` now require `access content` instead of `use scolta ai`, matching WordPress and Laravel behavior. ([#84](https://github.com/tag1consulting/scolta-drupal/issues/84))
+
 ### Added
 - **Sync scolta.js: AI Overview context now includes structured metadata and sort/filter indicators.** See [scolta-php#114](https://github.com/tag1consulting/scolta-php/pull/114).
 

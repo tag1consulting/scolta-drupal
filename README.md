@@ -151,7 +151,7 @@ If you have previously run `drush search-api:index`, that is not sufficient — 
 
 ### Permissions
 
-Users must have the **Use Scolta search** permission. Grant it at *Administration → People → Permissions*.
+The AI endpoints (`/api/scolta/v1/*`) are accessible to anonymous users by default — no special permission is required. Administrators who need to configure Scolta must have the **Administer Scolta** permission.
 
 ### Configuration
 
