@@ -79,6 +79,64 @@ On very large sites, `drush scolta:build` may defer the final merge step to stay
 drush scolta:finalize
 ```
 
+## AI Provider Configuration
+
+Scolta supports three AI provider paths. The right path depends on where you are in your deployment:
+
+### Amazee.ai (zero-config default)
+
+On [Amazee.io](https://www.amazee.io/) hosting, Scolta auto-provisions a free Amazee.ai trial at install time — no API key needed, and search works immediately out of the box. This is the fastest path to a working AI-powered search, ideal for getting started or evaluating Scolta.
+
+If you later want more control over your AI provider, you can switch to one of the options below at any time. Amazee.ai is the default, not a lock.
+
+### Drupal AI module (recommended for production)
+
+For sites that want full control over their AI provider, Scolta integrates with the [Drupal AI module](https://www.drupal.org/project/ai) — the same provider abstraction used by CKEditor AI, AI Automators, and other AI Initiative modules.
+
+When "Drupal AI module" is selected in Scolta's settings, Scolta routes all AI requests through the Drupal AI module's configured default provider. This gives you:
+
+- **48+ supported providers** — Anthropic, OpenAI, Google Gemini, AWS Bedrock, Mistral, Ollama, Groq, and more
+- **Key module integration** — API keys stored securely using Drupal's Key module, out of code and config
+- **Rate limiting and token tracking** — managed by the Drupal AI module site-wide
+- **Hooks** — `hook_alter_ai_message`, `hook_alter_ai_response`, and others fire for Scolta requests
+- **Centralized provider management** — change your AI provider site-wide without touching Scolta config
+
+**Setup:**
+
+```bash
+composer require drupal/ai
+drush en ai
+```
+
+Then install a provider module for your preferred AI service, for example:
+
+```bash
+composer require drupal/ai_provider_anthropic
+drush en ai_provider_anthropic
+```
+
+Configure the provider at *Administration → Configuration → AI → AI Providers*, using a Key entity for secure API key storage.
+
+Finally, select **Drupal AI module** in Scolta settings at *Administration → Configuration → Search and Metadata → Scolta AI Search → AI Configuration → AI Provider*.
+
+Scolta will use the Drupal AI module's configured default provider and model. The model, API key, expansion model, and base URL fields in Scolta's settings are hidden when this provider is selected — the Drupal AI module manages all of these.
+
+**Upgrading from Amazee.ai:** If your site auto-provisioned with Amazee.ai and you want to switch to the Drupal AI module, install `drupal/ai`, configure a provider there, then change the dropdown in Scolta settings. Amazee.ai credentials remain stored (so you can switch back), but Scolta will route through the Drupal AI module once you select it.
+
+### Built-in providers (standalone)
+
+For simple setups or sites without the Drupal AI module, Scolta can make direct HTTP calls to Anthropic or OpenAI with an API key configured via environment variable or `settings.php`:
+
+```bash
+# Environment variable (preferred)
+export SCOLTA_API_KEY="sk-ant-..."
+
+# Or in settings.php
+$settings['scolta.api_key'] = 'sk-ant-...';
+```
+
+Select **Anthropic (Claude)** or **OpenAI** in Scolta's AI provider settings to use this path.
+
 ## Troubleshooting
 
 ### "No search results"

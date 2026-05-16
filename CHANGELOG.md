@@ -10,6 +10,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 - **Amazee.ai AI requests no longer incorrectly route through the Drupal AI module when both are present.** Amazee.ai always uses its own managed gateway. ([#89](https://github.com/tag1consulting/scolta-drupal/issues/89))
 
 ### Added
+- **Documentation: Drupal AI Integration section in README.md.** Explains the three AI provider paths (Amazee.ai, Drupal AI module, built-in), setup steps for each, and the upgrade path from Amazee.ai to the Drupal AI module. ([#91](https://github.com/tag1consulting/scolta-drupal/issues/91))
+- **`drupal/ai` added to `composer.json` `suggest` field.** ([#91](https://github.com/tag1consulting/scolta-drupal/issues/91))
 - **New "Drupal AI module" provider option.** When selected, Scolta routes AI requests through the Drupal AI module's plugin manager using the site's configured default provider, gaining access to 48+ providers with Key module integration, rate limiting, and token tracking. The option only appears when `drupal/ai` is installed. ([#90](https://github.com/tag1consulting/scolta-drupal/issues/90))
 - **Model, API key, expansion model, and base URL fields are hidden when "Drupal AI module" is selected.** These settings are managed by the Drupal AI module when using that provider. ([#90](https://github.com/tag1consulting/scolta-drupal/issues/90))
 
