@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Added
+- **Sync scolta.js: AI Overview context now includes structured metadata and sort/filter indicators.** See [scolta-php#114](https://github.com/tag1consulting/scolta-php/pull/114).
+
 ### Fixed
 - **Amazee.ai AI requests no longer incorrectly route through the Drupal AI module when both are present.** Amazee.ai always uses its own managed gateway. ([#89](https://github.com/tag1consulting/scolta-drupal/issues/89))
 
