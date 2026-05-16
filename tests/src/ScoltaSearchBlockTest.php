@@ -335,4 +335,32 @@ class ScoltaSearchBlockTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // Cache tags — scoring config changes must invalidate cached pages.
+  // -------------------------------------------------------------------
+
+  public function testBuildDeclaresScoringConfigCacheTag(): void {
+    $this->assertStringContainsString(
+      "'config:scolta.settings'",
+      $this->blockContents,
+      "build() must include 'config:scolta.settings' cache tag so Drupal invalidates cached pages when scoring config is saved"
+    );
+  }
+
+  public function testBuildDeclaresSearchIndexCacheTag(): void {
+    $this->assertStringContainsString(
+      "'scolta_search_index'",
+      $this->blockContents,
+      "build() main render path must include 'scolta_search_index' cache tag"
+    );
+  }
+
+  public function testBuildIncludesCacheKey(): void {
+    $this->assertStringContainsString(
+      "'#cache'",
+      $this->blockContents,
+      "build() must declare '#cache' metadata so Drupal knows which tags to track"
+    );
+  }
+
 }
