@@ -102,19 +102,28 @@ class ScoltaAiService extends AiServiceAdapter {
     $values = $drupalConfig->getRawData();
 
     // Flatten nested scoring config to top-level keys.
+    // Top-level keys (e.g. set directly via drush config:set) take precedence
+    // over nested values so that explicit programmatic overrides are respected.
     if (isset($values['scoring']) && is_array($values['scoring'])) {
-      foreach ($values['scoring'] as $key => $value) {
-        $values[$key] = $value;
-      }
+      $scoring = $values['scoring'];
       unset($values['scoring']);
+      foreach ($scoring as $key => $value) {
+        if (!array_key_exists($key, $values)) {
+          $values[$key] = $value;
+        }
+      }
     }
 
     // Flatten nested display config to top-level keys.
+    // Same precedence rule: a top-level key wins over display.*.
     if (isset($values['display']) && is_array($values['display'])) {
-      foreach ($values['display'] as $key => $value) {
-        $values[$key] = $value;
-      }
+      $display = $values['display'];
       unset($values['display']);
+      foreach ($display as $key => $value) {
+        if (!array_key_exists($key, $values)) {
+          $values[$key] = $value;
+        }
+      }
     }
 
     // Remove pagefind config (not relevant to ScoltaConfig).

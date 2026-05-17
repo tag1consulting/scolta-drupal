@@ -24,20 +24,26 @@ class ScoltaAiServiceTest extends TestCase {
   private function simulateGetConfig(array $drupalConfig, string $apiKey = 'test-key'): ScoltaConfig {
     $values = $drupalConfig;
 
-    // Flatten scoring.
+    // Flatten scoring; top-level keys take precedence over nested values.
     if (isset($values['scoring']) && is_array($values['scoring'])) {
-      foreach ($values['scoring'] as $key => $value) {
-        $values[$key] = $value;
-      }
+      $scoring = $values['scoring'];
       unset($values['scoring']);
+      foreach ($scoring as $key => $value) {
+        if (!array_key_exists($key, $values)) {
+          $values[$key] = $value;
+        }
+      }
     }
 
-    // Flatten display.
+    // Flatten display; top-level keys take precedence over nested values.
     if (isset($values['display']) && is_array($values['display'])) {
-      foreach ($values['display'] as $key => $value) {
-        $values[$key] = $value;
-      }
+      $display = $values['display'];
       unset($values['display']);
+      foreach ($display as $key => $value) {
+        if (!array_key_exists($key, $values)) {
+          $values[$key] = $value;
+        }
+      }
     }
 
     // Remove pagefind.
@@ -191,6 +197,63 @@ class ScoltaAiServiceTest extends TestCase {
     $config = $this->simulateGetConfig($drupalConfig);
 
     $this->assertEquals(2592000, $config->cacheTtl); // 30 days.
+  }
+
+  // -------------------------------------------------------------------
+  // Top-level key precedence over nested display.* / scoring.* (issue #75).
+  // -------------------------------------------------------------------
+
+  /**
+   * A top-level key set via drush config:set must not be overwritten by
+   * display.* when both are present.
+   *
+   * Regression for: drush config:set scolta.settings max_pagefind_results 10
+   * being silently overridden by display.max_pagefind_results.
+   */
+  public function testTopLevelDisplayKeyTakesPrecedenceOverNested(): void {
+    $drupalConfig = $this->getInstallDefaults();
+    // Simulate: drush config:set scolta.settings max_pagefind_results 10
+    $drupalConfig['max_pagefind_results'] = 10;
+    // display.max_pagefind_results defaults to 50 from install config.
+
+    $config = $this->simulateGetConfig($drupalConfig);
+
+    $this->assertEquals(10, $config->maxPagefindResults,
+      'Top-level max_pagefind_results must override display.max_pagefind_results');
+  }
+
+  public function testTopLevelScoringKeyTakesPrecedenceOverNested(): void {
+    $drupalConfig = $this->getInstallDefaults();
+    // Simulate: drush config:set scolta.settings title_match_boost 3.0
+    $drupalConfig['title_match_boost'] = 3.0;
+    // scoring.title_match_boost defaults to 1.0.
+
+    $config = $this->simulateGetConfig($drupalConfig);
+
+    $this->assertEquals(3.0, $config->titleMatchBoost,
+      'Top-level title_match_boost must override scoring.title_match_boost');
+  }
+
+  public function testNestedDisplayKeyUsedWhenNoTopLevelOverride(): void {
+    $drupalConfig = $this->getInstallDefaults();
+    // No top-level max_pagefind_results; display.max_pagefind_results = 50.
+    $this->assertArrayNotHasKey('max_pagefind_results', $drupalConfig);
+
+    $config = $this->simulateGetConfig($drupalConfig);
+
+    $this->assertEquals(50, $config->maxPagefindResults,
+      'display.max_pagefind_results must be used when no top-level key is present');
+  }
+
+  public function testTopLevelKeyUsedWhenNoNestedDisplayValue(): void {
+    $drupalConfig = $this->getInstallDefaults();
+    unset($drupalConfig['display']['max_pagefind_results']);
+    $drupalConfig['max_pagefind_results'] = 25;
+
+    $config = $this->simulateGetConfig($drupalConfig);
+
+    $this->assertEquals(25, $config->maxPagefindResults,
+      'Top-level max_pagefind_results must be used when display.* key is absent');
   }
 
 }
