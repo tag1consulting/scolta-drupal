@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Added
+- **Health endpoint now returns `index` detail: `built`, `fragments`, `last_build`, and `integrity`.** Matches the Laravel health response shape, giving ops teams fragment count and build timestamp without SSH access. ([#76](https://github.com/tag1consulting/scolta-drupal/issues/76))
+
 ### Fixed
 - **Settings form now validates the API Base URL field.** Non-URL strings, incomplete URLs, and values without an http:// or https:// scheme are rejected on save with a clear error message. ([#86](https://github.com/tag1consulting/scolta-drupal/issues/86))
 - **Saving scoring configuration now immediately invalidates Drupal's page cache.** `ScoltaSearchBlock::build()` now declares `config:scolta.settings` as a cache tag, so Drupal automatically purges cached search pages whenever scoring weights or recency settings are saved. Previously, stale scoring config remained in cached `drupalSettings` until the cache expired or was cleared manually. ([#85](https://github.com/tag1consulting/scolta-drupal/issues/85))
