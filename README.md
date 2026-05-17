@@ -159,6 +159,21 @@ To restrict AI features to specific roles (e.g. authenticated users only), revok
 
 Visit *Administration → Configuration → Search and Metadata → Scolta AI Search* to configure the AI provider, API key, model, and indexing options.
 
+#### Drush config:set and config path precedence
+
+Scolta's config stores scoring and display values in nested namespaces (`scoring.*`, `display.*`). When using `drush config:set`, use the full nested path:
+
+```bash
+# Correct — nested path used by the admin UI
+drush config:set scolta.settings display.max_pagefind_results 10
+drush config:set scolta.settings scoring.title_match_boost 2.0
+
+# Also accepted — top-level keys take precedence over nested values
+drush config:set scolta.settings max_pagefind_results 10
+```
+
+Top-level keys (without a namespace prefix) override nested values of the same name, so both forms work. The nested path is canonical and matches the admin UI; the top-level form is convenient for one-off overrides.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for a full list of changes.
