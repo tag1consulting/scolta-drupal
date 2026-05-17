@@ -174,6 +174,53 @@ drush config:set scolta.settings max_pagefind_results 10
 
 Top-level keys (without a namespace prefix) override nested values of the same name, so both forms work. The nested path is canonical and matches the admin UI; the top-level form is convenient for one-off overrides.
 
+## External Services
+
+Scolta connects to external services under specific conditions. No data is sent automatically — all connections are triggered by admin/developer action or explicit configuration.
+
+### GitHub API (api.github.com)
+
+**When:** An administrator runs `drush scolta:download-pagefind` to download the Pagefind binary.
+**What is sent:** A standard HTTPS GET request to `https://api.github.com/repos/CloudCannon/pagefind/releases/latest`. No personally identifiable information is transmitted beyond standard HTTP request headers (IP address, user agent).
+**Service:** GitHub, operated by GitHub, Inc. (a subsidiary of Microsoft Corporation).
+**Terms of Service:** https://docs.github.com/en/site-policy/github-terms/github-terms-of-service
+**Privacy Statement:** https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement
+
+### Pagefind Binary (GitHub Releases / Pagefind)
+
+**When:** `drush scolta:download-pagefind` downloads the Pagefind binary from GitHub Releases after querying the GitHub API above.
+**What is sent:** A standard HTTPS GET request to download the release archive. No personally identifiable information is transmitted beyond standard HTTP request headers.
+**Service:** Pagefind is an open-source project (MIT license) maintained by the Pagefind project.
+**Pagefind:** https://pagefind.app/
+**CloudCannon:** https://cloudcannon.com/
+**Pagefind License:** https://github.com/Pagefind/pagefind/blob/main/LICENSE
+
+### Amazee.ai
+
+**When:** On [Amazee.io](https://www.amazee.io/) hosting, Scolta automatically provisions a free Amazee.ai trial on first activation. Once provisioned, every search query made by site visitors is sent to the Amazee.ai API endpoint while AI features are active.
+**What is sent:** The user's search query text, and selected page content excerpts (for result summarization).
+**Service:** Amazee.ai, operated by Amazee Group AG.
+**Amazee.ai:** https://amazee.ai/
+**Terms of Service:** https://amazee.ai/terms/
+**Privacy Policy:** https://amazee.ai/privacy/
+
+### AI Provider APIs (Drupal AI module or built-in)
+
+**When:** A visitor performs a search and AI features are enabled. Which provider receives the data depends on the Scolta AI provider setting.
+**What is sent:** The user's search query text and selected page content excerpts (for result summarization) are sent to the configured provider's API endpoint.
+**Providers:**
+
+- **Drupal AI module** — Scolta routes requests through the [Drupal AI module](https://www.drupal.org/project/ai), which supports 48+ providers. Review the terms and privacy policy of the provider configured in the Drupal AI module.
+- **Anthropic (Claude)** — processes search queries and page excerpts directly.
+  Terms of Service: https://www.anthropic.com/legal/consumer-terms
+  Privacy Policy: https://www.anthropic.com/legal/privacy
+- **OpenAI** — processes search queries and page excerpts directly.
+  Terms of Use: https://openai.com/policies/terms-of-use
+  Privacy Policy: https://openai.com/policies/privacy-policy
+- **OpenAI-compatible endpoints** (including self-hosted Ollama and other providers) — any endpoint configured by the site administrator that speaks the OpenAI API protocol. Review the terms and privacy policy of your chosen provider.
+
+No AI API calls are made unless a provider is configured and AI features are enabled in Scolta settings.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for a full list of changes.
