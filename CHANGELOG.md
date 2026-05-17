@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **Add `## External Services` section to `README.md`.** Documents all external HTTP connections: GitHub API (pagefind download via `drush scolta:download-pagefind`), Pagefind binary from GitHub Releases, Amazee.ai (auto-provisioned on Amazee.io hosting), and AI provider APIs (Drupal AI module, Anthropic, OpenAI, OpenAI-compatible endpoints). Includes terms of service and privacy policy links for each service, consistent with scolta-wp's `readme.txt` disclosure.
+
 ### Added
 - **`show_attribution` setting: optional "Powered by Scolta" attribution on the search page.** A new "Show Scolta attribution on search page" checkbox in the Display section of the settings form controls whether `<p class="scolta-attribution">Powered by Scolta</p>` is appended to the search block output. Defaults to `false` (unchecked). ([#102](https://github.com/tag1consulting/scolta-php/issues/102))
 - **Health endpoint now returns `index` detail: `built`, `fragments`, `last_build`, and `integrity`.** Matches the Laravel health response shape, giving ops teams fragment count and build timestamp without SSH access. ([#76](https://github.com/tag1consulting/scolta-drupal/issues/76))
