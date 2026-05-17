@@ -232,6 +232,7 @@
   let pagefindBase = '';   // Set during initPagefind(); used by resolveUrl().
   let currentSortOverride = null;    // { field, direction } or null — active sort override
   let llmAppliedFilters = {};        // { dimension: value } — filters injected by LLM expansion
+  let expansionInFlight = false;     // true while an expand-query HTTP request is pending
 
   // Detect default language filter from instanceConfig.currentLanguage or <html lang>.
   // Applied on every fresh search unless the URL already specifies f_language.
@@ -1546,6 +1547,7 @@
     const expandPromise = preserveFilters
       ? Promise.resolve(lastExpandedTerms)
       : expandQuery(query);
+    expansionInFlight = !preserveFilters && CONFIG.AI_EXPAND_QUERY;
 
     const primarySearch = await pagefindSearch(searchQuery, activeFilters);
     allScoredResults = await loadAndScoreSearch(primarySearch, scorerQuery, 1.0);
@@ -1600,6 +1602,7 @@
     // Summarize is intentionally deferred until after expansion so the AI sees
     // the same ranking the user sees (expanded terms promote more relevant results).
     expandPromise.then(async expansion => {
+      expansionInFlight = false;
       // expansion is { terms, sort_hint, subject_terms, filter_hint } or null (or a plain array for legacy cache hits).
       const expandedTerms = Array.isArray(expansion) ? expansion : (expansion?.terms ?? null);
       const sortHint = Array.isArray(expansion) ? null : (expansion?.sort_hint ?? null);
@@ -1627,6 +1630,12 @@
       await mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version, currentSortOverride, subjectTerms);
 
       if (version !== searchVersion) return;
+
+      // If mergeExpandedSearchResults returned early (no valid terms, no sort override),
+      // it did not call renderResults(); show the final state now.
+      if (allScoredResults.length === 0) {
+        renderResults();
+      }
 
       renderSortIndicator(currentSortOverride);
       renderFilterBadges();
@@ -1660,6 +1669,7 @@
     activeFilters = {};
     currentSortOverride = null;
     llmAppliedFilters = {};
+    expansionInFlight = false;
 
     // Remove search query and filter params from URL.
     try {
@@ -1773,6 +1783,9 @@
     if (filtered.length === 0) {
       container.innerHTML = "";
       header.innerHTML = "";
+      if (expansionInFlight) {
+        return;
+      }
       noResults.style.display = "block";
       loadMore.style.display = "none";
       return;
