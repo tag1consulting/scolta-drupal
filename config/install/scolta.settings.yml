@@ -42,6 +42,7 @@ memory_budget:
   profile: 'conservative'
   custom_bytes: ~
   chunk_size: ~
+show_attribution: false
 pagefind:
   build_dir: 'private://scolta-build'
   output_dir: 'public://scolta-pagefind'

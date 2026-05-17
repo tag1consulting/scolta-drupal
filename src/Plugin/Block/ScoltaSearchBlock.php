@@ -120,8 +120,13 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       'currentLanguage' => $currentLanguage,
     ];
 
+    $markup = '<div id="scolta-search"></div>';
+    if ($config->showAttribution) {
+      $markup .= '<p class="scolta-attribution">Powered by Scolta</p>';
+    }
+
     return [
-      '#markup' => '<div id="scolta-search"></div>',
+      '#markup' => $markup,
       '#attached' => [
         'library' => [
           'scolta/search',

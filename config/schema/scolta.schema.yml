@@ -160,6 +160,9 @@ scolta.settings:
         chunk_size:
           type: integer
           label: 'Pages per chunk (null uses profile default)'
+    show_attribution:
+      type: boolean
+      label: 'Show Scolta attribution on search page'
     pagefind:
       type: mapping
       label: 'Pagefind configuration'
