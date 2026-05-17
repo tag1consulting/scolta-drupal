@@ -605,6 +605,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Maximum characters of context sent to AI for summarization.'),
     ];
 
+    $form['display']['show_attribution'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Show Scolta attribution on search page'),
+      '#default_value' => $config->get('show_attribution') ?? FALSE,
+      '#description' => $this->t('When enabled, a "Powered by Scolta" notice is appended to the search block output.'),
+    ];
+
     // ── Cache Section ──
     $form['cache'] = [
       '#type' => 'details',
@@ -993,6 +1000,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('display.max_pagefind_results', (int) $form_state->getValue('max_pagefind_results'))
       ->set('display.ai_summary_top_n', (int) $form_state->getValue('ai_summary_top_n'))
       ->set('display.ai_summary_max_chars', (int) $form_state->getValue('ai_summary_max_chars'))
+      // Display: attribution.
+      ->set('show_attribution', (bool) $form_state->getValue('show_attribution'))
       // Cache.
       ->set('cache_ttl', (int) $form_state->getValue('cache_ttl'))
       // Custom prompts.

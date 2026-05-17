@@ -363,4 +363,59 @@ class ScoltaSearchBlockTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // show_attribution — issue scolta-php#102.
+  // -------------------------------------------------------------------
+
+  /**
+   * build() must conditionally append the attribution paragraph.
+   *
+   * The attribution HTML must only be emitted when $config->showAttribution
+   * is true — it must not be hardcoded into the default output.
+   */
+  public function testAttributionParagraphIsConditional(): void {
+    // The block must reference the showAttribution property.
+    $this->assertStringContainsString(
+      'showAttribution',
+      $this->blockContents,
+      'build() must check $config->showAttribution before emitting attribution HTML'
+    );
+
+    // The attribution HTML string must be present in the source.
+    $this->assertStringContainsString(
+      'scolta-attribution',
+      $this->blockContents,
+      'build() must contain the scolta-attribution CSS class for the attribution paragraph'
+    );
+
+    $this->assertStringContainsString(
+      'Powered by Scolta',
+      $this->blockContents,
+      'build() must contain "Powered by Scolta" attribution text'
+    );
+  }
+
+  /**
+   * The attribution HTML must be inside an if-block, not unconditional markup.
+   */
+  public function testAttributionIsInsideConditionalBlock(): void {
+    // Verify the if($config->showAttribution) guard is present.
+    $this->assertMatchesRegularExpression(
+      '/if\s*\(\s*\$config->showAttribution\s*\)/',
+      $this->blockContents,
+      'Attribution HTML must be guarded by if ($config->showAttribution)'
+    );
+  }
+
+  /**
+   * The attribution paragraph must use a <p> tag with the correct class.
+   */
+  public function testAttributionUsesCorrectHtmlStructure(): void {
+    $this->assertStringContainsString(
+      '<p class="scolta-attribution">Powered by Scolta</p>',
+      $this->blockContents,
+      'Attribution must be a <p> with class "scolta-attribution" and text "Powered by Scolta"'
+    );
+  }
+
 }

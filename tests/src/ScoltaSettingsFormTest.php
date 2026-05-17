@@ -731,4 +731,90 @@ class ScoltaSettingsFormTest extends TestCase {
     ];
   }
 
+  // -------------------------------------------------------------------
+  // show_attribution — issue scolta-php#102.
+  // -------------------------------------------------------------------
+
+  /**
+   * The install default for show_attribution must be false.
+   */
+  public function testShowAttributionDefaultIsFalse(): void {
+    $defaults = $this->getInstallDefaults();
+    $this->assertArrayHasKey(
+      'show_attribution',
+      $defaults,
+      'show_attribution must be present in config/install/scolta.settings.yml'
+    );
+    $this->assertFalse(
+      $defaults['show_attribution'],
+      'show_attribution must default to false'
+    );
+  }
+
+  /**
+   * When show_attribution is false, ScoltaConfig::$showAttribution is false.
+   */
+  public function testShowAttributionFalseFlowsToScoltaConfig(): void {
+    $defaults = $this->getInstallDefaults();
+    $config = $this->simulateGetConfig($defaults);
+    $this->assertFalse(
+      $config->showAttribution,
+      'ScoltaConfig::$showAttribution must be false when show_attribution is false in Drupal config'
+    );
+  }
+
+  /**
+   * When show_attribution is true, ScoltaConfig::$showAttribution is true.
+   */
+  public function testShowAttributionTrueFlowsToScoltaConfig(): void {
+    $defaults = $this->getInstallDefaults();
+    $modified = $defaults;
+    $modified['show_attribution'] = true;
+    $config = $this->simulateGetConfig($modified);
+    $this->assertTrue(
+      $config->showAttribution,
+      'ScoltaConfig::$showAttribution must be true when show_attribution is true in Drupal config'
+    );
+  }
+
+  /**
+   * The settings form must contain a show_attribution checkbox field.
+   */
+  public function testSettingsFormContainsShowAttributionCheckbox(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+
+    $this->assertStringContainsString(
+      "'show_attribution'",
+      $contents,
+      'ScoltaSettingsForm must reference show_attribution'
+    );
+
+    $this->assertStringContainsString(
+      "'#type' => 'checkbox'",
+      $contents,
+      'show_attribution field must be a checkbox'
+    );
+  }
+
+  /**
+   * submitForm() must persist show_attribution as a boolean.
+   */
+  public function testSubmitFormPersistsShowAttribution(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+
+    $this->assertStringContainsString(
+      "->set('show_attribution'",
+      $contents,
+      "submitForm() must call ->set('show_attribution', ...) to persist the setting"
+    );
+
+    $this->assertStringContainsString(
+      "(bool) \$form_state->getValue('show_attribution')",
+      $contents,
+      "submitForm() must cast show_attribution to bool before saving"
+    );
+  }
+
 }
