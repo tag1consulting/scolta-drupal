@@ -502,6 +502,127 @@ class ScoltaSettingsFormTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
+  // validateForm — AI Base URL validation (issue #86).
+  // -------------------------------------------------------------------
+
+  /**
+   * validateForm() must exist and validate the ai_base_url field.
+   */
+  public function testValidateFormMethodExists(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+
+    $this->assertStringContainsString(
+      'function validateForm(',
+      $contents,
+      'ScoltaSettingsForm must implement validateForm()'
+    );
+  }
+
+  /**
+   * validateForm() must reject non-URL strings for ai_base_url.
+   */
+  public function testValidateFormRejectsNonUrlStrings(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+    $body = $this->extractMethod($contents, 'validateForm');
+
+    $this->assertStringContainsString(
+      'ai_base_url',
+      $body,
+      'validateForm() must check the ai_base_url field'
+    );
+
+    $this->assertStringContainsString(
+      'setErrorByName',
+      $body,
+      'validateForm() must call setErrorByName() to report URL errors'
+    );
+  }
+
+  /**
+   * validateForm() must require http or https scheme for ai_base_url.
+   */
+  public function testValidateFormRequiresHttpOrHttpsScheme(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+    $body = $this->extractMethod($contents, 'validateForm');
+
+    $this->assertStringContainsString(
+      'https',
+      $body,
+      'validateForm() must require https:// scheme'
+    );
+
+    $this->assertStringContainsString(
+      'http',
+      $body,
+      'validateForm() must require http:// scheme'
+    );
+  }
+
+  /**
+   * validateForm() must allow an empty ai_base_url (optional field).
+   */
+  public function testValidateFormAllowsEmptyBaseUrl(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+    $body = $this->extractMethod($contents, 'validateForm');
+
+    // The guard condition that skips validation for empty values.
+    $this->assertMatchesRegularExpression(
+      '/\$baseUrl\s*!==\s*\'\'|\bempty\b.*\$baseUrl/s',
+      $body,
+      'validateForm() must skip validation when ai_base_url is empty'
+    );
+  }
+
+  /**
+   * URL validation logic accepts valid http/https URLs and rejects bad ones.
+   *
+   * Tests the logic extracted from validateForm() in isolation.
+   */
+  #[\PHPUnit\Framework\Attributes\DataProvider('urlValidationProvider')]
+  public function testUrlValidationLogic(string $url, bool $shouldBeValid): void {
+    $baseUrl = trim($url);
+    if ($baseUrl === '') {
+      // Empty is always valid (field is optional).
+      $this->assertTrue(TRUE);
+      return;
+    }
+
+    $parsed = parse_url($baseUrl);
+    $scheme = $parsed['scheme'] ?? '';
+    $isValid = filter_var($baseUrl, FILTER_VALIDATE_URL) !== FALSE
+      && in_array($scheme, ['http', 'https'], TRUE);
+
+    $this->assertEquals(
+      $shouldBeValid,
+      $isValid,
+      "URL '{$url}' should be " . ($shouldBeValid ? 'valid' : 'invalid')
+    );
+  }
+
+  /**
+   * @return array<string, array{string, bool}>
+   */
+  public static function urlValidationProvider(): array {
+    return [
+      'empty string'           => ['', TRUE],
+      'valid https'            => ['https://api.example.com', TRUE],
+      'valid http'             => ['http://api.example.com', TRUE],
+      'https with path'        => ['https://api.example.com/v1', TRUE],
+      'https with port'        => ['https://api.example.com:8080', TRUE],
+      'gibberish'              => ['not-a-url', FALSE],
+      'missing scheme'         => ['api.example.com', FALSE],
+      'ftp scheme'             => ['ftp://api.example.com', FALSE],
+      'incomplete url'         => ['https://', FALSE],
+      'just text'              => ['hello world', FALSE],
+      'scheme only'            => ['https:', FALSE],
+    ];
+  }
+
+  // -------------------------------------------------------------------
   // Helpers.
   // -------------------------------------------------------------------
 

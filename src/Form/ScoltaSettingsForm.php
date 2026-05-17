@@ -894,6 +894,25 @@ class ScoltaSettingsForm extends ConfigFormBase {
   /**
    * {@inheritdoc}
    */
+  public function validateForm(array &$form, FormStateInterface $form_state): void {
+    parent::validateForm($form, $form_state);
+
+    $baseUrl = trim($form_state->getValue('ai_base_url') ?? '');
+    if ($baseUrl !== '') {
+      $parsed = parse_url($baseUrl);
+      $scheme = $parsed['scheme'] ?? '';
+      if (!filter_var($baseUrl, FILTER_VALIDATE_URL) || !in_array($scheme, ['http', 'https'], TRUE)) {
+        $form_state->setErrorByName(
+          'ai_base_url',
+          $this->t('The API Base URL must be a valid URL beginning with http:// or https://.')
+        );
+      }
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $presetName = $form_state->getValue('preset') ?? 'none';
     $validPresets = array_keys(ScoltaConfig::getPresets());
