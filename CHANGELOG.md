@@ -6,6 +6,10 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [1.0.0-rc4] - 2026-05-18
+
 ### Fixed
 - **Exclude `vendor/*/test/` directories from release ZIP.** The ZIP builder now excludes vendor `test/` directories (singular — `wamania/php-stemmer/test/files/` is ~17 MB), vendor `tests/` directories, and dev-only config files (`phpunit.xml*`, `phpstan.neon*`, `.php-cs-fixer*`). The `validate-zip` CI job now fails if any `.log` files or vendor test content appear in the archive. ([#105](https://github.com/tag1consulting/scolta-drupal/issues/105))
 - **Add `## External Services` section to `README.md`.** Documents all external HTTP connections: GitHub API (pagefind download via `drush scolta:download-pagefind`), Pagefind binary from GitHub Releases, Amazee.ai (auto-provisioned on Amazee.io hosting), and AI provider APIs (Drupal AI module, Anthropic, OpenAI, OpenAI-compatible endpoints). Includes terms of service and privacy policy links for each service, consistent with scolta-wp's `readme.txt` disclosure.
