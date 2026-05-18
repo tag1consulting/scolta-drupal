@@ -350,4 +350,26 @@ class StructuralIntegrityTest extends TestCase {
       "Raw filesystem calls found in src/ (add phpcs:ignore with explanation if intentional):\n" . implode("\n", $violations));
   }
 
+  // -------------------------------------------------------------------
+  // Release workflow vendor test directory excludes
+  // -------------------------------------------------------------------
+
+  public function test_release_workflow_excludes_vendor_test_singular(): void {
+    $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
+    $this->assertStringContainsString(
+      '--exclude "scolta-drupal/vendor/*/test/*"',
+      $workflow,
+      'Release workflow must exclude vendor test/ directories (singular — e.g. wamania/php-stemmer/test/files/)'
+    );
+  }
+
+  public function test_release_workflow_validate_zip_checks_test_singular(): void {
+    $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
+    $this->assertStringContainsString(
+      'scolta-drupal/vendor/.+/test/',
+      $workflow,
+      'validate-zip job must check for vendor test/ directories (singular)'
+    );
+  }
+
 }

@@ -51,7 +51,16 @@ jobs:
             --exclude "scolta-drupal/tests/*" \
             --exclude "scolta-drupal/node_modules/*" \
             --exclude "scolta-drupal/.claude/*" \
-            --exclude "scolta-drupal/vendor/drupal/*"
+            --exclude "scolta-drupal/vendor/drupal/*" \
+            --exclude "scolta-drupal/vendor/*/tests" \
+            --exclude "scolta-drupal/vendor/*/tests/*" \
+            --exclude "scolta-drupal/vendor/*/test" \
+            --exclude "scolta-drupal/vendor/*/test/*" \
+            --exclude "scolta-drupal/vendor/*/phpunit.xml*" \
+            --exclude "scolta-drupal/vendor/*/phpstan.neon*" \
+            --exclude "scolta-drupal/vendor/*/.php-cs-fixer*" \
+            --exclude "*.log" \
+            --exclude "*.sh"
 
       - name: Extract CHANGELOG entry
         run: |
@@ -104,6 +113,24 @@ jobs:
 
           if ! grep -q 'scolta-drupal/scolta.module' zip-contents.txt; then
             echo "ERROR: scolta.module is missing from archive"
+            exit 1
+          fi
+
+          # No tests/ or test/ content in vendor directories
+          if grep -qE 'scolta-drupal/vendor/.+/tests/' zip-contents.txt; then
+            echo "ERROR: Archive contains vendor tests/ content (must be excluded):"
+            grep -E 'scolta-drupal/vendor/.+/tests/' zip-contents.txt
+            exit 1
+          fi
+          if grep -qE 'scolta-drupal/vendor/.+/test/' zip-contents.txt; then
+            echo "ERROR: Archive contains vendor test/ content (must be excluded):"
+            grep -E 'scolta-drupal/vendor/.+/test/' zip-contents.txt
+            exit 1
+          fi
+          # No .log files
+          if grep -q '\.log$' zip-contents.txt; then
+            echo "ERROR: Archive contains .log files:"
+            grep '\.log$' zip-contents.txt
             exit 1
           fi
 
