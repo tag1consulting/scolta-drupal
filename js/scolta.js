@@ -233,6 +233,7 @@
   let currentSortOverride = null;    // { field, direction } or null — active sort override
   let llmAppliedFilters = {};        // { dimension: value } — filters injected by LLM expansion
   let expansionInFlight = false;     // true while an expand-query HTTP request is pending
+  let cachedPagefindFilters = null;  // { dimension: { value: count } } — from pagefind.filters()
 
   // Detect default language filter from instanceConfig.currentLanguage or <html lang>.
   // Applied on every fresh search unless the URL already specifies f_language.
@@ -330,6 +331,11 @@
       try {
         pagefindBase = base.startsWith('http') ? new URL(base).pathname : base;
       } catch (_) { pagefindBase = base; }
+      if (!cachedPagefindFilters) {
+        try {
+          cachedPagefindFilters = await pagefind.filters();
+        } catch (_) { /* ignore — filters are optional */ }
+      }
       return;
     }
 
@@ -374,6 +380,14 @@
 
     // Warm the index: triggers WASM compilation + fragment download.
     await pagefind.search("");
+
+    try {
+      cachedPagefindFilters = await pagefind.filters();
+      console.log('[scolta] Pagefind filters cached:', Object.keys(cachedPagefindFilters));
+    } catch (e) {
+      console.warn('[scolta] Failed to cache Pagefind filters:', e.message);
+    }
+
     console.log("[scolta] Pagefind index preloaded");
   }
 
@@ -996,6 +1010,39 @@
     return pagefind.search(query, searchOpts);
   }
 
+  const SKIP_FILTER_DIMENSIONS = new Set(['site', 'language', 'content_type', 'entity_type']);
+
+  function matchSubjectToFilters(subjectTerms, availableFilters) {
+    if (!subjectTerms || !subjectTerms.length || !availableFilters) return {};
+
+    const keywords = new Set();
+    for (const term of subjectTerms) {
+      for (const word of term.toLowerCase().split(/\s+/)) {
+        if (word.length > 2) keywords.add(word);
+      }
+    }
+
+    const matched = {};
+    for (const [dimension, values] of Object.entries(availableFilters)) {
+      if (SKIP_FILTER_DIMENSIONS.has(dimension.toLowerCase())) continue;
+
+      for (const filterValue of Object.keys(values)) {
+        const lowerValue = filterValue.toLowerCase();
+        for (const keyword of keywords) {
+          if (lowerValue === keyword
+              || (lowerValue.length > 2 && keyword.includes(lowerValue))
+              || (keyword.length > 2 && lowerValue.includes(keyword))) {
+            matched[dimension] = filterValue;
+            break;
+          }
+        }
+        if (matched[dimension]) break;
+      }
+    }
+
+    return matched;
+  }
+
   // Pagefind's data.locations are not word positions — compute from content instead.
   function computeContentWordLocations(content, queryTerms) {
     if (!content || !queryTerms || queryTerms.length < 2) return null;
@@ -1313,11 +1360,30 @@
     }
 
     if (sortOverride && sortOverride.field && sortOverride.direction) {
-      // Native sort path: pass sort to Pagefind so it sorts ALL matching documents
-      // at the index level before returning. We load the top N from each already-sorted
-      // result set, then merge by URL dedup and sort the merged set by the sort field.
-      // This avoids the old bug where BM25 selected the top-50 first, then we tried
-      // to sort those 50 — expensive items outside the top-50 were never loaded.
+      // Filter+sort discovery: match subject_terms against cached Pagefind
+      // filters so the search is narrowed to the correct topic at the index
+      // level. No heuristic intersection — Pagefind does the filtering.
+      const subjectFilters = matchSubjectToFilters(subjectTerms, cachedPagefindFilters);
+      const hasFilterMatch = Object.keys(subjectFilters).length > 0;
+
+      if (hasFilterMatch) {
+        console.log('[scolta:sort] Subject filter match:', JSON.stringify(subjectFilters));
+      } else {
+        console.log('[scolta:sort] No filter match for subject terms, using sort only');
+      }
+
+      const mergedFilters = {};
+      for (const [dim, vals] of Object.entries(activeFilters)) {
+        mergedFilters[dim] = vals;
+      }
+      if (hasFilterMatch) {
+        for (const [dim, val] of Object.entries(subjectFilters)) {
+          if (!mergedFilters[dim]) {
+            mergedFilters[dim] = new Set([val]);
+          }
+        }
+      }
+
       const termSet = new Set([searchQuery]);
       for (const term of validTerms) {
         termSet.add(term);
@@ -1329,23 +1395,15 @@
         }
       }
 
-      // Run sorted searches and subject-only search in parallel.
-      const subjectSearchP = (subjectTerms && subjectTerms.length > 0)
-        ? pagefindSearch(subjectTerms.join(' '), activeFilters)
-        : Promise.resolve(null);
-
-      const [searches, subjectSearch] = await Promise.all([
-        Promise.all([...termSet].map(t => pagefindSearch(t, activeFilters, sortOverride))),
-        subjectSearchP,
-      ]);
+      const searches = await Promise.all(
+        [...termSet].map(t => pagefindSearch(t, mergedFilters, sortOverride))
+      );
 
       if (version !== searchVersion) {
         console.log('[scolta:expand] Discarding stale expansion after sort search (version', version, 'vs current', searchVersion, ')');
         return;
       }
 
-      // Load top N from each sorted search and merge by URL (first occurrence wins —
-      // searches are already sorted by the sort field, so first-seen is the best match).
       const urlMap = new Map();
       await Promise.all(searches.map(async (search) => {
         const toLoad = Math.min(search.results.length, CONFIG.MAX_PAGEFIND_RESULTS);
@@ -1356,19 +1414,6 @@
           if (!urlMap.has(url)) urlMap.set(url, data);
         }
       }));
-
-      // Load subject-filter results for intersection.
-      let subjectUrlSet = null;
-      if (subjectSearch && subjectSearch.results.length > 0) {
-        const subjectToLoad = Math.min(subjectSearch.results.length, CONFIG.MAX_PAGEFIND_RESULTS);
-        const subjectLoaded = await Promise.all(
-          subjectSearch.results.slice(0, subjectToLoad).map(r => r.data())
-        );
-        const normUrl = u => (u || '').replace(/\.html$/, '').replace(/\/$/, '').toLowerCase();
-        subjectUrlSet = new Set(subjectLoaded.map(d => normUrl(resolveUrl(d.url || ''))));
-      } else if (subjectTerms && subjectTerms.length > 0) {
-        subjectUrlSet = new Set(); // subject search ran but returned nothing
-      }
 
       if (version !== searchVersion) {
         console.log('[scolta:expand] Discarding stale expansion after sort load (version', version, 'vs current', searchVersion, ')');
@@ -1395,31 +1440,7 @@
           return desc ? -cmp : cmp;
         });
 
-        // Dual-search intersection: when subject terms are available, keep only
-        // sorted results whose URL also appears in the subject-only search.
-        // This prevents OR-matched common terms (e.g. "expensive") from dominating
-        // results when the user's actual subject (e.g. "tooth") is rarer.
-        if (subjectUrlSet && subjectUrlSet.size > 0) {
-          const normUrl = u => (u || '').replace(/\.html$/, '').replace(/\/$/, '').toLowerCase();
-          const intersection = withField.filter(d => subjectUrlSet.has(normUrl(resolveUrl(d.url || ''))));
-          if (intersection.length >= 3) {
-            allScoredResults = intersection.map(data => ({ data, score: 0 }));
-          } else if (intersection.length > 0) {
-            // Intersection too small — prepend subject-matched items, append the rest.
-            const intNorms = new Set(intersection.map(d => normUrl(resolveUrl(d.url || ''))));
-            const remainder = withField.filter(d => !intNorms.has(normUrl(resolveUrl(d.url || ''))));
-            allScoredResults = [...intersection, ...remainder].map(data => ({ data, score: 0 }));
-          } else {
-            console.warn('[scolta:sort] Subject filter intersection empty, using sorted results');
-            allScoredResults = withField.map(data => ({ data, score: 0 }));
-          }
-        } else if (subjectUrlSet !== null) {
-          // Subject search returned no results — fall back to sorted results.
-          console.warn('[scolta:sort] Subject filter search returned no results, using sorted results');
-          allScoredResults = withField.map(data => ({ data, score: 0 }));
-        } else {
-          allScoredResults = withField.map(data => ({ data, score: 0 }));
-        }
+        allScoredResults = withField.map(data => ({ data, score: 0 }));
       }
 
     } else {
