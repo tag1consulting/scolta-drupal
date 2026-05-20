@@ -6,7 +6,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
-_No changes yet._
+### Changed
+- **Sync scolta.js from scolta-php: replace sort intersection with filter+sort discovery.** The sort path now discovers available Pagefind filters at init and matches subject_terms keywords against filter values, passing matched filters to Pagefind alongside the sort override. Replaces the fragile subject intersection heuristic. Sites with structured metadata get precise filter+sort; sites without get honest sort-only. ([scolta-php#130](https://github.com/tag1consulting/scolta-php/pull/130))
 
 ## [1.0.0-rc4] - 2026-05-18
 
