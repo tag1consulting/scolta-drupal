@@ -997,7 +997,7 @@
       for (const [dim, vals] of Object.entries(filters)) {
         if (vals instanceof Set && vals.size > 0) {
           const arr = [...vals];
-          pagefindFilters[dim] = arr.length === 1 ? arr[0] : arr;
+          pagefindFilters[dim] = arr.length === 1 ? arr[0] : { any: arr };
         }
       }
       if (Object.keys(pagefindFilters).length > 0) {
@@ -1484,9 +1484,8 @@
 
     displayedCount = 0;
 
-    if (!preserveFilters) {
-      renderFilters();
-    }
+    filterCounts = computeFilterCounts(allScoredResults);
+    renderFilters();
 
     renderResults(true);
     console.log(`[scolta:expand] ${sortOverride ? 'Native sort' : 'Merged'}: ${allScoredResults.length} results`);
@@ -1612,9 +1611,7 @@
       }
     }
 
-    if (!preserveFilters) {
-      filterCounts = computeFilterCounts(allScoredResults);
-    }
+    filterCounts = computeFilterCounts(allScoredResults);
 
     renderFilters();
     renderResults();
@@ -1713,10 +1710,16 @@
   function renderFilters() {
     const container = els.filters;
 
-    // Only show dimensions that have more than one unique value.
+    // Show dimensions that have more than one unique value, plus any
+    // dimension with an active filter (so the user can always uncheck it).
     const dims = Object.keys(filterCounts).filter(
       dim => Object.keys(filterCounts[dim]).length > 1
     );
+    for (const dim of Object.keys(activeFilters)) {
+      if (activeFilters[dim] instanceof Set && activeFilters[dim].size > 0 && !dims.includes(dim)) {
+        dims.push(dim);
+      }
+    }
 
     // Order: language first, site second, then remaining dimensions alphabetically.
     dims.sort((a, b) => {
@@ -1740,7 +1743,13 @@
         || (dim.charAt(0).toUpperCase() + dim.slice(1).replace(/_/g, ' '));
       html += `<div class="scolta-filter-group"><h3>${escapeHtml(label)}</h3>`;
       const dimFilters = activeFilters[dim] || new Set();
-      const entries = Object.entries(filterCounts[dim]).sort((a, b) => b[1] - a[1]);
+      const dimCounts = filterCounts[dim] || {};
+      const entries = Object.entries(dimCounts).sort((a, b) => b[1] - a[1]);
+      for (const val of dimFilters) {
+        if (!(val in dimCounts)) {
+          entries.push([val, 0]);
+        }
+      }
       for (const [val, count] of entries) {
         const isActive = dimFilters.has(val);
         const checked = isActive ? "checked" : "";
