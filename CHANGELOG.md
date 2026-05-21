@@ -11,6 +11,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 - **`scolta.api.php` hook documentation file** (standard Drupal practice for hook discoverability).
 
 ### Fixed
+- **Sync scolta.js from scolta-php: expansion merge scoring fix.** Cross-list results now receive an additive bonus instead of max(score) deduplication. Multi-word expansion terms are no longer word-exploded into individual search queries. JS fallback `EXPAND_PRIMARY_WEIGHT` default aligned with PHP (0.5). New `cross_list_bonus` config key (default 0.15). ([scolta-php#137](https://github.com/tag1consulting/scolta-php/pull/137))
 - **`ScoltaContentGatherer::gather()` no longer hardcodes `nid` for entity sorting.** Uses the generic entity ID key, enabling content gathering for non-node entity types (taxonomy_term, group, media, etc.).
 - **Sync scolta.js from scolta-php: facet count refresh and multi-value OR fix.** Facet sidebar counts now refresh after filter selection. Multi-value facet filters (selecting two+ values in the same dimension) now produce OR (union) results instead of silently returning zero. ([scolta-php#131](https://github.com/tag1consulting/scolta-php/pull/131), [scolta-php#132](https://github.com/tag1consulting/scolta-php/pull/132))
 
