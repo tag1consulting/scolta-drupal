@@ -342,6 +342,32 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('One <code>dimension|Description</code> per line. Listing valid values helps the AI map user queries to filter values. Example: <code>topic|Subject area or domain. Values: Science, History, Biography, Geography, Arts</code>.'),
     ];
 
+    $sortableMappingRaw = $config->get('field_mappings.sortable') ?? [];
+    $sortableMappingDisplay = '';
+    foreach ($sortableMappingRaw as $field => $dimension) {
+      $sortableMappingDisplay .= "{$field}|{$dimension}\n";
+    }
+    $form['content']['field_mapping_sortable'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Sortable field mappings'),
+      '#default_value' => trim($sortableMappingDisplay),
+      '#rows' => 4,
+      '#description' => $this->t('Auto-map entity fields to sortable dimensions during indexing. One <code>entity_field_name|dimension_name</code> per line. Example: <code>field_word_count|word_count</code>. Supports entity reference fields (resolves to label), numeric fields, and text fields. The hook <code>hook_scolta_content_item_alter()</code> can still override these values.'),
+    ];
+
+    $filterMappingRaw = $config->get('field_mappings.filters') ?? [];
+    $filterMappingDisplay = '';
+    foreach ($filterMappingRaw as $field => $dimension) {
+      $filterMappingDisplay .= "{$field}|{$dimension}\n";
+    }
+    $form['content']['field_mapping_filters'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Filter field mappings'),
+      '#default_value' => trim($filterMappingDisplay),
+      '#rows' => 4,
+      '#description' => $this->t('Auto-map entity fields to filter dimensions during indexing. One <code>entity_field_name|dimension_name</code> per line. Example: <code>field_topics|topics</code>. Entity reference fields (e.g., taxonomy terms) resolve to the referenced entity label. Multi-value references are joined with commas.'),
+    ];
+
     $form['content']['indexer'] = [
       '#type' => 'select',
       '#title' => $this->t('Indexer mode'),
@@ -972,6 +998,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
         explode(',', $form_state->getValue('filter_fields') ?? '')
       ))))
       ->set('filter_field_descriptions', $this->parseKeyValueLines($form_state->getValue('filter_field_descriptions') ?? ''))
+      ->set('field_mappings.sortable', $this->parseKeyValueLines($form_state->getValue('field_mapping_sortable') ?? ''))
+      ->set('field_mappings.filters', $this->parseKeyValueLines($form_state->getValue('field_mapping_filters') ?? ''))
       ->set('indexer', $form_state->getValue('indexer'))
       ->set('memory_budget.profile', $form_state->getValue('memory_budget_profile') ?? 'conservative')
       ->set('memory_budget.custom_bytes', NULL)

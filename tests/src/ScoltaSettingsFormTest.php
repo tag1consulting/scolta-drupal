@@ -817,4 +817,55 @@ class ScoltaSettingsFormTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // Field mapping form fields.
+  // -------------------------------------------------------------------
+
+  public function testSettingsFormContainsFieldMappingSortable(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+
+    $this->assertStringContainsString(
+      "'field_mapping_sortable'",
+      $contents,
+      'ScoltaSettingsForm must reference field_mapping_sortable'
+    );
+  }
+
+  public function testSettingsFormContainsFieldMappingFilters(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+
+    $this->assertStringContainsString(
+      "'field_mapping_filters'",
+      $contents,
+      'ScoltaSettingsForm must reference field_mapping_filters'
+    );
+  }
+
+  public function testSubmitFormPersistsFieldMappings(): void {
+    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $contents = file_get_contents($file);
+
+    $this->assertStringContainsString(
+      "->set('field_mappings.sortable'",
+      $contents,
+      "submitForm() must persist field_mappings.sortable"
+    );
+    $this->assertStringContainsString(
+      "->set('field_mappings.filters'",
+      $contents,
+      "submitForm() must persist field_mappings.filters"
+    );
+  }
+
+  public function testFieldMappingsInInstallDefaults(): void {
+    $defaults = $this->getInstallDefaults();
+    $this->assertArrayHasKey('field_mappings', $defaults, 'Install defaults must include field_mappings');
+    $this->assertArrayHasKey('sortable', $defaults['field_mappings'], 'field_mappings must have sortable key');
+    $this->assertArrayHasKey('filters', $defaults['field_mappings'], 'field_mappings must have filters key');
+    $this->assertEmpty($defaults['field_mappings']['sortable'], 'Default field_mappings.sortable must be empty');
+    $this->assertEmpty($defaults['field_mappings']['filters'], 'Default field_mappings.filters must be empty');
+  }
+
 }

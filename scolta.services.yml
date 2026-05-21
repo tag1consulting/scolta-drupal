@@ -25,4 +25,4 @@ services:
 
   scolta.content_gatherer:
     class: Drupal\scolta\Service\ScoltaContentGatherer
-    arguments: ['@entity_type.manager', '@database', '@module_handler']
+    arguments: ['@entity_type.manager', '@database', '@module_handler', '@config.factory']

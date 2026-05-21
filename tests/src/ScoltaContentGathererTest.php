@@ -235,6 +235,102 @@ class ScoltaContentGathererTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
+  // Entity-agnostic sort: must use generic entity ID key, not 'nid'.
+  // -------------------------------------------------------------------
+
+  public function testGatherUsesGenericEntityIdKey(): void {
+    $this->assertStringContainsString(
+      "->getKey('id')",
+      $this->gathererContents,
+      'gather() must resolve the entity ID key dynamically instead of hardcoding nid'
+    );
+    $this->assertStringNotContainsString(
+      "->sort('nid'",
+      $this->gathererContents,
+      'gather() must not hardcode nid — use the generic entity ID key for non-node entity types'
+    );
+  }
+
+  public function testGatherSortsByIdKey(): void {
+    $this->assertStringContainsString(
+      '->sort($idKey,',
+      $this->gathererContents,
+      'gather() must sort by the dynamically resolved entity ID key'
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // Config-driven field mapping.
+  // -------------------------------------------------------------------
+
+  public function testGathererInjectsConfigFactory(): void {
+    $this->assertStringContainsString(
+      'ConfigFactoryInterface',
+      $this->gathererContents,
+      'ScoltaContentGatherer must inject ConfigFactoryInterface for field_mappings config'
+    );
+    $servicesYml = file_get_contents(dirname(__DIR__, 2) . '/scolta.services.yml');
+    $this->assertStringContainsString(
+      '@config.factory',
+      $servicesYml,
+      'scolta.content_gatherer service must inject @config.factory'
+    );
+  }
+
+  public function testGathererReadsFieldMappingsConfig(): void {
+    $this->assertStringContainsString(
+      "->get('field_mappings')",
+      $this->gathererContents,
+      'gather() must read field_mappings from scolta.settings config'
+    );
+  }
+
+  public function testGathererHasResolveFieldValueMethod(): void {
+    $this->assertStringContainsString(
+      'private function resolveFieldValue(',
+      $this->gathererContents,
+      'ScoltaContentGatherer must have resolveFieldValue() helper for field mapping'
+    );
+  }
+
+  public function testResolveFieldValueHandlesEntityReferences(): void {
+    $this->assertStringContainsString(
+      'entity_reference',
+      $this->gathererContents,
+      'resolveFieldValue() must handle entity_reference field types'
+    );
+  }
+
+  public function testResolveFieldValueHandlesNumericFields(): void {
+    $this->assertStringContainsString(
+      "'integer', 'decimal', 'float'",
+      $this->gathererContents,
+      'resolveFieldValue() must handle numeric field types'
+    );
+  }
+
+  public function testFieldMappingsAppliedBeforeHook(): void {
+    $lines = explode("\n", $this->gathererContents);
+    $mappingLine = NULL;
+    $hookLine = NULL;
+    foreach ($lines as $i => $line) {
+      if (str_contains($line, "->get('field_mappings')")) {
+        $mappingLine = $i;
+      }
+      if (str_contains($line, "->alter('scolta_content_item'")) {
+        $hookLine = $i;
+      }
+    }
+    $this->assertNotNull($mappingLine, 'field_mappings config read must be present');
+    $this->assertNotNull($hookLine, 'hook_scolta_content_item_alter invocation must be present');
+    $this->assertLessThan(
+      $hookLine,
+      $mappingLine,
+      'Config-driven field mappings must be applied BEFORE hook_scolta_content_item_alter'
+    );
+  }
+
+  // -------------------------------------------------------------------
   // URL must be root-relative, not absolute (issue #40).
   // -------------------------------------------------------------------
 
@@ -251,6 +347,44 @@ class ScoltaContentGathererTest extends TestCase {
       '/->toUrl\(\)->toString\(\)/',
       $this->gathererContents,
       'gather() must call ->toUrl()->toString() to produce root-relative URLs for Pagefind'
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // Hook API documentation (scolta.api.php).
+  // -------------------------------------------------------------------
+
+  public function testScoltaApiPhpExists(): void {
+    $this->assertFileExists(
+      $this->moduleRoot . '/scolta.api.php',
+      'scolta.api.php must exist for hook discoverability (standard Drupal practice)'
+    );
+  }
+
+  public function testScoltaApiPhpDocumentsContentItemAlterHook(): void {
+    $contents = file_get_contents($this->moduleRoot . '/scolta.api.php');
+    $this->assertStringContainsString(
+      'function hook_scolta_content_item_alter(',
+      $contents,
+      'scolta.api.php must document hook_scolta_content_item_alter()'
+    );
+  }
+
+  public function testScoltaModuleCrossReferencesApiPhp(): void {
+    $moduleContents = file_get_contents($this->moduleRoot . '/scolta.module');
+    $this->assertStringContainsString(
+      '@see scolta.api.php',
+      $moduleContents,
+      'scolta.module must cross-reference scolta.api.php for hook documentation'
+    );
+  }
+
+  public function testHookStubNotDuplicatedInModule(): void {
+    $moduleContents = file_get_contents($this->moduleRoot . '/scolta.module');
+    $this->assertStringNotContainsString(
+      'function hook_scolta_content_item_alter(',
+      $moduleContents,
+      'hook_scolta_content_item_alter() stub must only be in scolta.api.php, not scolta.module'
     );
   }
 
