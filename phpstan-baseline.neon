@@ -205,6 +205,18 @@ parameters:
 			path: src/Service/ScoltaAiService.php
 
 		-
+			message: '#^Access to an undefined property Drupal\\Core\\Field\\FieldItemInterface\:\:\$entity\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Service/ScoltaContentGatherer.php
+
+		-
+			message: '#^Access to an undefined property Drupal\\Core\\Field\\FieldItemInterface\:\:\$value\.$#'
+			identifier: property.notFound
+			count: 2
+			path: src/Service/ScoltaContentGatherer.php
+
+		-
 			message: '#^Access to property \$processed on an unknown class Drupal\\text\\Plugin\\Field\\FieldType\\TextItemBase\.$#'
 			identifier: class.notFound
 			count: 1
