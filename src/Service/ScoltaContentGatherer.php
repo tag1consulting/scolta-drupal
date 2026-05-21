@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Drupal\scolta\Service;
 
 use Drupal\Component\Render\PlainTextOutput;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityChangedInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\text\Plugin\Field\FieldType\TextItemBase;
 use Tag1\Scolta\Export\ContentItem;
 use Tag1\Scolta\Index\CachedContentReference;
@@ -45,11 +47,14 @@ class ScoltaContentGatherer {
    *   The database connection (used for lightweight timestamp queries).
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $moduleHandler
    *   The module handler (used to invoke hook_scolta_content_item_alter).
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
+   *   The config factory (used to read field_mappings).
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly Connection $database,
     private readonly ModuleHandlerInterface $moduleHandler,
+    private readonly ConfigFactoryInterface $configFactory,
   ) {}
 
   /**
@@ -177,12 +182,14 @@ class ScoltaContentGatherer {
     $batch = 10;
     $offset = $startPage;
 
+    $idKey = $this->entityTypeManager->getDefinition($entityType)->getKey('id');
+
     while (TRUE) {
       $query = $storage->getQuery()
         ->accessCheck(FALSE)
         ->condition('status', 1)
         ->range($offset, $batch)
-        ->sort('nid', 'ASC');
+        ->sort($idKey, 'ASC');
 
       if ($bundle) {
         $bundleKey = $this->entityTypeManager->getDefinition($entityType)->getKey('bundle');
@@ -299,6 +306,35 @@ class ScoltaContentGatherer {
               language: $langcode,
             );
 
+            $fieldMappings = $this->configFactory->get('scolta.settings')->get('field_mappings') ?? [];
+            $autoSortable = $contentItem->sortable;
+            $autoFilters = $contentItem->filters;
+
+            foreach ($fieldMappings['sortable'] ?? [] as $fieldName => $dimension) {
+              if ($translation->hasField($fieldName) && !$translation->get($fieldName)->isEmpty()) {
+                $value = $this->resolveFieldValue($translation->get($fieldName));
+                if ($value !== NULL) {
+                  $autoSortable[$dimension] = $value;
+                }
+              }
+            }
+
+            foreach ($fieldMappings['filters'] ?? [] as $fieldName => $dimension) {
+              if ($translation->hasField($fieldName) && !$translation->get($fieldName)->isEmpty()) {
+                $value = $this->resolveFieldValue($translation->get($fieldName));
+                if ($value !== NULL) {
+                  $autoFilters[$dimension] = $value;
+                }
+              }
+            }
+
+            if ($autoSortable !== $contentItem->sortable || $autoFilters !== $contentItem->filters) {
+              $contentItem = $contentItem->cloneWith([
+                'sortable' => $autoSortable,
+                'filters' => $autoFilters,
+              ]);
+            }
+
             $this->moduleHandler->alter('scolta_content_item', $contentItem, $translation);
 
             if ($manifest !== NULL && !$force) {
@@ -334,6 +370,40 @@ class ScoltaContentGatherer {
       drupal_static_reset();
       gc_collect_cycles();
     }
+  }
+
+  /**
+   * Extract a scalar value from a field item list for indexing.
+   *
+   * @return string|int|float|null
+   *   The resolved value, or NULL if the field cannot be resolved.
+   */
+  private function resolveFieldValue(FieldItemListInterface $fieldItemList): string|int|float|null {
+    $fieldType = $fieldItemList->getFieldDefinition()->getType();
+
+    if (in_array($fieldType, ['entity_reference', 'entity_reference_revisions'], TRUE)) {
+      $labels = [];
+      foreach ($fieldItemList as $item) {
+        if ($item->entity) {
+          $labels[] = $item->entity->label();
+        }
+      }
+      if (empty($labels)) {
+        return NULL;
+      }
+      return count($labels) === 1 ? $labels[0] : implode(', ', $labels);
+    }
+
+    if (in_array($fieldType, ['integer', 'decimal', 'float'], TRUE)) {
+      $value = $fieldItemList->first()?->value;
+      if ($value === NULL) {
+        return NULL;
+      }
+      return $fieldType === 'integer' ? (int) $value : (float) $value;
+    }
+
+    $value = $fieldItemList->first()?->value;
+    return $value !== NULL ? (string) $value : NULL;
   }
 
 }

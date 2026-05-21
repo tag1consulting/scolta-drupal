@@ -64,6 +64,24 @@ scolta.settings:
         '*':
           type: string
           label: 'Filter field description'
+    field_mappings:
+      type: mapping
+      label: 'Automatic field-to-dimension mappings'
+      mapping:
+        sortable:
+          type: mapping
+          label: 'Sortable field mappings'
+          mapping:
+            '*':
+              type: string
+              label: 'Dimension name for this entity field'
+        filters:
+          type: mapping
+          label: 'Filter field mappings'
+          mapping:
+            '*':
+              type: string
+              label: 'Dimension name for this entity field'
     scoring:
       type: mapping
       label: 'Scoring configuration'

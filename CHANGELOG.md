@@ -6,7 +6,12 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Added
+- **Config-driven field-to-dimension auto-mapping (`field_mappings` in settings).** Sites can now map entity fields to sortable and filter dimensions via the admin UI or config YAML, eliminating the need for a custom module in most cases. `hook_scolta_content_item_alter()` remains available for complex mappings.
+- **`scolta.api.php` hook documentation file** (standard Drupal practice for hook discoverability).
+
 ### Fixed
+- **`ScoltaContentGatherer::gather()` no longer hardcodes `nid` for entity sorting.** Uses the generic entity ID key, enabling content gathering for non-node entity types (taxonomy_term, group, media, etc.).
 - **Sync scolta.js from scolta-php: facet count refresh and multi-value OR fix.** Facet sidebar counts now refresh after filter selection. Multi-value facet filters (selecting two+ values in the same dimension) now produce OR (union) results instead of silently returning zero. ([scolta-php#131](https://github.com/tag1consulting/scolta-php/pull/131), [scolta-php#132](https://github.com/tag1consulting/scolta-php/pull/132))
 
 ### Changed
