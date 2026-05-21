@@ -66,7 +66,8 @@
       AI_SUMMARIZE: s.AI_SUMMARIZE ?? true,
       AI_SUMMARY_TOP_N: s.AI_SUMMARY_TOP_N ?? 5,
       AI_SUMMARY_MAX_CHARS: s.AI_SUMMARY_MAX_CHARS ?? 2000,
-      EXPAND_PRIMARY_WEIGHT: s.EXPAND_PRIMARY_WEIGHT ?? 0.7,
+      EXPAND_PRIMARY_WEIGHT: s.EXPAND_PRIMARY_WEIGHT ?? 0.5,
+      CROSS_LIST_BONUS: s.CROSS_LIST_BONUS ?? 0.15,
       AI_MAX_FOLLOWUPS: s.AI_MAX_FOLLOWUPS ?? 3,
       AI_LANGUAGES: s.AI_LANGUAGES ?? ['en'],
       LANGUAGE: s.LANGUAGE ?? 'en',
@@ -274,7 +275,8 @@
       AI_SUMMARIZE: s.AI_SUMMARIZE ?? true,
       AI_SUMMARY_TOP_N: s.AI_SUMMARY_TOP_N ?? 5,
       AI_SUMMARY_MAX_CHARS: s.AI_SUMMARY_MAX_CHARS ?? 2000,
-      EXPAND_PRIMARY_WEIGHT: s.EXPAND_PRIMARY_WEIGHT ?? 0.7,
+      EXPAND_PRIMARY_WEIGHT: s.EXPAND_PRIMARY_WEIGHT ?? 0.5,
+      CROSS_LIST_BONUS: s.CROSS_LIST_BONUS ?? 0.15,
       AI_MAX_FOLLOWUPS: s.AI_MAX_FOLLOWUPS ?? 3,
       AI_LANGUAGES: s.AI_LANGUAGES ?? ['en'],
       AUTO_LANGUAGE_FILTER: s.AUTO_LANGUAGE_FILTER ?? false,
@@ -518,7 +520,7 @@
     }
   }
 
-  async function summarizeResults(query, results, expandedTerms = [], sortHint = null, filterHint = null) {
+  async function summarizeResults(query, results, expandedTerms = [], sortHint = null, filterHint = null, userFilters = {}) {
     const CONFIG = getInstanceConfig();
     const endpoints = getInstanceEndpoints();
     if (!CONFIG.AI_SUMMARIZE || results.length === 0) return null;
@@ -579,6 +581,18 @@
         .map(([dim, val]) => `"${dim}: ${val}"`);
       if (filterParts.length > 0) {
         contextHeader += `[Results are filtered by ${filterParts.join(', ')}]\n`;
+      }
+    }
+    if (userFilters && typeof userFilters === 'object') {
+      const userFilterParts = [];
+      for (const dim of Object.keys(userFilters)) {
+        const vals = userFilters[dim];
+        if (vals instanceof Set && vals.size > 0) {
+          userFilterParts.push(dim + ': ' + [...vals].join(', '));
+        }
+      }
+      if (userFilterParts.length > 0) {
+        contextHeader += '[User has filtered results by ' + userFilterParts.join('; ') + ']\n';
       }
     }
     if (contextHeader) {
@@ -1260,19 +1274,24 @@
       }
     }
     // JS fallback merge
+    const BONUS = getInstanceConfig().CROSS_LIST_BONUS;
     const urlMap = new Map();
     for (const r of currentResults) {
       const url = resolveUrl(r.data.url || '');
-      const prev = urlMap.get(url);
-      if (!prev || r.score > prev.score) {
-        urlMap.set(url, r);
+      if (!urlMap.has(url)) {
+        urlMap.set(url, { ...r });
+      } else {
+        const prev = urlMap.get(url);
+        prev.score = Math.max(prev.score, r.score) + BONUS;
       }
     }
     for (const r of newResults) {
       const url = resolveUrl(r.data.url || '');
-      const prev = urlMap.get(url);
-      if (!prev || r.score > prev.score) {
-        urlMap.set(url, r);
+      if (!urlMap.has(url)) {
+        urlMap.set(url, { ...r });
+      } else {
+        const prev = urlMap.get(url);
+        prev.score = Math.max(prev.score, r.score) + BONUS;
       }
     }
     return [...urlMap.values()];
@@ -1326,9 +1345,10 @@
       const scoredVsTerm = scoreResults(loaded, term, weight, originalQuery);
       const scoredVsOriginal = scoreResults(loaded, originalQuery, weight * 0.5);
 
+      const BONUS = getInstanceConfig().CROSS_LIST_BONUS;
       const best = scoredVsTerm.map((r, idx) => ({
         data: r.data,
-        score: Math.max(r.score, scoredVsOriginal[idx].score),
+        score: r.score + (scoredVsOriginal[idx].score > 0 ? Math.min(scoredVsOriginal[idx].score * 0.3, BONUS) : 0),
       }));
       results = mergeResults(results, best);
     }
@@ -1387,12 +1407,6 @@
       const termSet = new Set([searchQuery]);
       for (const term of validTerms) {
         termSet.add(term);
-        const words = extractSearchTerms(term);
-        if (words.length > 1) {
-          for (const word of words) {
-            if (word.length > 2) termSet.add(word);
-          }
-        }
       }
 
       const searches = await Promise.all(
@@ -1447,22 +1461,11 @@
       // Relevance path: existing multi-term expand-and-merge behavior.
       const queries = [];
       let weightIndex = 0;
-      const expandBase = 1.0 - CONFIG.EXPAND_PRIMARY_WEIGHT;
+      const expandBase = CONFIG.EXPAND_PRIMARY_WEIGHT;
       for (const term of validTerms) {
         const weight = Math.max(expandBase - (weightIndex * 0.05), 0.1);
         queries.push({ term, weight });
         weightIndex++;
-
-        const words = extractSearchTerms(term);
-        if (words.length > 1) {
-          for (const word of words) {
-            if (word.length > 2 && !queries.some(q => q.term === word)) {
-              const wordWeight = Math.max(expandBase - (weightIndex * 0.05), 0.1);
-              queries.push({ term: word, weight: wordWeight });
-              weightIndex++;
-            }
-          }
-        }
       }
 
       const expandedResults = await searchAndLoadParallel(queries, activeFilters, searchQuery);
@@ -1475,8 +1478,8 @@
       allScoredResults = mergeResults(
         allScoredResults,
         expandedResults,
-        CONFIG.EXPAND_PRIMARY_WEIGHT,
-        1.0 - CONFIG.EXPAND_PRIMARY_WEIGHT
+        1.0,
+        1.0
       );
       allScoredResults.sort((a, b) => b.score - a.score);
       allScoredResults = deduplicateByTitle(allScoredResults);
@@ -1661,7 +1664,7 @@
       const expandedLabel = expandedTerms
         ? expandedTerms.filter(t => t.toLowerCase() !== query.toLowerCase())
         : [];
-      summarizeResults(query, allScoredResults, expandedLabel, sortHint, filterHint);
+      summarizeResults(query, allScoredResults, expandedLabel, sortHint, filterHint, activeFilters);
     });
   }
 

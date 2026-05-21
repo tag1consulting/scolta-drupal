@@ -110,6 +110,9 @@ scolta.settings:
         expand_primary_weight:
           type: float
           label: 'Expanded term primary weight'
+        cross_list_bonus:
+          type: float
+          label: 'Cross-list agreement bonus'
         language:
           type: string
           label: 'Scoring language'

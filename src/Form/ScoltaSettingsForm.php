@@ -498,11 +498,21 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['scoring']['expand_primary_weight'] = [
       '#type' => 'number',
       '#title' => $this->t('Expanded term primary weight'),
-      '#default_value' => $config->get('scoring.expand_primary_weight') ?? 0.7,
+      '#default_value' => $config->get('scoring.expand_primary_weight') ?? 0.5,
       '#step' => 'any',
       '#min' => 0,
       '#max' => 1,
       '#description' => $this->t('Weight given to the original query vs. expanded terms (0-1).'),
+    ];
+
+    $form['scoring']['cross_list_bonus'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Cross-list agreement bonus'),
+      '#default_value' => $config->get('scoring.cross_list_bonus') ?? 0.15,
+      '#step' => 'any',
+      '#min' => 0,
+      '#max' => 1,
+      '#description' => $this->t('Additive score bonus when a result appears in both primary and expanded result sets. Set to 0 to disable.'),
     ];
 
     $form['scoring']['language'] = [
@@ -1013,6 +1023,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('scoring.recency_penalty_after_days', (int) $form_state->getValue('recency_penalty_after_days'))
       ->set('scoring.recency_max_penalty', (float) $form_state->getValue('recency_max_penalty'))
       ->set('scoring.expand_primary_weight', (float) $form_state->getValue('expand_primary_weight'))
+      ->set('scoring.cross_list_bonus', (float) $form_state->getValue('cross_list_bonus'))
       ->set('scoring.language', $form_state->getValue('language') ?? 'en')
       ->set('scoring.custom_stop_words', array_values(array_filter(array_map(
         'trim',
