@@ -54,6 +54,7 @@
       // Title/content match scoring
       TITLE_MATCH_BOOST: s.TITLE_MATCH_BOOST ?? 1.0,
       TITLE_ALL_TERMS_MULTIPLIER: s.TITLE_ALL_TERMS_MULTIPLIER ?? 1.5,
+      EXACT_TITLE_MATCH_BOOST: s.EXACT_TITLE_MATCH_BOOST ?? 5.0,
       CONTENT_MATCH_BOOST: s.CONTENT_MATCH_BOOST ?? 0.4,
 
       // Display
@@ -263,6 +264,7 @@
       RECENCY_MAX_PENALTY: s.RECENCY_MAX_PENALTY ?? 0.3,
       TITLE_MATCH_BOOST: s.TITLE_MATCH_BOOST ?? 1.0,
       TITLE_ALL_TERMS_MULTIPLIER: s.TITLE_ALL_TERMS_MULTIPLIER ?? 1.5,
+      EXACT_TITLE_MATCH_BOOST: s.EXACT_TITLE_MATCH_BOOST ?? 5.0,
       CONTENT_MATCH_BOOST: s.CONTENT_MATCH_BOOST ?? 0.4,
       PHRASE_ADJACENT_MULTIPLIER: s.PHRASE_ADJACENT_MULTIPLIER ?? 2.5,
       PHRASE_NEAR_MULTIPLIER: s.PHRASE_NEAR_MULTIPLIER ?? 1.5,
@@ -1077,6 +1079,8 @@
 
   // Score a set of loaded results against a query.
   function scoreResults(loaded, query, sourceWeight, primaryQuery) {
+    const CONFIG = getInstanceConfig();
+    let scored;
     if (scoltaWasm) {
       // WASM scoring — canonical Rust implementation
       const queryTerms = extractSearchTerms(query);
@@ -1094,9 +1098,8 @@
       });
       // WASM config keys are snake_case; getInstanceConfig() returns
       // SCREAMING_SNAKE_CASE for the platform adapter layer. Convert here.
-      const screaming = getInstanceConfig();
       const wasmConfig = {};
-      for (const [k, v] of Object.entries(screaming)) {
+      for (const [k, v] of Object.entries(CONFIG)) {
         wasmConfig[k.toLowerCase()] = v;
       }
       const input = JSON.stringify({
@@ -1107,8 +1110,8 @@
       });
       try {
         const output = scoltaWasm.score_results(input);
-        const scored = JSON.parse(output);
-        return scored.map(item => ({
+        const wasmScored = JSON.parse(output);
+        scored = wasmScored.map(item => ({
           data: loaded[item.pagefind_index] || loaded.find(d =>
             resolveUrl(d.url || '') === item.url
           ) || loaded[0],
@@ -1118,16 +1121,30 @@
         console.warn("[scolta] WASM score_results failed, using fallback:", e.message);
       }
     }
-    // JS fallback scoring
-    const count = loaded.length;
-    return loaded.map((data, i) => {
-      const pagefindScore = count > 1 ? 1 - (i / (count - 1)) : 1;
-      const recency = recencyScoreFallback(data.meta?.date);
-      const titleBoost = titleMatchScoreFallback(data.meta?.title, query);
-      const contentBoost = contentMatchScoreFallback(data.excerpt, query);
-      const finalScore = (pagefindScore + recency + titleBoost + contentBoost) * sourceWeight;
-      return { data, score: finalScore };
-    });
+    if (!scored) {
+      // JS fallback scoring
+      const count = loaded.length;
+      scored = loaded.map((data, i) => {
+        const pagefindScore = count > 1 ? 1 - (i / (count - 1)) : 1;
+        const recency = recencyScoreFallback(data.meta?.date);
+        const titleBoost = titleMatchScoreFallback(data.meta?.title, query);
+        const contentBoost = contentMatchScoreFallback(data.excerpt, query);
+        const finalScore = (pagefindScore + recency + titleBoost + contentBoost) * sourceWeight;
+        return { data, score: finalScore };
+      });
+    }
+    // Exact title match: when the result's title IS the query, apply a large
+    // multiplicative boost so it always ranks #1 regardless of BM25 scores.
+    const normalizedQuery = (primaryQuery || query).toLowerCase().trim();
+    if (normalizedQuery && CONFIG.EXACT_TITLE_MATCH_BOOST > 1.0) {
+      for (const r of scored) {
+        const title = (r.data.meta?.title || '').toLowerCase().trim();
+        if (title && title === normalizedQuery) {
+          r.score *= CONFIG.EXACT_TITLE_MATCH_BOOST;
+        }
+      }
+    }
+    return scored;
   }
 
   // Score multiple independent queries in one WASM call.

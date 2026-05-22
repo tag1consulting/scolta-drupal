@@ -7,6 +7,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Added
+- **Sync scolta.js from scolta-php: exact title match boost.** New `exact_title_match_boost` config key (default 5.0x) — when a result's title exactly matches the search query (case-insensitive), applies a large multiplicative boost so it always ranks #1 regardless of BM25 differentials. ([scolta-php#138](https://github.com/tag1consulting/scolta-php/pull/138))
+
+### Added
 - **Config-driven field-to-dimension auto-mapping (`field_mappings` in settings).** Sites can now map entity fields to sortable and filter dimensions via the admin UI or config YAML, eliminating the need for a custom module in most cases. `hook_scolta_content_item_alter()` remains available for complex mappings.
 - **`scolta.api.php` hook documentation file** (standard Drupal practice for hook discoverability).
 
