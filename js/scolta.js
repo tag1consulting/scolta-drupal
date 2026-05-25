@@ -1420,6 +1420,12 @@
           if (!mergedFilters[dim]) {
             mergedFilters[dim] = new Set([val]);
           }
+          if (!activeFilters[dim]) {
+            activeFilters[dim] = new Set([val]);
+          }
+          if (!llmAppliedFilters[dim]) {
+            llmAppliedFilters[dim] = val;
+          }
         }
       }
 
