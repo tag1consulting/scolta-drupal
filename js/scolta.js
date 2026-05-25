@@ -1173,10 +1173,12 @@
       const filters = r.data.filters || {};
       for (const [dim, val] of Object.entries(filters)) {
         if (!val) continue;
-        const v = Array.isArray(val) ? val[0] : val;
-        if (!v) continue;
-        if (!counts[dim]) counts[dim] = {};
-        counts[dim][v] = (counts[dim][v] || 0) + 1;
+        const values = Array.isArray(val) ? val : [val];
+        for (const v of values) {
+          if (!v) continue;
+          if (!counts[dim]) counts[dim] = {};
+          counts[dim][v] = (counts[dim][v] || 0) + 1;
+        }
       }
     }
     return counts;

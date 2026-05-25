@@ -6,6 +6,12 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **Sync scolta.js from scolta-php: multi-value filter array counting.** `computeFilterCounts()` now iterates all values in multi-value filter arrays instead of only counting `val[0]`. Articles tagged with multiple topics now increment each topic in the facet display.
+
+### Added
+- **Filter pipeline consistency test.** `FilterPipelineConsistencyTest` validates that filter/sort config sections stay in sync: every `filter_field_descriptions` key must be in `filter_fields`, every `field_mappings` target must exist in the corresponding field list, etc.
+
 ### Added
 - **Sync scolta.js from scolta-php: exact title match boost.** New `exact_title_match_boost` config key (default 5.0x) — when a result's title exactly matches the search query (case-insensitive), applies a large multiplicative boost so it always ranks #1 regardless of BM25 differentials. ([scolta-php#138](https://github.com/tag1consulting/scolta-php/pull/138))
 
