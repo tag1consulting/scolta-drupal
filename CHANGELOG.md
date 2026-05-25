@@ -7,6 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Fixed
+- **Sync scolta.js from scolta-php: subject filter UI state.** Subject filter matches now update `activeFilters` and `llmAppliedFilters` so sidebar checkboxes and filter badges reflect active filters. ([scolta-php#144](https://github.com/tag1consulting/scolta-php/pull/144))
 - **Sync scolta.js from scolta-php: multi-value filter array counting.** `computeFilterCounts()` now iterates all values in multi-value filter arrays instead of only counting `val[0]`. Articles tagged with multiple topics now increment each topic in the facet display.
 
 ### Added
