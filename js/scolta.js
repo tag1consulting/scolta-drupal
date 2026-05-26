@@ -1461,10 +1461,35 @@
 
       const field = sortOverride.field;
       const desc = sortOverride.direction === 'desc';
-      const withField = [...urlMap.values()].filter(data => {
+      let withField = [...urlMap.values()].filter(data => {
         const v = data.meta?.[field];
         return v !== undefined && v !== null && v !== '';
       });
+
+      const SORT_FALLBACK_THRESHOLD = 20;
+      if (withField.length > 0 && withField.length < SORT_FALLBACK_THRESHOLD) {
+        console.log('[scolta:sort] Sorted search returned only ' + withField.length + ' results with field "' + field + '", re-running unsorted for JS-side sort');
+        const unsortedSearches = await Promise.all(
+          [...termSet].map(t => pagefindSearch(t, mergedFilters, null))
+        );
+        if (version !== searchVersion) return;
+        const fallbackMap = new Map();
+        await Promise.all(unsortedSearches.map(async (search) => {
+          const toLoad = Math.min(search.results.length, CONFIG.MAX_PAGEFIND_RESULTS);
+          if (toLoad === 0) return;
+          const loaded = await Promise.all(search.results.slice(0, toLoad).map(r => r.data()));
+          for (const data of loaded) {
+            const url = resolveUrl(data.url || '');
+            if (!fallbackMap.has(url)) fallbackMap.set(url, data);
+          }
+        }));
+        if (version !== searchVersion) return;
+        withField = [...fallbackMap.values()].filter(data => {
+          const v = data.meta?.[field];
+          return v !== undefined && v !== null && v !== '';
+        });
+        console.log('[scolta:sort] Fallback unsorted search yielded ' + withField.length + ' results with field "' + field + '"');
+      }
 
       if (withField.length === 0) {
         console.log('[scolta:sort] Sort field "' + field + '" absent from all results, falling back to relevance');
