@@ -767,13 +767,12 @@
     return html;
   }
 
-  // Apply inline formatting: **bold** and [text](url) links.
-  // Links are only rendered if the URL matches allowedLinkDomains
-  // (empty list = allow all links).
   function formatInline(text) {
     const allowedDomains = getInstanceAllowedLinkDomains();
     return text
+      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, url) => {
         if (allowedDomains.length === 0) {
           return `<a href="${url}" target="_blank" rel="noopener">${linkText}</a>`;

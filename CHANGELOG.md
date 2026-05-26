@@ -7,6 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Fixed
+- **AI Overview renders `*italic*` markdown as literal asterisks.** Updated `scolta.js` copy from scolta-php to include `*italic*` → `<em>` and `***bold italic***` → `<strong><em>` rendering. ([tag1consulting/scolta-php#125](https://github.com/tag1consulting/scolta-php/issues/125))
 - **Sync scolta.js from scolta-php: sort-intent fallback.** When sorted Pagefind search returns fewer than 20 results with the requested sort field, re-runs unsorted and JS-sorts client-side. Prevents near-empty results when the index lacks sort data. ([scolta-php#146](https://github.com/tag1consulting/scolta-php/pull/146))
 - **Sync scolta.js from scolta-php: subject filter UI state.** Subject filter matches now update `activeFilters` and `llmAppliedFilters` so sidebar checkboxes and filter badges reflect active filters. ([scolta-php#144](https://github.com/tag1consulting/scolta-php/pull/144))
 - **Sync scolta.js from scolta-php: multi-value filter array counting.** `computeFilterCounts()` now iterates all values in multi-value filter arrays instead of only counting `val[0]`. Articles tagged with multiple topics now increment each topic in the facet display.
