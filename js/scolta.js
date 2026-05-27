@@ -38,6 +38,10 @@
 (function (global) {
   'use strict';
 
+  function debugLog(/* ...args */) {
+    if (global.SCOLTA_DEBUG) console.log.apply(console, arguments);
+  }
+
   // ==========================================================================
   // CONFIGURATION — read from window.scolta.scoring, with defaults matching
   // the original implementation exactly.
@@ -65,8 +69,8 @@
       // AI features
       AI_EXPAND_QUERY: s.AI_EXPAND_QUERY ?? true,
       AI_SUMMARIZE: s.AI_SUMMARIZE ?? true,
-      AI_SUMMARY_TOP_N: s.AI_SUMMARY_TOP_N ?? 5,
-      AI_SUMMARY_MAX_CHARS: s.AI_SUMMARY_MAX_CHARS ?? 2000,
+      AI_SUMMARY_TOP_N: s.AI_SUMMARY_TOP_N ?? 10,
+      AI_SUMMARY_MAX_CHARS: s.AI_SUMMARY_MAX_CHARS ?? 4000,
       EXPAND_PRIMARY_WEIGHT: s.EXPAND_PRIMARY_WEIGHT ?? 0.5,
       CROSS_LIST_BONUS: s.CROSS_LIST_BONUS ?? 0.15,
       AI_MAX_FOLLOWUPS: s.AI_MAX_FOLLOWUPS ?? 3,
@@ -275,8 +279,8 @@
       MAX_PAGEFIND_RESULTS: s.MAX_PAGEFIND_RESULTS ?? 50,
       AI_EXPAND_QUERY: s.AI_EXPAND_QUERY ?? true,
       AI_SUMMARIZE: s.AI_SUMMARIZE ?? true,
-      AI_SUMMARY_TOP_N: s.AI_SUMMARY_TOP_N ?? 5,
-      AI_SUMMARY_MAX_CHARS: s.AI_SUMMARY_MAX_CHARS ?? 2000,
+      AI_SUMMARY_TOP_N: s.AI_SUMMARY_TOP_N ?? 10,
+      AI_SUMMARY_MAX_CHARS: s.AI_SUMMARY_MAX_CHARS ?? 4000,
       EXPAND_PRIMARY_WEIGHT: s.EXPAND_PRIMARY_WEIGHT ?? 0.5,
       CROSS_LIST_BONUS: s.CROSS_LIST_BONUS ?? 0.15,
       AI_MAX_FOLLOWUPS: s.AI_MAX_FOLLOWUPS ?? 3,
@@ -387,12 +391,12 @@
 
     try {
       cachedPagefindFilters = await pagefind.filters();
-      console.log('[scolta] Pagefind filters cached:', Object.keys(cachedPagefindFilters));
+      debugLog('[scolta] Pagefind filters cached:', Object.keys(cachedPagefindFilters));
     } catch (e) {
       console.warn('[scolta] Failed to cache Pagefind filters:', e.message);
     }
 
-    console.log("[scolta] Pagefind index preloaded");
+    debugLog("[scolta] Pagefind index preloaded");
   }
 
   // Strip the pagefind base path that fullUrl() prepends to root-relative paths.
@@ -417,7 +421,7 @@
       const wasm = await import(wasmPath);
       await wasm.default(); // wasm-pack init() — loads the .wasm binary
       scoltaWasm = wasm;
-      console.log("[scolta] WASM module loaded, version:", wasm.version());
+      debugLog("[scolta] WASM module loaded, version:", wasm.version());
     } catch (e) {
       console.warn("[scolta] WASM module not available, using JS fallback scoring:", e.message);
       scoltaWasm = null;
@@ -492,14 +496,14 @@
         body: JSON.stringify({ query }),
         signal: abortController?.signal,
       });
-      console.log("[scolta:expand] status:", resp.status);
+      debugLog("[scolta:expand] status:", resp.status);
       if (!resp.ok) {
         const errText = await resp.text();
         console.warn("[scolta:expand] error response:", errText);
         return null;
       }
       const data = await resp.json();
-      console.log("[scolta:expand] response:", data);
+      debugLog("[scolta:expand] response:", data);
       if (Array.isArray(data)) {
         return { terms: data, sort_hint: null, subject_terms: null, filter_hint: null };
       }
@@ -806,7 +810,7 @@
       scored.sort((a, b) => b.score - a.score);
       const best = scored.slice(0, 5);
       const context = buildLLMContext(best);
-      console.log(`[scolta:followup] Found ${best.length} additional results for: ${searchQuery} (from ${toLoad} candidates)`);
+      debugLog(`[scolta:followup] Found ${best.length} additional results for: ${searchQuery} (from ${toLoad} candidates)`);
       return context;
     } catch (e) {
       console.warn("[scolta:followup] context search failed:", e);
@@ -859,7 +863,7 @@
 
     // Discard if a new search started while we were fetching context
     if (followUpVersion !== searchVersion) {
-      console.log('[scolta:followup] Discarding stale follow-up (version', followUpVersion, 'vs current', searchVersion, ')');
+      debugLog('[scolta:followup] Discarding stale follow-up (version', followUpVersion, 'vs current', searchVersion, ')');
       return;
     }
 
@@ -879,7 +883,7 @@
 
       // Discard if a new search started while we were waiting for the response
       if (followUpVersion !== searchVersion) {
-        console.log('[scolta:followup] Discarding stale follow-up response (version', followUpVersion, 'vs current', searchVersion, ')');
+        debugLog('[scolta:followup] Discarding stale follow-up response (version', followUpVersion, 'vs current', searchVersion, ')');
         conversationMessages.pop();
         return;
       }
@@ -1261,7 +1265,7 @@
     }
 
     if (kept.length < results.length) {
-      console.log(`[scolta:dedup] Removed ${results.length - kept.length} near-duplicate titles`);
+      debugLog(`[scolta:dedup] Removed ${results.length - kept.length} near-duplicate titles`);
     }
     return kept;
   }
@@ -1426,7 +1430,7 @@
     if (validTerms.length === 0 && !sortOverride) return;
 
     if (version !== searchVersion) {
-      console.log('[scolta:expand] Discarding stale expansion (version', version, 'vs current', searchVersion, ')');
+      debugLog('[scolta:expand] Discarding stale expansion (version', version, 'vs current', searchVersion, ')');
       return;
     }
 
@@ -1447,13 +1451,13 @@
       const hasFilterMatch = Object.keys(subjectFilters).length > 0;
 
       if (hasFilterMatch) {
-        console.log('[scolta:sort] Subject filter match:', JSON.stringify(subjectFilters));
+        debugLog('[scolta:sort] Subject filter match:', JSON.stringify(subjectFilters));
       } else if (subjectTerms && subjectTerms.length > 0) {
-        console.log('[scolta:sort] No filter match for subject terms — dropping sort, using relevance');
+        debugLog('[scolta:sort] No filter match for subject terms — dropping sort, using relevance');
         currentSortOverride = null;
         useSortPath = false;
       } else {
-        console.log('[scolta:sort] No subject terms, using sort only');
+        debugLog('[scolta:sort] No subject terms, using sort only');
       }
     }
 
@@ -1488,7 +1492,7 @@
       );
 
       if (version !== searchVersion) {
-        console.log('[scolta:expand] Discarding stale expansion after sort search (version', version, 'vs current', searchVersion, ')');
+        debugLog('[scolta:expand] Discarding stale expansion after sort search (version', version, 'vs current', searchVersion, ')');
         return;
       }
 
@@ -1504,7 +1508,7 @@
       }));
 
       if (version !== searchVersion) {
-        console.log('[scolta:expand] Discarding stale expansion after sort load (version', version, 'vs current', searchVersion, ')');
+        debugLog('[scolta:expand] Discarding stale expansion after sort load (version', version, 'vs current', searchVersion, ')');
         return;
       }
 
@@ -1517,7 +1521,7 @@
 
       const SORT_FALLBACK_THRESHOLD = 20;
       if (withField.length > 0 && withField.length < SORT_FALLBACK_THRESHOLD) {
-        console.log('[scolta:sort] Sorted search returned only ' + withField.length + ' results with field "' + field + '", re-running unsorted for JS-side sort');
+        debugLog('[scolta:sort] Sorted search returned only ' + withField.length + ' results with field "' + field + '", re-running unsorted for JS-side sort');
         const unsortedSearches = await Promise.all(
           [...termSet].map(t => pagefindSearch(t, mergedFilters, null))
         );
@@ -1537,11 +1541,11 @@
           const v = data.meta?.[field];
           return v !== undefined && v !== null && v !== '';
         });
-        console.log('[scolta:sort] Fallback unsorted search yielded ' + withField.length + ' results with field "' + field + '"');
+        debugLog('[scolta:sort] Fallback unsorted search yielded ' + withField.length + ' results with field "' + field + '"');
       }
 
       if (withField.length === 0) {
-        console.log('[scolta:sort] Sort field "' + field + '" absent from all results, falling back to relevance');
+        debugLog('[scolta:sort] Sort field "' + field + '" absent from all results, falling back to relevance');
         currentSortOverride = null;
       } else {
         withField.sort((a, b) => {
@@ -1570,7 +1574,7 @@
       const expandedResults = await searchAndLoadParallel(queries, activeFilters, searchQuery);
 
       if (version !== searchVersion) {
-        console.log('[scolta:expand] Discarding stale expansion after load (version', version, 'vs current', searchVersion, ')');
+        debugLog('[scolta:expand] Discarding stale expansion after load (version', version, 'vs current', searchVersion, ')');
         return;
       }
 
@@ -1590,7 +1594,7 @@
     renderFilters();
 
     renderResults(true);
-    console.log(`[scolta:expand] ${sortOverride ? 'Native sort' : 'Merged'}: ${allScoredResults.length} results`);
+    debugLog(`[scolta:expand] ${sortOverride ? 'Native sort' : 'Merged'}: ${allScoredResults.length} results`);
   }
 
   // --- Main search ---
@@ -1659,7 +1663,7 @@
     const isForcedPhrase =
       trimmedQuery.startsWith('"') && trimmedQuery.endsWith('"') && trimmedQuery.length > 2;
     const scorerQuery = isForcedPhrase ? trimmedQuery : searchQuery;
-    console.log('[scolta:search] Filtered query:', JSON.stringify(sanitizeQueryForLogging(searchQuery)), '(original:', JSON.stringify(sanitizeQueryForLogging(query)), ')');
+    debugLog('[scolta:search] Filtered query:', JSON.stringify(sanitizeQueryForLogging(searchQuery)), '(original:', JSON.stringify(sanitizeQueryForLogging(query)), ')');
 
     allHighlightTerms = meaningfulTerms.length > 0
       ? meaningfulTerms.filter(t => t.length > 2)
@@ -1680,7 +1684,7 @@
     // never fall back to OR — the user explicitly asked for phrase results.
     usedOrFallback = false;
     if (!isForcedPhrase && meaningfulTerms.length > 1 && primarySearch.results.length === 0) {
-      console.log('[scolta:search] AND returned 0 results — running OR fallback');
+      debugLog('[scolta:search] AND returned 0 results — running OR fallback');
       const orQueries = meaningfulTerms.map(term => ({ term, weight: 0.6 }));
       const orResults = await searchAndLoadParallel(orQueries, activeFilters, searchQuery);
       allScoredResults = mergeResults(allScoredResults, orResults);
@@ -2136,7 +2140,7 @@
 
     // Load Pagefind and Scolta WASM in parallel.
     Promise.all([initPagefind(), initScoltaWasm()]).then(() => {
-      console.log("[scolta] Ready — Pagefind + WASM loaded");
+      debugLog("[scolta] Ready — Pagefind + WASM loaded");
 
       // If URL contains ?q=<query>, auto-execute the search and restore filter state.
       try {
@@ -2165,7 +2169,7 @@
       }
     });
 
-    console.log("[scolta] Initialized");
+    debugLog("[scolta] Initialized");
   }
 
   // Initialize the instance by building the UI inside the container.

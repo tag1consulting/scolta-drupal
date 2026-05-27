@@ -113,6 +113,21 @@ scolta.settings:
         cross_list_bonus:
           type: float
           label: 'Cross-list agreement bonus'
+        exact_title_match_boost:
+          type: float
+          label: 'Exact title match boost'
+        phrase_adjacent_multiplier:
+          type: float
+          label: 'Phrase adjacent multiplier'
+        phrase_near_multiplier:
+          type: float
+          label: 'Phrase near multiplier'
+        phrase_near_window:
+          type: integer
+          label: 'Phrase near window'
+        phrase_window:
+          type: integer
+          label: 'Phrase window'
         language:
           type: string
           label: 'Scoring language'

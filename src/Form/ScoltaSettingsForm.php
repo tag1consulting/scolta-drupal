@@ -515,6 +515,49 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Additive score bonus when a result appears in both primary and expanded result sets. Set to 0 to disable.'),
     ];
 
+    $form['scoring']['exact_title_match_boost'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Exact title match boost'),
+      '#default_value' => $config->get('scoring.exact_title_match_boost') ?? 5.0,
+      '#step' => 'any',
+      '#min' => 0,
+      '#description' => $this->t('Multiplicative boost when a result title exactly matches the search query (case-insensitive). Set to 0 to disable.'),
+    ];
+
+    $form['scoring']['phrase_adjacent_multiplier'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Phrase adjacent multiplier'),
+      '#default_value' => $config->get('scoring.phrase_adjacent_multiplier') ?? 2.5,
+      '#step' => 'any',
+      '#min' => 0,
+      '#description' => $this->t('Boost multiplier when query terms appear adjacent in content.'),
+    ];
+
+    $form['scoring']['phrase_near_multiplier'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Phrase near multiplier'),
+      '#default_value' => $config->get('scoring.phrase_near_multiplier') ?? 1.5,
+      '#step' => 'any',
+      '#min' => 0,
+      '#description' => $this->t('Boost multiplier when query terms appear within the near window.'),
+    ];
+
+    $form['scoring']['phrase_near_window'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Phrase near window'),
+      '#default_value' => $config->get('scoring.phrase_near_window') ?? 5,
+      '#min' => 1,
+      '#description' => $this->t('Maximum word distance for phrase near multiplier.'),
+    ];
+
+    $form['scoring']['phrase_window'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Phrase window'),
+      '#default_value' => $config->get('scoring.phrase_window') ?? 15,
+      '#min' => 1,
+      '#description' => $this->t('Maximum word distance for phrase proximity scoring.'),
+    ];
+
     $form['scoring']['language'] = [
       '#type' => 'select',
       '#title' => $this->t('Scoring language'),
@@ -635,7 +678,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['display']['ai_summary_max_chars'] = [
       '#type' => 'number',
       '#title' => $this->t('AI summary max characters'),
-      '#default_value' => $config->get('display.ai_summary_max_chars') ?? 2000,
+      '#default_value' => $config->get('display.ai_summary_max_chars') ?? 4000,
       '#min' => 100,
       '#max' => 10000,
       '#description' => $this->t('Maximum characters of context sent to AI for summarization.'),
@@ -1037,6 +1080,11 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('scoring.recency_max_penalty', (float) $form_state->getValue('recency_max_penalty'))
       ->set('scoring.expand_primary_weight', (float) $form_state->getValue('expand_primary_weight'))
       ->set('scoring.cross_list_bonus', (float) $form_state->getValue('cross_list_bonus'))
+      ->set('scoring.exact_title_match_boost', (float) $form_state->getValue('exact_title_match_boost'))
+      ->set('scoring.phrase_adjacent_multiplier', (float) $form_state->getValue('phrase_adjacent_multiplier'))
+      ->set('scoring.phrase_near_multiplier', (float) $form_state->getValue('phrase_near_multiplier'))
+      ->set('scoring.phrase_near_window', (int) $form_state->getValue('phrase_near_window'))
+      ->set('scoring.phrase_window', (int) $form_state->getValue('phrase_window'))
       ->set('scoring.language', $form_state->getValue('language') ?? 'en')
       ->set('scoring.custom_stop_words', array_values(array_filter(array_map(
         'trim',

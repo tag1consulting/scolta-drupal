@@ -26,7 +26,7 @@ use Tag1\Scolta\AiProvider\Amazee\AmazeeTrialProvisioner;
  *  - 'verification'   OTP sent; waiting for the code.
  *  - 'region'         Signed in; waiting for region selection.
  *
- * @since 0.4.0
+ * @since 1.0.0-rc1
  * @stability experimental
  */
 class AmazeeSettingsForm extends FormBase {

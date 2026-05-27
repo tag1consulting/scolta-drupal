@@ -16,7 +16,7 @@ use Tag1\Scolta\Index\PhpIndexer;
  * Provides static callback methods for Drupal's Batch API to process
  * content items in chunks and finalize the search index.
  *
- * @since 0.2.0
+ * @since 1.0.0-rc1
  * @stability experimental
  */
 class ScoltaBatchOperations {

@@ -33,7 +33,7 @@ use Tag1\Scolta\Index\TimestampManifest;
  * with 10 changed pages this reduces rebuild time from minutes to seconds
  * because loadMultiple() is skipped for the 43,990 unchanged entities.
  *
- * @since 0.2.0
+ * @since 1.0.0-rc1
  * @stability experimental
  */
 class ScoltaContentGatherer {
@@ -71,7 +71,7 @@ class ScoltaContentGatherer {
    * @return int
    *   Total count of published entities matching the given type and bundle.
    *
-   * @since 0.3.2
+   * @since 1.0.0-rc1
    * @stability experimental
    */
   public function gatherCount(string $entityType, string $bundle): int {
@@ -108,7 +108,7 @@ class ScoltaContentGatherer {
    * @return array<int, int>
    *   Map of entity ID → changed UNIX timestamp (0 on error or missing column).
    *
-   * @since 0.3.12
+   * @since 1.0.0-rc1
    * @stability experimental
    */
   public function getEntityTimestamps(string $entityType, array $ids): array {
@@ -171,7 +171,7 @@ class ScoltaContentGatherer {
    * @return \Generator<\Tag1\Scolta\Export\ContentItem|\Tag1\Scolta\Index\CachedContentReference>
    *   Yields one ContentItem or CachedContentReference per published entity.
    *
-   * @since 0.3.2
+   * @since 1.0.0-rc1
    * @stability experimental
    */
   public function gather(string $entityType, string $bundle, string $siteName, int $startPage = 0, ?TimestampManifest $manifest = NULL, bool $force = FALSE): \Generator {

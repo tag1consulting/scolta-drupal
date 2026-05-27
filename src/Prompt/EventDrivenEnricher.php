@@ -15,7 +15,7 @@ use Tag1\Scolta\Prompt\PromptEnricherInterface;
  * system. Modules can subscribe to PromptEnrichEvent to inject site-specific
  * context into AI prompts.
  *
- * @since 0.2.0
+ * @since 1.0.0-rc1
  * @stability experimental
  */
 class EventDrivenEnricher implements PromptEnricherInterface {

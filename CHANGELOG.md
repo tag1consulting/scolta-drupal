@@ -8,6 +8,10 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ### Added
 - **Pass `filterFieldDescriptions` to JS frontend via drupalSettings.** Enables subcategory matching in `matchSubjectToFilters()` — "physics" can now match the "Science" filter via description parsing.
+- **Filter pipeline consistency test.** `FilterPipelineConsistencyTest` validates that filter/sort config sections stay in sync: every `filter_field_descriptions` key must be in `filter_fields`, every `field_mappings` target must exist in the corresponding field list, etc.
+- **Sync scolta.js from scolta-php: exact title match boost.** New `exact_title_match_boost` config key (default 5.0x) — when a result's title exactly matches the search query (case-insensitive), applies a large multiplicative boost so it always ranks #1 regardless of BM25 differentials. ([scolta-php#138](https://github.com/tag1consulting/scolta-php/pull/138))
+- **Config-driven field-to-dimension auto-mapping (`field_mappings` in settings).** Sites can now map entity fields to sortable and filter dimensions via the admin UI or config YAML, eliminating the need for a custom module in most cases. `hook_scolta_content_item_alter()` remains available for complex mappings.
+- **`scolta.api.php` hook documentation file** (standard Drupal practice for hook discoverability).
 
 ### Fixed
 - **Sync scolta.js from scolta-php: filter exact-match-first and filter_hint canonicalization.** Two-pass matching prevents substring overlap (e.g., "Apollo 1" selected over "Apollo 11"). filter_hint values now canonicalized against cached Pagefind filters. ([scolta-php#149](https://github.com/tag1consulting/scolta-php/pull/149))
@@ -17,18 +21,6 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 - **Sync scolta.js from scolta-php: subject filter UI state.** Subject filter matches now update `activeFilters` and `llmAppliedFilters` so sidebar checkboxes and filter badges reflect active filters. ([scolta-php#144](https://github.com/tag1consulting/scolta-php/pull/144))
 - **Sync scolta.js from scolta-php: sort-without-filter fallback + subcategory matching.** Sort-only queries with unmatched subject terms now fall through to relevance ranking instead of sorting the entire unfiltered corpus. New Pass 2 in `matchSubjectToFilters()` uses `filterFieldDescriptions` to match subcategory terms to parent filter values. Filter prompt strengthened to encourage filter hints.
 - **Sync scolta.js from scolta-php: multi-value filter array counting.** `computeFilterCounts()` now iterates all values in multi-value filter arrays instead of only counting `val[0]`. Articles tagged with multiple topics now increment each topic in the facet display.
-
-### Added
-- **Filter pipeline consistency test.** `FilterPipelineConsistencyTest` validates that filter/sort config sections stay in sync: every `filter_field_descriptions` key must be in `filter_fields`, every `field_mappings` target must exist in the corresponding field list, etc.
-
-### Added
-- **Sync scolta.js from scolta-php: exact title match boost.** New `exact_title_match_boost` config key (default 5.0x) — when a result's title exactly matches the search query (case-insensitive), applies a large multiplicative boost so it always ranks #1 regardless of BM25 differentials. ([scolta-php#138](https://github.com/tag1consulting/scolta-php/pull/138))
-
-### Added
-- **Config-driven field-to-dimension auto-mapping (`field_mappings` in settings).** Sites can now map entity fields to sortable and filter dimensions via the admin UI or config YAML, eliminating the need for a custom module in most cases. `hook_scolta_content_item_alter()` remains available for complex mappings.
-- **`scolta.api.php` hook documentation file** (standard Drupal practice for hook discoverability).
-
-### Fixed
 - **Sync scolta.js from scolta-php: expansion merge scoring fix.** Cross-list results now receive an additive bonus instead of max(score) deduplication. Multi-word expansion terms are no longer word-exploded into individual search queries. JS fallback `EXPAND_PRIMARY_WEIGHT` default aligned with PHP (0.5). New `cross_list_bonus` config key (default 0.15). ([scolta-php#137](https://github.com/tag1consulting/scolta-php/pull/137))
 - **`ScoltaContentGatherer::gather()` no longer hardcodes `nid` for entity sorting.** Uses the generic entity ID key, enabling content gathering for non-node entity types (taxonomy_term, group, media, etc.).
 - **Sync scolta.js from scolta-php: facet count refresh and multi-value OR fix.** Facet sidebar counts now refresh after filter selection. Multi-value facet filters (selecting two+ values in the same dimension) now produce OR (union) results instead of silently returning zero. ([scolta-php#131](https://github.com/tag1consulting/scolta-php/pull/131), [scolta-php#132](https://github.com/tag1consulting/scolta-php/pull/132))
@@ -380,3 +372,25 @@ Coordinated release. Ports the streaming gather and CLI wiring pattern from scol
 - Config schema and install defaults in `config/schema/` and `config/install/`
 - Symlinked shared assets from scolta-php (`scolta.js`, `scolta.css`)
 - Drupal behavior bridge (`scolta-drupal-bridge.js`) for Drupal.behaviors integration
+
+[Unreleased]: https://github.com/tag1consulting/scolta-drupal/compare/1.0.0-rc4...HEAD
+[1.0.0-rc4]: https://github.com/tag1consulting/scolta-drupal/compare/1.0.0-rc3...1.0.0-rc4
+[1.0.0-rc3]: https://github.com/tag1consulting/scolta-drupal/compare/1.0.0-rc2...1.0.0-rc3
+[1.0.0-rc2]: https://github.com/tag1consulting/scolta-drupal/compare/1.0.0-rc1...1.0.0-rc2
+[1.0.0-rc1]: https://github.com/tag1consulting/scolta-drupal/compare/0.3.10...1.0.0-rc1
+[0.3.10]: https://github.com/tag1consulting/scolta-drupal/compare/0.3.9...0.3.10
+[0.3.9]: https://github.com/tag1consulting/scolta-drupal/compare/0.3.8...0.3.9
+[0.3.8]: https://github.com/tag1consulting/scolta-drupal/compare/0.3.7...0.3.8
+[0.3.7]: https://github.com/tag1consulting/scolta-drupal/compare/0.3.6...0.3.7
+[0.3.6]: https://github.com/tag1consulting/scolta-drupal/compare/0.3.5...0.3.6
+[0.3.5]: https://github.com/tag1consulting/scolta-drupal/compare/0.3.4...0.3.5
+[0.3.4]: https://github.com/tag1consulting/scolta-drupal/compare/0.3.3...0.3.4
+[0.3.3]: https://github.com/tag1consulting/scolta-drupal/compare/0.3.2...0.3.3
+[0.3.2]: https://github.com/tag1consulting/scolta-drupal/compare/0.3.1...0.3.2
+[0.3.1]: https://github.com/tag1consulting/scolta-drupal/compare/0.3.0...0.3.1
+[0.3.0]: https://github.com/tag1consulting/scolta-drupal/compare/0.2.4...0.3.0
+[0.2.4]: https://github.com/tag1consulting/scolta-drupal/compare/0.2.3...0.2.4
+[0.2.3]: https://github.com/tag1consulting/scolta-drupal/compare/0.2.2...0.2.3
+[0.2.2]: https://github.com/tag1consulting/scolta-drupal/compare/0.2.1...0.2.2
+[0.2.1]: https://github.com/tag1consulting/scolta-drupal/compare/0.2.0...0.2.1
+[0.2.0]: https://github.com/tag1consulting/scolta-drupal/releases/tag/0.2.0

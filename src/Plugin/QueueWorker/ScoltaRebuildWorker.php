@@ -24,7 +24,7 @@ use Tag1\Scolta\Index\PhpIndexer;
  *   cron = {"time" = 120}
  * )
  *
- * @since 0.2.0
+ * @since 1.0.0-rc1
  * @stability experimental
  */
 class ScoltaRebuildWorker extends QueueWorkerBase {

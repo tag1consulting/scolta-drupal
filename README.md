@@ -1,8 +1,22 @@
 # Scolta AI Search for Drupal
 
+[![CI](https://github.com/tag1consulting/scolta-drupal/actions/workflows/ci.yml/badge.svg)](https://github.com/tag1consulting/scolta-drupal/actions/workflows/ci.yml)
+
 AI-powered search for Drupal — semantic relevance scoring, AI summaries, and natural language query expansion on top of Drupal's Search API.
 
-Built and maintained by [Tag1 Consulting](https://tag1.com/) — technology leadership since 2007. [Tag1 offers AI strategy, architecture, and implementation consulting](https://tag1.com/services/ai/) for organizations evaluating or deploying AI-powered products.
+Built and maintained by [Tag1 Consulting](https://tag1.com/) — technology leadership since 2007. [Tag1 offers AI strategy, architecture, and implementation consulting](https://tag1.com/services/) for organizations evaluating or deploying AI-powered products.
+
+## Status
+
+Scolta 1.0 — the API documented here is stable. Breaking changes follow semantic versioning: no removal or signature change without a major version bump and a deprecation cycle. File bugs at the [issue tracker](https://github.com/tag1consulting/scolta-drupal/issues).
+
+## What Is Scolta?
+
+Scolta is a scoring, ranking, and AI layer built on [Pagefind](https://pagefind.app/). Pagefind is the search engine: it builds a static inverted index at publish time, runs a browser-side WASM search engine, produces word-position data, and generates highlighted excerpts. Scolta takes Pagefind's result set and re-ranks it with configurable boosts — title match weight, content match weight, recency decay curves, and phrase-proximity multipliers. No search server required. Queries resolve in the visitor's browser against the pre-built static index.
+
+This Drupal module is one of three CMS adapters (alongside [scolta-wp](https://github.com/tag1consulting/scolta-wp) and [scolta-laravel](https://github.com/tag1consulting/scolta-laravel)). It integrates with Drupal's Search API, provides Drush commands, an admin settings form, a search block, and API endpoints for AI query expansion and summarization.
+
+The LLM tier — query expansion, result summarization, follow-up questions — is optional. When enabled, it sends the query text and selected result excerpts to a configured LLM provider. The base search tier shares nothing with any third party; it runs entirely in the visitor's browser.
 
 ## Requirements
 
@@ -15,22 +29,41 @@ Built and maintained by [Tag1 Consulting](https://tag1.com/) — technology lead
 ```bash
 composer require tag1/scolta-drupal
 drush en scolta
+```
+
+### Search API setup
+
+Scolta uses Drupal's Search API as its indexing framework. After enabling the module:
+
+1. Go to *Administration > Configuration > Search and Metadata > Search API* (`/admin/config/search/search-api`)
+2. Add a new **Server** and select **Scolta Pagefind** as the backend
+3. Add a new **Index**, select the content types you want to search, and assign it to the Scolta server
+4. Build the search index:
+
+```bash
 drush scolta:build
 ```
+
+5. Place the **Scolta Search** block on your site via *Structure > Block Layout*
 
 ## Drush Commands
 
 | Command | Description |
 |---|---|
-| `drush scolta:build` | Build the search index (export + pagefind) |
+| `drush scolta:export` (`se`) | Export content as HTML files for Pagefind indexing |
+| `drush scolta:build` (`sb`) | Build the search index (export + index + deploy) |
 | `drush scolta:build --force` | Force rebuild even if content has not changed |
 | `drush scolta:build --resume` | Resume a previously interrupted build |
 | `drush scolta:build --restart` | Discard interrupted state and start fresh |
+| `drush scolta:build --indexer=php` | Use a specific indexer mode (`php`, `binary`, or `auto`) |
+| `drush scolta:build --memory-budget=256M` | Set memory budget (profile name or byte value) |
 | `drush scolta:build --chunk-size=N` | Process N pages per chunk (overrides config) |
-| `drush scolta:finalize` | Merge chunks into the final search index |
-| `drush scolta:status` | Show current index status |
-| `drush scolta:cleanup` | Remove stale temporary index files |
-| `drush scolta:discover` | Discover indexable content types |
+| `drush scolta:finalize` (`sf`) | Merge chunks into the final search index |
+| `drush scolta:rebuild-index` (`sri`) | Rebuild index from existing exported HTML files |
+| `drush scolta:clear-cache` (`scc`) | Clear expansion and summary caches |
+| `drush scolta:check-setup` (`scs`) | Verify dependencies and configuration |
+| `drush scolta:status` (`sst`) | Show current index, indexer, and AI provider status |
+| `drush scolta:download-pagefind` (`sdp`) | Download the Pagefind binary for the current platform |
 
 ## Large Corpora and Shared Hosting
 
@@ -115,9 +148,9 @@ composer require drupal/ai_provider_anthropic
 drush en ai_provider_anthropic
 ```
 
-Configure the provider at *Administration → Configuration → AI → AI Providers*, using a Key entity for secure API key storage.
+Configure the provider at *Administration > Configuration > AI > AI Providers*, using a Key entity for secure API key storage.
 
-Finally, select **Drupal AI module** in Scolta settings at *Administration → Configuration → Search and Metadata → Scolta AI Search → AI Configuration → AI Provider*.
+Finally, select **Drupal AI module** in Scolta settings at *Administration > Configuration > Search and Metadata > Scolta AI Search > AI Configuration > AI Provider*.
 
 Scolta will use the Drupal AI module's configured default provider and model. The model, API key, expansion model, and base URL fields in Scolta's settings are hidden when this provider is selected — the Drupal AI module manages all of these.
 
@@ -153,11 +186,11 @@ If you have previously run `drush search-api:index`, that is not sufficient — 
 
 Scolta defines a **Use Scolta AI features** permission (`use scolta ai`) that gates the AI API endpoints. This permission is granted to the **anonymous** and **authenticated** roles automatically at module install, so search visitors receive AI overviews out of the box with no admin action required.
 
-To restrict AI features to specific roles (e.g. authenticated users only), revoke the permission from the anonymous role at *Administration → People → Permissions*.
+To restrict AI features to specific roles (e.g. authenticated users only), revoke the permission from the anonymous role at *Administration > People > Permissions*.
 
 ### Configuration
 
-Visit *Administration → Configuration → Search and Metadata → Scolta AI Search* to configure the AI provider, API key, model, and indexing options.
+Visit *Administration > Configuration > Search and Metadata > Scolta AI Search* to configure the AI provider, API key, model, and indexing options.
 
 #### Drush config:set and config path precedence
 
@@ -229,7 +262,7 @@ See [CHANGELOG.md](CHANGELOG.md) for a full list of changes.
 
 Scolta is designed, built, and maintained by [Tag1 Consulting](https://tag1.com/). Tag1 has been delivering technology leadership since 2007 and is one of the leading open-source consulting firms in the world.
 
-Tag1 offers [AI strategy, architecture, and implementation consulting](https://tag1.com/services/ai/) — from evaluating whether AI search is right for your organization, to production deployment and ongoing tuning. If you need help integrating Scolta, customizing scoring for your content model, or connecting it to your AI provider of choice, [get in touch](https://tag1.com/contact/).
+Tag1 offers [AI strategy, architecture, and implementation consulting](https://tag1.com/services/) — from evaluating whether AI search is right for your organization, to production deployment and ongoing tuning. If you need help integrating Scolta, customizing scoring for your content model, or connecting it to your AI provider of choice, [get in touch](https://tag1.com/contact/).
 
 ## License
 

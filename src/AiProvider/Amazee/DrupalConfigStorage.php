@@ -15,7 +15,7 @@ use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
  * are secrets that must not be exported to config sync or version control.
  * The token is encrypted with AES-256-CBC using a key derived from hash_salt.
  *
- * @since 0.4.0
+ * @since 1.0.0-rc1
  * @stability experimental
  */
 final class DrupalConfigStorage implements ConfigStorageInterface {
