@@ -238,6 +238,83 @@ class ScoltaBackendConfigTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
+  // private:// fallback to public://
+  // -------------------------------------------------------------------
+
+  public function testGetResolvedBuildDirFallsBackToPublicWhenPrivateUnavailable(): void {
+    preg_match(
+      '/protected function getResolvedBuildDir\(\): string \{(.*?)protected function/s',
+      $this->backendContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      "str_starts_with(\$dir, 'private://')",
+      $body,
+      'getResolvedBuildDir() must check for private:// scheme to trigger fallback'
+    );
+    $this->assertStringContainsString(
+      'resolvePublicFallbackDir',
+      $body,
+      'getResolvedBuildDir() must call resolvePublicFallbackDir() for the public:// fallback'
+    );
+  }
+
+  public function testResolvePublicFallbackDirExists(): void {
+    $this->assertStringContainsString(
+      'function resolvePublicFallbackDir',
+      $this->backendContents,
+      'ScoltaBackend must have a resolvePublicFallbackDir() method'
+    );
+  }
+
+  public function testResolvePublicFallbackDirUsesPublicBaseNotSubpath(): void {
+    preg_match(
+      '/protected function resolvePublicFallbackDir\(.*?\{(.*?)\}/s',
+      $this->backendContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      "getViaUri('public://')",
+      $body,
+      'resolvePublicFallbackDir() must resolve the public:// base path, not a sub-path'
+    );
+  }
+
+  public function testDefaultConfigurationUsesPublicBuildDir(): void {
+    preg_match(
+      '/public function defaultConfiguration\(\): array \{(.*?)\}/s',
+      $this->backendContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      "'build_dir' => 'public://scolta-build'",
+      $body,
+      'defaultConfiguration() must default build_dir to public://scolta-build'
+    );
+  }
+
+  public function testGetResolvedBuildDirLogsNoticeOnFallback(): void {
+    preg_match(
+      '/protected function getResolvedBuildDir\(\): string \{(.*?)protected function/s',
+      $this->backendContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      'Private file system not configured',
+      $body,
+      'getResolvedBuildDir() must log a notice when falling back from private:// to public://'
+    );
+  }
+
+  // -------------------------------------------------------------------
   // indexer mode — form, validation, submit, runtime
   // -------------------------------------------------------------------
 

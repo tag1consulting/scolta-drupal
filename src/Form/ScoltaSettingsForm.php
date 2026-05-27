@@ -797,6 +797,19 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $items[] = $this->t('Pagefind binary: Not available. Run drush scolta:download-pagefind or install via npm.');
     }
 
+    // Build directory status.
+    $buildDirConfig = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
+    $resolvedBuildDir = $this->resolveStateDir($config);
+    if ($resolvedBuildDir !== $buildDirConfig) {
+      $items[] = $this->t('Build directory: @configured (resolved to @resolved)', [
+        '@configured' => $buildDirConfig,
+        '@resolved' => $resolvedBuildDir,
+      ]);
+    }
+    else {
+      $items[] = $this->t('Build directory: @path', ['@path' => $resolvedBuildDir]);
+    }
+
     // Pagefind index status.
     $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
     if (str_contains($outputDir, '://')) {
@@ -1211,16 +1224,33 @@ class ScoltaSettingsForm extends ConfigFormBase {
    *   The resolved state directory path.
    */
   protected function resolveStateDir($config): string {
-    $stateDir = $config->get('pagefind.build_dir') ?? 'private://scolta-build';
+    $stateDir = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
     if (str_contains($stateDir, '://')) {
       try {
-        $resolved = $this->streamWrapperManager
-          ->getViaUri($stateDir)->realpath() ?: $stateDir;
-        return $resolved;
+        $wrapper = $this->streamWrapperManager->getViaUri($stateDir);
+        $resolved = ($wrapper && ($realpath = $wrapper->realpath()) !== FALSE) ? $realpath : NULL;
+        if ($resolved !== NULL) {
+          return $resolved;
+        }
       }
       catch (\Exception $e) {
-        return $stateDir;
+        // Fall through to fallback.
       }
+
+      // When private:// is unavailable, fall back to public://scolta-build.
+      if (str_starts_with($stateDir, 'private://')) {
+        try {
+          $publicWrapper = $this->streamWrapperManager->getViaUri('public://');
+          if ($publicWrapper && ($publicBase = $publicWrapper->realpath()) !== FALSE) {
+            return $publicBase . '/scolta-build';
+          }
+        }
+        catch (\Exception $e) {
+          // Fall through to original URI.
+        }
+      }
+
+      return $stateDir;
     }
     return $stateDir;
   }

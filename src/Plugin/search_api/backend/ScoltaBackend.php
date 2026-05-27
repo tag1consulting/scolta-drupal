@@ -82,7 +82,7 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
    */
   public function defaultConfiguration(): array {
     return [
-      'build_dir' => 'private://scolta-build',
+      'build_dir' => 'public://scolta-build',
       'output_dir' => 'public://scolta-pagefind',
       'pagefind_binary' => 'pagefind',
       'auto_rebuild' => TRUE,
@@ -346,15 +346,30 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
       // When private:// is unavailable, fall back to public://scolta-build.
       if ($resolved === $dir && str_starts_with($dir, 'private://')) {
         $this->scoltaLogger->notice('Private file system not configured; using public://scolta-build for index storage.');
-        $publicWrapper = $this->streamWrapperManager->getViaUri('public://scolta-build');
-        if ($publicWrapper && ($publicRealpath = $publicWrapper->realpath()) !== FALSE) {
-          return $publicRealpath;
+        $fallback = $this->resolvePublicFallbackDir('scolta-build');
+        if ($fallback !== NULL) {
+          return $fallback;
         }
       }
 
       return $resolved;
     }
     return $dir;
+  }
+
+  /**
+   * Resolve a public:// subdirectory path even when it does not yet exist.
+   */
+  protected function resolvePublicFallbackDir(string $subdir): ?string {
+    $publicWrapper = $this->streamWrapperManager->getViaUri('public://');
+    if (!$publicWrapper) {
+      return NULL;
+    }
+    $basePath = $publicWrapper->realpath();
+    if ($basePath === FALSE) {
+      return NULL;
+    }
+    return $basePath . '/' . $subdir;
   }
 
   /**
