@@ -1032,7 +1032,9 @@
 
     const keywords = new Set();
     for (const term of subjectTerms) {
-      for (const word of term.toLowerCase().split(/\s+/)) {
+      const lower = term.toLowerCase().trim();
+      if (lower.length > 2) keywords.add(lower);
+      for (const word of lower.split(/\s+/)) {
         if (word.length > 2) keywords.add(word);
       }
     }
@@ -1041,13 +1043,11 @@
     for (const [dimension, values] of Object.entries(availableFilters)) {
       if (SKIP_FILTER_DIMENSIONS.has(dimension.toLowerCase())) continue;
 
-      // Pass 1: direct substring matching against filter value names.
+      // Pass 1: exact match — prefer precise hits over substring overlap.
       for (const filterValue of Object.keys(values)) {
         const lowerValue = filterValue.toLowerCase();
         for (const keyword of keywords) {
-          if (lowerValue === keyword
-              || (lowerValue.length > 2 && keyword.includes(lowerValue))
-              || (keyword.length > 2 && lowerValue.includes(keyword))) {
+          if (lowerValue === keyword) {
             matched[dimension] = filterValue;
             break;
           }
@@ -1055,7 +1055,22 @@
         if (matched[dimension]) break;
       }
 
-      // Pass 2: subcategory matching via filter descriptions.
+      // Pass 2: substring fallback — only if no exact match was found.
+      if (!matched[dimension]) {
+        for (const filterValue of Object.keys(values)) {
+          const lowerValue = filterValue.toLowerCase();
+          for (const keyword of keywords) {
+            if ((lowerValue.length > 2 && keyword.includes(lowerValue))
+                || (keyword.length > 2 && lowerValue.includes(keyword))) {
+              matched[dimension] = filterValue;
+              break;
+            }
+          }
+          if (matched[dimension]) break;
+        }
+      }
+
+      // Pass 3: subcategory matching via filter descriptions.
       // Descriptions like "Science (physics, chemistry, biology)" let us
       // match "physics" → "Science" even though "physics" isn't a filter value.
       if (!matched[dimension] && filterDescriptions) {
@@ -1722,11 +1737,20 @@
         if (filterHint) {
           for (const [dim, val] of Object.entries(filterHint)) {
             if (typeof dim === 'string' && dim && typeof val === 'string' && val) {
-              llmAppliedFilters[dim] = val;
+              let canonicalVal = val;
+              if (cachedPagefindFilters && cachedPagefindFilters[dim]) {
+                const knownValues = Object.keys(cachedPagefindFilters[dim]);
+                if (!knownValues.includes(val)) {
+                  const lowerVal = val.toLowerCase();
+                  const ciMatch = knownValues.find(v => v.toLowerCase() === lowerVal);
+                  if (ciMatch) canonicalVal = ciMatch;
+                }
+              }
+              llmAppliedFilters[dim] = canonicalVal;
               if (!activeFilters[dim]) {
                 activeFilters[dim] = new Set();
               }
-              activeFilters[dim].add(val);
+              activeFilters[dim].add(canonicalVal);
             }
           }
         }
