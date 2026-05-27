@@ -6,6 +6,10 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [1.0.0] - 2026-05-27
+
 ### Added
 - **Pass `filterFieldDescriptions` to JS frontend via drupalSettings.** Enables subcategory matching in `matchSubjectToFilters()` — "physics" can now match the "Science" filter via description parsing.
 - **Filter pipeline consistency test.** `FilterPipelineConsistencyTest` validates that filter/sort config sections stay in sync: every `filter_field_descriptions` key must be in `filter_fields`, every `field_mappings` target must exist in the corresponding field list, etc.
