@@ -13,7 +13,7 @@ use Symfony\Contracts\EventDispatcher\Event;
  * For example, a subscriber could append product catalog information,
  * compliance rules, or tenant-specific instructions.
  *
- * @since 0.2.0
+ * @since 1.0.0-rc1
  * @stability experimental
  */
 class PromptEnrichEvent extends Event {

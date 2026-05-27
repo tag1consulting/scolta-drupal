@@ -213,4 +213,11 @@ function scolta_uninstall() {
 
   // Clean up state entries.
   \Drupal::state()->delete('scolta.rebuild_requested_at');
+  \Drupal::state()->delete('scolta.generation');
+  \Drupal::state()->delete('scolta.rebuild_notice');
+  \Drupal::state()->delete('scolta.amazee.credentials');
+  \Drupal::state()->delete('scolta.amazee.budget_notice_time');
+
+  // Clean up per-user data (e.g. dismissed rebuild notices).
+  \Drupal::service('user.data')->delete('scolta');
 }

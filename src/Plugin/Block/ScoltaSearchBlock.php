@@ -78,7 +78,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     $indexExists = file_exists($resolvedDir . '/pagefind/pagefind-entry.json');
 
     if (!$indexExists) {
-      if (\Drupal::currentUser()->hasPermission('administer site configuration')) {
+      if (\Drupal::currentUser()->hasPermission('administer scolta')) {
         return [
           '#markup' => '<div class="messages messages--warning">'
             . '<p><strong>Scolta:</strong> Search index has not been built yet.</p>'

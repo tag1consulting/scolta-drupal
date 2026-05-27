@@ -10,7 +10,7 @@ use Tag1\Scolta\Cache\CacheDriverInterface;
 /**
  * Drupal cache backend adapter for AiEndpointHandler.
  *
- * @since 0.2.0
+ * @since 1.0.0-rc1
  * @stability experimental
  */
 class DrupalCacheDriver implements CacheDriverInterface {

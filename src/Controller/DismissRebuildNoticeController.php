@@ -17,7 +17,7 @@ use Symfony\Component\HttpFoundation\Request;
  * page loads. Other admins continue to see the notice until they
  * dismiss it themselves.
  *
- * @since 0.2.4
+ * @since 1.0.0-rc1
  * @stability experimental
  */
 class DismissRebuildNoticeController extends ControllerBase {

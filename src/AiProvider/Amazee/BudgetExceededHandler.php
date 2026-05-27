@@ -15,7 +15,7 @@ use Tag1\Scolta\AiProvider\Amazee\AmazeeBudgetExceededException;
  * Rate-limited to once per 24 hours via State so noisy search traffic
  * does not spam every admin page load with the same notice.
  *
- * @since 0.4.0
+ * @since 1.0.0-rc1
  * @stability experimental
  */
 final class BudgetExceededHandler {

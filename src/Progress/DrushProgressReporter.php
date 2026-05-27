@@ -15,7 +15,7 @@ use Tag1\Scolta\Index\ProgressReporterInterface;
  * Symfony ProgressBar here. This gives operators live chunk-by-chunk feedback
  * during long builds instead of a silent 50-minute wait.
  *
- * @since 0.3.2
+ * @since 1.0.0-rc1
  * @stability experimental
  */
 class DrushProgressReporter implements ProgressReporterInterface {

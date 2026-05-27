@@ -27,6 +27,11 @@ scoring:
   recency_max_penalty: 0.3
   expand_primary_weight: 0.5
   cross_list_bonus: 0.15
+  exact_title_match_boost: 5.0
+  phrase_adjacent_multiplier: 2.5
+  phrase_near_multiplier: 1.5
+  phrase_near_window: 5
+  phrase_window: 15
   language: 'en'
   custom_stop_words: []
   recency_strategy: 'exponential'
