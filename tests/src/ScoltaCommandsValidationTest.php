@@ -313,6 +313,85 @@ class ScoltaCommandsValidationTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
+  // Private file path fallback.
+  // -------------------------------------------------------------------
+
+  public function testResolveBuildDirMethodExists(): void {
+    $this->assertStringContainsString(
+      'function resolveBuildDir(',
+      $this->commandsContents,
+      'ScoltaCommands must have a resolveBuildDir() method for private:// fallback'
+    );
+  }
+
+  public function testResolveBuildDirFallsBackToPublic(): void {
+    preg_match(
+      '/function resolveBuildDir\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s',
+      $this->commandsContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      "str_starts_with(\$uri, 'private://')",
+      $body,
+      'resolveBuildDir() must check for private:// scheme'
+    );
+    $this->assertStringContainsString(
+      'scolta-build',
+      $body,
+      'resolveBuildDir() must fall back to public://scolta-build'
+    );
+  }
+
+  public function testResolveBuildDirLogsNotice(): void {
+    preg_match(
+      '/function resolveBuildDir\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s',
+      $this->commandsContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      'Private file system not configured',
+      $body,
+      'resolveBuildDir() must log a notice when falling back from private:// to public://'
+    );
+  }
+
+  public function testBuildWithPhpIndexerUsesResolveBuildDir(): void {
+    preg_match(
+      '/function buildWithPhpIndexer\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s',
+      $this->commandsContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      'resolveBuildDir(',
+      $body,
+      'buildWithPhpIndexer() must use resolveBuildDir() for the state directory'
+    );
+  }
+
+  public function testStatusCommandShowsBuildDirectory(): void {
+    $this->assertStringContainsString(
+      '--- Build Directory ---',
+      $this->commandsContents,
+      'status command must show a Build Directory section'
+    );
+  }
+
+  public function testDefaultBuildDirIsPublic(): void {
+    $install = file_get_contents($this->moduleRoot . '/config/install/scolta.settings.yml');
+    $this->assertStringContainsString(
+      "build_dir: 'public://scolta-build'",
+      $install,
+      'Default install config must use public://scolta-build as build_dir'
+    );
+  }
+
+  // -------------------------------------------------------------------
   // Auto indexer always uses PHP (no binary check).
   // -------------------------------------------------------------------
 

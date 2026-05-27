@@ -251,8 +251,8 @@ class ScoltaCommands extends DrushCommands {
     $resolvedOutputDir = $this->resolvePath(
       $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind'
     );
-    $resolvedStateDir = $this->resolvePath(
-      $config->get('pagefind.build_dir') ?? 'private://scolta-build'
+    $resolvedStateDir = $this->resolveBuildDir(
+      $config->get('pagefind.build_dir') ?? 'public://scolta-build'
     );
 
     if (!is_dir($resolvedStateDir) && !$this->fileSystem->mkdir($resolvedStateDir, 0755, TRUE)) {
@@ -460,6 +460,24 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
+   * Resolve the build directory with private:// fallback.
+   *
+   * Falls back to public://scolta-build when the configured directory uses
+   * private:// and the private file system is not configured on this site.
+   */
+  private function resolveBuildDir(string $uri): string {
+    $resolved = $this->resolvePath($uri);
+    if ($resolved === $uri && str_starts_with($uri, 'private://')) {
+      $this->logger()->notice('Private file system not configured; using public://scolta-build for index storage.');
+      $publicBase = $this->resolvePath('public://');
+      if ($publicBase !== 'public://') {
+        return $publicBase . '/scolta-build';
+      }
+    }
+    return $resolved;
+  }
+
+  /**
    * Merge committed index chunks into the final Pagefind-compatible index.
    *
    * Use this after `scolta:build` exits with "merge deferred" on large
@@ -482,8 +500,8 @@ class ScoltaCommands extends DrushCommands {
     $resolvedOutputDir = $options['output-dir'] ?: $this->resolvePath(
       $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind'
     );
-    $resolvedStateDir = $options['state-dir'] ?: $this->resolvePath(
-      $config->get('pagefind.build_dir') ?? 'private://scolta-build'
+    $resolvedStateDir = $options['state-dir'] ?: $this->resolveBuildDir(
+      $config->get('pagefind.build_dir') ?? 'public://scolta-build'
     );
 
     $budget = MemoryBudgetConfig::fromCliAndConfig(
@@ -721,6 +739,24 @@ class ScoltaCommands extends DrushCommands {
         $this->logger()->notice("  {$binaryStatus['message']}");
         $this->logger()->notice('  To upgrade: npm install -g pagefind  OR  drush scolta:download-pagefind');
       }
+    }
+
+    // Build directory.
+    $this->logger()->notice('--- Build Directory ---');
+    $buildDirConfig = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
+    $resolvedBuildDir = $this->resolveBuildDir($buildDirConfig);
+    if ($resolvedBuildDir !== $buildDirConfig) {
+      $this->logger()->notice("  Configured: {$buildDirConfig}");
+      $this->logger()->notice("  Resolved:   {$resolvedBuildDir}");
+    }
+    else {
+      $this->logger()->notice("  Path: {$resolvedBuildDir}");
+    }
+    if (is_dir($resolvedBuildDir)) {
+      $this->logger()->notice('  Status:     exists');
+    }
+    else {
+      $this->logger()->notice('  Status:     not created yet (created on first build)');
     }
 
     // Pagefind index.

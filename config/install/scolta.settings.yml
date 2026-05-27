@@ -48,7 +48,7 @@ memory_budget:
   chunk_size: ~
 show_attribution: false
 pagefind:
-  build_dir: 'private://scolta-build'
+  build_dir: 'public://scolta-build'
   output_dir: 'public://scolta-pagefind'
   binary: 'pagefind'
   auto_rebuild: true

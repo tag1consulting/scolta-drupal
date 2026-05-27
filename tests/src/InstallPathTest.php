@@ -29,9 +29,9 @@ class InstallPathTest extends TestCase {
     $config = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
 
     $this->assertStringStartsWith(
-      'private://',
+      'public://',
       $config['pagefind']['build_dir'] ?? '',
-      'build_dir must default to private:// stream wrapper'
+      'build_dir must default to public:// stream wrapper for out-of-box compatibility'
     );
     $this->assertStringStartsWith(
       'public://',
