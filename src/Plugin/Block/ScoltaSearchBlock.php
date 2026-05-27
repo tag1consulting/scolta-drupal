@@ -114,6 +114,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       'pagefindPath' => $pagefindPath . '/pagefind/pagefind.js',
       'wasmPath' => $wasmPath,
       'siteName' => $config->siteName ?: $this->configFactory->get('system.site')->get('name'),
+      'filterFieldDescriptions' => $config->filterFieldDescriptions,
       'container' => '#scolta-search',
       'allowedLinkDomains' => [],
       'disclaimer' => '',

@@ -1027,7 +1027,7 @@
 
   const SKIP_FILTER_DIMENSIONS = new Set(['site', 'language', 'content_type', 'entity_type']);
 
-  function matchSubjectToFilters(subjectTerms, availableFilters) {
+  function matchSubjectToFilters(subjectTerms, availableFilters, filterDescriptions) {
     if (!subjectTerms || !subjectTerms.length || !availableFilters) return {};
 
     const keywords = new Set();
@@ -1041,6 +1041,7 @@
     for (const [dimension, values] of Object.entries(availableFilters)) {
       if (SKIP_FILTER_DIMENSIONS.has(dimension.toLowerCase())) continue;
 
+      // Pass 1: direct substring matching against filter value names.
       for (const filterValue of Object.keys(values)) {
         const lowerValue = filterValue.toLowerCase();
         for (const keyword of keywords) {
@@ -1052,6 +1053,31 @@
           }
         }
         if (matched[dimension]) break;
+      }
+
+      // Pass 2: subcategory matching via filter descriptions.
+      // Descriptions like "Science (physics, chemistry, biology)" let us
+      // match "physics" → "Science" even though "physics" isn't a filter value.
+      if (!matched[dimension] && filterDescriptions) {
+        const desc = (filterDescriptions[dimension] || '').toLowerCase();
+        for (const filterValue of Object.keys(values)) {
+          const escapedValue = filterValue.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const pattern = new RegExp(escapedValue + '\\s*\\(([^)]+)\\)');
+          const m = desc.match(pattern);
+          if (m) {
+            const subcategories = m[1].split(',').map(s => s.trim());
+            for (const sub of subcategories) {
+              if (keywords.has(sub) || [...keywords].some(kw =>
+                (sub.length > 2 && kw.includes(sub)) ||
+                (kw.length > 2 && sub.includes(kw))
+              )) {
+                matched[dimension] = filterValue;
+                break;
+              }
+            }
+          }
+          if (matched[dimension]) break;
+        }
       }
     }
 
@@ -1397,18 +1423,27 @@
       }
     }
 
-    if (sortOverride && sortOverride.field && sortOverride.direction) {
-      // Filter+sort discovery: match subject_terms against cached Pagefind
-      // filters so the search is narrowed to the correct topic at the index
-      // level. No heuristic intersection — Pagefind does the filtering.
-      const subjectFilters = matchSubjectToFilters(subjectTerms, cachedPagefindFilters);
+    let useSortPath = !!(sortOverride && sortOverride.field && sortOverride.direction);
+    let subjectFilters = {};
+
+    if (useSortPath) {
+      const filterDescs = (instanceConfig && instanceConfig.filterFieldDescriptions) || {};
+      subjectFilters = matchSubjectToFilters(subjectTerms, cachedPagefindFilters, filterDescs);
       const hasFilterMatch = Object.keys(subjectFilters).length > 0;
 
       if (hasFilterMatch) {
         console.log('[scolta:sort] Subject filter match:', JSON.stringify(subjectFilters));
+      } else if (subjectTerms && subjectTerms.length > 0) {
+        console.log('[scolta:sort] No filter match for subject terms — dropping sort, using relevance');
+        currentSortOverride = null;
+        useSortPath = false;
       } else {
-        console.log('[scolta:sort] No filter match for subject terms, using sort only');
+        console.log('[scolta:sort] No subject terms, using sort only');
       }
+    }
+
+    if (useSortPath) {
+      const hasFilterMatch = Object.keys(subjectFilters).length > 0;
 
       const mergedFilters = {};
       for (const [dim, vals] of Object.entries(activeFilters)) {
