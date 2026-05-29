@@ -179,6 +179,7 @@ jobs:
             $j = json_decode(file_get_contents("composer.json"), true);
             $j["repositories"] = [];
             $j["require"]["tag1/scolta-php"] = "@dev";
+            $j["minimum-stability"] = "dev";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
