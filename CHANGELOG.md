@@ -2,11 +2,15 @@
 
 All notable changes to scolta-drupal will be documented in this file.
 
-This project uses [Semantic Versioning](https://semver.org/). Major versions are synchronized across all Scolta packages.
+This project uses [Semantic Versioning](https://semver.org/). Major versions are synchronized across all Scolta packages; minor and patch versions are released independently per package.
 
 ## [Unreleased]
 
-_No changes yet._
+### Changed
+- **Decoupled release build from lockstep scolta-php tagging.** `release.yml` no longer checks out scolta-php at the same tag or runs `composer update tag1/scolta-php`. The committed `composer.lock` pins scolta-php to a stable Packagist release (currently 1.0.0), and the release job uses `composer install --no-dev` against that lock. A new `lock-guard` CI job (in both `ci.yml` and `release.yml`) fails if the committed lock pins scolta-php to a path, dev, or pre-release source.
+- **Normalized `composer.json` constraint and stability.** Changed `tag1/scolta-php` constraint from `^1.0@dev` to `^1.0` and `minimum-stability` from `dev` to `stable`.
+- **Release archive uses fail-closed allowlist.** The ZIP build now copies enumerated root files and source dirs by extension, rather than using a denylist of `--exclude` patterns. Vendor is pruned of test dirs and dev config files. A disallowed-extension content guard in `validate-zip` catches regressions.
+- **Version consistency CI check.** `validate-release.php` now verifies `composer.json` and `scolta.info.yml` versions match. A new `version-consistency` CI job runs this on every PR.
 
 ## [1.0.0] - 2026-05-27
 

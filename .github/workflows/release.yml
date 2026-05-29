@@ -7,23 +7,37 @@ on:
       - '[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
+  lock-guard:
+    name: Verify scolta-php lock source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check scolta-php is stable and from Packagist
+        run: |
+          python3 - <<'PY'
+          import json,sys,re
+          lock=json.load(open("composer.lock"))
+          pkgs=lock.get("packages",[])+lock.get("packages-dev",[])
+          p=next((x for x in pkgs if x["name"]=="tag1/scolta-php"),None)
+          if not p: sys.exit("scolta-php not in lock")
+          dist=(p.get("dist") or {}).get("type")
+          ver=p.get("version","")
+          bad=[]
+          if dist=="path": bad.append(f"dist.type=path ({(p.get('dist') or {}).get('url')})")
+          if not re.fullmatch(r"\d+\.\d+\.\d+", ver): bad.append(f"non-stable version {ver}")
+          if bad: sys.exit("LOCK GUARD FAILED for tag1/scolta-php: "+"; ".join(bad))
+          print(f"Lock guard OK: tag1/scolta-php {ver} via {dist}")
+          PY
+
   release:
     name: Build and publish release
     runs-on: ubuntu-latest
+    needs: lock-guard
     permissions:
       contents: write
     steps:
-      # Check out scolta-drupal into 'package/' so that '../scolta-php' resolves correctly
       - uses: actions/checkout@v4
-        with:
-          path: package
-
-      # Check out scolta-php at the same tag into 'scolta-php/'
-      - uses: actions/checkout@v4
-        with:
-          repository: tag1consulting/scolta-php
-          ref: ${{ github.ref_name }}
-          path: scolta-php
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -32,41 +46,53 @@ jobs:
           extensions: intl
           coverage: none
 
-      - name: Refresh path-repo lock entry
-        working-directory: package
-        run: composer update tag1/scolta-php --no-dev --no-interaction
-
       - name: Install dependencies (no dev)
-        working-directory: package
         run: composer install --no-dev --prefer-dist --no-interaction
 
       - name: Create release archive
-        working-directory: package
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          cd ..
-          mv package scolta-drupal
-          zip -r scolta-drupal-${VERSION}.zip scolta-drupal/ \
-            --exclude "scolta-drupal/.git*" \
-            --exclude "scolta-drupal/tests/*" \
-            --exclude "scolta-drupal/node_modules/*" \
-            --exclude "scolta-drupal/.claude/*" \
-            --exclude "scolta-drupal/vendor/drupal/*" \
-            --exclude "scolta-drupal/vendor/*/tests" \
-            --exclude "scolta-drupal/vendor/*/tests/*" \
-            --exclude "scolta-drupal/vendor/*/test" \
-            --exclude "scolta-drupal/vendor/*/test/*" \
-            --exclude "scolta-drupal/vendor/*/phpunit.xml*" \
-            --exclude "scolta-drupal/vendor/*/phpstan.neon*" \
-            --exclude "scolta-drupal/vendor/*/.php-cs-fixer*" \
-            --exclude "*.log" \
-            --exclude "*.sh"
+          STAGE=$(mktemp -d)
+          PKG="scolta-drupal"
+
+          # Root files — enumerated allowlist
+          for f in composer.json composer.lock LICENSE README.md scolta.info.yml \
+                   scolta.module scolta.install scolta.links.menu.yml \
+                   scolta.links.task.yml scolta.permissions.yml \
+                   scolta.routing.yml scolta.services.yml scolta.libraries.yml \
+                   scolta.api.php; do
+            [ -f "$f" ] && cp "$f" "$STAGE/"
+          done
+
+          # Source dirs by extension
+          for dir in src config css js templates; do
+            if [ -d "$dir" ]; then
+              find "$dir" \( -name '*.php' -o -name '*.yml' -o -name '*.yaml' \
+                -o -name '*.twig' -o -name '*.js' -o -name '*.css' -o -name '*.wasm' \) \
+                | while read -r f; do
+                  mkdir -p "$STAGE/$(dirname "$f")"
+                  cp "$f" "$STAGE/$f"
+                done
+            fi
+          done
+
+          # vendor/ — full tree minus dev cruft
+          cp -a vendor "$STAGE/vendor"
+          find "$STAGE/vendor" -type d \( -name tests -o -name test \) -exec rm -rf {} + 2>/dev/null || true
+          find "$STAGE/vendor" \( \
+            -name 'phpunit.xml*' -o -name 'phpstan.neon*' -o -name '.php-cs-fixer*' \
+            -o -name '*.sha256' -o -name '*.toml' -o -name '.deepsource.toml' \
+          \) -delete 2>/dev/null || true
+
+          cd "$(dirname "$STAGE")"
+          mv "$STAGE" "$PKG"
+          zip -r "$OLDPWD/$PKG-${VERSION}.zip" "$PKG/"
 
       - name: Extract CHANGELOG entry
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" \
-            scolta-drupal/CHANGELOG.md > release-notes.txt
+            CHANGELOG.md > release-notes.txt
           cat release-notes.txt
 
       - name: Create GitHub Release
@@ -127,11 +153,26 @@ jobs:
             grep -E 'scolta-drupal/vendor/.+/test/' zip-contents.txt
             exit 1
           fi
-          # No .log files
+
+          # Disallowed extensions
+          FAIL=0
+          for ext in '.sha256' '.toml' '.dist' '.neon'; do
+            if grep -qE "\\${ext}$" zip-contents.txt; then
+              echo "ERROR: Archive contains ${ext} files:"
+              grep -E "\\${ext}$" zip-contents.txt
+              FAIL=1
+            fi
+          done
+          if grep -qE 'phpunit\.xml' zip-contents.txt; then
+            echo "ERROR: Archive contains phpunit.xml files:"
+            grep -E 'phpunit\.xml' zip-contents.txt
+            FAIL=1
+          fi
           if grep -q '\.log$' zip-contents.txt; then
             echo "ERROR: Archive contains .log files:"
             grep '\.log$' zip-contents.txt
-            exit 1
+            FAIL=1
           fi
+          [ $FAIL -eq 1 ] && exit 1
 
           echo "Archive structure OK."

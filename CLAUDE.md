@@ -2,7 +2,7 @@
 
 ## Versioning (CRITICAL — read scolta-core/VERSIONING.md)
 
-Major versions are synchronized across all Scolta packages. This is a platform adapter — it depends on scolta-php, never on scolta-core directly.
+Major versions are synchronized across all Scolta packages; minor and patch versions are released independently per package. Adapters pin scolta-php via `composer.lock` within their `^1.x` constraint. This is a platform adapter — it depends on scolta-php, never on scolta-core directly.
 
 ### Rules
 
@@ -19,6 +19,10 @@ The `version` field in `composer.json` is always either a tagged release (`0.2.0
 - If current version has `-dev`, **do not change it** — multiple commits accumulate on one dev version.
 - If current version is a bare release and you're making the first change after it, bump to next target with `-dev`.
 - **WARNING:** Never commit a bare version bump without tagging it as a release.
+
+### Local cross-package development
+
+To test against un-released scolta-php locally, run `composer config minimum-stability dev && composer require tag1/scolta-php:@dev` (the path repo then supplies the dev build). **Do not commit the result** — the release lock must stay Packagist-stable. The CI lock guard enforces this.
 
 ### Drupal conventions
 

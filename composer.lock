@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "9646646dc1edab6c5b7f6b0bf0e502be",
+    "content-hash": "13d71b4526217f0d796e09316007cf38",
     "packages": [
         {
             "name": "asm89/stack-cors",
@@ -4589,11 +4589,17 @@
         },
         {
             "name": "tag1/scolta-php",
-            "version": "1.0.0-rc4",
+            "version": "1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/tag1consulting/scolta-php.git",
+                "reference": "043b70d0e16af666dcd1695ef8ac9776988f6c0b"
+            },
             "dist": {
-                "type": "path",
-                "url": "../scolta-php",
-                "reference": "6905f3d85ee2e4858d317e769120127c3fa68e33"
+                "type": "zip",
+                "url": "https://api.github.com/repos/tag1consulting/scolta-php/zipball/043b70d0e16af666dcd1695ef8ac9776988f6c0b",
+                "reference": "043b70d0e16af666dcd1695ef8ac9776988f6c0b",
+                "shasum": ""
             },
             "require": {
                 "guzzlehttp/guzzle": "^7.0",
@@ -4619,46 +4625,30 @@
                     "Tag1\\Scolta\\": "src/"
                 }
             },
-            "autoload-dev": {
-                "psr-4": {
-                    "Tag1\\Scolta\\Tests\\": "tests/"
-                }
-            },
-            "archive": {
-                "exclude": [
-                    "tests/"
-                ]
-            },
-            "scripts": {
-                "test": [
-                    "phpunit --no-coverage"
-                ],
-                "lint": [
-                    "php-cs-fixer fix --dry-run --diff"
-                ],
-                "format": [
-                    "php-cs-fixer fix"
-                ],
-                "update-browser-wasm": [
-                    "cp ../scolta-core/pkg/scolta_core_bg.wasm assets/wasm/ && cp ../scolta-core/pkg/scolta_core.js assets/wasm/"
-                ],
-                "update-js-checksum": [
-                    "sha256sum assets/js/scolta.js | awk '{print $1}' > assets/js/scolta.js.sha256"
-                ],
-                "validate-release": [
-                    "php scripts/validate-release.php"
-                ],
-                "check-version-sync": [
-                    "php scripts/check-version-sync.php"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
+            "authors": [
+                {
+                    "name": "Tag1 Consulting",
+                    "homepage": "https://tag1.com"
+                }
+            ],
             "description": "AI-powered search with Pagefind — PHP language binding",
-            "transport-options": {
-                "relative": true
-            }
+            "homepage": "https://tag1.com",
+            "keywords": [
+                "ai",
+                "pagefind",
+                "scoring",
+                "search",
+                "wasm"
+            ],
+            "support": {
+                "issues": "https://github.com/tag1consulting/scolta-php/issues",
+                "source": "https://github.com/tag1consulting/scolta-php"
+            },
+            "time": "2026-05-27T15:44:42+00:00"
         },
         {
             "name": "twig/twig",
@@ -7324,10 +7314,8 @@
         }
     ],
     "aliases": [],
-    "minimum-stability": "dev",
-    "stability-flags": {
-        "tag1/scolta-php": 20
-    },
+    "minimum-stability": "stable",
+    "stability-flags": {},
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

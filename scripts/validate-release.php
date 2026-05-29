@@ -1,26 +1,46 @@
 <?php
+
 /**
+ * @file
  * Validate scolta-drupal is ready for release.
+ *
+ * Drupal has TWO places where the version must match:
+ * 1. composer.json "version" field
+ * 2. scolta.info.yml "version" field.
  */
-$composer = json_decode(file_get_contents(__DIR__ . '/../composer.json'), true);
-$version = $composer['version'] ?? 'MISSING';
 
-echo "composer.json version: {$version}\n";
+// 1. composer.json
+$composer = json_decode(file_get_contents(__DIR__ . '/../composer.json'), TRUE);
+$composerVersion = $composer['version'] ?? 'MISSING';
 
-$fail = false;
+// 2. scolta.info.yml
+$infoYml = file_get_contents(__DIR__ . '/../scolta.info.yml');
+preg_match('/^version:\s*[\'"]?([^\s\'"]+)/m', $infoYml, $m);
+$infoVersion = $m[1] ?? 'MISSING';
 
-if ($version === 'MISSING') {
-    echo "FAIL: No version field in composer.json\n";
-    $fail = true;
+echo "composer.json:    {$composerVersion}\n";
+echo "scolta.info.yml:  {$infoVersion}\n";
+
+$fail = FALSE;
+
+if ($composerVersion === 'MISSING' || $infoVersion === 'MISSING') {
+  echo "FAIL: One or more version locations are missing\n";
+  $fail = TRUE;
 }
 
-if (str_ends_with($version, '-dev')) {
-    echo "FAIL: Version ends in -dev\n";
-    $fail = true;
+if ($composerVersion !== $infoVersion) {
+  echo "FAIL: Versions don't match across the two locations\n";
+  $fail = TRUE;
+}
+
+if (str_ends_with($composerVersion, '-dev')) {
+  echo "FAIL: Version ends in -dev\n";
+  $fail = TRUE;
 }
 
 if (!$fail) {
-    echo "PASS: Ready to release {$version}\n";
-} else {
-    exit(1);
+  echo "PASS: Both locations match: {$composerVersion}\n";
+}
+else {
+  exit(1);
 }
