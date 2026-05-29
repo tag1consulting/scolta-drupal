@@ -185,7 +185,7 @@ jobs:
 
       - name: Create Drupal 11 project (drupal/drupal includes dev deps + Mink)
         run: |
-          composer create-project drupal/drupal:^11 /tmp/drupal \
+          composer create-project drupal/drupal:11.3.10 /tmp/drupal \
             --no-interaction --no-install --quiet
 
       - name: Configure Drupal project to use this module as a path repo
@@ -201,8 +201,7 @@ jobs:
             tag1/scolta-drupal:@dev \
             drupal/search_api:^1 \
             drush/drush:^13 \
-            --no-interaction --ignore-platform-req=php \
-            --with-all-dependencies
+            --no-interaction --ignore-platform-req=php
 
       - name: Ensure module is in the contrib modules path
         working-directory: /tmp/drupal
