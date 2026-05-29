@@ -212,9 +212,9 @@ class StructuralIntegrityTest extends TestCase {
   public function testReleaseWorkflowCreatesCorrectZipFolder(): void {
     $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
     $this->assertStringContainsString(
-      'mv package scolta-drupal',
+      'PKG="scolta-drupal"',
       $workflow,
-      'Release workflow must rename package dir to scolta-drupal before zipping'
+      'Release workflow must set PKG to scolta-drupal for the zip folder name'
     );
     $this->assertStringNotContainsString(
       'zip -r ../scolta-drupal-${VERSION}.zip .',
@@ -354,12 +354,12 @@ class StructuralIntegrityTest extends TestCase {
   // Release workflow vendor test directory excludes
   // -------------------------------------------------------------------
 
-  public function test_release_workflow_excludes_vendor_test_singular(): void {
+  public function test_release_workflow_prunes_vendor_test_dirs(): void {
     $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
     $this->assertStringContainsString(
-      '--exclude "scolta-drupal/vendor/*/test/*"',
+      '-name tests -o -name test',
       $workflow,
-      'Release workflow must exclude vendor test/ directories (singular — e.g. wamania/php-stemmer/test/files/)'
+      'Release workflow must prune vendor test/ and tests/ directories from the staged archive'
     );
   }
 
@@ -369,6 +369,29 @@ class StructuralIntegrityTest extends TestCase {
       'scolta-drupal/vendor/.+/test/',
       $workflow,
       'validate-zip job must check for vendor test/ directories (singular)'
+    );
+  }
+
+  public function test_release_workflow_has_lock_guard(): void {
+    $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
+    $this->assertStringContainsString(
+      'LOCK GUARD FAILED',
+      $workflow,
+      'Release workflow must include the scolta-php lock-source guard'
+    );
+  }
+
+  public function test_release_workflow_has_disallowed_extension_guard(): void {
+    $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
+    $this->assertStringContainsString(
+      '.sha256',
+      $workflow,
+      'validate-zip must check for disallowed .sha256 files'
+    );
+    $this->assertStringContainsString(
+      '.toml',
+      $workflow,
+      'validate-zip must check for disallowed .toml files'
     );
   }
 
