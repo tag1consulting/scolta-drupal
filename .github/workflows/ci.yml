@@ -194,10 +194,6 @@ jobs:
           composer config repositories.scolta-drupal path "$GITHUB_WORKSPACE"
           composer config repositories.scolta-php path "$GITHUB_WORKSPACE/scolta-php"
 
-      - name: Set minimum-stability for dev path repos
-        working-directory: /tmp/drupal
-        run: composer config minimum-stability dev
-
       - name: Install Drupal + scolta + drush
         working-directory: /tmp/drupal
         run: |
