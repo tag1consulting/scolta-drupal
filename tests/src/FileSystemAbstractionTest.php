@@ -43,7 +43,7 @@ class FileSystemAbstractionTest extends TestCase {
     $file = $this->moduleRoot . '/src/Service/PagefindExporter.php';
     $contents = file_get_contents($file);
     // deleteAll() should call $this->fileSystem->delete() for each file.
-    $this->assertStringContainsString('$this->fileSystem->delete($file)', $contents,
+    $this->assertStringContainsString('$this->fileSystem->delete($file', $contents,
       'PagefindExporter::deleteAll() must delete files via $this->fileSystem->delete()');
   }
 

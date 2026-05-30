@@ -6,6 +6,7 @@ namespace Drupal\scolta\Service;
 
 use Drupal\Core\File\FileSystemInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
+use Tag1\Scolta\Export\ContentExporter;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Process\Process;
 
@@ -48,10 +49,8 @@ class PagefindBuilder {
       ];
     }
 
-    // Count HTML files to provide a sanity check.
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- glob() used for pattern matching; scanDirectory() cannot match *.html without iterating all files.
-    $htmlFiles = glob($buildDir . '/*.html');
-    $fileCount = $htmlFiles ? count($htmlFiles) : 0;
+    // Count HTML files recursively (nested directory layout).
+    $fileCount = ContentExporter::countHtmlFiles($buildDir);
 
     if ($fileCount === 0) {
       return [
