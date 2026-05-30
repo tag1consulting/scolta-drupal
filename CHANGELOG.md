@@ -6,6 +6,8 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-05-30
+
 ### Changed
 - **PagefindExporter now writes nested directory layout mirroring canonical URLs instead of flat filenames**, aligning binary indexer output with PHP indexer ([scolta-php#157](https://github.com/tag1consulting/scolta-php/pull/157)).
 - **HTML file counting uses recursive directory walk instead of flat glob.** `PagefindBuilder::build()` now calls `ContentExporter::countHtmlFiles()` to count HTML files recursively in the nested layout.
@@ -384,7 +386,8 @@ Coordinated release. Ports the streaming gather and CLI wiring pattern from scol
 - Symlinked shared assets from scolta-php (`scolta.js`, `scolta.css`)
 - Drupal behavior bridge (`scolta-drupal-bridge.js`) for Drupal.behaviors integration
 
-[Unreleased]: https://github.com/tag1consulting/scolta-drupal/compare/1.0.0-rc4...HEAD
+[Unreleased]: https://github.com/tag1consulting/scolta-drupal/compare/1.0.1...HEAD
+[1.0.1]: https://github.com/tag1consulting/scolta-drupal/compare/1.0.0...1.0.1
 [1.0.0-rc4]: https://github.com/tag1consulting/scolta-drupal/compare/1.0.0-rc3...1.0.0-rc4
 [1.0.0-rc3]: https://github.com/tag1consulting/scolta-drupal/compare/1.0.0-rc2...1.0.0-rc3
 [1.0.0-rc2]: https://github.com/tag1consulting/scolta-drupal/compare/1.0.0-rc1...1.0.0-rc2
