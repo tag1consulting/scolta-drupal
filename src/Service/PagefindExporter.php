@@ -12,6 +12,7 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Render\RendererInterface;
 use Drupal\search_api\Item\ItemInterface;
 use Psr\Log\LoggerInterface;
+use Tag1\Scolta\Export\ContentExporter;
 
 /**
  * Exports Search API items as HTML files with Pagefind data attributes.
@@ -67,9 +68,11 @@ class PagefindExporter {
     // Assemble the HTML file.
     $html = $this->assembleHtml($meta, $renderedHtml);
 
-    // Write to disk.
-    $filename = $this->itemIdToFilename($item->getId());
-    $filepath = rtrim($buildDir, '/') . '/' . $filename;
+    // Write to disk using nested directory layout mirroring the canonical URL.
+    $relativePath = isset($meta['url'])
+      ? self::urlToExportPath($meta['url'])
+      : $this->itemIdToFilename($item->getId());
+    $filepath = rtrim($buildDir, '/') . '/' . $relativePath;
     $this->ensureDirectory(dirname($filepath));
     // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- absolute path outside Drupal stream wrappers; saveData() requires a URI scheme.
     if (file_put_contents($filepath, $html) === FALSE) {
@@ -79,8 +82,26 @@ class PagefindExporter {
 
   /**
    * Delete the HTML file for a given item ID.
+   *
+   * Looks up the ID in the export manifest to find the nested path.
+   * Falls back to flat {id}.html for backward compatibility with indexes
+   * built before path-mirroring export.
+   *
+   * @since 1.1.0
+   * @stability experimental
    */
   public function deleteItem(string $itemId, string $buildDir): void {
+    // Try manifest-based lookup first (nested directory layout).
+    $manifest = ContentExporter::readManifest($buildDir);
+    if (isset($manifest[$itemId])) {
+      $filepath = rtrim($buildDir, '/') . '/' . $manifest[$itemId];
+      if (file_exists($filepath)) {
+        $this->fileSystem->delete($filepath);
+        return;
+      }
+    }
+
+    // Fall back to flat filename for backward compatibility.
     $filename = $this->itemIdToFilename($itemId);
     $filepath = rtrim($buildDir, '/') . '/' . $filename;
     if (file_exists($filepath)) {
@@ -91,35 +112,31 @@ class PagefindExporter {
   /**
    * Delete all HTML files in the build directory.
    *
+   * Uses a recursive directory walk to find HTML files in the nested
+   * directory layout. The datasourceId filter is ignored because the
+   * datasource prefix was only meaningful for flat filenames; in the
+   * nested layout all files are index.html.
+   *
    * @param string $buildDir
    *   The build directory path.
    * @param string|null $datasourceId
-   *   Optional datasource filter (e.g., 'entity:node').
+   *   Optional datasource filter (ignored in nested layout).
+   *
+   * @since 1.1.0
+   * @stability experimental
    */
   public function deleteAll(string $buildDir, ?string $datasourceId = NULL): void {
     if (!is_dir($buildDir)) {
       return;
     }
 
-    if ($datasourceId) {
-      // Delete only files matching the datasource prefix.
-      $prefix = str_replace([':', '/'], ['-', '-'], $datasourceId);
-      // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- glob() used for pattern matching; scanDirectory() cannot match mid-name wildcards like prefix-*.html.
-      $files = glob($buildDir . '/' . $prefix . '-*.html');
-      if ($files) {
-        foreach ($files as $file) {
-          $this->fileSystem->delete($file);
-        }
-      }
-    }
-    else {
-      // Delete all HTML files.
-      // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- glob() used for pattern matching; scanDirectory() cannot match *.html without iterating all files.
-      $files = glob($buildDir . '/*.html');
-      if ($files) {
-        foreach ($files as $file) {
-          $this->fileSystem->delete($file);
-        }
+    $iterator = new \RecursiveIteratorIterator(
+      new \RecursiveDirectoryIterator($buildDir, \FilesystemIterator::SKIP_DOTS),
+      \RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ($iterator as $file) {
+      if ($file->isFile() && $file->getExtension() === 'html') {
+        $this->fileSystem->delete($file->getPathname());
       }
     }
   }
@@ -291,6 +308,25 @@ HTML;
     if (!is_dir($dir)) {
       $this->fileSystem->mkdir($dir, NULL, TRUE);
     }
+  }
+
+  /**
+   * Map a canonical URL to an export file path.
+   *
+   * Delegates to ContentExporter::urlToExportPath() so the Drupal adapter
+   * produces the same nested directory layout as the shared PHP exporter.
+   *
+   * @param string $url
+   *   Root-relative canonical URL.
+   *
+   * @return string
+   *   Export-relative file path (no leading slash).
+   *
+   * @since 1.1.0
+   * @stability experimental
+   */
+  public static function urlToExportPath(string $url): string {
+    return ContentExporter::urlToExportPath($url);
   }
 
 }
