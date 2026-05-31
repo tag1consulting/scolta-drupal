@@ -9,8 +9,14 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ### Fixed
 - **AI Provider settings field now reflects the saved provider instead of always showing Amazee when Amazee credentials are present** (display-only bug; the persisted value and live API calls were already correct). The form only honored an explicit `drupal_ai` selection over an active Amazee trial; every other saved provider was overridden to `amazee` for the field's `#default_value`. The `drupal_ai` guard is now generalized so any explicitly-saved provider wins; `isAmazeeActive()` auto-detection applies only when no provider was saved. Added functional coverage to `ScoltaSettingsFormFunctionalTest`. (#125)
 
+### Added
+- **`expand_subword_max_frequency` scoring setting (default `0.05`).** Surfaced in the settings form, config schema, and install/example config. Controls the new sub-word frequency guard in `scolta.js` — a multi-word expansion term's constituent words are searched on their own only when below this corpus frequency, restoring broad-query recall (scolta-php#156) without reintroducing high-frequency noise.
+
 ### Changed
 - Opened 1.0.2-dev development cycle.
+- **Scoring default tuning (matches scolta-php):** `cross_list_bonus` `0.15` → `0.05`, `recency_boost_max` `0.5` → `0.25`, `title_match_boost` `1.0` → `2.0` in install config and form defaults.
+
+> Note: the corresponding `js/scolta.js` (frequency-guarded sub-word expansion, scolta-php#156) and `scolta_core` assets are synced automatically via the `copy-assets` composer hook once the scolta-php dependency is updated to the release that contains them. This PR adds the adapter-side settings plumbing so the new control is wired and ready.
 
 ## [1.0.1] - 2026-05-30
 

@@ -18,15 +18,16 @@ field_mappings:
   sortable: {}
   filters: {}
 scoring:
-  title_match_boost: 1.0
+  title_match_boost: 2.0
   title_all_terms_multiplier: 1.5
   content_match_boost: 0.4
-  recency_boost_max: 0.5
+  recency_boost_max: 0.25
   recency_half_life_days: 365
   recency_penalty_after_days: 1825
   recency_max_penalty: 0.3
   expand_primary_weight: 0.5
-  cross_list_bonus: 0.15
+  cross_list_bonus: 0.05
+  expand_subword_max_frequency: 0.05
   exact_title_match_boost: 5.0
   phrase_adjacent_multiplier: 2.5
   phrase_near_multiplier: 1.5
