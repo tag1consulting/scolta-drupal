@@ -84,14 +84,19 @@ class ScoltaAiServiceTest extends TestCase {
     $drupalConfig = $this->getInstallDefaults();
     $config = $this->simulateGetConfig($drupalConfig);
 
-    $this->assertEquals(1.0, $config->titleMatchBoost);
+    $this->assertEquals(2.0, $config->titleMatchBoost);
     $this->assertEquals(1.5, $config->titleAllTermsMultiplier);
     $this->assertEquals(0.4, $config->contentMatchBoost);
-    $this->assertEquals(0.5, $config->recencyBoostMax);
+    $this->assertEquals(0.25, $config->recencyBoostMax);
     $this->assertEquals(365, $config->recencyHalfLifeDays);
     $this->assertEquals(1825, $config->recencyPenaltyAfterDays);
     $this->assertEquals(0.3, $config->recencyMaxPenalty);
     $this->assertEquals(0.5, $config->expandPrimaryWeight);
+    $this->assertEquals(0.05, $config->crossListBonus);
+    // The sub-word frequency guard setting ships in install config; the typed
+    // ScoltaConfig property is provided by scolta-php once the dependency is
+    // updated, so assert the install default structurally here.
+    $this->assertEquals(0.05, $this->getInstallDefaults()['scoring']['expand_subword_max_frequency']);
   }
 
   public function testDisplayConfigFlattensCorrectly(): void {
@@ -226,7 +231,7 @@ class ScoltaAiServiceTest extends TestCase {
     $drupalConfig = $this->getInstallDefaults();
     // Simulate: drush config:set scolta.settings title_match_boost 3.0
     $drupalConfig['title_match_boost'] = 3.0;
-    // scoring.title_match_boost defaults to 1.0.
+    // scoring.title_match_boost defaults to 2.0.
 
     $config = $this->simulateGetConfig($drupalConfig);
 

@@ -447,7 +447,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['scoring']['title_match_boost'] = [
       '#type' => 'number',
       '#title' => $this->t('Title match boost'),
-      '#default_value' => $config->get('scoring.title_match_boost') ?? 1.0,
+      '#default_value' => $config->get('scoring.title_match_boost') ?? 2.0,
       '#step' => 'any',
       '#min' => 0,
       '#description' => $this->t('Boost factor for title matches.'),
@@ -474,7 +474,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['scoring']['recency_boost_max'] = [
       '#type' => 'number',
       '#title' => $this->t('Recency boost maximum'),
-      '#default_value' => $config->get('scoring.recency_boost_max') ?? 0.5,
+      '#default_value' => $config->get('scoring.recency_boost_max') ?? 0.25,
       '#step' => 'any',
       '#min' => 0,
       '#description' => $this->t('Maximum boost for recent content.'),
@@ -518,11 +518,21 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['scoring']['cross_list_bonus'] = [
       '#type' => 'number',
       '#title' => $this->t('Cross-list agreement bonus'),
-      '#default_value' => $config->get('scoring.cross_list_bonus') ?? 0.15,
+      '#default_value' => $config->get('scoring.cross_list_bonus') ?? 0.05,
       '#step' => 'any',
       '#min' => 0,
       '#max' => 1,
       '#description' => $this->t('Additive score bonus when a result appears in both primary and expanded result sets. Set to 0 to disable.'),
+    ];
+
+    $form['scoring']['expand_subword_max_frequency'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Sub-word maximum corpus frequency'),
+      '#default_value' => $config->get('scoring.expand_subword_max_frequency') ?? 0.05,
+      '#step' => 'any',
+      '#min' => 0,
+      '#max' => 1,
+      '#description' => $this->t("Maximum corpus frequency (fraction of indexed pages) for a multi-word expansion term's constituent word to be searched on its own. Recovers broad-query recall while blocking high-frequency noise words. Set to 0 to disable sub-word expansion; values at or above 1 search every sub-word."),
     ];
 
     $form['scoring']['exact_title_match_boost'] = [
@@ -1090,6 +1100,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('scoring.recency_max_penalty', (float) $form_state->getValue('recency_max_penalty'))
       ->set('scoring.expand_primary_weight', (float) $form_state->getValue('expand_primary_weight'))
       ->set('scoring.cross_list_bonus', (float) $form_state->getValue('cross_list_bonus'))
+      ->set('scoring.expand_subword_max_frequency', (float) $form_state->getValue('expand_subword_max_frequency'))
       ->set('scoring.exact_title_match_boost', (float) $form_state->getValue('exact_title_match_boost'))
       ->set('scoring.phrase_adjacent_multiplier', (float) $form_state->getValue('phrase_adjacent_multiplier'))
       ->set('scoring.phrase_near_multiplier', (float) $form_state->getValue('phrase_near_multiplier'))
