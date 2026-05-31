@@ -158,13 +158,23 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#open' => TRUE,
     ];
 
-    // Respect an explicit 'drupal_ai' selection even when Amazee is active.
-    $storedProvider = $config->get('ai_provider') ?? 'anthropic';
+    // The explicitly-saved provider always wins for the displayed default.
+    // Amazee auto-detection is only a fallback for the unset state — when no
+    // provider was ever saved. Previously only an explicit Drupal AI selection
+    // survived an active Amazee trial; every other saved provider was
+    // overridden to "amazee" for display (#125).
+    $storedProvider = $config->get('ai_provider');
     if ($storedProvider === 'drupal_ai') {
+      // Explicit Drupal AI selection wins even when Amazee is active.
       $defaultProvider = 'drupal_ai';
     }
+    elseif ($storedProvider !== NULL && $storedProvider !== '') {
+      // Any other explicitly-saved provider also wins over auto-detection.
+      $defaultProvider = $storedProvider;
+    }
     else {
-      $defaultProvider = $this->aiService->isAmazeeActive() ? 'amazee' : $storedProvider;
+      // Nothing saved yet: surface an active Amazee trial, else anthropic.
+      $defaultProvider = $this->aiService->isAmazeeActive() ? 'amazee' : 'anthropic';
     }
 
     $providerOptions = [

@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **AI Provider settings field now reflects the saved provider instead of always showing Amazee when Amazee credentials are present** (display-only bug; the persisted value and live API calls were already correct). The form only honored an explicit `drupal_ai` selection over an active Amazee trial; every other saved provider was overridden to `amazee` for the field's `#default_value`. The `drupal_ai` guard is now generalized so any explicitly-saved provider wins; `isAmazeeActive()` auto-detection applies only when no provider was saved. Added functional coverage to `ScoltaSettingsFormFunctionalTest`. (#125)
+
 ### Changed
 - Opened 1.0.2-dev development cycle.
 
