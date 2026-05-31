@@ -207,6 +207,90 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * Stores fake Amazee credentials so isAmazeeActive() returns TRUE.
+   */
+  protected function activateAmazee(): void {
+    \Drupal::state()->set('scolta.amazee.credentials', [
+      'litellm_token' => 'amazee-test-token',
+      'litellm_api_url' => 'https://api.amazee.example.com',
+      'region' => 'us-east-1',
+    ]);
+  }
+
+  /**
+   * Tests the field shows the saved provider when Amazee is active (#125).
+   *
+   * Regression for #125: an active Amazee trial must not override an
+   * explicitly-saved provider in the field's pre-selected value.
+   */
+  public function testProviderFieldReflectsSavedValueWhenAmazeeActive(): void {
+    $this->activateAmazee();
+    $this->config('scolta.settings')->set('ai_provider', 'anthropic')->save();
+
+    $this->drupalLogin($this->adminUser);
+    $this->drupalGet('/admin/config/search/scolta');
+    $this->assertSession()->statusCodeEquals(200);
+
+    // The saved provider (anthropic) must be the selected option, not amazee.
+    $field = $this->assertSession()->fieldExists('ai_provider');
+    $this->assertSame('anthropic', $field->getValue(),
+      'Provider field must show the saved provider (anthropic), not amazee.');
+    $this->assertSession()->optionExists('ai_provider', 'amazee');
+  }
+
+  /**
+   * A saved OpenAI selection also wins over an active Amazee trial.
+   */
+  public function testProviderFieldRespectsSavedOpenAiWhenAmazeeActive(): void {
+    $this->activateAmazee();
+    $this->config('scolta.settings')->set('ai_provider', 'openai')->save();
+
+    $this->drupalLogin($this->adminUser);
+    $this->drupalGet('/admin/config/search/scolta');
+
+    $field = $this->assertSession()->fieldExists('ai_provider');
+    $this->assertSame('openai', $field->getValue(),
+      'Provider field must show the saved provider (openai), not amazee.');
+  }
+
+  /**
+   * With nothing saved, an active Amazee trial is surfaced as the default.
+   */
+  public function testProviderFieldFallsBackToAmazeeWhenUnset(): void {
+    $this->activateAmazee();
+    // Ensure no provider has been explicitly saved.
+    $this->config('scolta.settings')->clear('ai_provider')->save();
+
+    $this->drupalLogin($this->adminUser);
+    $this->drupalGet('/admin/config/search/scolta');
+
+    $field = $this->assertSession()->fieldExists('ai_provider');
+    $this->assertSame('amazee', $field->getValue(),
+      'With no saved provider and Amazee active, the field should default to amazee.');
+  }
+
+  /**
+   * An explicit drupal_ai selection is still honoured when Amazee is active.
+   */
+  public function testProviderFieldRespectsDrupalAiSelection(): void {
+    // The drupal_ai option only renders when the AI module is present. Skip if
+    // it is not available in this functional install.
+    if (!\Drupal::hasService('ai.provider')) {
+      $this->markTestSkipped('Drupal AI module (ai.provider service) not installed.');
+    }
+
+    $this->activateAmazee();
+    $this->config('scolta.settings')->set('ai_provider', 'drupal_ai')->save();
+
+    $this->drupalLogin($this->adminUser);
+    $this->drupalGet('/admin/config/search/scolta');
+
+    $field = $this->assertSession()->fieldExists('ai_provider');
+    $this->assertSame('drupal_ai', $field->getValue(),
+      'An explicit drupal_ai selection must win over an active Amazee trial.');
+  }
+
+  /**
    * Tests that AI feature toggles affect the JS config.
    */
   public function testAiToggleAppearsInSearchPage(): void {
