@@ -168,6 +168,34 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * Tests the sub-word guard denylist field saves and renders its value.
+   *
+   * Release-gate render assertion for the scolta-php#156 follow-up: the field
+   * must round-trip a saved value through the UI.
+   */
+  public function testSubwordDenyListPersistence(): void {
+    $this->drupalLogin($this->adminUser);
+    $this->drupalGet('/admin/config/search/scolta');
+
+    // The field exists and is empty by default.
+    $this->assertSession()->fieldExists('expand_subword_deny_list');
+
+    $this->submitForm([
+      'expand_subword_deny_list' => 'Hot, Easy',
+    ], 'Save configuration');
+    $this->assertSession()->statusCodeEquals(200);
+
+    // Persisted as a lowercase token array.
+    $config = $this->config('scolta.settings');
+    $this->assertEquals(['hot', 'easy'], $config->get('scoring.expand_subword_deny_list'));
+
+    // Reload and verify the saved value is rendered (comma-joined).
+    $this->drupalGet('/admin/config/search/scolta');
+    $field = $this->assertSession()->fieldExists('expand_subword_deny_list');
+    $this->assertEquals('hot, easy', $field->getValue());
+  }
+
+  /**
    * Tests that the search block renders with scoring config on the page.
    */
   public function testSearchBlockRendersWithScoringConfig(): void {

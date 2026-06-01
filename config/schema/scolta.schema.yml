@@ -140,6 +140,12 @@ scolta.settings:
           sequence:
             type: string
             label: 'Stop word'
+        expand_subword_deny_list:
+          type: sequence
+          label: 'Sub-word guard denylist'
+          sequence:
+            type: string
+            label: 'Denylisted word'
         recency_strategy:
           type: string
           label: 'Recency strategy'

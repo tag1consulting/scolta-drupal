@@ -33,6 +33,7 @@ scoring:
   expand_subword_max_frequency: 0.05 # Max corpus frequency for an expansion sub-word to be searched (0 disables)
   language: 'en'                    # ISO 639-1 language code for stop word filtering
   custom_stop_words: []             # Extra stop words: ['drupal', 'cms']
+  expand_subword_deny_list: []      # Words never auto-exempted from the sub-word guard: ['hot'] (stay scorable)
   recency_strategy: 'exponential'   # 'exponential', 'linear', 'step', 'none', 'custom'
   recency_curve: []                 # Custom control points: [[0, 1.0], [365, 0.0]]
 
