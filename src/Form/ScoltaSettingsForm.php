@@ -625,6 +625,14 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Comma-separated additional stop words to exclude from scoring, beyond the built-in language list. e.g. <code>drupal, cms, site</code>'),
     ];
 
+    $form['scoring']['expand_subword_deny_list'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Sub-word guard denylist'),
+      '#default_value' => implode(', ', $config->get('scoring.expand_subword_deny_list') ?? []),
+      '#rows' => 2,
+      '#description' => $this->t('Comma-separated words that are never auto-exempted from the sub-word frequency guard, even when typed (e.g. a generic word like <code>hot</code> on a recipe site). Unlike custom stop words, these stay searchable and scorable. Leave empty unless a typed common word floods results.'),
+    ];
+
     $form['scoring']['recency_strategy'] = [
       '#type' => 'select',
       '#title' => $this->t('Recency strategy'),
@@ -1110,6 +1118,10 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('scoring.custom_stop_words', array_values(array_filter(array_map(
         'trim',
         explode(',', $form_state->getValue('custom_stop_words') ?? '')
+      ))))
+      ->set('scoring.expand_subword_deny_list', array_values(array_filter(array_map(
+        fn($w) => strtolower(trim($w)),
+        explode(',', $form_state->getValue('expand_subword_deny_list') ?? '')
       ))))
       ->set('scoring.recency_strategy', in_array($form_state->getValue('recency_strategy'), [
         'exponential', 'linear', 'step', 'none', 'custom',

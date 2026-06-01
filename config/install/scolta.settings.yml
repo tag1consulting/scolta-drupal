@@ -35,6 +35,7 @@ scoring:
   phrase_window: 15
   language: 'en'
   custom_stop_words: []
+  expand_subword_deny_list: []
   recency_strategy: 'exponential'
   recency_curve: []
 display:
