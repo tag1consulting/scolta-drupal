@@ -4,7 +4,7 @@
  * Extract context from multiple content items in one call.
  *
  * # Stability
- * Status: stable
+ * Status: experimental
  * Since: 0.2.3
  *
  * Input: JSON string with shape:
@@ -120,7 +120,7 @@ export function describe() {
  * Extract the most relevant portion of article content for LLM context.
  *
  * # Stability
- * Status: stable
+ * Status: experimental
  * Since: 0.2.3
  *
  * Input: JSON string with shape:
@@ -202,7 +202,7 @@ export function get_prompt(name) {
  * Find priority pages matching a query.
  *
  * # Stability
- * Status: stable
+ * Status: experimental
  * Since: 0.2.3
  *
  * Input: JSON string with shape:
@@ -382,7 +382,7 @@ export function resolve_prompt(input) {
  * Redact PII from a query string before analytics logging.
  *
  * # Stability
- * Status: stable
+ * Status: experimental
  * Since: 0.2.3
  *
  * Input: JSON string with shape:
@@ -465,7 +465,7 @@ export function score_results(input) {
  * Trim conversation history to fit within a character limit.
  *
  * # Stability
- * Status: stable
+ * Status: experimental
  * Since: 0.2.3
  *
  * Input: JSON string with shape:

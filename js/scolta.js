@@ -75,7 +75,6 @@
       CROSS_LIST_BONUS: s.CROSS_LIST_BONUS ?? 0.05,
       EXPAND_SUBWORD_MAX_FREQ: s.EXPAND_SUBWORD_MAX_FREQ ?? 0.05,
       EXPAND_SUBWORD_DENYLIST: s.EXPAND_SUBWORD_DENYLIST ?? [],
-      AI_QUERY_WORD_IMPORTANCE: s.AI_QUERY_WORD_IMPORTANCE ?? true,
       AI_MAX_FOLLOWUPS: s.AI_MAX_FOLLOWUPS ?? 3,
       AI_LANGUAGES: s.AI_LANGUAGES ?? ['en'],
       LANGUAGE: s.LANGUAGE ?? 'en',
@@ -295,7 +294,6 @@
       CROSS_LIST_BONUS: s.CROSS_LIST_BONUS ?? 0.05,
       EXPAND_SUBWORD_MAX_FREQ: s.EXPAND_SUBWORD_MAX_FREQ ?? 0.05,
       EXPAND_SUBWORD_DENYLIST: s.EXPAND_SUBWORD_DENYLIST ?? [],
-      AI_QUERY_WORD_IMPORTANCE: s.AI_QUERY_WORD_IMPORTANCE ?? true,
       AI_MAX_FOLLOWUPS: s.AI_MAX_FOLLOWUPS ?? 3,
       AI_LANGUAGES: s.AI_LANGUAGES ?? ['en'],
       AUTO_LANGUAGE_FILTER: s.AUTO_LANGUAGE_FILTER ?? false,
@@ -462,63 +460,38 @@
     } catch { return 0; }
   }
 
-  // Per-query-word importance weighting (issue #163 follow-up). Mirrors the Rust
-  // scorer: each query word's match contribution is scaled by its weight —
-  // "content" words and any word absent from the `importance` map weigh 1.0;
-  // "incidental" words use INCIDENTAL_MATCH_WEIGHT. `importance` is the
-  // {word: "content"|"incidental"} map keyed on the primary query's words (or a
-  // falsy value to disable weighting). The denominator stays the raw term count
-  // so an incidental-only match earns a fraction of a content-word match. The
-  // all-terms multiplier keys on content words only. An absent map (or
-  // AI_QUERY_WORD_IMPORTANCE off) makes every weight 1.0 — byte-identical to the
-  // pre-importance formula.
-  function titleMatchScoreFallback(title, query, importance) {
+  function titleMatchScoreFallback(title, query) {
     const CONFIG = getInstanceConfig();
     if (!title || !query) return 0;
     const titleLower = title.toLowerCase();
     const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
     if (terms.length === 0) return 0;
-    const useImportance = !!importance && CONFIG.AI_QUERY_WORD_IMPORTANCE !== false;
-    let matchedWeight = 0;
-    let contentTotal = 0;
-    let contentMatched = 0;
+    let matchCount = 0;
     for (const term of terms) {
-      const label = useImportance ? importance[term] : null;
-      const w = (typeof label === 'string' && label.toLowerCase() === 'incidental')
-        ? CONFIG.INCIDENTAL_MATCH_WEIGHT : 1.0;
-      const isContent = w >= 1.0;
-      if (isContent) contentTotal++;
       const regex = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "i");
-      if (regex.test(titleLower)) {
-        matchedWeight += w;
-        if (isContent) contentMatched++;
-      }
+      if (regex.test(titleLower)) matchCount++;
     }
-    if (matchedWeight === 0) return 0;
+    if (matchCount === 0) return 0;
     let boost = CONFIG.TITLE_MATCH_BOOST;
-    if (contentTotal > 0 && contentMatched === contentTotal && terms.length > 1) {
+    if (matchCount === terms.length && terms.length > 1) {
       boost *= CONFIG.TITLE_ALL_TERMS_MULTIPLIER;
     }
-    return boost * (matchedWeight / terms.length);
+    return boost * (matchCount / terms.length);
   }
 
-  function contentMatchScoreFallback(excerpt, query, importance) {
+  function contentMatchScoreFallback(excerpt, query) {
     const CONFIG = getInstanceConfig();
     if (!excerpt || !query) return 0;
     const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
     if (terms.length === 0) return 0;
     const excerptLower = excerpt.toLowerCase();
-    const useImportance = !!importance && CONFIG.AI_QUERY_WORD_IMPORTANCE !== false;
-    let matchedWeight = 0;
+    let matchCount = 0;
     for (const term of terms) {
-      const label = useImportance ? importance[term] : null;
-      const w = (typeof label === 'string' && label.toLowerCase() === 'incidental')
-        ? CONFIG.INCIDENTAL_MATCH_WEIGHT : 1.0;
       const regex = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "i");
-      if (regex.test(excerptLower)) matchedWeight += w;
+      if (regex.test(excerptLower)) matchCount++;
     }
-    if (matchedWeight === 0) return 0;
-    return CONFIG.CONTENT_MATCH_BOOST * (matchedWeight / terms.length);
+    if (matchCount === 0) return 0;
+    return CONFIG.CONTENT_MATCH_BOOST * (matchCount / terms.length);
   }
 
   // --- AI features ---
@@ -543,7 +516,7 @@
       const data = await resp.json();
       debugLog("[scolta:expand] response:", data);
       if (Array.isArray(data)) {
-        return { terms: data, sort_hint: null, subject_terms: null, filter_hint: null, query_word_importance: null };
+        return { terms: data, sort_hint: null, subject_terms: null, filter_hint: null };
       }
       const terms = Array.isArray(data?.terms) ? data.terms : null;
       if (!terms) return null;
@@ -555,10 +528,7 @@
       const fh = data.filter_hint;
       const filter_hint = (fh && typeof fh === 'object' && !Array.isArray(fh))
         ? fh : null;
-      const qwi = data.query_word_importance;
-      const query_word_importance = (qwi && typeof qwi === 'object' && !Array.isArray(qwi))
-        ? qwi : null;
-      return { terms, sort_hint, subject_terms, filter_hint, query_word_importance };
+      return { terms, sort_hint, subject_terms, filter_hint };
     } catch (e) {
       if (e.name === 'AbortError') return null;
       if (e instanceof TypeError) return null;
@@ -1163,21 +1133,8 @@
   }
 
   // Score a set of loaded results against a query.
-  function scoreResults(loaded, query, sourceWeight, primaryQuery, queryWordImportance) {
+  function scoreResults(loaded, query, sourceWeight, primaryQuery) {
     const CONFIG = getInstanceConfig();
-    // Per-query-word importance down-weights matches on "incidental" query words
-    // (issue #163 follow-up). The map keys on the primary query's words, so it
-    // bites on the primary-query scoring pass and is a no-op for expansion-term
-    // passes whose words aren't in the map. Gated by AI_QUERY_WORD_IMPORTANCE:
-    // when off, the map is omitted, so the scorer falls back to equal weighting.
-    const importance =
-      CONFIG.AI_QUERY_WORD_IMPORTANCE !== false &&
-      queryWordImportance &&
-      typeof queryWordImportance === 'object' &&
-      !Array.isArray(queryWordImportance) &&
-      Object.keys(queryWordImportance).length > 0
-        ? queryWordImportance
-        : null;
     let scored;
     if (scoltaWasm) {
       // WASM scoring — canonical Rust implementation
@@ -1205,7 +1162,6 @@
         results: results,
         config: wasmConfig,
         primary_query: primaryQuery || undefined,
-        query_word_importance: importance || undefined,
       });
       try {
         const output = scoltaWasm.score_results(input);
@@ -1226,8 +1182,8 @@
       scored = loaded.map((data, i) => {
         const pagefindScore = count > 1 ? 1 - (i / (count - 1)) : 1;
         const recency = recencyScoreFallback(data.meta?.date);
-        const titleBoost = titleMatchScoreFallback(data.meta?.title, query, importance);
-        const contentBoost = contentMatchScoreFallback(data.excerpt, query, importance);
+        const titleBoost = titleMatchScoreFallback(data.meta?.title, query);
+        const contentBoost = contentMatchScoreFallback(data.excerpt, query);
         const finalScore = (pagefindScore + recency + titleBoost + contentBoost) * sourceWeight;
         return { data, score: finalScore };
       });
@@ -1429,7 +1385,7 @@
     return scoreResults(loaded, query, weight);
   }
 
-  async function searchAndLoadParallel(queries, filters, originalQuery, queryWordImportance) {
+  async function searchAndLoadParallel(queries, filters, originalQuery) {
     const CONFIG = getInstanceConfig();
     if (queries.length === 0) return [];
 
@@ -1460,8 +1416,8 @@
     for (const [term, items] of byTerm) {
       const weight = items[0].weight;
       const loaded = items.map(i => i.data);
-      const scoredVsTerm = scoreResults(loaded, term, weight, originalQuery, queryWordImportance);
-      const scoredVsOriginal = scoreResults(loaded, originalQuery, weight * 0.5, undefined, queryWordImportance);
+      const scoredVsTerm = scoreResults(loaded, term, weight, originalQuery);
+      const scoredVsOriginal = scoreResults(loaded, originalQuery, weight * 0.5);
 
       const BONUS = getInstanceConfig().CROSS_LIST_BONUS;
       const best = scoredVsTerm.map((r, idx) => ({
@@ -1474,7 +1430,7 @@
     return results;
   }
 
-  async function mergeExpandedSearchResults(expandedTerms, originalQuery, searchQuery, preserveFilters, version, sortOverride, subjectTerms, queryWordImportance) {
+  async function mergeExpandedSearchResults(expandedTerms, originalQuery, searchQuery, preserveFilters, version, sortOverride, subjectTerms) {
     const CONFIG = getInstanceConfig();
     const validTerms = expandedTerms
       ? expandedTerms.filter(t => t.toLowerCase() !== originalQuery.toLowerCase())
@@ -1515,28 +1471,6 @@
     const subwordDenylist = new Set(
       (CONFIG.EXPAND_SUBWORD_DENYLIST || []).map(w => String(w).toLowerCase())
     );
-    // Semantic refinement of Fix A (#156 follow-up): the typed-word exemption is
-    // correct for content-bearing words ("soft" in "crispy soft") but wrong for
-    // incidental ones ("grilled" in "grilled vegetables") that leak in via an
-    // expansion term and broaden results off-topic. Frequency can't separate
-    // these — the desired word can be MORE common than the flood word — so gate
-    // the exemption on the LLM's per-query-word "content"/"incidental" labels.
-    // contentWords === null means "no usable classification" (map absent/empty,
-    // or AI_QUERY_WORD_IMPORTANCE disabled): fall back to treating every query
-    // token as content, i.e. exact pre-classification behavior — no regression.
-    const importanceEnabled = CONFIG.AI_QUERY_WORD_IMPORTANCE !== false;
-    let contentWords = null;
-    if (importanceEnabled && queryWordImportance && typeof queryWordImportance === 'object') {
-      const labeled = Object.entries(queryWordImportance)
-        .filter(([, label]) => typeof label === 'string');
-      if (labeled.length > 0) {
-        contentWords = new Set(
-          labeled
-            .filter(([, label]) => label.toLowerCase() === 'content')
-            .map(([word]) => String(word).toLowerCase())
-        );
-      }
-    }
     const subwordFreqCache = new Map();
     let subwordCorpusTotal = null;
     async function subwordAllowed(word) {
@@ -1545,12 +1479,7 @@
       if (subwordMaxFreq >= 1) return true;    // pre-v1.0.0 behavior: all sub-words
       // Fix A: a sub-word the user literally typed is wanted by definition —
       // bypass the frequency check. Fix D: unless it's on the guard denylist.
-      // Semantic gate: only content-bearing typed words keep the exemption;
-      // incidental ones (contentWords non-null and missing this word) fall through
-      // to the frequency check. contentWords === null preserves the all-content
-      // fallback (no classification / feature disabled).
-      const isContentWord = contentWords === null || contentWords.has(word);
-      if (queryTokens.has(word) && isContentWord && !subwordDenylist.has(word)) return true;
+      if (queryTokens.has(word) && !subwordDenylist.has(word)) return true;
       if (subwordFreqCache.has(word)) return subwordFreqCache.get(word);
       let allowed = false;
       try {
@@ -1717,7 +1646,7 @@
         }
       }
 
-      const expandedResults = await searchAndLoadParallel(queries, activeFilters, searchQuery, queryWordImportance);
+      const expandedResults = await searchAndLoadParallel(queries, activeFilters, searchQuery);
 
       if (version !== searchVersion) {
         debugLog('[scolta:expand] Discarding stale expansion after load (version', version, 'vs current', searchVersion, ')');
@@ -1873,12 +1802,11 @@
     // the same ranking the user sees (expanded terms promote more relevant results).
     expandPromise.then(async expansion => {
       expansionInFlight = false;
-      // expansion is { terms, sort_hint, subject_terms, filter_hint, query_word_importance } or null (or a plain array for legacy cache hits).
+      // expansion is { terms, sort_hint, subject_terms, filter_hint } or null (or a plain array for legacy cache hits).
       const expandedTerms = Array.isArray(expansion) ? expansion : (expansion?.terms ?? null);
       const sortHint = Array.isArray(expansion) ? null : (expansion?.sort_hint ?? null);
       const subjectTerms = Array.isArray(expansion) ? null : (Array.isArray(expansion?.subject_terms) ? expansion.subject_terms : null);
       const filterHint = Array.isArray(expansion) ? null : (expansion?.filter_hint ?? null);
-      const queryWordImportance = Array.isArray(expansion) ? null : (expansion?.query_word_importance ?? null);
 
       if (!preserveFilters) {
         lastExpandedTerms = expansion;
@@ -1907,7 +1835,7 @@
         }
       }
       renderExpandedTerms(expandedTerms, query);
-      await mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version, currentSortOverride, subjectTerms, queryWordImportance);
+      await mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version, currentSortOverride, subjectTerms);
 
       if (version !== searchVersion) return;
 
