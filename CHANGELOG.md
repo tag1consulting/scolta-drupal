@@ -16,8 +16,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ### Changed
 - Opened 1.0.2-dev development cycle.
 - **Scoring default tuning (matches scolta-php):** `cross_list_bonus` `0.15` → `0.05`, `recency_boost_max` `0.5` → `0.25`, `title_match_boost` `1.0` → `2.0` in install config and form defaults.
-
-> Note: the corresponding `js/scolta.js` (frequency-guarded sub-word expansion, scolta-php#156) and `scolta_core` assets are synced automatically via the `copy-assets` composer hook once the scolta-php dependency is updated to the release that contains them. This PR adds the adapter-side settings plumbing so the new control is wired and ready.
+- **Synced `js/scolta.js` to the canonical scolta-php source.** Brings the committed copy up to date with the frequency-guarded sub-word expansion ([scolta-php#156](https://github.com/tag1consulting/scolta-php/issues/156)/#161), the query-typed-word exemption ([scolta-php#162](https://github.com/tag1consulting/scolta-php/pull/162)), and the new semantic query-word importance gate ([scolta-php#163](https://github.com/tag1consulting/scolta-php/pull/163)) — the typed-word exemption now applies only to words the expansion endpoint classifies as content-bearing, so incidental modifiers can no longer broaden results. The settings plumbing for `expand_subword_deny_list`/`expand_subword_max_frequency` landed previously; this brings the actual browser behavior in sync. The new `ai_query_word_importance` toggle (browser-side, default on) is not yet surfaced in the settings form — a follow-up.
 
 ## [1.0.1] - 2026-05-30
 
