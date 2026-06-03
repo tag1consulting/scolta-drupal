@@ -324,51 +324,11 @@ class ScoltaAiService extends AiServiceAdapter {
   /**
    * {@inheritdoc}
    *
-   * Intercepts AmazeeBudgetExceededException to show an admin notice before
-   * re-throwing, so callers still get a clean exception.
+   * Converts a budget-exceeded RuntimeException to
+   * AmazeeBudgetExceededException, notifies the handler, and re-throws. No-op
+   * if the message does not match. Invoked by the base AI methods' catch block.
    */
-  public function message(string $systemPrompt, string $userMessage, int $maxTokens = 512): string {
-    try {
-      return parent::message($systemPrompt, $userMessage, $maxTokens);
-    }
-    catch (\RuntimeException $e) {
-      $this->handlePossibleBudgetException($e);
-      throw $e;
-    }
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function conversation(string $systemPrompt, array $messages, int $maxTokens = 512): string {
-    try {
-      return parent::conversation($systemPrompt, $messages, $maxTokens);
-    }
-    catch (\RuntimeException $e) {
-      $this->handlePossibleBudgetException($e);
-      throw $e;
-    }
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function messageForOperation(string $operation, string $systemPrompt, string $userMessage, int $maxTokens = 512): string {
-    try {
-      return parent::messageForOperation($operation, $systemPrompt, $userMessage, $maxTokens);
-    }
-    catch (\RuntimeException $e) {
-      $this->handlePossibleBudgetException($e);
-      throw $e;
-    }
-  }
-
-  /**
-   * Converts a budget-exceeded RuntimeException to AmazeeBudgetExceededException.
-   *
-   * Notifies the handler and re-throws. No-op if the message does not match.
-   */
-  private function handlePossibleBudgetException(\RuntimeException $e): void {
+  protected function handlePossibleBudgetException(\RuntimeException $e): void {
     if (!str_contains($e->getMessage(), 'Budget has been exceeded!')) {
       return;
     }

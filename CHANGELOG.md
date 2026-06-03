@@ -7,6 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Changed
+- **Dropped the redundant `message()`/`conversation()`/`messageForOperation()` overrides in `ScoltaAiService`; the base `AiServiceAdapter` now owns the budget-exception try/catch.** Each override existed only to wrap the `parent::` call in `try/catch (\RuntimeException)` → `handlePossibleBudgetException()`. scolta-php's base class now does that wrapping and calls a protected `handlePossibleBudgetException()` hook, so the adapter keeps only its hook override (visibility changed `private`→`protected`). Behavior is identical — an Amazee budget error still converts to `AmazeeBudgetExceededException` and notifies the budget handler exactly once. Requires scolta-php ≥ 1.0.3 (the release that adds the hook). ([scolta-php#173](https://github.com/tag1consulting/scolta-php/pull/173))
 - **Resynced the bundled scolta-core WASM (`js/wasm/`) with the updated default `summarize` prompt.** The rebuilt binary carries the explicit output-length budget added in scolta-core (keep summaries under ~150 words, a single flat bulleted list, no section/sub-category headers) that prevents AI overviews from being truncated mid-sentence at the model's output-token ceiling (scolta-php#168). The runtime prompt resolves server-side in PHP, so this keeps the committed browser asset in parity with core. ([tag1consulting/scolta-core#37](https://github.com/tag1consulting/scolta-core/pull/37))
 - Opened 1.0.3-dev development cycle.
 

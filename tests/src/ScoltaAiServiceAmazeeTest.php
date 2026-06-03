@@ -69,20 +69,34 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
     $this->assertStringContainsString('public function isAmazeeActive()', $contents);
   }
 
-  public function testOverridesMessageMethod(): void {
+  public function testOverridesBudgetExceptionHook(): void {
+    // The budget-conversion logic now lives in a single protected hook that
+    // overrides AiServiceAdapter::handlePossibleBudgetException(). The base
+    // class owns the try/catch around the AI calls, so the adapter no longer
+    // overrides message()/conversation()/messageForOperation() just to wrap them.
     $contents = file_get_contents($this->serviceFile);
-    $this->assertStringContainsString('public function message(string $systemPrompt', $contents);
-    $this->assertStringContainsString('handlePossibleBudgetException', $contents);
+    $this->assertMatchesRegularExpression(
+      '/protected\s+function\s+handlePossibleBudgetException\s*\(\s*\\\\?RuntimeException/',
+      $contents,
+      'Adapter must override the protected handlePossibleBudgetException() hook'
+    );
   }
 
-  public function testOverridesConversationMethod(): void {
+  public function testBudgetHookConvertsAndNotifies(): void {
     $contents = file_get_contents($this->serviceFile);
-    $this->assertStringContainsString('public function conversation(string $systemPrompt', $contents);
+    // The hook still detects the Amazee budget signal, wraps it, and notifies.
+    $this->assertStringContainsString("'Budget has been exceeded!'", $contents);
+    $this->assertStringContainsString('new AmazeeBudgetExceededException', $contents);
+    $this->assertStringContainsString('budgetHandler?->handle', $contents);
   }
 
-  public function testOverridesMessageForOperationMethod(): void {
+  public function testNoRedundantAiMethodOverrides(): void {
+    // The base AiServiceAdapter now owns the budget try/catch, so these
+    // overrides must NOT be reintroduced here.
     $contents = file_get_contents($this->serviceFile);
-    $this->assertStringContainsString('public function messageForOperation(string $operation', $contents);
+    $this->assertStringNotContainsString('public function message(string $systemPrompt', $contents);
+    $this->assertStringNotContainsString('public function conversation(string $systemPrompt', $contents);
+    $this->assertStringNotContainsString('public function messageForOperation(string $operation', $contents);
   }
 
   public function testBuildConfigChecksExplicitKeyBeforeAmazee(): void {
