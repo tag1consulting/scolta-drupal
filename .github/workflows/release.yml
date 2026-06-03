@@ -80,8 +80,8 @@ jobs:
           cp -a vendor "$STAGE/vendor"
           find "$STAGE/vendor" -type d \( -name tests -o -name test \) -exec rm -rf {} + 2>/dev/null || true
           find "$STAGE/vendor" \( \
-            -name 'phpunit.xml*' -o -name 'phpstan.neon*' -o -name '.php-cs-fixer*' \
-            -o -name '*.sha256' -o -name '*.toml' -o -name '.deepsource.toml' \
+            -name 'phpunit.xml*' -o -name '*.neon' -o -name '.php-cs-fixer*' \
+            -o -name '*.sha256' -o -name '*.toml' -o -name '*.dist' -o -name '*.log' \
           \) -delete 2>/dev/null || true
 
           cd "$(dirname "$STAGE")"

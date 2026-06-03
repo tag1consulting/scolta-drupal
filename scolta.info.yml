@@ -6,5 +6,5 @@ package: Search
 dependencies:
   - search_api:search_api
 configure: scolta.settings
-version: '1.0.2-dev'
+version: '1.0.2'
 lifecycle: stable

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a5efd4fb79a3f3f40328bf98332bce71",
+    "content-hash": "d7a1b5fa59ee4d05a44fc54331190da4",
     "packages": [
         {
             "name": "asm89/stack-cors",
@@ -4590,16 +4590,16 @@
         },
         {
             "name": "tag1/scolta-php",
-            "version": "1.0.1",
+            "version": "1.0.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/tag1consulting/scolta-php.git",
-                "reference": "91cbd51ae5cd7032cdabc9df991cd53ffc9ef182"
+                "reference": "e71c47926861ca66f8052c0d25d781e4401aadc0"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/tag1consulting/scolta-php/zipball/91cbd51ae5cd7032cdabc9df991cd53ffc9ef182",
-                "reference": "91cbd51ae5cd7032cdabc9df991cd53ffc9ef182",
+                "url": "https://api.github.com/repos/tag1consulting/scolta-php/zipball/e71c47926861ca66f8052c0d25d781e4401aadc0",
+                "reference": "e71c47926861ca66f8052c0d25d781e4401aadc0",
                 "shasum": ""
             },
             "require": {
@@ -4649,7 +4649,7 @@
                 "issues": "https://github.com/tag1consulting/scolta-php/issues",
                 "source": "https://github.com/tag1consulting/scolta-php"
             },
-            "time": "2026-05-30T18:50:02+00:00"
+            "time": "2026-06-03T06:40:41+00:00"
         },
         {
             "name": "twig/twig",
