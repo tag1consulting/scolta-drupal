@@ -1311,6 +1311,37 @@
     return counts;
   }
 
+  // Compute "drop-self" facet counts for actively-filtered dimensions.
+  //
+  // computeFilterCounts() derives facet values from the current result set,
+  // which is already filtered by every active filter — so a dimension with an
+  // active filter collapses to its single selected value (filter language=en →
+  // only "English" shows, with no way to switch or broaden). Proper faceted
+  // search computes a dimension's available values from results filtered by all
+  // OTHER dimensions but NOT the dimension itself. Pagefind's search result
+  // exposes per-value counts in `.filters`, so a search that drops a single
+  // dimension's own filter yields accurate "what would I get if I switched"
+  // counts for that dimension under the current query and remaining filters.
+  async function computeDropSelfFacets(query, baseFilters) {
+    const out = {};
+    for (const dim of Object.keys(baseFilters)) {
+      const vals = baseFilters[dim];
+      if (!(vals instanceof Set) || vals.size === 0) continue;
+      const others = {};
+      for (const [d, v] of Object.entries(baseFilters)) {
+        if (d !== dim) others[d] = v;
+      }
+      try {
+        const search = await pagefindSearch(query, others);
+        if (search && search.filters && search.filters[dim]
+            && Object.keys(search.filters[dim]).length > 0) {
+          out[dim] = search.filters[dim];
+        }
+      } catch (_) { /* facet counts are best-effort — never block render */ }
+    }
+    return out;
+  }
+
   // Deduplicate results with near-identical titles using Jaccard similarity.
   // Run AFTER sorting — keeps the higher-scored result for each cluster.
   function deduplicateByTitle(results) {
@@ -1745,6 +1776,10 @@
     displayedCount = 0;
 
     filterCounts = computeFilterCounts(allScoredResults);
+    const dropSelfFacets = await computeDropSelfFacets(searchQuery, activeFilters);
+    for (const dim of Object.keys(dropSelfFacets)) {
+      filterCounts[dim] = dropSelfFacets[dim];
+    }
     renderFilters();
 
     renderResults(true);
@@ -1872,6 +1907,10 @@
     }
 
     filterCounts = computeFilterCounts(allScoredResults);
+    const dropSelfFacets = await computeDropSelfFacets(searchQuery, activeFilters);
+    for (const dim of Object.keys(dropSelfFacets)) {
+      filterCounts[dim] = dropSelfFacets[dim];
+    }
 
     renderFilters();
     renderResults();
