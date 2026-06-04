@@ -16,6 +16,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 - **Resynced the bundled scolta-core WASM (`js/wasm/`) with the updated default `summarize` prompt.** The rebuilt binary carries the explicit output-length budget added in scolta-core (keep summaries under ~150 words, a single flat bulleted list, no section/sub-category headers) that prevents AI overviews from being truncated mid-sentence at the model's output-token ceiling (scolta-php#168). The runtime prompt resolves server-side in PHP, so this keeps the committed browser asset in parity with core. ([tag1consulting/scolta-core#37](https://github.com/tag1consulting/scolta-core/pull/37))
 - Opened 1.0.3-dev development cycle.
 
+### Internal
+- **GitHub release workflow is now notes-only; dropped the redundant vendor-bundled release zip and its `validate-zip` job.** This module is distributed via drupal.org (the packager builds the canonical tarball from `git.drupalcode.org`, honoring `.gitattributes export-ignore`); Composer installs resolve from the GitHub source zipball. The manually-built `scolta-drupal-${VERSION}.zip` GitHub release asset had no consumer. The tag-triggered release now publishes the CHANGELOG entry with GitHub's auto-attached source archives only. The `lock-guard` job (verifies `tag1/scolta-php` is pinned to a Packagist stable dist) and `.gitattributes export-ignore` are both retained. Removed the `StructuralIntegrityTest` methods that asserted the deleted zip/validate-zip behavior and replaced them with `testReleaseWorkflowUploadsNoBuildArtifact`, which fails if a build artifact upload or `validate-zip` job is re-added.
+
 ## [1.0.2] - 2026-06-02
 
 ### Fixed
