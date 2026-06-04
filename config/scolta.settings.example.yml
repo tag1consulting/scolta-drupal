@@ -31,8 +31,7 @@ scoring:
   expand_primary_weight: 0.7        # Weight for original vs expanded terms (0-1)
   cross_list_bonus: 0.05            # Bonus when a result matches both primary + expanded sets
   expand_subword_max_frequency: 0.05 # Max corpus frequency for an expansion sub-word to be searched (0 disables)
-  expansion_combine_mode: relevance_union # How expansion sub-query results feed the AI summary: 'relevance_union' or 'round_robin'
-  expansion_per_term_top_k: 3       # Round-robin only: candidates taken from each expansion sub-query
+  expansion_combine_mode: relevance_union # How expansion sub-query results feed the AI summary: 'relevance_union' or 'round_robin' (preset-defaulted; round_robin on content_catalog/blog/ecommerce)
   language: 'en'                    # ISO 639-1 language code for stop word filtering
   custom_stop_words: []             # Extra stop words: ['drupal', 'cms']
   expand_subword_deny_list: []      # Words never auto-exempted from the sub-word guard: ['hot'] (stay scorable)

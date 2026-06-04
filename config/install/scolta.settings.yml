@@ -29,7 +29,6 @@ scoring:
   cross_list_bonus: 0.05
   expand_subword_max_frequency: 0.05
   expansion_combine_mode: relevance_union
-  expansion_per_term_top_k: 3
   exact_title_match_boost: 5.0
   phrase_adjacent_multiplier: 2.5
   phrase_near_multiplier: 1.5
