@@ -46,24 +46,79 @@ jobs:
       - name: Install dependencies
         run: composer update --no-interaction --prefer-dist --ignore-platform-req=php
 
-      - name: Verify scolta.js matches canonical (scolta-php)
+      - name: Verify duplicated assets match canonical (scolta-php manifest)
         run: |
-          SHA256_FILE=vendor/tag1/scolta-php/assets/js/scolta.js.sha256
-          if [ ! -f "$SHA256_FILE" ]; then
-            echo "ERROR: $SHA256_FILE not found. scolta-php must include a checksum file."
-            echo "Generate it in scolta-php: sha256sum assets/js/scolta.js | awk '{print \$1}' > assets/js/scolta.js.sha256"
+          set -euo pipefail
+          MANIFEST=vendor/tag1/scolta-php/assets/ASSETS.sha256
+
+          # Map each canonical manifest path (relative to scolta-php assets/)
+          # to its committed location in this Drupal module.
+          committed_path() {
+            case "$1" in
+              js/scolta.js)             echo "js/scolta.js" ;;
+              css/scolta.css)           echo "css/scolta.css" ;;
+              wasm/scolta_core.js)      echo "js/wasm/scolta_core.js" ;;
+              wasm/scolta_core_bg.wasm) echo "js/wasm/scolta_core_bg.wasm" ;;
+              *) echo "" ;;
+            esac
+          }
+
+          if [ ! -f "$MANIFEST" ]; then
+            # Backward-compat: scolta-php in the lock predates the manifest.
+            # Fall back to the per-file scolta.js checksum so this adapter can
+            # merge before scolta-php is released, then upgrade automatically
+            # once the lock is bumped to a manifest-bearing scolta-php.
+            echo "NOTE: $MANIFEST not found (older scolta-php in lock); falling back to scolta.js.sha256 check."
+            SHA256_FILE=vendor/tag1/scolta-php/assets/js/scolta.js.sha256
+            if [ ! -f "$SHA256_FILE" ]; then
+              echo "ERROR: $SHA256_FILE not found. scolta-php must include a checksum file."
+              echo "Generate it in scolta-php: sha256sum assets/js/scolta.js | awk '{print \$1}' > assets/js/scolta.js.sha256"
+              exit 1
+            fi
+            EXPECTED=$(cat "$SHA256_FILE")
+            ACTUAL=$(sha256sum js/scolta.js | awk '{print $1}')
+            if [ "$EXPECTED" != "$ACTUAL" ]; then
+              echo "ERROR: js/scolta.js is out of sync with canonical source (scolta-php)."
+              echo "Expected: $EXPECTED"
+              echo "Actual:   $ACTUAL"
+              echo "Run: composer copy-assets"
+              exit 1
+            fi
+            echo "OK: js/scolta.js checksum matches canonical (scolta-php)."
+            exit 0
+          fi
+
+          # Manifest present: verify every duplicated asset.
+          fail=0
+          while read -r EXPECTED REL; do
+            [ -z "$REL" ] && continue
+            DEST=$(committed_path "$REL")
+            if [ -z "$DEST" ]; then
+              echo "ERROR: manifest lists unknown asset '$REL' with no committed mapping. Update committed_path() in ci.yml."
+              fail=1
+              continue
+            fi
+            if [ ! -f "$DEST" ]; then
+              echo "ERROR: committed asset $DEST is missing."
+              fail=1
+              continue
+            fi
+            ACTUAL=$(sha256sum "$DEST" | awk '{print $1}')
+            if [ "$EXPECTED" != "$ACTUAL" ]; then
+              echo "ERROR: $DEST is out of sync with canonical source (scolta-php assets/$REL)."
+              echo "Expected: $EXPECTED"
+              echo "Actual:   $ACTUAL"
+              fail=1
+            else
+              echo "OK: $DEST matches canonical (scolta-php assets/$REL)."
+            fi
+          done < "$MANIFEST"
+
+          if [ "$fail" -ne 0 ]; then
+            echo "Duplicated assets are out of sync. Run: composer copy-assets"
             exit 1
           fi
-          EXPECTED=$(cat "$SHA256_FILE")
-          ACTUAL=$(sha256sum js/scolta.js | awk '{print $1}')
-          if [ "$EXPECTED" != "$ACTUAL" ]; then
-            echo "ERROR: js/scolta.js is out of sync with canonical source (scolta-php)."
-            echo "Expected: $EXPECTED"
-            echo "Actual:   $ACTUAL"
-            echo "Run: cp vendor/tag1/scolta-php/assets/js/scolta.js js/scolta.js"
-            exit 1
-          fi
-          echo "OK: js/scolta.js checksum matches canonical (scolta-php)."
+          echo "OK: all duplicated assets match the scolta-php manifest."
 
       - name: Lint (Drupal coding standards)
         if: matrix.lint
