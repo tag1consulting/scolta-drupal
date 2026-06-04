@@ -546,14 +546,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('How the per-sub-query result sets of a multi-term query expansion are combined into the AI summary candidate set. <em>Relevance union</em> keeps the historical behavior. <em>Round-robin</em> deals the top candidates from each expansion sub-query so the summarizer sees breadth across distinct sub-topics. The visible results list stays relevance-sorted either way.'),
     ];
 
-    $form['scoring']['expansion_per_term_top_k'] = [
-      '#type' => 'number',
-      '#title' => $this->t('Expansion per-term top K'),
-      '#default_value' => $config->get('scoring.expansion_per_term_top_k') ?? 3,
-      '#min' => 1,
-      '#description' => $this->t('Round-robin only: how many candidates are taken from each expansion sub-query when building the AI summary candidate set. Ignored when the combine mode is relevance union.'),
-    ];
-
     $form['scoring']['exact_title_match_boost'] = [
       '#type' => 'number',
       '#title' => $this->t('Exact title match boost'),
@@ -1131,7 +1123,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('scoring.expansion_combine_mode', in_array($form_state->getValue('expansion_combine_mode'), [
         'relevance_union', 'round_robin',
       ], TRUE) ? $form_state->getValue('expansion_combine_mode') : 'relevance_union')
-      ->set('scoring.expansion_per_term_top_k', max(1, (int) $form_state->getValue('expansion_per_term_top_k')))
       ->set('scoring.exact_title_match_boost', (float) $form_state->getValue('exact_title_match_boost'))
       ->set('scoring.phrase_adjacent_multiplier', (float) $form_state->getValue('phrase_adjacent_multiplier'))
       ->set('scoring.phrase_near_multiplier', (float) $form_state->getValue('phrase_near_multiplier'))

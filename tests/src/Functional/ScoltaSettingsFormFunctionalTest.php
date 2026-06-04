@@ -198,35 +198,35 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
   /**
    * Tests the expansion combine-mode and per-term top-K fields persist.
    *
-   * Release-gate render assertion for scolta-php#170: the round-robin combine
-   * mode and its per-term K must round-trip a saved value through the UI, and
-   * the defaults must keep the historical relevance-union behavior.
+   * Release-gate render assertion for scolta-php#170/#179: the combine mode must
+   * round-trip a saved value through the UI and default to the historical
+   * relevance-union behavior. The per-term top-K is no longer configurable (it
+   * is locked at 3 inside scolta-php), so its form field must be gone.
    */
   public function testExpansionCombineModePersistence(): void {
     $this->drupalLogin($this->adminUser);
     $this->drupalGet('/admin/config/search/scolta');
 
-    // The fields exist and default to the historical behavior.
+    // The combine-mode field exists and defaults to the historical behavior.
     $modeField = $this->assertSession()->fieldExists('expansion_combine_mode');
     $this->assertEquals('relevance_union', $modeField->getValue());
-    $kField = $this->assertSession()->fieldExists('expansion_per_term_top_k');
-    $this->assertEquals('3', $kField->getValue());
+
+    // The locked per-term top-K knob is no longer exposed as a form field.
+    $this->assertSession()->fieldNotExists('expansion_per_term_top_k');
 
     $this->submitForm([
       'expansion_combine_mode' => 'round_robin',
-      'expansion_per_term_top_k' => '5',
     ], 'Save configuration');
     $this->assertSession()->statusCodeEquals(200);
 
-    // Persisted with the selected mode and integer K.
+    // Persisted with the selected mode; no per-term top-K is written.
     $config = $this->config('scolta.settings');
     $this->assertEquals('round_robin', $config->get('scoring.expansion_combine_mode'));
-    $this->assertSame(5, $config->get('scoring.expansion_per_term_top_k'));
+    $this->assertNull($config->get('scoring.expansion_per_term_top_k'));
 
-    // Reload and verify the saved values are rendered.
+    // Reload and verify the saved value is rendered.
     $this->drupalGet('/admin/config/search/scolta');
     $this->assertEquals('round_robin', $this->assertSession()->fieldExists('expansion_combine_mode')->getValue());
-    $this->assertEquals('5', $this->assertSession()->fieldExists('expansion_per_term_top_k')->getValue());
   }
 
   /**

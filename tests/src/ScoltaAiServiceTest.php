@@ -97,11 +97,12 @@ class ScoltaAiServiceTest extends TestCase {
     // ScoltaConfig property is provided by scolta-php once the dependency is
     // updated, so assert the install default structurally here.
     $this->assertEquals(0.05, $this->getInstallDefaults()['scoring']['expand_subword_max_frequency']);
-    // The expansion combine-mode and per-term top-K settings ship in install
-    // config; the typed ScoltaConfig properties are provided by scolta-php once
-    // the dependency is updated, so assert the install defaults structurally.
+    // The expansion combine-mode setting ships in install config (base default;
+    // presets override it via scolta-php). The per-term top-K is no longer a
+    // configurable setting — it is locked at 3 inside scolta-php — so it must no
+    // longer appear in install config.
     $this->assertEquals('relevance_union', $this->getInstallDefaults()['scoring']['expansion_combine_mode']);
-    $this->assertEquals(3, $this->getInstallDefaults()['scoring']['expansion_per_term_top_k']);
+    $this->assertArrayNotHasKey('expansion_per_term_top_k', $this->getInstallDefaults()['scoring']);
   }
 
   public function testDisplayConfigFlattensCorrectly(): void {
