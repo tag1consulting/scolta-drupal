@@ -206,24 +206,6 @@ class StructuralIntegrityTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // Release workflow ZIP folder structure
-  // -------------------------------------------------------------------
-
-  public function testReleaseWorkflowCreatesCorrectZipFolder(): void {
-    $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
-    $this->assertStringContainsString(
-      'PKG="scolta-drupal"',
-      $workflow,
-      'Release workflow must set PKG to scolta-drupal for the zip folder name'
-    );
-    $this->assertStringNotContainsString(
-      'zip -r ../scolta-drupal-${VERSION}.zip .',
-      $workflow,
-      'Must not zip from current dir (creates flat archive without scolta-drupal/ folder)'
-    );
-  }
-
-  // -------------------------------------------------------------------
   // isExecutable() guard
   // -------------------------------------------------------------------
 
@@ -351,26 +333,8 @@ class StructuralIntegrityTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // Release workflow vendor test directory excludes
+  // Release workflow lock guard
   // -------------------------------------------------------------------
-
-  public function test_release_workflow_prunes_vendor_test_dirs(): void {
-    $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
-    $this->assertStringContainsString(
-      '-name tests -o -name test',
-      $workflow,
-      'Release workflow must prune vendor test/ and tests/ directories from the staged archive'
-    );
-  }
-
-  public function test_release_workflow_validate_zip_checks_test_singular(): void {
-    $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
-    $this->assertStringContainsString(
-      'scolta-drupal/vendor/.+/test/',
-      $workflow,
-      'validate-zip job must check for vendor test/ directories (singular)'
-    );
-  }
 
   public function test_release_workflow_has_lock_guard(): void {
     $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
@@ -381,17 +345,28 @@ class StructuralIntegrityTest extends TestCase {
     );
   }
 
-  public function test_release_workflow_has_disallowed_extension_guard(): void {
+  /**
+   * The release is notes-only. This module is distributed via drupal.org (the
+   * packager builds the tarball from git.drupalcode.org), so a GitHub
+   * vendor-bundled release asset has no consumer. Guard against silently
+   * re-adding a custom build artifact or validate-zip job.
+   */
+  public function testReleaseWorkflowUploadsNoBuildArtifact(): void {
     $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
-    $this->assertStringContainsString(
-      '.sha256',
+    $this->assertStringNotContainsString(
+      'scolta-drupal-',
       $workflow,
-      'validate-zip must check for disallowed .sha256 files'
+      'Release workflow must not build or upload a scolta-drupal-*.zip asset'
     );
-    $this->assertStringContainsString(
-      '.toml',
+    $this->assertStringNotContainsString(
+      'validate-zip',
       $workflow,
-      'validate-zip must check for disallowed .toml files'
+      'Release workflow must not include a validate-zip job (no release asset to validate)'
+    );
+    $this->assertStringNotContainsString(
+      'files:',
+      $workflow,
+      'Release workflow must be notes-only (no files: upload to the release)'
     );
   }
 
