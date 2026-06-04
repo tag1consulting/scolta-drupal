@@ -188,6 +188,8 @@ Pick the **Site Type** that matches your site and Scolta sets sensible defaults 
 
 You rarely need to touch individual numbers — the preset is the recommended path, and any value you change by hand in the **Scoring** section still overrides the preset. The one advanced knob worth knowing is **Search breadth** (`expand_subword_max_frequency`): higher returns more results but can pull in loosely-related matches; lower keeps results tight. The Recipe & Content Catalog preset already raises it from `0.05` to `0.10`.
 
+Two further advanced knobs control how a multi-term query expansion feeds the AI summary. **Expansion combine mode** (`expansion_combine_mode`) is either `relevance_union` (default — historical behavior) or `round_robin`, which deals the top candidates from each expansion sub-query so the summarizer sees breadth across distinct sub-topics. **Expansion per-term top K** (`expansion_per_term_top_k`, default `3`) sets how many candidates are taken from each sub-query under round-robin; it is ignored under relevance union. The visible results list stays relevance-sorted in both modes.
+
 For the evidence behind each preset — the scoring sweeps and the per-parameter data — see [scolta-php's `docs/TUNING.md`](https://github.com/tag1consulting/scolta-php/blob/main/docs/TUNING.md).
 
 ## Troubleshooting

@@ -7,6 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 ## [Unreleased]
 
 ### Added
+- **`expansion_combine_mode` (`relevance_union` default / `round_robin`) and `expansion_per_term_top_k` (default `3`) scoring settings.** New "Expansion combine mode" select and "Expansion per-term top K" number fields in the settings form, plus config schema and install/example config, for the scolta-php round-robin AI-summary candidate selection across query-expansion sub-queries ([tag1consulting/scolta-php#170](https://github.com/tag1consulting/scolta-php/issues/170)). Under `round_robin`, the summarizer is dealt the top K candidates from each expansion sub-query so it sees breadth across distinct sub-topics; `relevance_union` keeps the historical behavior and the visible results list stays relevance-sorted in both modes. Re-synced `js/scolta.js` to scolta-php main (the new `selectSummaryCandidates` round-robin logic). Added `ScoltaSettingsFormFunctionalTest::testExpansionCombineModePersistence` covering the render/save round-trip and the default values.
 - **`hook_help()` pointer to the search-breadth tuning guide.** The Scolta help page and settings form now show a one-line symptom→fix note ("Getting fewer search results than you expect on a recipe, product, or catalog site? … choose the Recipe & Content Catalog preset") linking admins to the new README "Tuning search breadth" section.
 
 ### Changed

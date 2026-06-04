@@ -116,6 +116,12 @@ scolta.settings:
         expand_subword_max_frequency:
           type: float
           label: 'Sub-word maximum corpus frequency'
+        expansion_combine_mode:
+          type: string
+          label: 'Expansion combine mode'
+        expansion_per_term_top_k:
+          type: integer
+          label: 'Expansion per-term top K'
         exact_title_match_boost:
           type: float
           label: 'Exact title match boost'

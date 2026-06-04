@@ -535,6 +535,25 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t("Advanced: how aggressively multi-word searches broaden. Higher returns more results but can pull in loosely-related matches; lower keeps results tight. Most sites should pick a Site Type preset above instead of changing this by hand. Default: 0.05 (the Recipe &amp; Content Catalog preset raises it to 0.10). Set to 0 to disable sub-word expansion; values at or above 1 search every sub-word."),
     ];
 
+    $form['scoring']['expansion_combine_mode'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Expansion combine mode'),
+      '#default_value' => $config->get('scoring.expansion_combine_mode') ?? 'relevance_union',
+      '#options' => [
+        'relevance_union' => $this->t('Relevance union (default)'),
+        'round_robin' => $this->t('Round-robin across sub-queries'),
+      ],
+      '#description' => $this->t('How the per-sub-query result sets of a multi-term query expansion are combined into the AI summary candidate set. <em>Relevance union</em> keeps the historical behavior. <em>Round-robin</em> deals the top candidates from each expansion sub-query so the summarizer sees breadth across distinct sub-topics. The visible results list stays relevance-sorted either way.'),
+    ];
+
+    $form['scoring']['expansion_per_term_top_k'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Expansion per-term top K'),
+      '#default_value' => $config->get('scoring.expansion_per_term_top_k') ?? 3,
+      '#min' => 1,
+      '#description' => $this->t('Round-robin only: how many candidates are taken from each expansion sub-query when building the AI summary candidate set. Ignored when the combine mode is relevance union.'),
+    ];
+
     $form['scoring']['exact_title_match_boost'] = [
       '#type' => 'number',
       '#title' => $this->t('Exact title match boost'),
@@ -1109,6 +1128,10 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('scoring.expand_primary_weight', (float) $form_state->getValue('expand_primary_weight'))
       ->set('scoring.cross_list_bonus', (float) $form_state->getValue('cross_list_bonus'))
       ->set('scoring.expand_subword_max_frequency', (float) $form_state->getValue('expand_subword_max_frequency'))
+      ->set('scoring.expansion_combine_mode', in_array($form_state->getValue('expansion_combine_mode'), [
+        'relevance_union', 'round_robin',
+      ], TRUE) ? $form_state->getValue('expansion_combine_mode') : 'relevance_union')
+      ->set('scoring.expansion_per_term_top_k', max(1, (int) $form_state->getValue('expansion_per_term_top_k')))
       ->set('scoring.exact_title_match_boost', (float) $form_state->getValue('exact_title_match_boost'))
       ->set('scoring.phrase_adjacent_multiplier', (float) $form_state->getValue('phrase_adjacent_multiplier'))
       ->set('scoring.phrase_near_multiplier', (float) $form_state->getValue('phrase_near_multiplier'))

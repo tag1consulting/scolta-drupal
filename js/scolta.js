@@ -75,6 +75,8 @@
       CROSS_LIST_BONUS: s.CROSS_LIST_BONUS ?? 0.05,
       EXPAND_SUBWORD_MAX_FREQ: s.EXPAND_SUBWORD_MAX_FREQ ?? 0.05,
       EXPAND_SUBWORD_DENYLIST: s.EXPAND_SUBWORD_DENYLIST ?? [],
+      EXPANSION_COMBINE_MODE: s.EXPANSION_COMBINE_MODE ?? 'relevance_union',
+      EXPANSION_PER_TERM_TOP_K: s.EXPANSION_PER_TERM_TOP_K ?? 3,
       AI_MAX_FOLLOWUPS: s.AI_MAX_FOLLOWUPS ?? 3,
       AI_LANGUAGES: s.AI_LANGUAGES ?? ['en'],
       LANGUAGE: s.LANGUAGE ?? 'en',
@@ -294,6 +296,8 @@
       CROSS_LIST_BONUS: s.CROSS_LIST_BONUS ?? 0.05,
       EXPAND_SUBWORD_MAX_FREQ: s.EXPAND_SUBWORD_MAX_FREQ ?? 0.05,
       EXPAND_SUBWORD_DENYLIST: s.EXPAND_SUBWORD_DENYLIST ?? [],
+      EXPANSION_COMBINE_MODE: s.EXPANSION_COMBINE_MODE ?? 'relevance_union',
+      EXPANSION_PER_TERM_TOP_K: s.EXPANSION_PER_TERM_TOP_K ?? 3,
       AI_MAX_FOLLOWUPS: s.AI_MAX_FOLLOWUPS ?? 3,
       AI_LANGUAGES: s.AI_LANGUAGES ?? ['en'],
       AUTO_LANGUAGE_FILTER: s.AUTO_LANGUAGE_FILTER ?? false,
@@ -537,6 +541,74 @@
     }
   }
 
+  // Build the candidate set fed to the AI summarizer (issue #170).
+  //
+  // `relevance_union` (default) reproduces the historical behavior: take the
+  // top-N off the already relevance-sorted, deduplicated pool.
+  //
+  // `round_robin` addresses sub-query domination — when a query fans out into
+  // distinct sub-topics of unequal corpus size, the relevance-union top-N is
+  // filled entirely by the single largest sub-query, so the summarizer never
+  // sees the smaller ones and cannot mention them. Instead, group results by the
+  // expansion sub-query that produced them (provenance stamped by
+  // searchAndLoadParallel) and deal the top-K from each sub-query in turn until
+  // AI_SUMMARY_TOP_N is filled. This reallocates *within* the existing top-N /
+  // character budget — it never exceeds it — and does not touch the visible
+  // ranked list. A single-bucket pool (focused single-intent query) is identical
+  // to `relevance_union`.
+  function selectSummaryCandidates(results, query, CONFIG) {
+    const topN = CONFIG.AI_SUMMARY_TOP_N;
+    if (CONFIG.EXPANSION_COMBINE_MODE !== 'round_robin') {
+      return results.slice(0, topN);
+    }
+
+    const K = Math.max(1, CONFIG.EXPANSION_PER_TERM_TOP_K | 0);
+
+    // Group by provenance, preserving the incoming relevance order within each
+    // bucket. Results with no stamp (the primary query, or non-expanded
+    // searches) fall under the original query.
+    const buckets = new Map();
+    for (const r of results) {
+      const term = (r.data && r.data.__scoltaSourceTerm) || query;
+      if (!buckets.has(term)) buckets.set(term, []);
+      buckets.get(term).push(r);
+    }
+
+    // One sub-query → no breadth to balance; behave exactly like relevance_union.
+    if (buckets.size <= 1) return results.slice(0, topN);
+
+    // Deal the strongest sub-query first so the lead candidate still reflects
+    // overall relevance.
+    const order = [...buckets.keys()].sort(
+      (a, b) => (buckets.get(b)[0]?.score || 0) - (buckets.get(a)[0]?.score || 0)
+    );
+
+    const picked = [];
+    const seen = new Set();
+    let round = 0;
+    let progressed = true;
+    while (picked.length < topN && progressed) {
+      progressed = false;
+      for (const term of order) {
+        const bucket = buckets.get(term);
+        for (let k = 0; k < K && picked.length < topN; k++) {
+          const idx = round * K + k;
+          if (idx >= bucket.length) break;
+          progressed = true;
+          const r = bucket[idx];
+          // Dedup is by URL already, so `seen` is a safety net against a result
+          // that somehow lands in two buckets.
+          const key = resolveUrl(r.data?.url || '') || r;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          picked.push(r);
+        }
+      }
+      round++;
+    }
+    return picked;
+  }
+
   async function summarizeResults(query, results, expandedTerms = [], sortHint = null, filterHint = null, userFilters = {}) {
     const CONFIG = getInstanceConfig();
     const endpoints = getInstanceEndpoints();
@@ -556,7 +628,7 @@
         <div class="scolta-ai-shimmer" style="width:72%"></div>
       </div>`;
 
-    const topN = results.slice(0, CONFIG.AI_SUMMARY_TOP_N);
+    const topN = selectSummaryCandidates(results, query, CONFIG);
     let context;
     if (scoltaWasm && scoltaWasm.batch_extract_context) {
       try {
@@ -1416,6 +1488,13 @@
     for (const [term, items] of byTerm) {
       const weight = items[0].weight;
       const loaded = items.map(i => i.data);
+      // Stamp expansion provenance onto each loaded result so the summary
+      // candidate selector can group by sub-query (issue #170). This survives
+      // mergeResults (which preserves the original data object per URL) and is
+      // invisible to the visible ranked list — only the summarizer consults it.
+      for (const d of loaded) {
+        if (d) d.__scoltaSourceTerm = term;
+      }
       const scoredVsTerm = scoreResults(loaded, term, weight, originalQuery);
       const scoredVsOriginal = scoreResults(loaded, originalQuery, weight * 0.5);
 
