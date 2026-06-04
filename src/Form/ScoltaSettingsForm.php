@@ -527,12 +527,12 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     $form['scoring']['expand_subword_max_frequency'] = [
       '#type' => 'number',
-      '#title' => $this->t('Sub-word maximum corpus frequency'),
+      '#title' => $this->t('Search breadth (advanced)'),
       '#default_value' => $config->get('scoring.expand_subword_max_frequency') ?? 0.05,
       '#step' => 'any',
       '#min' => 0,
       '#max' => 1,
-      '#description' => $this->t("Maximum corpus frequency (fraction of indexed pages) for a multi-word expansion term's constituent word to be searched on its own. Recovers broad-query recall while blocking high-frequency noise words. Set to 0 to disable sub-word expansion; values at or above 1 search every sub-word."),
+      '#description' => $this->t("Advanced: how aggressively multi-word searches broaden. Higher returns more results but can pull in loosely-related matches; lower keeps results tight. Most sites should pick a Site Type preset above instead of changing this by hand. Default: 0.05 (the Recipe &amp; Content Catalog preset raises it to 0.10). Set to 0 to disable sub-word expansion; values at or above 1 search every sub-word."),
     ];
 
     $form['scoring']['exact_title_match_boost'] = [
