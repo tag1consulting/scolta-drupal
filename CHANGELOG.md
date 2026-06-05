@@ -4,7 +4,7 @@ All notable changes to scolta-drupal will be documented in this file.
 
 This project uses [Semantic Versioning](https://semver.org/). Major versions are synchronized across all Scolta packages; minor and patch versions are released independently per package.
 
-## [Unreleased]
+## [1.0.3] - 2026-06-05
 
 ### Added
 - **`expansion_combine_mode` (`relevance_union` default / `round_robin`) scoring setting.** New "Expansion combine mode" select in the settings form, plus config schema and install/example config, for the scolta-php round-robin AI-summary candidate selection across query-expansion sub-queries ([tag1consulting/scolta-php#170](https://github.com/tag1consulting/scolta-php/issues/170)). Under `round_robin`, the summarizer is dealt the top candidates from each expansion sub-query so it sees breadth across distinct sub-topics; `relevance_union` keeps the historical behavior and the visible results list stays relevance-sorted in both modes. The mode is preset-defaulted (see Changed below) and any value set by hand overrides the preset. Re-synced `js/scolta.js` to scolta-php main (the new `selectSummaryCandidates` round-robin logic). Added `ScoltaSettingsFormFunctionalTest::testExpansionCombineModePersistence` covering the render/save round-trip and the default value.
