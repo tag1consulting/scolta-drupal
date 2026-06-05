@@ -217,6 +217,11 @@
     return value;
   }
 
+  function filterDimLabel(dimension) {
+    return FILTER_LABELS[dimension]
+      || (dimension.charAt(0).toUpperCase() + dimension.slice(1).replace(/_/g, ' '));
+  }
+
   // ==========================================================================
   // INSTANCE FACTORY
   // ==========================================================================
@@ -240,7 +245,7 @@
   let conversationMessages = [];
   let followUpCount = 0;
   let abortController = null;
-  let filterCounts = {};
+  let queryFacetCounts = {};   // { dimension: { value: count } } — fixed per typed query
   let currentQuery = "";
   let allHighlightTerms = [];
   let lastExpandedTerms = null;
@@ -378,8 +383,8 @@
     }
 
     // Merge all language instances so multilingual facets appear.
-    // pagefind.init() loads only the page language; without merging,
-    // filterCounts.language has one value and renderFilters hides the facet.
+    // pagefind.init() loads only the page language; without merging, the
+    // taxonomy's language dimension has one value and renderFilters hides the facet.
     //
     // pagefind.mergeIndex() skips calls where indexPath is a prefix of the
     // primary instance's basePath (same-index dedup guard). The primary
@@ -1292,54 +1297,32 @@
     }
   }
 
-  // Compute facet counts from actual result set.
-  // Returns { dimension: { value: count } } for all filter dimensions present in results.
-  function computeFilterCounts(results) {
-    const counts = {};
-    for (const r of results) {
-      const filters = r.data.filters || {};
-      for (const [dim, val] of Object.entries(filters)) {
-        if (!val) continue;
-        const values = Array.isArray(val) ? val : [val];
-        for (const v of values) {
-          if (!v) continue;
-          if (!counts[dim]) counts[dim] = {};
-          counts[dim][v] = (counts[dim][v] || 0) + 1;
-        }
-      }
-    }
-    return counts;
-  }
-
-  // Compute "drop-self" facet counts for actively-filtered dimensions.
+  // Compute the query-fixed facet counts for a typed query.
   //
-  // computeFilterCounts() derives facet values from the current result set,
-  // which is already filtered by every active filter — so a dimension with an
-  // active filter collapses to its single selected value (filter language=en →
-  // only "English" shows, with no way to switch or broaden). Proper faceted
-  // search computes a dimension's available values from results filtered by all
-  // OTHER dimensions but NOT the dimension itself. Pagefind's search result
-  // exposes per-value counts in `.filters`, so a search that drops a single
-  // dimension's own filter yields accurate "what would I get if I switched"
-  // counts for that dimension under the current query and remaining filters.
-  async function computeDropSelfFacets(query, baseFilters) {
-    const out = {};
-    for (const dim of Object.keys(baseFilters)) {
-      const vals = baseFilters[dim];
-      if (!(vals instanceof Set) || vals.size === 0) continue;
-      const others = {};
-      for (const [d, v] of Object.entries(baseFilters)) {
-        if (d !== dim) others[d] = v;
+  // Counts are a fixed property of the typed query: computed once when the query
+  // is submitted, never recomputed on a facet toggle or after AI expansion. A
+  // single Pagefind search returns per-value counts for every dimension in one
+  // shot (`.filters`); the count next to a value means "N of the results for
+  // your search are tagged this." To keep counts stable yet correctly scoped,
+  // the search keeps only STRUCTURAL filter dimensions (language/site/etc. in
+  // SKIP_FILTER_DIMENSIONS — typically the auto-language default) and drops
+  // every user-facing facet selection, so the numbers are independent of which
+  // facets the user has clicked. Expansion is LLM-driven and nondeterministic,
+  // so deriving counts from the deterministic typed query keeps them stable
+  // run-to-run. Returns { dimension: { value: count } }.
+  async function computeQueryFacetCounts(query, baseFilters) {
+    const structuralFilters = {};
+    for (const [dim, vals] of Object.entries(baseFilters || {})) {
+      if (SKIP_FILTER_DIMENSIONS.has(dim.toLowerCase())) {
+        structuralFilters[dim] = vals;
       }
-      try {
-        const search = await pagefindSearch(query, others);
-        if (search && search.filters && search.filters[dim]
-            && Object.keys(search.filters[dim]).length > 0) {
-          out[dim] = search.filters[dim];
-        }
-      } catch (_) { /* facet counts are best-effort — never block render */ }
     }
-    return out;
+    try {
+      const search = await pagefindSearch(query, structuralFilters);
+      return (search && search.filters) ? search.filters : {};
+    } catch (_) {
+      return {};   // facet counts are best-effort — never block render
+    }
   }
 
   // Deduplicate results with near-identical titles using Jaccard similarity.
@@ -1775,11 +1758,10 @@
 
     displayedCount = 0;
 
-    filterCounts = computeFilterCounts(allScoredResults);
-    const dropSelfFacets = await computeDropSelfFacets(searchQuery, activeFilters);
-    for (const dim of Object.keys(dropSelfFacets)) {
-      filterCounts[dim] = dropSelfFacets[dim];
-    }
+    // queryFacetCounts is fixed for the typed query — computed once in doSearch's
+    // primary pass and deliberately NOT recomputed here. The panel (dimensions,
+    // values, counts, order) is therefore byte-identical before and after AI
+    // expansion; only the result list and header count change.
     renderFilters();
 
     renderResults(true);
@@ -1906,10 +1888,12 @@
       }
     }
 
-    filterCounts = computeFilterCounts(allScoredResults);
-    const dropSelfFacets = await computeDropSelfFacets(searchQuery, activeFilters);
-    for (const dim of Object.keys(dropSelfFacets)) {
-      filterCounts[dim] = dropSelfFacets[dim];
+    // Counts are a fixed property of the typed query: compute them once, only
+    // when the typed query changes (!preserveFilters). A facet toggle, sort, or
+    // load-more (preserveFilters === true) reuses the stored counts so the panel
+    // numbers never move on click.
+    if (!preserveFilters) {
+      queryFacetCounts = await computeQueryFacetCounts(searchQuery, activeFilters);
     }
 
     renderFilters();
@@ -2017,26 +2001,20 @@
 
   function renderFilters() {
     const container = els.filters;
+    const taxonomy = cachedPagefindFilters || {};
 
-    // Show dimensions that have more than one unique value, plus any
-    // dimension with an active filter (so the user can always uncheck it).
-    const dims = Object.keys(filterCounts).filter(
-      dim => Object.keys(filterCounts[dim]).length > 1
+    // Dimensions are driven by the index taxonomy, NOT the result set: show
+    // every dimension that is not infrastructure (SKIP_FILTER_DIMENSIONS) and
+    // has more than one distinct value in the taxonomy. A globally single-value
+    // dimension is not a useful facet. This gate is query-independent, so no
+    // dimension ever appears, disappears, or reorders while searching.
+    const dims = Object.keys(taxonomy).filter(
+      dim => !SKIP_FILTER_DIMENSIONS.has(dim.toLowerCase())
+          && Object.keys(taxonomy[dim]).length > 1
     );
-    for (const dim of Object.keys(activeFilters)) {
-      if (activeFilters[dim] instanceof Set && activeFilters[dim].size > 0 && !dims.includes(dim)) {
-        dims.push(dim);
-      }
-    }
 
-    // Order: language first, site second, then remaining dimensions alphabetically.
-    dims.sort((a, b) => {
-      const order = { language: 0, site: 1 };
-      const oa = order[a] ?? 2;
-      const ob = order[b] ?? 2;
-      if (oa !== ob) return oa - ob;
-      return a.localeCompare(b);
-    });
+    // Sort dimensions alphabetically by display label.
+    dims.sort((a, b) => filterDimLabel(a).localeCompare(filterDimLabel(b)));
 
     if (dims.length === 0) {
       container.innerHTML = "";
@@ -2047,23 +2025,25 @@
     els.layout.classList.add("has-filters");
     let html = "";
     for (const dim of dims) {
-      const label = FILTER_LABELS[dim]
-        || (dim.charAt(0).toUpperCase() + dim.slice(1).replace(/_/g, ' '));
-      html += `<div class="scolta-filter-group"><h3>${escapeHtml(label)}</h3>`;
+      html += `<div class="scolta-filter-group"><h3>${escapeHtml(filterDimLabel(dim))}</h3>`;
       const dimFilters = activeFilters[dim] || new Set();
-      const dimCounts = filterCounts[dim] || {};
-      const entries = Object.entries(dimCounts).sort((a, b) => b[1] - a[1]);
-      for (const val of dimFilters) {
-        if (!(val in dimCounts)) {
-          entries.push([val, 0]);
-        }
-      }
-      for (const [val, count] of entries) {
+      const dimCounts = queryFacetCounts[dim] || {};
+      // Values come from the taxonomy, sorted alphabetically by display value —
+      // never by count, which would reorder as counts change. The full value
+      // list is fixed across searches and facet clicks.
+      const vals = Object.keys(taxonomy[dim]).sort(
+        (a, b) => filterDisplayValue(dim, a).localeCompare(filterDisplayValue(dim, b))
+      );
+      for (const val of vals) {
+        const count = dimCounts[val] ?? 0;
         const isActive = dimFilters.has(val);
+        // Uniform zero policy: a count-0 value is shown but disabled, UNLESS it
+        // is currently active (an active value must always remain uncheckable).
+        const disabled = (count === 0 && !isActive) ? " disabled" : "";
         const checked = isActive ? "checked" : "";
         const activeClass = isActive ? " active" : "";
         html += `<label class="scolta-filter-item${activeClass}">
-          <input type="checkbox" value="${escapeHtml(val)}" ${checked}
+          <input type="checkbox" value="${escapeHtml(val)}" ${checked}${disabled}
                  data-scolta-filter-dim="${escapeHtml(dim)}" data-scolta-filter-val="${escapeHtml(val)}">
           ${escapeHtml(filterDisplayValue(dim, val))} <span class="scolta-filter-count">(${count})</span>
         </label>`;
