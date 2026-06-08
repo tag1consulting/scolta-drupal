@@ -760,6 +760,20 @@
     return div.innerHTML;
   }
 
+  // Prepare a raw query for display inside the results header, which wraps the
+  // query in its own pair of double-quotes. A quoted-phrase search ("merge
+  // conflict") already carries surrounding quotes, so without trimming a single
+  // matched pair the header would render the doubled ""merge conflict"".
+  // escapeHtml does not escape `"`, so the only quote level shown is the
+  // template's — strip at most one surrounding pair here so it isn't doubled.
+  function displayQuery(query) {
+    const q = query || "";
+    if (q.length >= 2 && q.startsWith('"') && q.endsWith('"')) {
+      return q.slice(1, -1);
+    }
+    return q;
+  }
+
   function stripHtml(text) {
     const div = document.createElement("div");
     div.innerHTML = text;
@@ -791,9 +805,22 @@
   // Top 2 results get full page content for depth; remaining get excerpts.
   function buildLLMContext(results, sortHint = null, filterHint = null) {
     const CONFIG = getInstanceConfig();
-    return results.map((r, i) => {
+    // Collapse results that resolve to the same destination URL before numbering.
+    // Two results sharing a URL would otherwise each get their own [n] block, so
+    // the model is handed duplicate sources and cites the same href repeatedly in
+    // its summary. Deduping here (the root layer) keeps the first — highest
+    // ranked — occurrence of each URL; results with no URL are never collapsed.
+    const seenUrls = new Set();
+    const unique = [];
+    for (const r of results) {
+      const _u = r.data.meta?.url || resolveUrl(r.data.url || "");
+      const url = _u.startsWith("/") ? window.location.origin + _u : _u;
+      if (url && seenUrls.has(url)) continue;
+      if (url) seenUrls.add(url);
+      unique.push({ r, url });
+    }
+    return unique.map(({ r, url }, i) => {
       const title = r.data.meta?.title || "Untitled";
-      const _u = r.data.meta?.url || resolveUrl(r.data.url || ""); const url = _u.startsWith("/") ? window.location.origin + _u : _u;
       const useFullContent = i < 2;
       const text = useFullContent
         ? stripHtml(r.data.content || r.data.excerpt || "")
@@ -1310,7 +1337,27 @@
   // facets the user has clicked. Expansion is LLM-driven and nondeterministic,
   // so deriving counts from the deterministic typed query keeps them stable
   // run-to-run. Returns { dimension: { value: count } }.
-  async function computeQueryFacetCounts(query, baseFilters) {
+  //
+  // The count source must follow the same query-mode decision the result list
+  // makes (see the OR fallback in doSearch). Pagefind ANDs every word of a
+  // multi-word query, so a long conversational query frequently returns zero
+  // AND matches; the result list then rebuilds from per-term OR searches, but a
+  // single native `.filters` read off the empty AND search would report every
+  // count as 0. So:
+  //   1. AND search non-empty → return its native `.filters` (exact, uncapped).
+  //   2. AND search empty AND the OR fallback would engage (>1 meaningful term,
+  //      not a forced phrase) → tally the UNION of per-term matches (counted by
+  //      fragment id so a doc matching several terms counts once). Pagefind has
+  //      no term-level OR and summing per-term `.filters` would double-count, so
+  //      the union must be tallied from loaded fragments, not summed.
+  //   3. AND search empty and fallback would NOT engage (single term or forced
+  //      phrase) → the result list is genuinely empty too, so all-zero counts
+  //      are truthful; return the empty search's `.filters`.
+  // The mode decision is made on THIS structural-only search, not the primary
+  // search — they can diverge (a user-applied facet may empty the primary search
+  // while the structural search still matches), and counts describe the typed
+  // query against structural scope, so the structural search's verdict governs.
+  async function computeQueryFacetCounts(query, baseFilters, meaningfulTerms, isForcedPhrase) {
     const structuralFilters = {};
     for (const [dim, vals] of Object.entries(baseFilters || {})) {
       if (SKIP_FILTER_DIMENSIONS.has(dim.toLowerCase())) {
@@ -1319,10 +1366,67 @@
     }
     try {
       const search = await pagefindSearch(query, structuralFilters);
+      // Mode 1: AND search matched — native per-value counts, exact.
+      if (search && search.results && search.results.length > 0) {
+        return search.filters || {};
+      }
+      // Mode 2: AND search empty but the OR fallback would populate the list —
+      // counts must follow the same union the result path shows.
+      const terms = Array.isArray(meaningfulTerms) ? meaningfulTerms : [];
+      if (!isForcedPhrase && terms.length > 1) {
+        return await computeUnionFacetCounts(terms, structuralFilters);
+      }
+      // Mode 3: empty and no fallback — zeros are truthful.
       return (search && search.filters) ? search.filters : {};
     } catch (_) {
       return {};   // facet counts are best-effort — never block render
     }
+  }
+
+  // Tally facet counts from the UNION of per-term matches — the count-path
+  // mirror of the result path's OR fallback. Runs one structural-only-filtered
+  // search per meaningful term, unions the results by fragment id (so a document
+  // matching several terms is counted ONCE — never sum per-term `.filters`, which
+  // double-counts), caps each term's results at MAX_PAGEFIND_RESULTS (the same
+  // cap the result path loads under), then tallies each unique fragment's
+  // `data.filters` into { dimension: { value: count } }. Fragment filter values
+  // may be a scalar or an array — both are handled. Every dimension found is
+  // tallied (renderFilters skips structural dims anyway). Fragment loads are
+  // Pagefind-cached by hash, and the result path loads largely the same
+  // fragments, so the marginal cost is small.
+  async function computeUnionFacetCounts(terms, structuralFilters) {
+    const CONFIG = getInstanceConfig();
+    const searches = await Promise.all(
+      terms.map(term => pagefindSearch(term, structuralFilters))
+    );
+    const seenIds = new Set();
+    const dataPromises = [];
+    for (const search of searches) {
+      if (!search || !search.results) continue;
+      const toLoad = Math.min(search.results.length, CONFIG.MAX_PAGEFIND_RESULTS);
+      for (let j = 0; j < toLoad; j++) {
+        const r = search.results[j];
+        if (seenIds.has(r.id)) continue;   // union by id — count each doc once
+        seenIds.add(r.id);
+        dataPromises.push(r.data());
+      }
+    }
+    const fragments = await Promise.all(dataPromises);
+    const counts = {};
+    for (const data of fragments) {
+      const filters = data && data.filters;
+      if (!filters) continue;
+      for (const [dim, vals] of Object.entries(filters)) {
+        // Fragment filter values may be a scalar or an array; a Set per doc
+        // guards against a repeated value within one document's array.
+        const values = new Set(Array.isArray(vals) ? vals : [vals]);
+        if (!counts[dim]) counts[dim] = {};
+        for (const v of values) {
+          counts[dim][v] = (counts[dim][v] || 0) + 1;
+        }
+      }
+    }
+    return counts;
   }
 
   // Deduplicate results with near-identical titles using Jaccard similarity.
@@ -1893,7 +1997,7 @@
     // load-more (preserveFilters === true) reuses the stored counts so the panel
     // numbers never move on click.
     if (!preserveFilters) {
-      queryFacetCounts = await computeQueryFacetCounts(searchQuery, activeFilters);
+      queryFacetCounts = await computeQueryFacetCounts(searchQuery, activeFilters, meaningfulTerms, isForcedPhrase);
     }
 
     renderFilters();
@@ -2099,11 +2203,24 @@
     const filtered = allScoredResults;
 
     if (filtered.length === 0) {
-      container.innerHTML = "";
-      header.innerHTML = "";
       if (expansionInFlight) {
+        // Phase 1 found no matches, but the AI query-expansion request is still
+        // in flight and may yet surface results (e.g. "rama" expanding to terms
+        // that match). Show a neutral in-progress state rather than (a) blanking
+        // the panel — the previous behavior, which left it empty for the entire
+        // duration of the async expand round-trip (observed as a multi-second
+        // blank) — or (b) flashing "No results found." that then disappears once
+        // expansion adds hits. The terminal state (results or "No results
+        // found.") is rendered by the final renderResults() call after the
+        // expand promise settles.
+        container.innerHTML = '<p class="scolta-searching">Searching…</p>';
+        header.innerHTML = "";
+        noResults.style.display = "none";
+        loadMore.style.display = "none";
         return;
       }
+      container.innerHTML = "";
+      header.innerHTML = "";
       noResults.style.display = "block";
       loadMore.style.display = "none";
       return;
@@ -2119,7 +2236,8 @@
           .join('; ')
       : '';
     const orFallbackLabel = usedOrFallback ? ' — no exact matches found, showing partial matches' : '';
-    header.innerHTML = `<span>${filtered.length.toLocaleString()} results for "${escapeHtml(currentQuery)}"${filterLabel}${expandLabel}${orFallbackLabel}</span>
+    const resultNoun = filtered.length === 1 ? 'result' : 'results';
+    header.innerHTML = `<span>${filtered.length.toLocaleString()} ${resultNoun} for "${escapeHtml(displayQuery(currentQuery))}"${filterLabel}${expandLabel}${orFallbackLabel}</span>
                         <span>Showing ${showing}</span>`;
 
     let html = "";

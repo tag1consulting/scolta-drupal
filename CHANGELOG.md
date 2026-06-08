@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **Synced `js/scolta.js` from scolta-php — four shared browser-render bug fixes ([tag1consulting/scolta-php#199](https://github.com/tag1consulting/scolta-php/pull/199)).** Asset-only re-sync of the canonical browser script; no Drupal-side logic changed. (1) **Zero-result blank panel:** a search that returned no matches blanked the result panel for the entire duration of the asynchronous AI query-expansion round-trip — `renderResults()` cleared the container and header and returned early while expansion was in flight, so "No results found." only appeared after the expand promise settled (on a slow expand endpoint, a multi-second blank). It now shows a neutral "Searching…" in-progress state while expansion runs, then the terminal results-or-"No results found." once it settles. (2) **"1 results":** the header now pluralizes the noun on the count (`1 result` vs `N results`). (3) **Doubled quotes:** a quoted-phrase query rendered as `""merge conflict""` because the header wraps the query in its own quotes and `escapeHtml()` does not escape `"`; a matched surrounding quote pair is now stripped before the template re-adds one. (4) **Citation duplication:** AI-summary context (`buildLLMContext`) now collapses results that resolve to the same URL, so the summarizer is no longer handed — and no longer cites — duplicate sources. This resync also carries scolta-php main's previously-unsynced facet-count fix (`computeUnionFacetCounts`): facet counts no longer read all-zero on a long conversational query whose strict-AND search is empty — counts follow the same per-term OR union the result list uses. The committed copy is byte-identical to scolta-php's canonical `assets/js/scolta.js`; CI's asset-drift check compares against scolta-php `dev-main`, so it passes once scolta-php#199 merges to main.
+
 ## [1.0.3] - 2026-06-05
 
 ### Added
