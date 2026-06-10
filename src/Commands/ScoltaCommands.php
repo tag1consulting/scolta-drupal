@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\scolta\Commands;
 
 use Drupal\Core\Cache\CacheBackendInterface;
+use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
@@ -55,6 +56,8 @@ class ScoltaCommands extends DrushCommands {
    *   The content gatherer service.
    * @param \Drupal\Core\File\FileSystemInterface $fileSystem
    *   The file system service.
+   * @param \Drupal\Core\Cache\CacheTagsInvalidatorInterface $cacheTagsInvalidator
+   *   The cache tags invalidator.
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -66,6 +69,7 @@ class ScoltaCommands extends DrushCommands {
     private readonly StreamWrapperManagerInterface $streamWrapperManager,
     private readonly ScoltaContentGatherer $contentGatherer,
     private readonly FileSystemInterface $fileSystem,
+    private readonly CacheTagsInvalidatorInterface $cacheTagsInvalidator,
   ) {
     parent::__construct();
   }
@@ -311,7 +315,7 @@ class ScoltaCommands extends DrushCommands {
         'time' => $report->durationSeconds,
         'mem' => $report->peakMemoryMb(),
       ]);
-      \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
+      $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
     }
     elseif ($report->error === 'index_only_complete') {
       // PHP heap fragmented after indexing — merge must run in a fresh process.
@@ -322,10 +326,10 @@ class ScoltaCommands extends DrushCommands {
       $this->spawnFinalize($resolvedStateDir, $resolvedOutputDir, $budget->totalBudgetBytes());
     }
     elseif ($report->error === 'memory_abort') {
-      // MemoryTelemetry aborted before all pages were indexed. If at least one
-      // chunk was committed, spawn a fresh resume so the chain continues without
-      // manual intervention. The parent process exits first, releasing ~500 MB
-      // of fragmented RSS, so the child starts with a clean heap.
+      // MemoryTelemetry aborted before all pages were indexed. If at least
+      // one chunk was committed, spawn a fresh resume so the chain continues
+      // without manual intervention. The parent process exits first,
+      // releasing ~500 MB of fragmented RSS, so the child starts clean.
       if ($report->chunksWritten > 0) {
         $this->logger()->notice(
           '{chunks} chunks committed ({pages} pages). Spawning resume in background...',
@@ -532,7 +536,7 @@ class ScoltaCommands extends DrushCommands {
         'time' => $report->durationSeconds,
         'mem' => $report->peakMemoryMb(),
       ]);
-      \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
+      $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
     }
     else {
       $this->logger()->error('Finalize failed: {error}', ['error' => $report->error ?? 'unknown']);
@@ -601,7 +605,7 @@ class ScoltaCommands extends DrushCommands {
     $generation = $this->state->get('scolta.generation', 0);
     $this->state->set('scolta.generation', $generation + 1);
 
-    \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
+    $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
     $this->logger()->success('Index built successfully.');
   }
 
@@ -632,11 +636,25 @@ class ScoltaCommands extends DrushCommands {
 
   /**
    * Clear Scolta caches (expansion and summary).
+   *
+   * Scolta shares the cache.default bin with every other module, so wiping
+   * the bin is off limits. AI expansion/summary entries embed the
+   * scolta.generation counter in their cache key, so bumping the generation
+   * orphans all existing entries; the resolved-prompt entries use known
+   * fixed keys and are deleted directly.
    */
   #[CLI\Command(name: 'scolta:clear-cache', aliases: ['scc'])]
   public function clearCache(): void {
-    $this->cache->deleteAll();
-    $this->logger()->success('Scolta caches cleared.');
+    $generation = $this->state->get('scolta.generation', 0);
+    $this->state->set('scolta.generation', $generation + 1);
+
+    $this->cache->deleteMultiple([
+      'scolta.prompt.expand_query',
+      'scolta.prompt.summarize',
+      'scolta.prompt.follow_up',
+    ]);
+
+    $this->logger()->success('Scolta caches cleared (generation bumped, resolved prompts deleted).');
   }
 
   /**
@@ -786,13 +804,18 @@ class ScoltaCommands extends DrushCommands {
       $this->logger()->notice("  Path: {$outputDir} (no index built yet)");
     }
 
-    // AI provider.
+    // AI provider. Routing only goes through the Drupal AI module when the
+    // admin explicitly selected 'drupal_ai' AND the module is installed —
+    // mirror that here instead of reporting on module presence alone.
     $this->logger()->notice('--- AI Provider ---');
-    if ($this->aiService->hasDrupalAiModule()) {
+    $provider = $config->get('ai_provider') ?? 'anthropic';
+    if ($provider === 'drupal_ai' && $this->aiService->hasDrupalAiModule()) {
       $this->logger()->notice('  Provider: Drupal AI module');
     }
+    elseif ($provider === 'drupal_ai') {
+      $this->logger()->notice('  Provider: drupal_ai selected but AI module not installed — falling back to built-in client');
+    }
     else {
-      $provider = $config->get('ai_provider') ?? 'anthropic';
       $this->logger()->notice("  Provider: {$provider} (built-in)");
     }
     $keySource = $this->aiService->getApiKeySource();

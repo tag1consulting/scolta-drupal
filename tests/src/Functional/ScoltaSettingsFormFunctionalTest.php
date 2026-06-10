@@ -123,6 +123,79 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * Malformed recency-curve JSON must produce a validation error.
+   *
+   * Pre-fix, submitForm() ran json_decode(...) ?: [] and silently wiped the
+   * input without telling the admin anything was wrong.
+   */
+  public function testMalformedRecencyCurveJsonIsRejected(): void {
+    $this->drupalLogin($this->adminUser);
+    $this->drupalGet('/admin/config/search/scolta');
+
+    $this->submitForm([
+      'recency_curve' => 'this is not json',
+    ], 'Save configuration');
+
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->pageTextContains('The custom recency curve must be a JSON array');
+    $this->assertSession()->pageTextNotContains('The configuration options have been saved.');
+  }
+
+  /**
+   * A key|value line without a pipe must produce a validation error.
+   *
+   * Pre-fix, parseKeyValueLines() silently dropped pipe-less lines on save.
+   */
+  public function testPipelessKeyValueLineIsRejected(): void {
+    $this->drupalLogin($this->adminUser);
+    $this->drupalGet('/admin/config/search/scolta');
+
+    $this->submitForm([
+      'filter_field_descriptions' => "topic|Subject area\nthis line has no pipe",
+    ], 'Save configuration');
+
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->pageTextContains('missing the "|" separator');
+    $this->assertSession()->pageTextNotContains('The configuration options have been saved.');
+
+    // A valid submission still saves.
+    $this->drupalGet('/admin/config/search/scolta');
+    $this->submitForm([
+      'filter_field_descriptions' => 'topic|Subject area',
+    ], 'Save configuration');
+    $this->assertSession()->pageTextContains('The configuration options have been saved.');
+    $this->assertEquals(
+      ['topic' => 'Subject area'],
+      $this->config('scolta.settings')->get('filter_field_descriptions')
+    );
+  }
+
+  /**
+   * settings.php $config['scolta.settings'] overrides must reach AI traffic.
+   *
+   * Pre-fix, ScoltaAiService::buildConfig() read getRawData(), so the
+   * standard way of keeping keys out of exported config silently did not
+   * apply to the AI pipeline.
+   */
+  public function testSettingsPhpOverrideAppliesToAiConfig(): void {
+    $this->writeSettings([
+      'config' => [
+        'scolta.settings' => [
+          'site_description' => (object) [
+            'value' => 'overridden-by-settings-php',
+            'required' => TRUE,
+          ],
+        ],
+      ],
+    ]);
+    $this->rebuildAll();
+
+    $config = $this->container->get('scolta.ai_service')->getConfig();
+    $this->assertSame('overridden-by-settings-php', $config->siteDescription,
+      'The settings.php config override must apply to the AI service config');
+  }
+
+  /**
    * Tests that saving default prompts stores empty string (not the default text).
    */
   public function testSavingDefaultPromptStoresEmpty(): void {

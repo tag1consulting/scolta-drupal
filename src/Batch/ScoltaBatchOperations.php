@@ -97,33 +97,6 @@ class ScoltaBatchOperations {
   }
 
   /**
-   * Process a chunk of content items.
-   *
-   * @param int $chunkIdx
-   *   The zero-based chunk index.
-   * @param array $chunk
-   *   Array of ContentItem objects to process.
-   * @param int $totalPages
-   *   Total number of pages across all chunks.
-   * @param array $config
-   *   Configuration array with state_dir, output_dir, hmac_secret, language.
-   * @param array $context
-   *   The batch context array.
-   */
-  public static function processChunk(int $chunkIdx, array $chunk, int $totalPages, array $config, array &$context): void {
-    $indexer = new PhpIndexer(
-      $config['state_dir'],
-      $config['output_dir'],
-      $config['hmac_secret'] ?? NULL,
-      $config['language'] ?? 'en'
-    );
-    $indexer->processChunk($chunk, $chunkIdx, $totalPages);
-
-    $context['results']['completed_chunks'] = ($context['results']['completed_chunks'] ?? 0) + 1;
-    $context['message'] = t('Processed chunk @num', ['@num' => $chunkIdx + 1]);
-  }
-
-  /**
    * Finalize the search index after all chunks are processed.
    *
    * @param array $config

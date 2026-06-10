@@ -11,5 +11,6 @@ services:
       - '@stream_wrapper_manager'
       - '@scolta.content_gatherer'
       - '@file_system'
+      - '@cache_tags.invalidator'
     tags:
       - { name: drush.command }

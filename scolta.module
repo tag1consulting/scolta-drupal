@@ -5,6 +5,8 @@
  * Scolta module hooks.
  */
 
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Url;
@@ -87,9 +89,9 @@ function scolta_page_top(array &$page_top) {
   $dismiss_text = t('Dismiss');
   $markup = '<div role="contentinfo" class="messages messages--' . $type . '">'
     . '<div class="messages__content">'
-    . \Drupal\Component\Utility\Html::escape((string) $text)
-    . ' <a href="' . \Drupal\Component\Utility\Html::escape($dismiss_url) . '">'
-    . \Drupal\Component\Utility\Html::escape((string) $dismiss_text)
+    . Html::escape((string) $text)
+    . ' <a href="' . Html::escape($dismiss_url) . '">'
+    . Html::escape((string) $dismiss_text)
     . '</a>'
     . '</div></div>';
 
@@ -107,7 +109,7 @@ function scolta_page_top(array &$page_top) {
  * configuration is optional when Scolta is the backend — Scolta indexes the
  * full rendered entity view, not individual Search API fields.
  */
-function scolta_form_search_api_index_fields_alter(array &$form, \Drupal\Core\Form\FormStateInterface $form_state, string $form_id): void {
+function scolta_form_search_api_index_fields_alter(array &$form, FormStateInterface $form_state, string $form_id): void {
   $form_object = $form_state->getFormObject();
   if (!method_exists($form_object, 'getEntity')) {
     return;

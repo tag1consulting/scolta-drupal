@@ -95,15 +95,17 @@ class FileSystemAbstractionTest extends TestCase {
   public function testRebuildWorkerUsesFileSystemForMkdir(): void {
     $file = $this->moduleRoot . '/src/Plugin/QueueWorker/ScoltaRebuildWorker.php';
     $contents = file_get_contents($file);
-    $this->assertStringContainsString('$fileSystem->mkdir(', $contents,
-      'ScoltaRebuildWorker must create directories via $fileSystem->mkdir()');
+    $this->assertStringContainsString('$this->fileSystem->mkdir(', $contents,
+      'ScoltaRebuildWorker must create directories via the injected $this->fileSystem->mkdir()');
   }
 
   public function testRebuildWorkerGetsFileSystemFromContainer(): void {
     $file = $this->moduleRoot . '/src/Plugin/QueueWorker/ScoltaRebuildWorker.php';
     $contents = file_get_contents($file);
-    $this->assertStringContainsString("\Drupal::service('file_system')", $contents,
-      "ScoltaRebuildWorker must obtain file_system via \\Drupal::service('file_system')");
+    $this->assertStringContainsString("\$container->get('file_system')", $contents,
+      "ScoltaRebuildWorker must inject file_system via create() — not \\Drupal::service()");
+    $this->assertStringNotContainsString("\Drupal::service('file_system')", $contents,
+      'ScoltaRebuildWorker must not fall back to the \Drupal static for file_system');
   }
 
   // -------------------------------------------------------------------

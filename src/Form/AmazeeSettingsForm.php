@@ -33,7 +33,6 @@ class AmazeeSettingsForm extends FormBase {
 
   public function __construct(
     private readonly DrupalConfigStorage $storage,
-    private readonly AmazeeClient $amazeeClient,
     private readonly AmazeeTrialProvisioner $trialProvisioner,
     private readonly AmazeeAccountUpgrader $upgrader,
   ) {}
@@ -47,7 +46,6 @@ class AmazeeSettingsForm extends FormBase {
     $amazeeClient = new AmazeeClient(httpClient: $httpClient);
     return new static(
       $storage,
-      $amazeeClient,
       new AmazeeTrialProvisioner($amazeeClient, $storage, NULL, new AmazeeModelResolver($amazeeClient)),
       new AmazeeAccountUpgrader($amazeeClient, $storage),
     );
@@ -235,10 +233,6 @@ class AmazeeSettingsForm extends FormBase {
     return $form;
   }
 
-  // ---------------------------------------------------------------------------
-  // Submit handlers.
-  // ---------------------------------------------------------------------------
-
   /**
    * Provision a free trial and immediately connect.
    */
@@ -250,7 +244,7 @@ class AmazeeSettingsForm extends FormBase {
 
       if ($result->aiModel !== NULL || $result->aiExpansionModel !== NULL) {
         $config = $this->configFactory()->getEditable('scolta.settings');
-        $defaultModel = 'claude-sonnet-4-5-20250929';
+        $defaultModel = ScoltaSettingsForm::DEFAULT_AI_MODEL;
 
         if ($result->aiModel !== NULL && $config->get('ai_model') === $defaultModel) {
           $config->set('ai_model', $result->aiModel);

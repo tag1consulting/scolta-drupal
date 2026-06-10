@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Plugin\search_api\backend;
 
-use Drupal\Core\Cache\Cache;
+use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Plugin\PluginFormInterface;
+use Drupal\Core\Queue\QueueFactory;
+use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Service\PagefindBuilder;
 use Drupal\scolta\Service\PagefindExporter;
@@ -66,6 +68,27 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
   protected LoggerInterface $scoltaLogger;
 
   /**
+   * The queue factory.
+   *
+   * @var \Drupal\Core\Queue\QueueFactory
+   */
+  protected QueueFactory $queueFactory;
+
+  /**
+   * The state service.
+   *
+   * @var \Drupal\Core\State\StateInterface
+   */
+  protected StateInterface $state;
+
+  /**
+   * The cache tags invalidator.
+   *
+   * @var \Drupal\Core\Cache\CacheTagsInvalidatorInterface
+   */
+  protected CacheTagsInvalidatorInterface $cacheTagsInvalidator;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
@@ -74,6 +97,9 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
     $instance->builder = $container->get('scolta.pagefind_builder');
     $instance->streamWrapperManager = $container->get('stream_wrapper_manager');
     $instance->scoltaLogger = $container->get('logger.channel.scolta');
+    $instance->queueFactory = $container->get('queue');
+    $instance->state = $container->get('state');
+    $instance->cacheTagsInvalidator = $container->get('cache_tags.invalidator');
     return $instance;
   }
 
@@ -302,7 +328,7 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
 
     if ($indexer !== 'binary') {
       // PHP pipeline (auto or php): queue a background rebuild via cron.
-      \Drupal::queue('scolta_rebuild')->createItem(['triggered_by' => 'search_api_indexing']);
+      $this->queueFactory->get('scolta_rebuild')->createItem(['triggered_by' => 'search_api_indexing']);
       $this->scoltaLogger->info('Queued background PHP index rebuild after Search API indexing (indexer mode: @mode).', [
         '@mode' => $indexer,
       ]);
@@ -320,7 +346,12 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
         '@files' => $result['file_count'] ?? '?',
         '@size' => $result['index_size'] ?? '?',
       ]);
-      Cache::invalidateTags(['scolta:expand']);
+      // Bump the generation counter so cached AI responses (keyed on the
+      // generation) are invalidated for the fresh index, and flag render
+      // caches that depend on the index.
+      $generation = $this->state->get('scolta.generation', 0);
+      $this->state->set('scolta.generation', $generation + 1);
+      $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
     }
     else {
       $this->scoltaLogger->error('Pagefind build failed: @error', [

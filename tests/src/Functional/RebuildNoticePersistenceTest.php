@@ -94,12 +94,10 @@ class RebuildNoticePersistenceTest extends BrowserTestBase {
       'ok',
       'Index rebuilt: 5 pages.'
     ));
-    $notice_id = \Drupal::state()->get('scolta.rebuild_notice')['notice_id'];
 
-    // Visit dismiss route.
-    $this->drupalGet('/admin/config/search/scolta/dismiss-rebuild-notice', [
-      'query' => ['notice_id' => $notice_id],
-    ]);
+    // Dismiss via the rendered link — it carries the required CSRF token.
+    $this->drupalGet('/admin/config/search/scolta');
+    $this->clickLink('Dismiss');
 
     // Follow redirect back to settings.
     $this->drupalGet('/admin/config/search/scolta');
@@ -119,12 +117,10 @@ class RebuildNoticePersistenceTest extends BrowserTestBase {
       'ok',
       'Index rebuilt: 5 pages.'
     ));
-    $notice_id_1 = \Drupal::state()->get('scolta.rebuild_notice')['notice_id'];
 
-    // Dismiss rebuild-1.
-    $this->drupalGet('/admin/config/search/scolta/dismiss-rebuild-notice', [
-      'query' => ['notice_id' => $notice_id_1],
-    ]);
+    // Dismiss rebuild-1 via the rendered (tokenized) link.
+    $this->drupalGet('/admin/config/search/scolta');
+    $this->clickLink('Dismiss');
     $this->drupalGet('/admin/config/search/scolta');
     $this->assertSession()->pageTextNotContains('5 pages');
 
@@ -160,6 +156,61 @@ class RebuildNoticePersistenceTest extends BrowserTestBase {
     $this->drupalLogin($this->adminUser2);
     $this->drupalGet('/admin/config/search/scolta');
     $this->assertSession()->pageTextContains('Index rebuilt');
+  }
+
+  /**
+   * The state-changing dismiss GET must be rejected without a CSRF token.
+   */
+  public function testDismissRouteRequiresCsrfToken(): void {
+    $this->drupalLogin($this->adminUser);
+
+    \Drupal::state()->set('scolta.rebuild_notice', ScoltaBatchOperations::buildNoticeData(
+      'ok',
+      'Index rebuilt: 5 pages.'
+    ));
+    $notice_id = \Drupal::state()->get('scolta.rebuild_notice')['notice_id'];
+
+    $this->drupalGet('/admin/config/search/scolta/dismiss-rebuild-notice', [
+      'query' => ['notice_id' => $notice_id],
+    ]);
+    $this->assertSession()->statusCodeEquals(403);
+
+    // The notice must still be considered undismissed.
+    $this->drupalGet('/admin/config/search/scolta');
+    $this->assertSession()->pageTextContains('Index rebuilt');
+  }
+
+  /**
+   * A protocol-relative ?destination must not redirect off-site.
+   *
+   * str_starts_with($destination, '/') alone passes '//evil.com', which the
+   * browser treats as https://evil.com — an open redirect.
+   */
+  public function testDismissDestinationRejectsProtocolRelativeUrl(): void {
+    $this->drupalLogin($this->adminUser);
+
+    \Drupal::state()->set('scolta.rebuild_notice', ScoltaBatchOperations::buildNoticeData(
+      'ok',
+      'Index rebuilt: 5 pages.'
+    ));
+
+    // Take the rendered (tokenized) dismiss link and poison the destination.
+    // The CSRF token only covers the route path, so the token stays valid —
+    // exactly the request an attacker-crafted link would produce.
+    $this->drupalGet('/admin/config/search/scolta');
+    $link = $this->getSession()->getPage()->findLink('Dismiss');
+    $this->assertNotNull($link, 'Dismiss link must be rendered');
+    $href = $link->getAttribute('href');
+    $poisoned = preg_replace('/destination=[^&]*/', 'destination=' . urlencode('//evil.com'), $href);
+    $this->assertStringContainsString('evil.com', urldecode($poisoned));
+
+    $this->drupalGet($this->getAbsoluteUrl($poisoned));
+
+    $finalUrl = $this->getSession()->getCurrentUrl();
+    $this->assertStringNotContainsString('evil.com', $finalUrl,
+      'Protocol-relative destination must not redirect off-site');
+    $this->assertStringContainsString('/admin/config/search/scolta', $finalUrl,
+      'The rejected destination must fall back to the settings page');
   }
 
 }

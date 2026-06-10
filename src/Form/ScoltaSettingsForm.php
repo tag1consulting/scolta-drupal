@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Form;
 
+use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Entity\EntityChangedInterface;
@@ -33,6 +34,15 @@ use Tag1\Scolta\Prompt\DefaultPrompts;
  * AI, Content, Scoring, Display, Cache, Custom Prompts, and Status.
  */
 class ScoltaSettingsForm extends ConfigFormBase {
+
+  /**
+   * The default AI model shipped in config/install/scolta.settings.yml.
+   *
+   * The Amazee trial auto-apply (AmazeeSettingsForm) only overwrites
+   * ai_model when it still equals this shipped default, so the literal
+   * must stay in sync with the install config.
+   */
+  public const DEFAULT_AI_MODEL = 'claude-sonnet-4-5-20250929';
 
   /**
    * The Scolta AI service.
@@ -77,6 +87,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
   protected FileSystemInterface $fileSystem;
 
   /**
+   * The cache tags invalidator.
+   *
+   * @var \Drupal\Core\Cache\CacheTagsInvalidatorInterface
+   */
+  protected CacheTagsInvalidatorInterface $cacheTagsInvalidator;
+
+  /**
    * Constructs a ScoltaSettingsForm object.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -95,6 +112,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
    *   The state service.
    * @param \Drupal\Core\File\FileSystemInterface $fileSystem
    *   The file system service.
+   * @param \Drupal\Core\Cache\CacheTagsInvalidatorInterface $cacheTagsInvalidator
+   *   The cache tags invalidator.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
@@ -105,6 +124,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     EntityTypeManagerInterface $entityTypeManager,
     StateInterface $state,
     FileSystemInterface $fileSystem,
+    CacheTagsInvalidatorInterface $cacheTagsInvalidator,
   ) {
     parent::__construct($configFactory, $typedConfigManager);
     $this->aiService = $aiService;
@@ -113,6 +133,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $this->entityTypeManager = $entityTypeManager;
     $this->state = $state;
     $this->fileSystem = $fileSystem;
+    $this->cacheTagsInvalidator = $cacheTagsInvalidator;
   }
 
   /**
@@ -128,6 +149,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $container->get('entity_type.manager'),
       $container->get('state'),
       $container->get('file_system'),
+      $container->get('cache_tags.invalidator'),
     );
   }
 
@@ -207,7 +229,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['ai']['ai_provider_drupal_ai_info'] = [
       '#type' => 'item',
       '#markup' => $this->t('Scolta will use the default AI provider and model configured in the <a href="@url">Drupal AI module</a>. Model, API key, and base URL fields below are managed by the Drupal AI module and are hidden when this provider is selected.', [
-        '@url' => '/admin/config/ai/providers',
+        '@url' => Url::fromUserInput('/admin/config/ai/providers')->toString(),
       ]),
       '#states' => [
         'visible' => [
@@ -219,7 +241,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['ai']['ai_model'] = [
       '#type' => 'textfield',
       '#title' => $this->t('AI Model'),
-      '#default_value' => $config->get('ai_model') ?? 'claude-sonnet-4-5-20250929',
+      '#default_value' => $config->get('ai_model') ?? self::DEFAULT_AI_MODEL,
       '#description' => $this->t('Model identifier for summarize and follow-up (e.g., claude-sonnet-4-5-20250929, gpt-4o).'),
       '#states' => [
         'invisible' => [
@@ -270,7 +292,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('AI Languages'),
       '#default_value' => implode(', ', $config->get('ai_languages') ?? ['en']),
-      '#description' => $this->t('Comma-separated language codes (e.g., en, es, fr). When multiple languages are configured, AI responses will match the language of the user\'s query.'),
+      '#description' => $this->t("Comma-separated language codes (e.g., en, es, fr). When multiple languages are configured, AI responses will match the language of the user's query."),
     ];
 
     $form['ai']['max_follow_ups'] = [
@@ -434,7 +456,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     // ── Scoring Section ──
     $presetLabel = isset($presets[$currentPreset]) ? $presets[$currentPreset]['label'] : '';
     $scoringDescription = ($currentPreset !== 'none' && $presetLabel !== '')
-      ? (string) $this->t('These settings were populated by the @label preset. Change any value here and your change takes priority — the preset only fills in what you haven\'t touched.', ['@label' => $presetLabel])
+      ? (string) $this->t("These settings were populated by the @label preset. Change any value here and your change takes priority — the preset only fills in what you haven't touched.", ['@label' => $presetLabel])
       : (string) $this->t('Configure each scoring parameter individually.');
 
     $form['scoring'] = [
@@ -859,8 +881,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
       }
     }
     else {
-      $items[] = $this->t('AI provider: Built-in AiClient (@provider). <a href="/admin/config/ai/providers">Install the Drupal AI module</a> for 48+ provider support with Key module integration.', [
+      $items[] = $this->t('AI provider: Built-in AiClient (@provider). <a href="@url">Install the Drupal AI module</a> for 48+ provider support with Key module integration.', [
         '@provider' => $activeProvider,
+        '@url' => Url::fromUserInput('/admin/config/ai/providers')->toString(),
       ]);
     }
 
@@ -1046,6 +1069,43 @@ class ScoltaSettingsForm extends ConfigFormBase {
         );
       }
     }
+
+    // Reject malformed recency-curve JSON instead of silently discarding it
+    // on save (json_decode(...) ?: [] would wipe the input without feedback).
+    $recencyCurve = trim($form_state->getValue('recency_curve') ?? '');
+    if ($recencyCurve !== '') {
+      $decoded = json_decode($recencyCurve, TRUE);
+      if (!is_array($decoded)) {
+        $form_state->setErrorByName(
+          'recency_curve',
+          $this->t('The custom recency curve must be a JSON array of [days, boost] control points, e.g. [[0, 1.0], [365, 0.0]].')
+        );
+      }
+    }
+
+    // Reject key|value lines without a pipe instead of silently dropping them.
+    $pipeFields = [
+      'sortable_field_descriptions' => $this->t('Sortable field descriptions'),
+      'filter_field_descriptions' => $this->t('Filter field descriptions'),
+      'field_mapping_sortable' => $this->t('Sortable field mappings'),
+      'field_mapping_filters' => $this->t('Filter field mappings'),
+    ];
+    foreach ($pipeFields as $fieldName => $label) {
+      $raw = (string) ($form_state->getValue($fieldName) ?? '');
+      foreach (explode("\n", $raw) as $line) {
+        $line = trim($line);
+        if ($line !== '' && !str_contains($line, '|')) {
+          $form_state->setErrorByName(
+            $fieldName,
+            $this->t('@label: the line "@line" is missing the "|" separator. Use one key|value pair per line.', [
+              '@label' => $label,
+              '@line' => $line,
+            ])
+          );
+          break;
+        }
+      }
+    }
   }
 
   /**
@@ -1176,7 +1236,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $config = $this->config('scolta.settings');
     $siteName = $config->get('site_name') ?: ($this->config('system.site')->get('name') ?? '');
 
-    // Clear any previous notice so a fresh notice_id is used after this rebuild.
+    // Clear any previous notice so a fresh notice_id is used after this
+    // rebuild.
     $this->state->delete('scolta.rebuild_notice');
 
     // Resolve indexer mode up front so we choose the right gather strategy.
@@ -1187,9 +1248,10 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     if ($indexerMode === 'php') {
       // For the PHP indexer, only query entity IDs here. Entity loading and
-      // content filtering happen inside each batch step so that no single web
-      // request has to load the full corpus into memory. This prevents the
-      // "Index Now" button from timing out on shared hosting at any corpus size.
+      // content filtering happen inside each batch step so that no single
+      // web request has to load the full corpus into memory. This prevents
+      // the "Index Now" button from timing out on shared hosting at any
+      // corpus size.
       $storage = $this->entityTypeManager->getStorage('node');
       $ids = array_values($storage->getQuery()
         ->accessCheck(FALSE)
@@ -1204,9 +1266,10 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $this->rebuildWithBatch($ids, $siteName, $config);
     }
     else {
-      // Binary mode requires exec(), which is not available on shared hosting.
-      // Loading all content synchronously is acceptable here since binary mode
-      // is only used on hosts that support long-running processes.
+      // Binary mode shells out to the Pagefind CLI, which shared hosting
+      // does not allow. Loading all content synchronously is acceptable here
+      // since binary mode is only used on hosts that support long-running
+      // processes.
       $items = $this->gatherContentItems($siteName);
 
       if (empty($items)) {
@@ -1323,7 +1386,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
     if (str_contains($stateDir, '://')) {
       try {
         $wrapper = $this->streamWrapperManager->getViaUri($stateDir);
-        $resolved = ($wrapper && ($realpath = $wrapper->realpath()) !== FALSE) ? $realpath : NULL;
+        // realpath() returns FALSE (or '' from some wrappers) when the
+        // wrapper cannot resolve — treat both as unresolved.
+        $resolved = $wrapper ? ($wrapper->realpath() ?: NULL) : NULL;
         if ($resolved !== NULL) {
           return $resolved;
         }
@@ -1336,7 +1401,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
       if (str_starts_with($stateDir, 'private://')) {
         try {
           $publicWrapper = $this->streamWrapperManager->getViaUri('public://');
-          if ($publicWrapper && ($publicBase = $publicWrapper->realpath()) !== FALSE) {
+          $publicBase = $publicWrapper ? ($publicWrapper->realpath() ?: NULL) : NULL;
+          if ($publicBase !== NULL) {
             return $publicBase . '/scolta-build';
           }
         }
@@ -1354,7 +1420,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
    * Resolve 'auto' indexer mode.
    *
    * Auto always uses the PHP indexer — it works on all PHP hosting
-   * environments without exec() or Node.js. Set indexer: binary to
+   * environments without shell access or Node.js. Set indexer: binary to
    * use the Pagefind binary explicitly.
    *
    * @param \Drupal\Core\Config\ImmutableConfig $config
@@ -1420,7 +1486,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     ];
 
     $batch = [
-      'title' => t('Rebuilding search index...'),
+      'title' => $this->t('Rebuilding search index...'),
       'operations' => $operations,
       'finished' => [ScoltaBatchOperations::class, 'finished'],
       'progressive' => TRUE,
@@ -1440,7 +1506,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
   protected function rebuildWithBinary(array $items, $config): void {
     $outputDir = $this->resolveOutputDir($config);
     $stateDir = $this->resolveStateDir($config);
-    $language = $config->get('ai_languages')[0] ?? 'en';
 
     // Ensure directories exist.
     if (!is_dir($stateDir)) {
@@ -1469,17 +1534,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
       return;
     }
 
-    $cmd = $binary
-      . ' --site ' . escapeshellarg($outputDir)
-      . ' --output-path ' . escapeshellarg($outputDir . '/pagefind')
-      . ' 2>&1';
-    $output = [];
-    $exitCode = NULL;
-    exec($cmd, $output, $exitCode);
+    // PagefindBuilder validates the binary against an allowlist and runs it
+    // through Symfony Process with a timeout — never shell out directly.
+    $result = $this->pagefindBuilder->build($binary, $outputDir, $outputDir . '/pagefind');
 
-    if ($exitCode !== 0) {
+    if (!$result['success']) {
       $this->messenger()->addError($this->t('Pagefind build failed: @output', [
-        '@output' => implode("\n", $output),
+        '@output' => $result['error'] ?? $result['output'],
       ]));
       return;
     }
@@ -1488,7 +1549,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $generation = $this->state->get('scolta.generation', 0);
     $this->state->set('scolta.generation', $generation + 1);
 
-    \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
+    $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
     // Store in State so the notice persists across page loads until dismissed.
     $this->state->set('scolta.rebuild_notice', ScoltaBatchOperations::buildNoticeData(
       'ok',

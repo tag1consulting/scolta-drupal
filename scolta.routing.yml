@@ -13,6 +13,7 @@ scolta.dismiss_rebuild_notice:
     _title: 'Dismiss rebuild notice'
   requirements:
     _permission: 'administer scolta'
+    _csrf_token: 'TRUE'
   methods: [GET]
 
 scolta.settings:
