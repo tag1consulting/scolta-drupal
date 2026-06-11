@@ -4,17 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Controller;
 
-use Drupal\Core\Controller\ControllerBase;
-use Drupal\scolta\Prompt\EventDrivenEnricher;
-use Drupal\scolta\Service\ScoltaAiService;
-use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Tag1\Scolta\Cache\CacheDriverInterface;
 use Tag1\Scolta\Cache\NullCacheDriver;
-use Tag1\Scolta\Http\AiControllerTrait;
-use Tag1\Scolta\Prompt\PromptEnricherInterface;
+use Tag1\Scolta\Http\AiEndpointHandler;
 
 /**
  * Handles follow-up questions about search results.
@@ -23,60 +15,19 @@ use Tag1\Scolta\Prompt\PromptEnricherInterface;
  *   {"messages": [...conversation history...]}
  *   -> {"response": "Based on the search results...", "remaining": 2}
  */
-class FollowUpController extends ControllerBase {
-
-  use AiControllerTrait;
-
-  public function __construct(
-    private readonly ScoltaAiService $aiService,
-    private readonly EventDispatcherInterface $eventDispatcher,
-  ) {}
+class FollowUpController extends AiApiControllerBase {
 
   /**
    * {@inheritdoc}
    */
-  public static function create(ContainerInterface $container): static {
-    return new static(
-      $container->get('scolta.ai_service'),
-      $container->get('event_dispatcher'),
-    );
-  }
-
-  /**
-   * Handle a follow-up question request.
-   */
-  public function handle(Request $request): JsonResponse {
-    try {
-      $body = json_decode($request->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
-    }
-    catch (\JsonException $e) {
-      return new JsonResponse(['error' => 'Malformed JSON: ' . $e->getMessage()], 400);
-    }
-
-    $config  = $this->aiService->getConfig();
-    $handler = $this->createHandler($this->aiService, $config);
-    $result  = $handler->handleFollowUp($body['messages'] ?? []);
-
-    if ($result['ok']) {
-      return new JsonResponse($result['data']);
-    }
-
-    if (isset($result['exception'])) {
-      $this->getLogger('scolta')->error(
-        'Follow-up failed: @msg',
-        ['@msg' => $result['exception']->getMessage(), 'exception' => $result['exception']]
-      );
-    }
-
-    $response = ['error' => $result['error']];
-    if (isset($result['limit'])) {
-      $response['limit'] = $result['limit'];
-    }
-    return new JsonResponse($response, $result['status']);
+  protected function invokeHandler(AiEndpointHandler $handler, array $body): array {
+    return $handler->handleFollowUp($body['messages'] ?? []);
   }
 
   /**
    * {@inheritdoc}
+   *
+   * Follow-up conversations are stateful and never cached.
    */
   protected function resolveCache(int $cacheTtl): CacheDriverInterface {
     return new NullCacheDriver();
@@ -87,13 +38,6 @@ class FollowUpController extends ControllerBase {
    */
   protected function getCacheGeneration(): int {
     return 0;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function resolveEnricher(): PromptEnricherInterface {
-    return new EventDrivenEnricher($this->eventDispatcher);
   }
 
 }

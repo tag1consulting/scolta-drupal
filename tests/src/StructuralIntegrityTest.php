@@ -65,13 +65,18 @@ class StructuralIntegrityTest extends TestCase {
     $this->assertFileExists($classFile,
       "Route '{$routeName}' references {$class} but file does not exist");
 
-    // Verify the method exists in the file source.
+    // Verify the method exists in the file source — directly or inherited
+    // from the local AiApiControllerBase (the shared AI request pipeline).
     if ($method) {
       $contents = file_get_contents($classFile);
+      if (!str_contains($contents, "function {$method}(")
+        && str_contains($contents, 'extends AiApiControllerBase')) {
+        $contents = file_get_contents(dirname($classFile) . '/AiApiControllerBase.php');
+      }
       $this->assertStringContainsString(
         "function {$method}(",
         $contents,
-        "Route '{$routeName}' references method {$method} not found in {$class}"
+        "Route '{$routeName}' references method {$method} not found in {$class} or its base"
       );
     }
   }

@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Batch;
 
-use Drupal\Core\Entity\EntityChangedInterface;
-use Drupal\Core\Entity\FieldableEntityInterface;
 use Tag1\Scolta\Export\ContentExporter;
-use Tag1\Scolta\Export\ContentItem;
 use Tag1\Scolta\Index\PhpIndexer;
 
 /**
@@ -42,40 +39,14 @@ class ScoltaBatchOperations {
    *   The batch context array.
    */
   public static function loadAndProcessChunk(int $chunkIdx, array $entityIds, int $totalCount, string $siteName, array $config, array &$context): void {
-    $storage = \Drupal::entityTypeManager()->getStorage('node');
-    $entities = $storage->loadMultiple($entityIds);
-
-    $items = [];
-    foreach ($entities as $entity) {
-      if (!$entity instanceof FieldableEntityInterface) {
-        continue;
-      }
-
-      $body = '';
-      foreach (['body', 'field_body', 'field_content'] as $field) {
-        if ($entity->hasField($field) && !$entity->get($field)->isEmpty()) {
-          $body = $entity->get($field)->value;
-          break;
-        }
-      }
-
-      if (empty($body)) {
-        continue;
-      }
-
-      $changedTime = $entity instanceof EntityChangedInterface
-        ? $entity->getChangedTime()
-        : (int) ($entity->get('changed')->value ?? 0);
-
-      $items[] = new ContentItem(
-        id: (string) $entity->id(),
-        title: $entity->label() ?: 'Untitled',
-        bodyHtml: $body,
-        url: $entity->toUrl()->toString(),
-        date: date('Y-m-d', $changedTime),
-        siteName: $siteName,
-      );
-    }
+    // Convert through the shared gatherer so the batch path produces the
+    // same ContentItems as drush scolta:build — text-format rendering,
+    // translations, field mappings, and hook_scolta_content_item_alter()
+    // all apply. (Static service access: Batch API callbacks must be
+    // statically callable, so constructor injection is not available here.)
+    /** @var \Drupal\scolta\Service\ScoltaContentGatherer $gatherer */
+    $gatherer = \Drupal::service('scolta.content_gatherer');
+    $items = iterator_to_array($gatherer->gatherByIds('node', $entityIds, $siteName), FALSE);
 
     if (!empty($items)) {
       $exporter = new ContentExporter($config['output_dir']);

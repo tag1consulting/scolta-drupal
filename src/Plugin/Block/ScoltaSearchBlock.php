@@ -14,6 +14,7 @@ use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
+use Drupal\scolta\Service\IndexLocator;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -43,6 +44,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     private readonly AccountInterface $currentUser,
     private readonly StreamWrapperManagerInterface $streamWrapperManager,
     private readonly ModuleExtensionList $moduleExtensionList,
+    private readonly IndexLocator $indexLocator,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -62,6 +64,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       $container->get('current_user'),
       $container->get('stream_wrapper_manager'),
       $container->get('extension.list.module'),
+      $container->get('scolta.index_locator'),
     );
   }
 
@@ -84,7 +87,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
         // Fall through with unresolved URI.
       }
     }
-    $indexExists = file_exists($resolvedDir . '/pagefind/pagefind-entry.json');
+    $indexExists = $this->indexLocator->exists($resolvedDir);
 
     if (!$indexExists) {
       // Output differs by the 'administer scolta' permission, so the render

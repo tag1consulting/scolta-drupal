@@ -7,9 +7,7 @@ namespace Drupal\scolta\Form;
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
-use Drupal\Core\Entity\EntityChangedInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
@@ -19,12 +17,12 @@ use Drupal\Core\Url;
 use Drupal\scolta\Batch\ScoltaBatchOperations;
 use Drupal\scolta\Service\PagefindBuilder;
 use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta\Service\ScoltaContentGatherer;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Config\ScoltaConfig;
 use Tag1\Scolta\Export\ContentExporter;
-use Tag1\Scolta\Export\ContentItem;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 
 /**
@@ -94,6 +92,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
   protected CacheTagsInvalidatorInterface $cacheTagsInvalidator;
 
   /**
+   * The content gatherer service.
+   *
+   * @var \Drupal\scolta\Service\ScoltaContentGatherer
+   */
+  protected ScoltaContentGatherer $contentGatherer;
+
+  /**
    * Constructs a ScoltaSettingsForm object.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -114,6 +119,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
    *   The file system service.
    * @param \Drupal\Core\Cache\CacheTagsInvalidatorInterface $cacheTagsInvalidator
    *   The cache tags invalidator.
+   * @param \Drupal\scolta\Service\ScoltaContentGatherer $contentGatherer
+   *   The content gatherer service.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
@@ -125,6 +132,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     StateInterface $state,
     FileSystemInterface $fileSystem,
     CacheTagsInvalidatorInterface $cacheTagsInvalidator,
+    ScoltaContentGatherer $contentGatherer,
   ) {
     parent::__construct($configFactory, $typedConfigManager);
     $this->aiService = $aiService;
@@ -134,6 +142,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $this->state = $state;
     $this->fileSystem = $fileSystem;
     $this->cacheTagsInvalidator = $cacheTagsInvalidator;
+    $this->contentGatherer = $contentGatherer;
   }
 
   /**
@@ -150,6 +159,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $container->get('state'),
       $container->get('file_system'),
       $container->get('cache_tags.invalidator'),
+      $container->get('scolta.content_gatherer'),
     );
   }
 
@@ -767,6 +777,46 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Cache lifetime for AI responses in seconds. Set to 0 to disable caching. Default: 2592000 (30 days).'),
     ];
 
+    // ── Rate Limiting Section ──
+    $form['flood'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Rate Limiting'),
+      '#open' => FALSE,
+      '#description' => $this->t('The AI API endpoints (expand, summarize, follow-up) make cost-bearing LLM calls and are reachable by anonymous visitors by default. These thresholds reject excess requests with HTTP 429 before any AI call is made.'),
+    ];
+
+    $form['flood']['flood_ai_ip_limit'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Per-IP request limit'),
+      '#default_value' => $config->get('flood.ai_ip_limit') ?? 60,
+      '#min' => 0,
+      '#description' => $this->t('Maximum AI API requests allowed per client IP per window. Set to 0 to disable the per-IP layer. Default: 60.'),
+    ];
+
+    $form['flood']['flood_ai_ip_window'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Per-IP window (seconds)'),
+      '#default_value' => $config->get('flood.ai_ip_window') ?? 60,
+      '#min' => 1,
+      '#description' => $this->t('Window for the per-IP limit. Default: 60.'),
+    ];
+
+    $form['flood']['flood_ai_global_limit'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Site-wide request limit'),
+      '#default_value' => $config->get('flood.ai_global_limit') ?? 1000,
+      '#min' => 0,
+      '#description' => $this->t('Maximum AI API requests allowed across all visitors per window — a backstop against distributed abuse. Set to 0 to disable the global layer. Default: 1000.'),
+    ];
+
+    $form['flood']['flood_ai_global_window'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Site-wide window (seconds)'),
+      '#default_value' => $config->get('flood.ai_global_window') ?? 60,
+      '#min' => 1,
+      '#description' => $this->t('Window for the site-wide limit. Default: 60.'),
+    ];
+
     // ── Custom Prompts Section ──
     $form['prompts'] = [
       '#type' => 'details',
@@ -1211,6 +1261,11 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('show_attribution', (bool) $form_state->getValue('show_attribution'))
       // Cache.
       ->set('cache_ttl', (int) $form_state->getValue('cache_ttl'))
+      // Rate limiting.
+      ->set('flood.ai_ip_limit', max(0, (int) $form_state->getValue('flood_ai_ip_limit')))
+      ->set('flood.ai_ip_window', max(1, (int) $form_state->getValue('flood_ai_ip_window')))
+      ->set('flood.ai_global_limit', max(0, (int) $form_state->getValue('flood_ai_global_limit')))
+      ->set('flood.ai_global_window', max(1, (int) $form_state->getValue('flood_ai_global_window')))
       // Custom prompts.
       ->set('prompt_expand_query', $this->normalizePromptValue($form_state->getValue('prompt_expand_query') ?? '', 'expand_query'))
       ->set('prompt_summarize', $this->normalizePromptValue($form_state->getValue('prompt_summarize') ?? '', 'summarize'))
@@ -1270,7 +1325,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       // does not allow. Loading all content synchronously is acceptable here
       // since binary mode is only used on hosts that support long-running
       // processes.
-      $items = $this->gatherContentItems($siteName);
+      $items = iterator_to_array($this->contentGatherer->gather('node', '', $siteName), FALSE);
 
       if (empty($items)) {
         $this->messenger()->addWarning($this->t('No content found to index.'));
@@ -1288,64 +1343,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
       $this->rebuildWithBinary($filteredItems, $config);
     }
-  }
-
-  /**
-   * Gather content items from published node entities.
-   *
-   * @param string $siteName
-   *   The site name for metadata.
-   *
-   * @return \Tag1\Scolta\Export\ContentItem[]
-   *   Array of content items.
-   */
-  protected function gatherContentItems(string $siteName): array {
-    $storage = $this->entityTypeManager->getStorage('node');
-    $ids = $storage->getQuery()
-      ->accessCheck(FALSE)
-      ->condition('status', 1)
-      ->execute();
-
-    if (empty($ids)) {
-      return [];
-    }
-
-    $entities = $storage->loadMultiple($ids);
-    $items = [];
-
-    foreach ($entities as $entity) {
-      if (!$entity instanceof FieldableEntityInterface) {
-        continue;
-      }
-
-      // Extract body content -- try common field names.
-      $body = '';
-      foreach (['body', 'field_body', 'field_content'] as $field) {
-        if ($entity->hasField($field) && !$entity->get($field)->isEmpty()) {
-          $body = $entity->get($field)->value;
-          break;
-        }
-      }
-
-      if (empty($body)) {
-        continue;
-      }
-
-      $changedTime = $entity instanceof EntityChangedInterface
-        ? $entity->getChangedTime()
-        : (int) ($entity->get('changed')->value ?? 0);
-
-      $items[] = new ContentItem(
-        id: (string) $entity->id(),
-        title: $entity->label() ?: 'Untitled',
-        bodyHtml: $body,
-        url: $entity->toUrl()->toString(),
-        date: date('Y-m-d', $changedTime),
-        siteName: $siteName,
-      );
-    }
-
-    return $items;
   }
 
   /**

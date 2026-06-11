@@ -12,5 +12,6 @@ services:
       - '@scolta.content_gatherer'
       - '@file_system'
       - '@cache_tags.invalidator'
+      - '@scolta.index_locator'
     tags:
       - { name: drush.command }

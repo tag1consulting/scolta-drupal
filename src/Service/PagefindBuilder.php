@@ -22,6 +22,7 @@ class PagefindBuilder {
   public function __construct(
     protected readonly LoggerInterface $logger,
     protected readonly FileSystemInterface $fileSystem,
+    protected readonly IndexLocator $indexLocator,
   ) {}
 
   /**
@@ -157,18 +158,8 @@ class PagefindBuilder {
    *   The index status array.
    */
   public function getStatus(string $outputDir): array {
-    if (!is_dir($outputDir)) {
-      return [
-        'exists' => FALSE,
-        'file_count' => 0,
-        'index_size' => '0 B',
-        'last_built' => NULL,
-      ];
-    }
-
-    // Check for pagefind.js as the indicator the index exists.
-    $indexFile = $outputDir . '/pagefind.js';
-    if (!file_exists($indexFile)) {
+    $location = is_dir($outputDir) ? $this->indexLocator->locate($outputDir) : NULL;
+    if ($location === NULL) {
       return [
         'exists' => FALSE,
         'file_count' => 0,
@@ -178,12 +169,11 @@ class PagefindBuilder {
     }
 
     $size = $this->calculateDirectorySize($outputDir);
-    $mtime = filemtime($indexFile);
+    $mtime = filemtime($location['indexFile']);
 
     return [
       'exists' => TRUE,
-      // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- glob() used for counting fragments; scanDirectory() would be heavier for a simple count.
-      'file_count' => count(glob($outputDir . '/fragment/*') ?: []),
+      'file_count' => $this->indexLocator->countFragments($location),
       'index_size' => $this->formatBytes($size),
       'last_built' => $mtime ? date('Y-m-d H:i:s', $mtime) : NULL,
     ];

@@ -26,7 +26,7 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
   /**
    * Creates a minimal fake Pagefind index so the search block renders.
    *
-   * ScoltaSearchBlock::build() returns empty when pagefind-entry.json is
+   * ScoltaSearchBlock::build() returns empty when the pagefind index is
    * missing. Tests that place the block and assert on its HTML need a real
    * (but empty) index file at the configured output location.
    */
@@ -37,6 +37,7 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
     $realDir = $wrappers->getViaUri($outputUri)->realpath();
     if ($realDir !== FALSE) {
       @mkdir($realDir . '/pagefind', 0777, TRUE);
+      file_put_contents($realDir . '/pagefind/pagefind.js', '// fake index');
       file_put_contents($realDir . '/pagefind/pagefind-entry.json', '{}');
     }
   }

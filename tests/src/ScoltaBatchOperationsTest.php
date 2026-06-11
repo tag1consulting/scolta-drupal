@@ -39,9 +39,10 @@ class ScoltaBatchOperationsTest extends TestCase {
    * that silently drops the return value is not permitted.
    */
   public function testFilePutContentsAlwaysChecked(): void {
+    // The rebuild worker no longer writes files directly — the
+    // IndexBuildOrchestrator owns all index/state writes.
     $files = [
       __DIR__ . '/../../src/Service/PagefindExporter.php',
-      __DIR__ . '/../../src/Plugin/QueueWorker/ScoltaRebuildWorker.php',
     ];
     foreach ($files as $file) {
       $source = file_get_contents($file);
@@ -149,9 +150,9 @@ class ScoltaBatchOperationsTest extends TestCase {
     $body = $m[1] ?? '';
     $this->assertNotEmpty($body, 'Could not locate loadAndProcessChunk() body');
     $this->assertStringContainsString(
-      'entityTypeManager',
+      'gatherByIds',
       $body,
-      'loadAndProcessChunk() must call entityTypeManager()->getStorage() to load entities inside the batch step'
+      'loadAndProcessChunk() must convert its ID slice through ScoltaContentGatherer::gatherByIds() so batch-built indexes match Drush-built ones'
     );
   }
 

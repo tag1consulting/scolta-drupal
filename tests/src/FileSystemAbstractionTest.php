@@ -79,13 +79,15 @@ class FileSystemAbstractionTest extends TestCase {
       'PagefindBuilder must create output directory via $this->fileSystem->mkdir()');
   }
 
-  public function testPagefindBuilderServiceHasTwoArguments(): void {
+  public function testPagefindBuilderServiceArguments(): void {
     $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml');
     $args = $services['services']['scolta.pagefind_builder']['arguments'] ?? [];
-    $this->assertCount(2, $args,
-      'scolta.pagefind_builder service must have 2 arguments (logger, file_system)');
+    $this->assertCount(3, $args,
+      'scolta.pagefind_builder service must have 3 arguments (logger, file_system, index_locator)');
     $this->assertContains('@file_system', $args,
       'scolta.pagefind_builder service must inject @file_system');
+    $this->assertContains('@scolta.index_locator', $args,
+      'scolta.pagefind_builder must resolve index existence through the shared locator');
   }
 
   // -------------------------------------------------------------------

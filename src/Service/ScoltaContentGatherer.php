@@ -257,90 +257,9 @@ class ScoltaContentGatherer {
           $entityTs = (int) ($timestamps[$entity->id()] ?? 0);
           $itemsForManifest = [];
 
-          // Yield every available translation as a separate indexed page.
-          foreach ($entity->getTranslationLanguages() as $langcode => $language) {
-            $translation = $entity->getTranslation($langcode);
+          [$contentItems, $entityTs] = $this->buildContentItems($entity, $siteName, $entityTs);
 
-            // Extract body content — try common field names.
-            $body = '';
-            foreach (['body', 'field_body', 'field_content'] as $field) {
-              if ($translation->hasField($field) && !$translation->get($field)->isEmpty()) {
-                $item = $translation->get($field)->first();
-                if ($item instanceof TextItemBase) {
-                  // ->processed runs text format filters; PlainTextOutput
-                  // decodes HTML entities. Cast to string: ->processed
-                  // returns FilteredMarkup, not a plain string.
-                  // Fall back to ->value if the text format is misconfigured.
-                  $body = PlainTextOutput::renderFromHtml((string) $item->processed) ?: PlainTextOutput::renderFromHtml((string) $item->value);
-                }
-                else {
-                  $body = $item->value;
-                }
-                break;
-              }
-            }
-
-            if (empty($body)) {
-              continue;
-            }
-
-            if ($entityTs === 0) {
-              $entityTs = $translation instanceof EntityChangedInterface
-                ? $translation->getChangedTime()
-                : (int) ($translation->get('changed')->value ?? 0);
-            }
-
-            // Single-language entities and English translations keep plain IDs
-            // for backward compatibility. Other languages get a -{langcode}
-            // suffix
-            // to avoid filename collisions when the same entity has multiple
-            // translations (e.g. node/42 → "42" for en, "42-es" for es).
-            $languages = $entity->getTranslationLanguages();
-            $itemId = ($langcode === 'en' || count($languages) === 1)
-              ? (string) $entity->id()
-              : $entity->id() . '-' . $langcode;
-
-            $contentItem = new ContentItem(
-              id: $itemId,
-              title: $translation->label() ?: 'Untitled',
-              bodyHtml: $body,
-              url: $translation->toUrl()->toString(),
-              date: date('Y-m-d', $entityTs),
-              siteName: $siteName,
-              language: $langcode,
-            );
-
-            $fieldMappings = $this->configFactory->get('scolta.settings')->get('field_mappings') ?? [];
-            $autoSortable = $contentItem->sortable;
-            $autoFilters = $contentItem->filters;
-
-            foreach ($fieldMappings['sortable'] ?? [] as $fieldName => $dimension) {
-              if ($translation->hasField($fieldName) && !$translation->get($fieldName)->isEmpty()) {
-                $value = $this->resolveFieldValue($translation->get($fieldName));
-                if ($value !== NULL) {
-                  $autoSortable[$dimension] = $value;
-                }
-              }
-            }
-
-            foreach ($fieldMappings['filters'] ?? [] as $fieldName => $dimension) {
-              if ($translation->hasField($fieldName) && !$translation->get($fieldName)->isEmpty()) {
-                $value = $this->resolveFieldValue($translation->get($fieldName));
-                if ($value !== NULL) {
-                  $autoFilters[$dimension] = $value;
-                }
-              }
-            }
-
-            if ($autoSortable !== $contentItem->sortable || $autoFilters !== $contentItem->filters) {
-              $contentItem = $contentItem->cloneWith([
-                'sortable' => $autoSortable,
-                'filters' => $autoFilters,
-              ]);
-            }
-
-            $this->moduleHandler->alter('scolta_content_item', $contentItem, $translation);
-
+          foreach ($contentItems as $contentItem) {
             if ($manifest !== NULL && !$force) {
               $hash = PhpIndexer::contentHash($contentItem);
               $itemsForManifest[] = [
@@ -374,6 +293,164 @@ class ScoltaContentGatherer {
       drupal_static_reset();
       gc_collect_cycles();
     }
+  }
+
+  /**
+   * Gather ContentItems for an explicit list of entity IDs.
+   *
+   * Used by Batch API steps that receive pre-computed ID slices: every item
+   * goes through the exact same per-entity pipeline as gather() — text-format
+   * rendering, translations, field mappings, and the
+   * hook_scolta_content_item_alter() hook — so batch-built indexes match
+   * Drush-built ones.
+   *
+   * @param string $entityType
+   *   The entity type to load (e.g. 'node').
+   * @param int[] $ids
+   *   Entity IDs to load and convert.
+   * @param string $siteName
+   *   The site name used in the ContentItem metadata.
+   *
+   * @return \Generator<\Tag1\Scolta\Export\ContentItem>
+   *   Yields one ContentItem per published translation.
+   *
+   * @since 1.0.4
+   * @stability experimental
+   */
+  public function gatherByIds(string $entityType, array $ids, string $siteName): \Generator {
+    $storage = $this->entityTypeManager->getStorage($entityType);
+
+    foreach (array_chunk($ids, 10) as $chunk) {
+      $entities = $storage->loadMultiple($chunk);
+
+      while ($entities) {
+        $entity = array_shift($entities);
+        if (!$entity instanceof FieldableEntityInterface) {
+          unset($entity);
+          continue;
+        }
+
+        [$contentItems] = $this->buildContentItems($entity, $siteName, 0);
+        foreach ($contentItems as $contentItem) {
+          yield $contentItem;
+        }
+
+        unset($entity);
+      }
+
+      $storage->resetCache($chunk);
+      drupal_static_reset();
+      gc_collect_cycles();
+    }
+  }
+
+  /**
+   * Build the ContentItems for one entity — the single conversion pipeline.
+   *
+   * Yields every translation as a separate indexed page, renders body text
+   * through the field's text format (->processed), applies the configured
+   * field_mappings, and invokes hook_scolta_content_item_alter(). Every
+   * gathering entry point (gather(), gatherByIds()) funnels through here.
+   *
+   * @param \Drupal\Core\Entity\FieldableEntityInterface $entity
+   *   The loaded entity.
+   * @param string $siteName
+   *   The site name used in the ContentItem metadata.
+   * @param int $entityTs
+   *   Known changed timestamp, or 0 to derive it from the entity.
+   *
+   * @return array{0: \Tag1\Scolta\Export\ContentItem[], 1: int}
+   *   The content items for all translations, and the resolved timestamp.
+   */
+  private function buildContentItems(FieldableEntityInterface $entity, string $siteName, int $entityTs): array {
+    $items = [];
+
+    foreach ($entity->getTranslationLanguages() as $langcode => $language) {
+      $translation = $entity->getTranslation($langcode);
+
+      // Extract body content — try common field names.
+      $body = '';
+      foreach (['body', 'field_body', 'field_content'] as $field) {
+        if ($translation->hasField($field) && !$translation->get($field)->isEmpty()) {
+          $item = $translation->get($field)->first();
+          if ($item instanceof TextItemBase) {
+            // ->processed runs text format filters; PlainTextOutput
+            // decodes HTML entities. Cast to string: ->processed
+            // returns FilteredMarkup, not a plain string.
+            // Fall back to ->value if the text format is misconfigured.
+            $body = PlainTextOutput::renderFromHtml((string) $item->processed) ?: PlainTextOutput::renderFromHtml((string) $item->value);
+          }
+          else {
+            $body = $item->value;
+          }
+          break;
+        }
+      }
+
+      if (empty($body)) {
+        continue;
+      }
+
+      if ($entityTs === 0) {
+        $entityTs = $translation instanceof EntityChangedInterface
+          ? $translation->getChangedTime()
+          : (int) ($translation->get('changed')->value ?? 0);
+      }
+
+      // Single-language entities and English translations keep plain IDs
+      // for backward compatibility. Other languages get a -{langcode}
+      // suffix to avoid filename collisions when the same entity has
+      // multiple translations (e.g. node/42 → "42" for en, "42-es" for es).
+      $languages = $entity->getTranslationLanguages();
+      $itemId = ($langcode === 'en' || count($languages) === 1)
+        ? (string) $entity->id()
+        : $entity->id() . '-' . $langcode;
+
+      $contentItem = new ContentItem(
+        id: $itemId,
+        title: $translation->label() ?: 'Untitled',
+        bodyHtml: $body,
+        url: $translation->toUrl()->toString(),
+        date: date('Y-m-d', $entityTs),
+        siteName: $siteName,
+        language: $langcode,
+      );
+
+      $fieldMappings = $this->configFactory->get('scolta.settings')->get('field_mappings') ?? [];
+      $autoSortable = $contentItem->sortable;
+      $autoFilters = $contentItem->filters;
+
+      foreach ($fieldMappings['sortable'] ?? [] as $fieldName => $dimension) {
+        if ($translation->hasField($fieldName) && !$translation->get($fieldName)->isEmpty()) {
+          $value = $this->resolveFieldValue($translation->get($fieldName));
+          if ($value !== NULL) {
+            $autoSortable[$dimension] = $value;
+          }
+        }
+      }
+
+      foreach ($fieldMappings['filters'] ?? [] as $fieldName => $dimension) {
+        if ($translation->hasField($fieldName) && !$translation->get($fieldName)->isEmpty()) {
+          $value = $this->resolveFieldValue($translation->get($fieldName));
+          if ($value !== NULL) {
+            $autoFilters[$dimension] = $value;
+          }
+        }
+      }
+
+      if ($autoSortable !== $contentItem->sortable || $autoFilters !== $contentItem->filters) {
+        $contentItem = $contentItem->cloneWith([
+          'sortable' => $autoSortable,
+          'filters' => $autoFilters,
+        ]);
+      }
+
+      $this->moduleHandler->alter('scolta_content_item', $contentItem, $translation);
+
+      $items[] = $contentItem;
+    }
+
+    return [$items, $entityTs];
   }
 
   /**

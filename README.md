@@ -214,6 +214,14 @@ To restrict AI features to specific roles (e.g. authenticated users only), revok
 
 Visit *Administration > Configuration > Search and Metadata > Scolta AI Search* to configure the AI provider, API key, model, and indexing options.
 
+#### AI endpoint rate limiting
+
+The AI API endpoints (`/api/scolta/v1/expand-query`, `/api/scolta/v1/summarize`, `/api/scolta/v1/followup`) make cost-bearing LLM calls and are reachable by anonymous visitors by default. The **Rate Limiting** section of the settings form configures per-IP and site-wide flood thresholds (defaults: 60 requests/minute per IP, 1000 requests/minute site-wide); requests beyond a threshold are rejected with HTTP 429 before any AI work happens. Set a limit to 0 to disable that layer.
+
+#### Auto-rebuild debounce
+
+When auto-rebuild is enabled, content saves enqueue an index rebuild that cron processes. The rebuild is debounced by the backend's **Rebuild delay** setting (Search API server > backend configuration, default 300 seconds): the queue waits until that many seconds have passed since the *last* content change, so a burst of edits produces one build instead of many.
+
 #### Drush config:set and config path precedence
 
 Scolta's config stores scoring and display values in nested namespaces (`scoring.*`, `display.*`). When using `drush config:set`, use the full nested path:

@@ -179,6 +179,22 @@ scolta.settings:
     cache_ttl:
       type: integer
       label: 'Cache TTL in seconds'
+    flood:
+      type: mapping
+      label: 'AI endpoint rate limiting'
+      mapping:
+        ai_ip_limit:
+          type: integer
+          label: 'Maximum AI API requests per IP per window (0 disables)'
+        ai_ip_window:
+          type: integer
+          label: 'Per-IP flood window in seconds'
+        ai_global_limit:
+          type: integer
+          label: 'Maximum AI API requests site-wide per window (0 disables)'
+        ai_global_window:
+          type: integer
+          label: 'Site-wide flood window in seconds'
     prompt_expand_query:
       type: string
       label: 'Custom expand query prompt'

@@ -7,6 +7,12 @@ parameters:
 			path: src/AiProvider/Amazee/DrupalConfigStorage.php
 
 		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Controller/AiApiControllerBase.php
+
+		-
 			message: '#^Call to method set\(\) on an unknown class Drupal\\user\\UserDataInterface\.$#'
 			identifier: class.notFound
 			count: 1
@@ -31,52 +37,10 @@ parameters:
 			path: src/Controller/DismissRebuildNoticeController.php
 
 		-
-			message: '#^Offset ''exception'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
-			identifier: isset.offset
-			count: 1
-			path: src/Controller/ExpandQueryController.php
-
-		-
-			message: '#^Unsafe usage of new static\(\)\.$#'
-			identifier: new.static
-			count: 1
-			path: src/Controller/ExpandQueryController.php
-
-		-
-			message: '#^Offset ''exception'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
-			identifier: isset.offset
-			count: 1
-			path: src/Controller/FollowUpController.php
-
-		-
-			message: '#^Offset ''limit'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
-			identifier: isset.offset
-			count: 1
-			path: src/Controller/FollowUpController.php
-
-		-
-			message: '#^Unsafe usage of new static\(\)\.$#'
-			identifier: new.static
-			count: 1
-			path: src/Controller/FollowUpController.php
-
-		-
 			message: '#^Unsafe usage of new static\(\)\.$#'
 			identifier: new.static
 			count: 1
 			path: src/Controller/HealthController.php
-
-		-
-			message: '#^Offset ''exception'' on array\{ok\: false, data\?\: mixed, status\?\: int, error\?\: string\} in isset\(\) does not exist\.$#'
-			identifier: isset.offset
-			count: 1
-			path: src/Controller/SummarizeController.php
-
-		-
-			message: '#^Unsafe usage of new static\(\)\.$#'
-			identifier: new.static
-			count: 1
-			path: src/Controller/SummarizeController.php
 
 		-
 			message: '#^Offset ''id'' on array\{id\: string, name\: string, url\: string\} on left side of \?\? always exists and is not nullable\.$#'
