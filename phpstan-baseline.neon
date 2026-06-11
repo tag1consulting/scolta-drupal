@@ -13,8 +13,20 @@ parameters:
 			path: src/Controller/DismissRebuildNoticeController.php
 
 		-
-			message: '#^PHPDoc tag @var for variable \$user_data contains unknown class Drupal\\user\\UserDataInterface\.$#'
+			message: '#^Parameter \$userData of method Drupal\\scolta\\Controller\\DismissRebuildNoticeController\:\:__construct\(\) has invalid type Drupal\\user\\UserDataInterface\.$#'
 			identifier: class.notFound
+			count: 1
+			path: src/Controller/DismissRebuildNoticeController.php
+
+		-
+			message: '#^Property Drupal\\scolta\\Controller\\DismissRebuildNoticeController\:\:\$userData has unknown class Drupal\\user\\UserDataInterface as its type\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Controller/DismissRebuildNoticeController.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
 			count: 1
 			path: src/Controller/DismissRebuildNoticeController.php
 
@@ -79,28 +91,10 @@ parameters:
 			path: src/Form/AmazeeSettingsForm.php
 
 		-
-			message: '#^Property Drupal\\scolta\\Form\\AmazeeSettingsForm\:\:\$amazeeClient is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Form/AmazeeSettingsForm.php
-
-		-
 			message: '#^Unsafe usage of new static\(\)\.$#'
 			identifier: new.static
 			count: 1
 			path: src/Form/AmazeeSettingsForm.php
-
-		-
-			message: '#^Strict comparison using \!\=\= between mixed and null will always evaluate to true\.$#'
-			identifier: notIdentical.alwaysTrue
-			count: 1
-			path: src/Form/MemoryBudgetSettingsFieldSet.php
-
-		-
-			message: '#^Strict comparison using \!\=\= between string and false will always evaluate to true\.$#'
-			identifier: notIdentical.alwaysTrue
-			count: 2
-			path: src/Form/ScoltaSettingsForm.php
 
 		-
 			message: '#^Call to an undefined method Drupal\\Core\\Entity\\EntityInterface\:\:getServerId\(\)\.$#'
@@ -139,8 +133,8 @@ parameters:
 			path: src/Plugin/Block/ScoltaSearchBlock.php
 
 		-
-			message: '#^Call to an undefined method Drupal\\scolta\\Plugin\\QueueWorker\\ScoltaRebuildWorker\:\:getLogger\(\)\.$#'
-			identifier: method.notFound
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
 			count: 1
 			path: src/Plugin/QueueWorker/ScoltaRebuildWorker.php
 

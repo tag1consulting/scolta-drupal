@@ -140,12 +140,13 @@ class ScoltaContentGatherer {
    *
    * Paginates the entity query in batches of 10. When a TimestampManifest is
    * provided and $force is false, entities whose changed timestamp matches the
-   * manifest are yielded as CachedContentReference objects without loading their
+   * manifest are yielded as CachedContentReference objects without loading
    * body content. Changed or new entities are fully loaded and yielded as
    * ContentItem objects; the manifest is updated with their new timestamp and
    * pre-computed content hash.
    *
-   * After each batch, resetCache(), drupal_static_reset(), and gc_collect_cycles()
+   * After each batch, resetCache(), drupal_static_reset(), and
+   * gc_collect_cycles()
    * are called to release Drupal's accumulated per-request static caches. Peak
    * RSS stays bounded regardless of corpus size.
    *
@@ -212,7 +213,8 @@ class ScoltaContentGatherer {
           $entityKey = (string) $id;
           $entry = $manifest->get($entityKey);
           if ($entry !== NULL && ((int) ($timestamps[$id] ?? 0)) === $entry['ts']) {
-            // Entity unchanged — yield cached references, skip full entity load.
+            // Entity unchanged — yield cached references, skip the full
+            // entity load.
             foreach ($entry['items'] as $itemData) {
               yield new CachedContentReference(
                 entityKey: $entityKey,
@@ -265,8 +267,9 @@ class ScoltaContentGatherer {
               if ($translation->hasField($field) && !$translation->get($field)->isEmpty()) {
                 $item = $translation->get($field)->first();
                 if ($item instanceof TextItemBase) {
-                  // ->processed runs text format filters; PlainTextOutput decodes HTML entities.
-                  // Cast to string: ->processed returns FilteredMarkup, not a plain string.
+                  // ->processed runs text format filters; PlainTextOutput
+                  // decodes HTML entities. Cast to string: ->processed
+                  // returns FilteredMarkup, not a plain string.
                   // Fall back to ->value if the text format is misconfigured.
                   $body = PlainTextOutput::renderFromHtml((string) $item->processed) ?: PlainTextOutput::renderFromHtml((string) $item->value);
                 }
@@ -288,7 +291,8 @@ class ScoltaContentGatherer {
             }
 
             // Single-language entities and English translations keep plain IDs
-            // for backward compatibility. Other languages get a -{langcode} suffix
+            // for backward compatibility. Other languages get a -{langcode}
+            // suffix
             // to avoid filename collisions when the same entity has multiple
             // translations (e.g. node/42 → "42" for en, "42-es" for es).
             $languages = $entity->getTranslationLanguages();

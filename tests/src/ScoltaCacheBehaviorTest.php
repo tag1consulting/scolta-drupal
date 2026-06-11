@@ -118,6 +118,60 @@ namespace Drupal\scolta\Tests {
             $this->assertEquals( 1, $ai->callCount, 'AI service should be called only once — second summarize call serves from cache' );
         }
 
+        // -------------------------------------------------------------------
+        // Generation bump — the invalidation mechanism scolta:clear-cache and
+        // the rebuild paths rely on. Entries cached at generation N must not
+        // be served at generation N+1, and the shared backend keeps every
+        // foreign entry: nothing may call deleteAll() on the bin.
+        // -------------------------------------------------------------------
+
+        public function test_generation_bump_invalidates_cached_ai_entries(): void {
+            $backend = new InMemoryDrupalCacheBackend();
+            $ai      = new DrupalTestMockAiService( '["term1","term2"]' );
+
+            $handlerGen1 = new AiEndpointHandler(
+                aiService: $ai,
+                cache: new DrupalCacheDriver( $backend ),
+                generation: 1,
+                cacheTtl: 3600,
+                maxFollowUps: 3,
+            );
+            $handlerGen1->handleExpandQuery( 'generation test' );
+            $this->assertEquals( 1, $ai->callCount );
+
+            // Same backend, bumped generation — the old entry must be a miss.
+            $handlerGen2 = new AiEndpointHandler(
+                aiService: $ai,
+                cache: new DrupalCacheDriver( $backend ),
+                generation: 2,
+                cacheTtl: 3600,
+                maxFollowUps: 3,
+            );
+            $handlerGen2->handleExpandQuery( 'generation test' );
+            $this->assertEquals( 2, $ai->callCount, 'A generation bump must invalidate previously cached AI responses' );
+        }
+
+        public function test_generation_bump_leaves_foreign_cache_entries_intact(): void {
+            $backend = new InMemoryDrupalCacheBackend();
+            $backend->set( 'views:some_other_module_entry', 'precious' );
+
+            $ai = new DrupalTestMockAiService( '["term1"]' );
+            $handler = new AiEndpointHandler(
+                aiService: $ai,
+                cache: new DrupalCacheDriver( $backend ),
+                generation: 2,
+                cacheTtl: 3600,
+                maxFollowUps: 3,
+            );
+            $handler->handleExpandQuery( 'generation test' );
+
+            // The targeted invalidation strategy (generation bump + fixed-key
+            // prompt deletes) never touches entries owned by other modules.
+            $cached = $backend->get( 'views:some_other_module_entry' );
+            $this->assertNotFalse( $cached );
+            $this->assertEquals( 'precious', $cached->data );
+        }
+
     }
 
     // -----------------------------------------------------------------------

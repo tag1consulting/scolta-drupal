@@ -5,6 +5,7 @@
  * Scolta module hooks.
  */
 
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Url;
@@ -72,31 +73,43 @@ function scolta_page_top(array &$page_top) {
   $result = $notice['result'] ?? 'ok';
   $message = $notice['message'] ?? '';
 
-  $dismiss_url = Url::fromRoute('scolta.dismiss_rebuild_notice', [], [
-    'query' => [
-      'notice_id'   => $notice_id,
-      'destination' => \Drupal::service('path.current')->getPath(),
-    ],
-  ])->toString();
-
   $type = $result === 'ok' ? 'status' : 'error';
   $text = $result === 'ok'
     ? t('Scolta index rebuilt: @msg', ['@msg' => $message])
     : t('Scolta index rebuild failed.');
 
-  $dismiss_text = t('Dismiss');
-  $markup = '<div role="contentinfo" class="messages messages--' . $type . '">'
-    . '<div class="messages__content">'
-    . \Drupal\Component\Utility\Html::escape((string) $text)
-    . ' <a href="' . \Drupal\Component\Utility\Html::escape($dismiss_url) . '">'
-    . \Drupal\Component\Utility\Html::escape((string) $dismiss_text)
-    . '</a>'
-    . '</div></div>';
-
+  // The dismiss route requires a CSRF token. Render the link through
+  // '#type' => 'link' so the token placeholder the route processor emits
+  // is replaced during rendering — a hand-stringified URL would carry the
+  // raw placeholder and always fail validation.
   $page_top['scolta_rebuild_notice'] = [
-    '#markup' => $markup,
-    '#allowed_tags' => ['div', 'a'],
+    '#type' => 'container',
+    '#attributes' => [
+      'role' => 'contentinfo',
+      'class' => ['messages', 'messages--' . $type],
+    ],
     '#weight' => -100,
+    // The notice depends on per-user dismissal state and the transient
+    // rebuild-notice state key, both read at render time — never cache it.
+    '#cache' => ['max-age' => 0],
+    'content' => [
+      '#type' => 'container',
+      '#attributes' => ['class' => ['messages__content']],
+      'text' => [
+        '#plain_text' => $text,
+        '#suffix' => ' ',
+      ],
+      'dismiss' => [
+        '#type' => 'link',
+        '#title' => t('Dismiss'),
+        '#url' => Url::fromRoute('scolta.dismiss_rebuild_notice', [], [
+          'query' => [
+            'notice_id'   => $notice_id,
+            'destination' => \Drupal::service('path.current')->getPath(),
+          ],
+        ]),
+      ],
+    ],
   ];
 }
 
@@ -107,7 +120,7 @@ function scolta_page_top(array &$page_top) {
  * configuration is optional when Scolta is the backend — Scolta indexes the
  * full rendered entity view, not individual Search API fields.
  */
-function scolta_form_search_api_index_fields_alter(array &$form, \Drupal\Core\Form\FormStateInterface $form_state, string $form_id): void {
+function scolta_form_search_api_index_fields_alter(array &$form, FormStateInterface $form_state, string $form_id): void {
   $form_object = $form_state->getFormObject();
   if (!method_exists($form_object, 'getEntity')) {
     return;

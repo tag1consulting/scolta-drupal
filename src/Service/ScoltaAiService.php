@@ -15,6 +15,8 @@ use Psr\Log\LoggerInterface;
 use Tag1\Scolta\AiClient;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeBudgetExceededException;
 use Tag1\Scolta\AiProvider\Amazee\AutoProvisioner;
+use Tag1\Scolta\AiProvider\Amazee\BudgetAwareProviderDecorator;
+use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
 use Tag1\Scolta\Config\ScoltaConfig;
 use Tag1\Scolta\Service\AiServiceAdapter;
 
@@ -73,12 +75,32 @@ class ScoltaAiService extends AiServiceAdapter {
    */
   private ?BudgetExceededHandler $budgetHandler;
 
+  /**
+   * Amazee credential storage used for lazy auto-provisioning.
+   *
+   * @var \Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface|null
+   */
+  private ?ConfigStorageInterface $amazeeConfigStorage;
+
+  /**
+   * The Drupal AI module's provider plugin manager, when installed.
+   *
+   * Injected optionally ('@?ai.provider') so the service definition works
+   * whether or not the AI module exists. Typed object because the
+   * \Drupal\ai\AiProviderPluginManager class is absent without the module.
+   *
+   * @var object|null
+   */
+  private ?object $aiProviderManager;
+
   public function __construct(
     ClientInterface $httpClient,
     ConfigFactoryInterface $configFactory,
     LoggerInterface $logger,
     StateInterface $state,
     ?BudgetExceededHandler $budgetHandler = NULL,
+    ?ConfigStorageInterface $amazeeConfigStorage = NULL,
+    ?object $aiProviderManager = NULL,
   ) {
     $this->httpClient = $httpClient;
     $this->configFactory = $configFactory;
@@ -86,6 +108,8 @@ class ScoltaAiService extends AiServiceAdapter {
     // Assign state before parent::__construct so buildConfig() can read it.
     $this->state = $state;
     $this->budgetHandler = $budgetHandler;
+    $this->amazeeConfigStorage = $amazeeConfigStorage;
+    $this->aiProviderManager = $aiProviderManager;
 
     parent::__construct($this->buildConfig());
   }
@@ -99,7 +123,9 @@ class ScoltaAiService extends AiServiceAdapter {
    */
   protected function buildConfig(): ScoltaConfig {
     $drupalConfig = $this->configFactory->get('scolta.settings');
-    $values = $drupalConfig->getRawData();
+    // Read via get() so settings.php $config['scolta.settings'] overrides
+    // apply to AI traffic like any other config consumer.
+    $values = $drupalConfig->get() ?? [];
 
     // Flatten nested scoring config to top-level keys.
     // Top-level keys (e.g. set directly via drush config:set) take precedence
@@ -136,8 +162,9 @@ class ScoltaAiService extends AiServiceAdapter {
       $values['ai_api_key'] = $explicitKey;
     }
     elseif (($values['ai_provider'] ?? '') !== 'drupal_ai') {
-      // Only inject Amazee credentials for built-in providers. When 'drupal_ai'
-      // is selected the Drupal AI module manages its own provider, key, and model.
+      // Only inject Amazee credentials for built-in providers. When
+      // 'drupal_ai' is selected the Drupal AI module manages its own
+      // provider, key, and model.
       $amazeeCreds = $this->state->get('scolta.amazee.credentials');
       if (is_array($amazeeCreds) && !empty($amazeeCreds['litellm_token'])) {
         $values['ai_provider'] = 'openai';
@@ -202,9 +229,12 @@ class ScoltaAiService extends AiServiceAdapter {
 
   /**
    * Check if the Drupal AI module is available.
+   *
+   * The 'ai.provider' plugin manager is injected optionally, so its
+   * presence is equivalent to the AI module being installed.
    */
   public function hasDrupalAiModule(): bool {
-    return \Drupal::hasService('ai.provider');
+    return $this->aiProviderManager !== NULL;
   }
 
   /**
@@ -273,7 +303,7 @@ class ScoltaAiService extends AiServiceAdapter {
    */
   protected function messageViaDrupalAi(string $systemPrompt, string $userMessage, int $maxTokens): string {
     /** @var \Drupal\ai\AiProviderPluginManager $pluginManager */
-    $pluginManager = \Drupal::service('ai.provider');
+    $pluginManager = $this->aiProviderManager;
 
     $defaultProviderId = $pluginManager->getDefaultProviderForOperationType('chat');
     if (empty($defaultProviderId)) {
@@ -299,7 +329,7 @@ class ScoltaAiService extends AiServiceAdapter {
    */
   protected function conversationViaDrupalAi(string $systemPrompt, array $messages, int $maxTokens): string {
     /** @var \Drupal\ai\AiProviderPluginManager $pluginManager */
-    $pluginManager = \Drupal::service('ai.provider');
+    $pluginManager = $this->aiProviderManager;
 
     $defaultProviderId = $pluginManager->getDefaultProviderForOperationType('chat');
     if (empty($defaultProviderId)) {
@@ -329,7 +359,10 @@ class ScoltaAiService extends AiServiceAdapter {
    * if the message does not match. Invoked by the base AI methods' catch block.
    */
   protected function handlePossibleBudgetException(\RuntimeException $e): void {
-    if (!str_contains($e->getMessage(), 'Budget has been exceeded!')) {
+    // isBudgetError() owns the budget-message matching (including walking
+    // the exception chain) so the adapter never duplicates scolta-php's
+    // private budget-string constant.
+    if (!BudgetAwareProviderDecorator::isBudgetError($e)) {
       return;
     }
     $budgetException = new AmazeeBudgetExceededException($e);
@@ -346,11 +379,9 @@ class ScoltaAiService extends AiServiceAdapter {
    * built with the freshly stored credentials.
    */
   protected function createClient(): AiClient {
-    if ($this->getApiKeySource() === 'none') {
-      /** @var \Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface $storage */
-      $storage = \Drupal::service('scolta.amazee_config_storage');
+    if ($this->getApiKeySource() === 'none' && $this->amazeeConfigStorage !== NULL) {
       AutoProvisioner::ensureAiAvailable(
-        $storage,
+        $this->amazeeConfigStorage,
         hasExplicitApiKey: FALSE,
         onModelsResolved: function (string $aiModel, string $aiExpansionModel): void {
           $config = $this->configFactory->getEditable('scolta.settings');

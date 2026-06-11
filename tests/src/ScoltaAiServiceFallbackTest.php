@@ -94,9 +94,14 @@ class ScoltaAiServiceFallbackTest extends TestCase {
 
   public function testHasDrupalAiModuleChecksServiceContainer(): void {
     $this->assertStringContainsString(
-      "hasService('ai.provider')",
+      '$this->aiProviderManager !== NULL',
       $this->serviceContents,
-      "hasDrupalAiModule() must check \\Drupal::hasService('ai.provider')"
+      'hasDrupalAiModule() must check the optionally-injected ai.provider plugin manager'
+    );
+    $this->assertStringNotContainsString(
+      "\Drupal::hasService(",
+      $this->serviceContents,
+      'hasDrupalAiModule() must not consult the static service container'
     );
   }
 

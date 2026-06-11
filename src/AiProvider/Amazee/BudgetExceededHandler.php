@@ -7,6 +7,7 @@ namespace Drupal\scolta\AiProvider\Amazee;
 use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\Core\Url;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeBudgetExceededException;
 
 /**
@@ -46,7 +47,7 @@ final class BudgetExceededHandler {
 
     $this->messenger->addWarning($this->t(
       'Your Amazee.ai AI budget has been exceeded. Visit the <a href=":url">Amazee.ai settings</a> to upgrade your plan.',
-      [':url' => '/admin/config/search/scolta/amazee'],
+      [':url' => Url::fromRoute('scolta.settings.amazee')->toString()],
     ));
   }
 

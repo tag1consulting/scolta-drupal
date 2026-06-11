@@ -45,12 +45,11 @@ scolta.settings:
         type: string
         label: 'Field name'
     sortable_field_descriptions:
-      type: mapping
+      type: sequence
       label: 'Sortable field descriptions'
-      mapping:
-        '*':
-          type: string
-          label: 'Field description'
+      sequence:
+        type: string
+        label: 'Field description'
     filter_fields:
       type: sequence
       label: 'Filter fields'
@@ -58,30 +57,27 @@ scolta.settings:
         type: string
         label: 'Filter dimension name'
     filter_field_descriptions:
-      type: mapping
+      type: sequence
       label: 'Filter field descriptions'
-      mapping:
-        '*':
-          type: string
-          label: 'Filter field description'
+      sequence:
+        type: string
+        label: 'Filter field description'
     field_mappings:
       type: mapping
       label: 'Automatic field-to-dimension mappings'
       mapping:
         sortable:
-          type: mapping
+          type: sequence
           label: 'Sortable field mappings'
-          mapping:
-            '*':
-              type: string
-              label: 'Dimension name for this entity field'
+          sequence:
+            type: string
+            label: 'Dimension name for this entity field'
         filters:
-          type: mapping
+          type: sequence
           label: 'Filter field mappings'
-          mapping:
-            '*':
-              type: string
-              label: 'Dimension name for this entity field'
+          sequence:
+            type: string
+            label: 'Dimension name for this entity field'
     scoring:
       type: mapping
       label: 'Scoring configuration'
@@ -247,6 +243,9 @@ search_api.backend.plugin.scolta_pagefind:
     auto_rebuild:
       type: boolean
       label: 'Auto-rebuild index after changes'
+    auto_rebuild_delay:
+      type: integer
+      label: 'Seconds to wait after the last content change before rebuilding'
     view_mode:
       type: string
       label: 'Entity view mode'

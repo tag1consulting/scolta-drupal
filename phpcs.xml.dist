@@ -6,6 +6,8 @@
   <arg value="sp"/>
 
   <file>src</file>
+  <file>scolta.module</file>
+  <file>scolta.install</file>
 
   <rule ref="Drupal"/>
   <rule ref="DrupalPractice"/>

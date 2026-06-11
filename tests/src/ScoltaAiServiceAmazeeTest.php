@@ -84,8 +84,11 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
 
   public function testBudgetHookConvertsAndNotifies(): void {
     $contents = file_get_contents($this->serviceFile);
-    // The hook still detects the Amazee budget signal, wraps it, and notifies.
-    $this->assertStringContainsString("'Budget has been exceeded!'", $contents);
+    // The hook detects the Amazee budget signal via the public scolta-php
+    // API instead of duplicating the private budget-message constant.
+    $this->assertStringContainsString('BudgetAwareProviderDecorator::isBudgetError(', $contents);
+    $this->assertStringNotContainsString("'Budget has been exceeded!'", $contents,
+      'The budget magic string must not be duplicated — use isBudgetError()');
     $this->assertStringContainsString('new AmazeeBudgetExceededException', $contents);
     $this->assertStringContainsString('budgetHandler?->handle', $contents);
   }

@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Drupal\scolta\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Routing\LocalRedirectResponse;
 use Drupal\Core\Url;
+use Drupal\user\UserDataInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -21,6 +24,29 @@ use Symfony\Component\HttpFoundation\Request;
  * @stability experimental
  */
 class DismissRebuildNoticeController extends ControllerBase {
+
+  /**
+   * The user data service.
+   *
+   * @var \Drupal\user\UserDataInterface
+   */
+  protected UserDataInterface $userData;
+
+  /**
+   * {@inheritdoc}
+   */
+  public function __construct(UserDataInterface $userData) {
+    $this->userData = $userData;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container): static {
+    return new static(
+      $container->get('user.data'),
+    );
+  }
 
   /**
    * Record dismissal and redirect back to the Scolta settings page.
@@ -39,18 +65,23 @@ class DismissRebuildNoticeController extends ControllerBase {
       $current_notice = $this->state()->get('scolta.rebuild_notice');
       // Only record dismissal if this notice_id is still the active one.
       if (is_array($current_notice) && ($current_notice['notice_id'] ?? '') === $notice_id) {
-        /** @var \Drupal\user\UserDataInterface $user_data */
-        $user_data = \Drupal::service('user.data');
-        $user_data->set('scolta', $this->currentUser()->id(), 'dismissed_rebuild_notice', $notice_id);
+        $this->userData->set('scolta', $this->currentUser()->id(), 'dismissed_rebuild_notice', $notice_id);
       }
     }
 
-    $destination = $request->query->get('destination', '');
-    if ($destination && str_starts_with($destination, '/')) {
-      return new RedirectResponse($destination);
+    // Only allow local single-slash paths: '//evil.com' is protocol-relative
+    // and would redirect off-site, so it must not pass the leading-'/' check.
+    $destination = (string) $request->query->get('destination', '');
+    if ($destination !== '' && str_starts_with($destination, '/') && !str_starts_with($destination, '//')) {
+      try {
+        return new LocalRedirectResponse(Url::fromUserInput($destination)->toString());
+      }
+      catch (\InvalidArgumentException $e) {
+        // Malformed destination — fall through to the settings page.
+      }
     }
 
-    return new RedirectResponse(Url::fromRoute('scolta.settings')->toString());
+    return new LocalRedirectResponse(Url::fromRoute('scolta.settings')->toString());
   }
 
 }

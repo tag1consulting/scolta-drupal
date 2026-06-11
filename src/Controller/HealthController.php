@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\scolta\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -25,10 +26,18 @@ class HealthController extends ControllerBase {
   protected ScoltaAiService $aiService;
 
   /**
+   * The stream wrapper manager.
+   *
+   * @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface
+   */
+  protected StreamWrapperManagerInterface $streamWrapperManager;
+
+  /**
    * {@inheritdoc}
    */
-  public function __construct(ScoltaAiService $aiService) {
+  public function __construct(ScoltaAiService $aiService, StreamWrapperManagerInterface $streamWrapperManager) {
     $this->aiService = $aiService;
+    $this->streamWrapperManager = $streamWrapperManager;
   }
 
   /**
@@ -37,6 +46,7 @@ class HealthController extends ControllerBase {
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('scolta.ai_service'),
+      $container->get('stream_wrapper_manager'),
     );
   }
 
@@ -51,8 +61,8 @@ class HealthController extends ControllerBase {
     $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
     if (str_contains($outputDir, '://')) {
       try {
-        $swm = \Drupal::service('stream_wrapper_manager');
-        $outputDir = $swm->getViaUri($outputDir)->realpath() ?: $outputDir;
+        $outputDir = $this->streamWrapperManager
+          ->getViaUri($outputDir)->realpath() ?: $outputDir;
       }
       catch (\Exception $e) {
         // Fall through with original path.
@@ -68,15 +78,19 @@ class HealthController extends ControllerBase {
 
     $result = $checker->check();
 
-    // Drupal-specific: override AI provider when Drupal AI module is active.
-    if ($this->aiService->hasDrupalAiModule()) {
+    // Drupal-specific: override AI provider only when the admin has explicitly
+    // selected 'drupal_ai' AND the module is installed. Merely having the AI
+    // module installed does not change routing (see ScoltaAiService), so the
+    // health report must not claim it does.
+    if ($scoltaConfig->aiProvider === 'drupal_ai' && $this->aiService->hasDrupalAiModule()) {
       $result['ai_provider'] = 'drupal-ai';
       $result['ai_configured'] = TRUE;
     }
 
     // Drupal-specific: index detail enrichment.
     if ($result['index_exists']) {
-      // Determine actual index file location (pagefind/ subdirectory or legacy root).
+      // Determine the actual index file location (pagefind/ subdirectory
+      // or legacy root).
       $indexFile = file_exists($outputDir . '/pagefind/pagefind.js')
         ? $outputDir . '/pagefind/pagefind.js'
         : $outputDir . '/pagefind.js';

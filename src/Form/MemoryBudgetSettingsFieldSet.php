@@ -74,33 +74,4 @@ final class MemoryBudgetSettingsFieldSet {
     return $fieldset;
   }
 
-  /**
-   * Extract a MemoryBudgetConfig from submitted form values.
-   *
-   * @param array $values
-   *   The $form_state->getValues() array (or a sub-array).
-   *
-   * @return \Tag1\Scolta\Config\MemoryBudgetConfig
-   *   The loaded memory budget configuration.
-   */
-  public static function extract(array $values): MemoryBudgetConfig {
-    $chunkRaw = $values['chunk_size'] ?? '';
-    return MemoryBudgetConfig::load([
-      'profile'      => $values['memory_budget_profile'] ?? 'conservative',
-      'custom_bytes' => NULL,
-      'chunk_size'   => ($chunkRaw !== '' && $chunkRaw !== NULL) ? (int) $chunkRaw : NULL,
-    ]);
-  }
-
-  /**
-   * Format a byte value as a human-readable string (MB or GB).
-   */
-  public static function formatBytes(int $bytes): string {
-    if ($bytes >= 1024 * 1024 * 1024) {
-      return round($bytes / (1024 * 1024 * 1024), 1) . ' GB';
-    }
-
-    return round($bytes / (1024 * 1024)) . ' MB';
-  }
-
 }

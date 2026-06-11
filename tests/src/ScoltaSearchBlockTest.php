@@ -412,9 +412,9 @@ class ScoltaSearchBlockTest extends TestCase {
    */
   public function testAttributionUsesCorrectHtmlStructure(): void {
     $this->assertStringContainsString(
-      '<p class="scolta-attribution">Powered by Scolta</p>',
+      '\'<p class="scolta-attribution">\' . $this->t(\'Powered by Scolta\') . \'</p>\'',
       $this->blockContents,
-      'Attribution must be a <p> with class "scolta-attribution" and text "Powered by Scolta"'
+      'Attribution must be a <p> with class "scolta-attribution" and translatable "Powered by Scolta" text'
     );
   }
 

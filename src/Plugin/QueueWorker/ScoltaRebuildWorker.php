@@ -4,10 +4,20 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Plugin\QueueWorker;
 
+use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityChangedInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
+use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\Lock\LockBackendInterface;
+use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Queue\QueueWorkerBase;
 use Drupal\Core\Queue\SuspendQueueException;
+use Drupal\Core\State\StateInterface;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Export\ContentItem;
 use Tag1\Scolta\Index\PhpIndexer;
@@ -27,27 +37,59 @@ use Tag1\Scolta\Index\PhpIndexer;
  * @since 1.0.0-rc1
  * @stability experimental
  */
-class ScoltaRebuildWorker extends QueueWorkerBase {
+class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPluginInterface {
+
+  public function __construct(
+    array $configuration,
+    $plugin_id,
+    $plugin_definition,
+    protected readonly LockBackendInterface $lock,
+    protected readonly ConfigFactoryInterface $configFactory,
+    protected readonly FileSystemInterface $fileSystem,
+    protected readonly StreamWrapperManagerInterface $streamWrapperManager,
+    protected readonly EntityTypeManagerInterface $entityTypeManager,
+    protected readonly StateInterface $state,
+    protected readonly CacheTagsInvalidatorInterface $cacheTagsInvalidator,
+    protected readonly LoggerInterface $logger,
+  ) {
+    parent::__construct($configuration, $plugin_id, $plugin_definition);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition): static {
+    return new static(
+      $configuration,
+      $plugin_id,
+      $plugin_definition,
+      $container->get('lock'),
+      $container->get('config.factory'),
+      $container->get('file_system'),
+      $container->get('stream_wrapper_manager'),
+      $container->get('entity_type.manager'),
+      $container->get('state'),
+      $container->get('cache_tags.invalidator'),
+      $container->get('logger.channel.scolta'),
+    );
+  }
 
   /**
    * {@inheritdoc}
    */
   public function processItem($data): void {
-    $lock = \Drupal::lock();
-    if (!$lock->acquire('scolta_build', 3600)) {
+    if (!$this->lock->acquire('scolta_build', 3600)) {
       throw new SuspendQueueException('Build lock held.');
     }
 
     try {
-      $config = \Drupal::config('scolta.settings');
-      $fileSystem = \Drupal::service('file_system');
-      $streamWrapperManager = \Drupal::service('stream_wrapper_manager');
+      $config = $this->configFactory->get('scolta.settings');
 
       // Resolve output directory.
       $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
       if (str_contains($outputDir, '://')) {
         try {
-          $outputDir = $streamWrapperManager
+          $outputDir = $this->streamWrapperManager
             ->getViaUri($outputDir)->realpath() ?: $outputDir;
         }
         catch (\Exception $e) {
@@ -59,7 +101,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase {
       $stateDir = $config->get('pagefind.build_dir') ?? 'private://scolta-build';
       if (str_contains($stateDir, '://')) {
         try {
-          $stateDir = $streamWrapperManager
+          $stateDir = $this->streamWrapperManager
             ->getViaUri($stateDir)->realpath() ?: $stateDir;
         }
         catch (\Exception $e) {
@@ -68,18 +110,18 @@ class ScoltaRebuildWorker extends QueueWorkerBase {
       }
 
       // Ensure directories exist.
-      if (!is_dir($stateDir) && !$fileSystem->mkdir($stateDir, 0755, TRUE)) {
-        \Drupal::logger('scolta')->error('Failed to create state directory: @dir', ['@dir' => $stateDir]);
+      if (!is_dir($stateDir) && !$this->fileSystem->mkdir($stateDir, 0755, TRUE)) {
+        $this->logger->error('Failed to create state directory: @dir', ['@dir' => $stateDir]);
         return;
       }
-      if (!is_dir($outputDir) && !$fileSystem->mkdir($outputDir, 0755, TRUE)) {
-        \Drupal::logger('scolta')->error('Failed to create output directory: @dir', ['@dir' => $outputDir]);
+      if (!is_dir($outputDir) && !$this->fileSystem->mkdir($outputDir, 0755, TRUE)) {
+        $this->logger->error('Failed to create output directory: @dir', ['@dir' => $outputDir]);
         return;
       }
 
       // Gather content from published nodes.
-      $siteName = $config->get('site_name') ?: (\Drupal::config('system.site')->get('name') ?? '');
-      $entityStorage = \Drupal::entityTypeManager()->getStorage('node');
+      $siteName = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
+      $entityStorage = $this->entityTypeManager->getStorage('node');
       $ids = $entityStorage->getQuery()
         ->accessCheck(FALSE)
         ->condition('status', 1)
@@ -120,7 +162,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase {
       }
 
       if (empty($items)) {
-        \Drupal::logger('scolta')->info('No content found to index.');
+        $this->logger->info('No content found to index.');
         return;
       }
 
@@ -129,7 +171,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase {
       $filteredItems = $exporter->exportToItems($items);
 
       if (empty($filteredItems)) {
-        \Drupal::logger('scolta')->info('No items passed content filter.');
+        $this->logger->info('No items passed content filter.');
         return;
       }
 
@@ -138,7 +180,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase {
       $indexer = new PhpIndexer($stateDir, $outputDir, NULL, $language);
 
       if ($indexer->shouldBuild($filteredItems) === NULL) {
-        \Drupal::logger('scolta')->info('No changes detected, skipping rebuild.');
+        $this->logger->info('No changes detected, skipping rebuild.');
         return;
       }
 
@@ -153,31 +195,46 @@ class ScoltaRebuildWorker extends QueueWorkerBase {
 
       if ($result->success) {
         // Write fingerprint for future change detection.
-        $fp = PhpIndexer::computeFingerprint($filteredItems);
-        $statePath = $outputDir . '/.scolta-state';
-        // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- absolute path outside Drupal stream wrappers; saveData() requires a URI scheme.
-        if (file_put_contents($statePath, $fp) === FALSE) {
-          $this->getLogger('scolta')->error('Failed to write index fingerprint to @path', ['@path' => $statePath]);
-        }
+        $this->writeFingerprint(
+          $outputDir . '/.scolta-state',
+          PhpIndexer::computeFingerprint($filteredItems)
+        );
 
         // Increment generation counter.
-        $state = \Drupal::state();
-        $generation = $state->get('scolta.generation', 0);
-        $state->set('scolta.generation', $generation + 1);
+        $generation = $this->state->get('scolta.generation', 0);
+        $this->state->set('scolta.generation', $generation + 1);
 
-        \Drupal::service('cache_tags.invalidator')->invalidateTags(['scolta_search_index']);
-        \Drupal::logger('scolta')->info('Search index rebuilt via queue: @msg', [
+        $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
+        $this->logger->info('Search index rebuilt via queue: @msg', [
           '@msg' => $result->message,
         ]);
       }
       else {
-        \Drupal::logger('scolta')->error('Queue index rebuild failed: @error', [
+        $this->logger->error('Queue index rebuild failed: @error', [
           '@error' => $result->error ?? $result->message,
         ]);
       }
     }
     finally {
-      $lock->release('scolta_build');
+      $this->lock->release('scolta_build');
+    }
+  }
+
+  /**
+   * Write the index fingerprint used for change detection on the next run.
+   *
+   * A failed write is logged but never fatal: the next queue run simply
+   * rebuilds unconditionally because the fingerprint is missing.
+   *
+   * @param string $statePath
+   *   Absolute path of the fingerprint file.
+   * @param string $fingerprint
+   *   The computed corpus fingerprint.
+   */
+  protected function writeFingerprint(string $statePath, string $fingerprint): void {
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- absolute path outside Drupal stream wrappers; saveData() requires a URI scheme.
+    if (@file_put_contents($statePath, $fingerprint) === FALSE) {
+      $this->logger->error('Failed to write index fingerprint to @path', ['@path' => $statePath]);
     }
   }
 

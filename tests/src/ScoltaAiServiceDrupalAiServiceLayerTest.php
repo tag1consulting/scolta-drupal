@@ -146,9 +146,14 @@ class ScoltaAiServiceDrupalAiServiceLayerTest extends TestCase {
 
   public function testServiceUsesAiProviderPluginManager(): void {
     $this->assertStringContainsString(
-      "service('ai.provider')",
+      '$this->aiProviderManager',
       $this->serviceContents,
-      'messageViaDrupalAi/conversationViaDrupalAi must use the ai.provider plugin manager service'
+      'messageViaDrupalAi/conversationViaDrupalAi must use the injected ai.provider plugin manager'
+    );
+    $this->assertStringNotContainsString(
+      "\Drupal::service('ai.provider')",
+      $this->serviceContents,
+      'The ai.provider plugin manager must be injected (@?ai.provider), not fetched statically'
     );
   }
 

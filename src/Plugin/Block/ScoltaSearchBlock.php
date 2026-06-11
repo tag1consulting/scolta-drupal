@@ -6,10 +6,13 @@ namespace Drupal\scolta\Plugin\Block;
 
 use Drupal\Core\Block\BlockBase;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
+use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -37,6 +40,9 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     private readonly FileUrlGeneratorInterface $fileUrlGenerator,
     private readonly ConfigFactoryInterface $configFactory,
     private readonly LanguageManagerInterface $languageManager,
+    private readonly AccountInterface $currentUser,
+    private readonly StreamWrapperManagerInterface $streamWrapperManager,
+    private readonly ModuleExtensionList $moduleExtensionList,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -53,6 +59,9 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       $container->get('file_url_generator'),
       $container->get('config.factory'),
       $container->get('language_manager'),
+      $container->get('current_user'),
+      $container->get('stream_wrapper_manager'),
+      $container->get('extension.list.module'),
     );
   }
 
@@ -68,8 +77,8 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     $resolvedDir = $outputDir;
     if (str_contains($outputDir, '://')) {
       try {
-        $swm = \Drupal::service('stream_wrapper_manager');
-        $resolvedDir = $swm->getViaUri($outputDir)->realpath() ?: $outputDir;
+        $resolvedDir = $this->streamWrapperManager
+          ->getViaUri($outputDir)->realpath() ?: $outputDir;
       }
       catch (\Exception $e) {
         // Fall through with unresolved URI.
@@ -78,17 +87,24 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     $indexExists = file_exists($resolvedDir . '/pagefind/pagefind-entry.json');
 
     if (!$indexExists) {
-      if (\Drupal::currentUser()->hasPermission('administer scolta')) {
+      // Output differs by the 'administer scolta' permission, so the render
+      // cache must vary on permissions.
+      $cache = [
+        'tags' => ['scolta_search_index'],
+        'contexts' => ['user.permissions'],
+      ];
+      if ($this->currentUser->hasPermission('administer scolta')) {
+        $notice = $this->t(
+          '<p><strong>Scolta:</strong> Search index has not been built yet.</p><p><a href=":url">Build now &rarr;</a> or run <code>drush scolta:build</code></p>',
+          [':url' => Url::fromRoute('scolta.settings')->toString()]
+        );
         return [
-          '#markup' => '<div class="messages messages--warning">'
-            . '<p><strong>Scolta:</strong> Search index has not been built yet.</p>'
-            . '<p><a href="/admin/config/search/scolta">Build now &rarr;</a> or run <code>drush scolta:build</code></p>'
-            . '</div>',
-          '#cache' => ['tags' => ['scolta_search_index']],
+          '#markup' => '<div class="messages messages--warning">' . $notice . '</div>',
+          '#cache' => $cache,
         ];
       }
       // Hide search block for non-admins when index is missing.
-      return ['#cache' => ['tags' => ['scolta_search_index']]];
+      return ['#cache' => $cache];
     }
 
     $config = $this->aiService->getConfig();
@@ -97,7 +113,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
 
     // Build the window.scolta configuration for the JS frontend.
     // Resolve the WASM glue JS path for client-side scoring.
-    $modulePath = \Drupal::service('extension.list.module')->getPath('scolta');
+    $modulePath = $this->moduleExtensionList->getPath('scolta');
     $wasmPath = base_path() . $modulePath . '/js/wasm/scolta_core.js';
 
     $currentLanguage = $this->languageManager
@@ -123,7 +139,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
 
     $markup = '<div id="scolta-search"></div>';
     if ($config->showAttribution) {
-      $markup .= '<p class="scolta-attribution">Powered by Scolta</p>';
+      $markup .= '<p class="scolta-attribution">' . $this->t('Powered by Scolta') . '</p>';
     }
 
     return [
@@ -138,7 +154,10 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
         ],
       ],
       '#cache' => [
-        'tags' => ['config:scolta.settings', 'scolta_search_index'],
+        // config:system.site covers the site-name fallback in drupalSettings;
+        // the language context covers currentLanguage.
+        'tags' => ['config:scolta.settings', 'config:system.site', 'scolta_search_index'],
+        'contexts' => ['languages:language_content'],
       ],
     ];
   }

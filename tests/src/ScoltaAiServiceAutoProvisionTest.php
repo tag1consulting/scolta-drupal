@@ -55,9 +55,14 @@ class ScoltaAiServiceAutoProvisionTest extends TestCase {
 
   public function testCreateClientUsesConfigStorage(): void {
     $this->assertStringContainsString(
-      "'scolta.amazee_config_storage'",
+      '$this->amazeeConfigStorage',
       $this->serviceSource,
-      'createClient() must fetch scolta.amazee_config_storage service'
+      'createClient() must use the injected Amazee config storage'
+    );
+    $this->assertStringNotContainsString(
+      "\Drupal::service('scolta.amazee_config_storage')",
+      $this->serviceSource,
+      'The Amazee config storage must be constructor-injected, not fetched statically'
     );
   }
 
