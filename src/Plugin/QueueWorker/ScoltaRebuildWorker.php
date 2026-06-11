@@ -143,9 +143,8 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
         return;
       }
 
-      $budget = MemoryBudgetConfig::load([
+      $budget = MemoryBudgetConfig::fromCliAndConfig(NULL, NULL, fn() => [
         'profile' => $config->get('memory_budget.profile') ?? 'conservative',
-        'custom_bytes' => $config->get('memory_budget.custom_bytes'),
         'chunk_size' => $config->get('memory_budget.chunk_size'),
       ]);
 

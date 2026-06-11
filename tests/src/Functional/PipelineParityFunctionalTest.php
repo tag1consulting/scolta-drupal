@@ -54,8 +54,9 @@ class PipelineParityFunctionalTest extends BrowserTestBase {
 
     $this->drupalCreateContentType(['type' => 'article', 'name' => 'Article']);
 
-    // Non-default text format whose filter strips <script> — the duplicated
-    // pipelines indexed raw ->value, the gatherer renders ->processed.
+    // Non-default text format with a restrictive filter — the duplicated
+    // pipelines indexed raw ->value (markup and all), the gatherer renders
+    // ->processed and reduces it to plain text.
     FilterFormat::create([
       'format' => 'restricted_test',
       'name' => 'Restricted test',
@@ -137,12 +138,15 @@ class PipelineParityFunctionalTest extends BrowserTestBase {
       $byId[$item->id] = $item;
     }
 
-    // Text-format rendering: ->processed strips the script.
+    // Text-format rendering: the gatherer indexes the processed plain-text
+    // output. The old duplicated pipelines put the raw ->value — markup and
+    // all — into bodyHtml, so leaked tags are the regression signal.
     $formatItem = current(array_filter($byId, fn($i) => $i->title === 'Format node'));
     $this->assertNotFalse($formatItem);
     $this->assertStringContainsString('Visible body copy', $formatItem->bodyHtml);
-    $this->assertStringNotContainsString('never-index-me', $formatItem->bodyHtml,
-      'The text format must be applied — raw ->value leaks unfiltered markup into the index');
+    $this->assertStringNotContainsString('<script>', $formatItem->bodyHtml,
+      'Raw ->value markup must not leak into the index — the text format + plain-text rendering must be applied');
+    $this->assertStringNotContainsString('<p>', $formatItem->bodyHtml);
 
     // Field mapping: field_topic → topic filter dimension.
     $this->assertSame('History', $formatItem->filters['topic'] ?? NULL,

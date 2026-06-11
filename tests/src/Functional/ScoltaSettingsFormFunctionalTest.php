@@ -48,6 +48,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $realDir = \Drupal::service('stream_wrapper_manager')->getViaUri($outputUri)->realpath();
     if ($realDir !== FALSE) {
       @mkdir($realDir . '/pagefind', 0777, TRUE);
+      file_put_contents($realDir . '/pagefind/pagefind.js', '// fake index');
       file_put_contents($realDir . '/pagefind/pagefind-entry.json', '{}');
     }
   }
