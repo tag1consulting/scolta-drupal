@@ -10,10 +10,15 @@ use PHPUnit\Framework\TestCase;
  * Regression tests for controller security and correctness fixes.
  *
  * Verifies via source analysis (no Drupal bootstrap required):
- *   - json_decode uses JSON_THROW_ON_ERROR with a \JsonException catch
+ *   - JSON decoding goes through the shared parseJsonBody() (scolta-php
+ *     AiControllerTrait), which uses JSON_THROW_ON_ERROR and returns the
+ *     shared 400 error shape — controllers no longer hand-roll json_decode
  *   - Sensitive data is not logged (raw AI responses, print_r output)
  *   - Exception stack traces are preserved in logger calls
  *   - Exception details are not leaked in HTTP error responses
+ *
+ * The shared request pipeline lives in AiApiControllerBase; the three
+ * endpoint controllers only implement invokeHandler().
  */
 class ControllerJsonSafetyTest extends TestCase {
 
@@ -24,7 +29,7 @@ class ControllerJsonSafetyTest extends TestCase {
   }
 
   /**
-   * Data provider for all three controllers.
+   * Data provider for all three endpoint controllers.
    */
   public static function controllerProvider(): array {
     $root = dirname(__DIR__, 2);
@@ -44,103 +49,101 @@ class ControllerJsonSafetyTest extends TestCase {
     ];
   }
 
+  private function baseSource(): string {
+    return file_get_contents($this->moduleRoot . '/src/Controller/AiApiControllerBase.php');
+  }
+
   // -------------------------------------------------------------------
-  // 1. json_decode uses JSON_THROW_ON_ERROR in the handle() method.
+  // 1. JSON decoding is centralized in parseJsonBody() (scolta-php).
   // -------------------------------------------------------------------
 
-  #[\PHPUnit\Framework\Attributes\DataProvider('controllerProvider')]
-  public function testJsonDecodeUsesThrowOnError(string $className, string $file): void {
-    $contents = file_get_contents($file);
+  public function testBaseUsesSharedJsonBodyParser(): void {
+    $contents = $this->baseSource();
     $this->assertStringContainsString(
-      'JSON_THROW_ON_ERROR',
+      '$this->parseJsonBody(',
       $contents,
-      "{$className}::handle() must use JSON_THROW_ON_ERROR in json_decode"
+      'AiApiControllerBase::handle() must decode via the shared parseJsonBody() API'
+    );
+    $this->assertStringNotContainsString(
+      'json_decode(',
+      $contents,
+      'The base must not hand-roll json_decode — parseJsonBody owns decoding (JSON_THROW_ON_ERROR + 400 shape)'
+    );
+  }
+
+  public function testBaseMapsParseErrorsToErrorResponse(): void {
+    $contents = $this->baseSource();
+    $this->assertStringContainsString(
+      "return new JsonResponse(['error' => \$parsed['error']], \$parsed['status']);",
+      $contents,
+      'Malformed JSON must map to the shared error shape and status (400)'
+    );
+  }
+
+  #[\PHPUnit\Framework\Attributes\DataProvider('controllerProvider')]
+  public function testControllersDoNotHandRollJsonDecode(string $className, string $file): void {
+    $contents = file_get_contents($file);
+    $this->assertStringNotContainsString(
+      'json_decode(',
+      $contents,
+      "{$className} must not duplicate JSON decoding — the base pipeline owns it"
     );
   }
 
   // -------------------------------------------------------------------
-  // 2. Each controller catches \JsonException and returns 400.
-  // -------------------------------------------------------------------
-
-  #[\PHPUnit\Framework\Attributes\DataProvider('controllerProvider')]
-  public function testJsonExceptionReturnsBadRequest(string $className, string $file): void {
-    $contents = file_get_contents($file);
-    $this->assertStringContainsString(
-      'catch (\JsonException $e)',
-      $contents,
-      "{$className}::handle() must catch \\JsonException"
-    );
-    $this->assertStringContainsString(
-      "'error' => 'Malformed JSON: '",
-      $contents,
-      "{$className} must return a Malformed JSON error message"
-    );
-    // Verify 400 status code is used for malformed JSON.
-    $this->assertMatchesRegularExpression(
-      "/Malformed JSON.*400/s",
-      $contents,
-      "{$className} must return HTTP 400 for malformed JSON"
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // 3. ExpandQueryController does NOT log raw AI responses.
+  // 2. Sensitive data is not logged.
   // -------------------------------------------------------------------
 
   public function testExpandDoesNotLogRawResponse(): void {
     $contents = file_get_contents(
       $this->moduleRoot . '/src/Controller/ExpandQueryController.php'
-    );
+    ) . $this->baseSource();
     $this->assertStringNotContainsString(
       'Expand raw response',
       $contents,
-      'ExpandQueryController must not log raw AI responses (sensitive data leak)'
+      'The expand pipeline must not log raw AI responses (sensitive data leak)'
     );
   }
 
-  // -------------------------------------------------------------------
-  // 4. ExpandQueryController does NOT use print_r in log messages.
-  // -------------------------------------------------------------------
-
-  public function testExpandDoesNotUsePrintR(): void {
-    $contents = file_get_contents(
-      $this->moduleRoot . '/src/Controller/ExpandQueryController.php'
-    );
+  public function testPipelineDoesNotUsePrintR(): void {
+    $contents = $this->baseSource();
     $this->assertStringNotContainsString(
       'print_r',
       $contents,
-      'ExpandQueryController must not use print_r (sensitive data in logs)'
+      'The AI request pipeline must not use print_r (sensitive data in logs)'
     );
   }
 
   // -------------------------------------------------------------------
-  // 5. Each controller's error-logging block includes the exception object.
+  // 3. Error-logging preserves the exception object for stack traces.
   // -------------------------------------------------------------------
 
-  #[\PHPUnit\Framework\Attributes\DataProvider('controllerProvider')]
-  public function testExceptionObjectPreservedInLog(string $className, string $file): void {
-    $contents = file_get_contents($file);
+  public function testExceptionObjectPreservedInLog(): void {
+    $contents = $this->baseSource();
     $this->assertStringContainsString(
       "'exception' => \$result['exception']",
       $contents,
-      "{$className} must pass the exception object to the logger for stack traces"
+      'The base must pass the exception object to the logger for stack traces'
     );
   }
 
   // -------------------------------------------------------------------
-  // 6. Error HTTP responses do NOT contain the exception message.
+  // 4. Error HTTP responses do NOT contain the exception message.
   // -------------------------------------------------------------------
 
-  #[\PHPUnit\Framework\Attributes\DataProvider('controllerProvider')]
-  public function testErrorResponseDoesNotLeakExceptionMessage(string $className, string $file): void {
-    $contents = file_get_contents($file);
+  public function testErrorResponseDoesNotLeakExceptionMessage(): void {
+    $contents = $this->baseSource();
 
-    // The error responses use $result['error'] (a static string from the handler),
-    // never $e->getMessage() or $result['exception']->getMessage().
+    // The error responses use $result['error'] (a static string from the
+    // handler), never $e->getMessage() or $result['exception']->getMessage().
     $this->assertStringContainsString(
-      "['error' => \$result['error']]",
+      "\$response = ['error' => \$result['error']];",
       $contents,
-      "{$className} must use handler error message in HTTP response, not raw exception"
+      'The base must use the handler error message in HTTP responses, not raw exceptions'
+    );
+    $this->assertStringNotContainsString(
+      "\$result['exception']->getMessage()] ,",
+      $contents
     );
   }
 

@@ -32,9 +32,9 @@ class HealthControllerIndexDetailTest extends TestCase {
     $src = file_get_contents($this->moduleRoot . '/src/Controller/HealthController.php');
 
     $this->assertStringContainsString(
-      "if (\$result['index_exists'])",
+      '$this->indexLocator->locate(',
       $src,
-      'HealthController must branch on index_exists to add detail'
+      'HealthController must resolve index existence through the shared IndexLocator'
     );
     $this->assertStringContainsString(
       "'fragments' => count(\$fragments)",

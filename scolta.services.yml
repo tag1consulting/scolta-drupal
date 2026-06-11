@@ -21,8 +21,11 @@ services:
 
   scolta.pagefind_builder:
     class: Drupal\scolta\Service\PagefindBuilder
-    arguments: ['@logger.channel.scolta', '@file_system']
+    arguments: ['@logger.channel.scolta', '@file_system', '@scolta.index_locator']
 
   scolta.content_gatherer:
     class: Drupal\scolta\Service\ScoltaContentGatherer
     arguments: ['@entity_type.manager', '@database', '@module_handler', '@config.factory']
+
+  scolta.index_locator:
+    class: Drupal\scolta\Service\IndexLocator

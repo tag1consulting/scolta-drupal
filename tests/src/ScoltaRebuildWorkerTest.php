@@ -6,7 +6,8 @@ declare(strict_types=1);
 // the queue-worker base class and the injected service interfaces are stubbed
 // when absent — the same pattern ScoltaCacheBehaviorTest uses for the cache
 // backend interface. Locally (and in the phpstan job) the real core classes
-// exist and the stubs are skipped.
+// exist and the stubs are skipped. Stubs carry the minimal method signatures
+// the worker calls so PHPUnit can stub them in both environments.
 // phpcs:disable
 namespace Drupal\Core\Queue {
     if (!class_exists(QueueWorkerBase::class)) {
@@ -19,7 +20,21 @@ namespace Drupal\Core\Queue {
         }
     }
     if (!class_exists(SuspendQueueException::class)) {
-        class SuspendQueueException extends \RuntimeException {}
+        class SuspendQueueException extends \RuntimeException {
+            public function __construct(
+                string $message = '',
+                int $code = 0,
+                ?\Throwable $previous = null,
+                public readonly float $delay = 0.0,
+            ) {
+                parent::__construct($message, $code, $previous);
+            }
+        }
+    }
+    if (!class_exists(QueueFactory::class)) {
+        class QueueFactory {
+            public function get($name, $reliable = false) {}
+        }
     }
 }
 
@@ -31,7 +46,10 @@ namespace Drupal\Core\Plugin {
 
 namespace Drupal\Core\Lock {
     if (!interface_exists(LockBackendInterface::class)) {
-        interface LockBackendInterface {}
+        interface LockBackendInterface {
+            public function acquire($name, $timeout = 30.0);
+            public function release($name);
+        }
     }
 }
 
@@ -55,13 +73,18 @@ namespace Drupal\Core\StreamWrapper {
 
 namespace Drupal\Core\Entity {
     if (!interface_exists(EntityTypeManagerInterface::class)) {
-        interface EntityTypeManagerInterface {}
+        interface EntityTypeManagerInterface {
+            public function getStorage($entity_type_id);
+        }
     }
 }
 
 namespace Drupal\Core\State {
     if (!interface_exists(StateInterface::class)) {
-        interface StateInterface {}
+        interface StateInterface {
+            public function get($key, $default = NULL);
+            public function set($key, $value);
+        }
     }
 }
 
@@ -74,22 +97,25 @@ namespace Drupal\Core\Cache {
 
 namespace Drupal\scolta\Tests {
 
+    use Drupal\Core\Queue\SuspendQueueException;
     use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
+    use Drupal\scolta\Service\ScoltaContentGatherer;
     use PHPUnit\Framework\TestCase;
-    use Psr\Log\AbstractLogger;
+    use Psr\Log\NullLogger;
 
     /**
-     * Tests ScoltaRebuildWorker dependency injection and the fingerprint
-     * failure path.
+     * Tests ScoltaRebuildWorker's pipeline structure and debounce behavior.
      *
-     * The error path previously fataled: QueueWorkerBase has no getLogger(),
-     * and the "Call to an undefined method" was baselined instead of fixed,
-     * so a failed fingerprint write crashed cron. writeFingerprint() must log
-     * through the injected logger and never throw.
+     * The worker previously eager-loaded every published node and duplicated
+     * the body-extraction block, building a DIFFERENT index than
+     * drush scolta:build. It must now run the same streamed
+     * gatherer → filterItems → IndexBuildOrchestrator pipeline, debounce on
+     * scolta.rebuild_requested_at + the backend's auto_rebuild_delay, and
+     * drain duplicate queue items after a successful build.
      */
     class ScoltaRebuildWorkerTest extends TestCase {
 
-        private function createWorker(SpyLogger $logger): ScoltaRebuildWorker {
+        private function createWorker(object $state): ScoltaRebuildWorker {
             return new ScoltaRebuildWorker(
                 [],
                 'scolta_rebuild',
@@ -99,53 +125,94 @@ namespace Drupal\scolta\Tests {
                 $this->createStub(\Drupal\Core\File\FileSystemInterface::class),
                 $this->createStub(\Drupal\Core\StreamWrapper\StreamWrapperManagerInterface::class),
                 $this->createStub(\Drupal\Core\Entity\EntityTypeManagerInterface::class),
-                $this->createStub(\Drupal\Core\State\StateInterface::class),
+                $state,
                 $this->createStub(\Drupal\Core\Cache\CacheTagsInvalidatorInterface::class),
-                $logger,
+                new NullLogger(),
+                $this->createStub(ScoltaContentGatherer::class),
+                $this->createStub(\Drupal\Core\Queue\QueueFactory::class),
             );
         }
 
-        private function callWriteFingerprint(ScoltaRebuildWorker $worker, string $path, string $fp): void {
-            $method = new \ReflectionMethod($worker, 'writeFingerprint');
-            $method->invoke($worker, $path, $fp);
-        }
-
         // -------------------------------------------------------------------
-        // Fingerprint write failure path (the previously-fatal error path).
+        // Debounce behavior.
         // -------------------------------------------------------------------
 
-        public function test_fingerprint_write_failure_logs_error_without_fatal(): void {
-            $logger = new SpyLogger();
-            $worker = $this->createWorker($logger);
+        public function test_fresh_content_change_suspends_the_queue(): void {
+            $state = $this->createStub(\Drupal\Core\State\StateInterface::class);
+            // The last content change was 1 second ago — well inside any
+            // configured delay (the floor is 60s, fallback 300s).
+            $state->method('get')->willReturn(time() - 1);
 
-            $this->callWriteFingerprint(
-                $worker,
-                '/nonexistent-scolta-test-dir-' . uniqid() . '/.scolta-state',
-                'fingerprint-value'
-            );
+            $worker = $this->createWorker($state);
 
-            $this->assertCount(1, $logger->records, 'A failed fingerprint write must log exactly one error.');
-            $this->assertSame('error', $logger->records[0]['level']);
-            $this->assertStringContainsString('fingerprint', $logger->records[0]['message']);
+            $this->expectException(SuspendQueueException::class);
+            $this->expectExceptionMessageMatches('/Debouncing/');
+            $worker->processItem(['type' => 'auto']);
         }
 
-        public function test_fingerprint_write_success_logs_nothing(): void {
-            $logger = new SpyLogger();
-            $worker = $this->createWorker($logger);
+        public function test_debounce_skipped_when_no_change_recorded(): void {
+            $state = $this->createStub(\Drupal\Core\State\StateInterface::class);
+            // No recorded change (e.g. the install-time queue item): the
+            // debounce must not delay the initial build. The build then
+            // fails to acquire the (stub, falsy) lock — which proves the
+            // code got PAST the debounce.
+            $state->method('get')->willReturn(0);
 
-            $dir = sys_get_temp_dir() . '/scolta-worker-test-' . uniqid();
-            mkdir($dir);
-            $path = $dir . '/.scolta-state';
+            $worker = $this->createWorker($state);
 
             try {
-                $this->callWriteFingerprint($worker, $path, 'fingerprint-value');
-
-                $this->assertSame('fingerprint-value', file_get_contents($path));
-                $this->assertSame([], $logger->records, 'A successful write must not log.');
-            } finally {
-                @unlink($path);
-                @rmdir($dir);
+                $worker->processItem(['type' => 'install']);
+                $this->fail('Expected SuspendQueueException from the stub lock');
             }
+            catch (SuspendQueueException $e) {
+                $this->assertStringContainsString('lock', $e->getMessage(),
+                    'With no recorded change the worker must reach the lock acquisition, not the debounce');
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // Pipeline structure: same streamed pipeline as drush scolta:build.
+        // -------------------------------------------------------------------
+
+        public function test_worker_streams_through_the_shared_gatherer(): void {
+            $contents = $this->workerSource();
+            $this->assertStringContainsString('$this->contentGatherer->gather(', $contents,
+                'The worker must gather through ScoltaContentGatherer — the single source of truth');
+            $this->assertStringContainsString('->filterItems(', $contents,
+                'Gathered items must stream through ContentExporter::filterItems()');
+            $this->assertStringContainsString('IndexBuildOrchestrator', $contents,
+                'The worker must build through the orchestrator like drush scolta:build');
+            $this->assertStringContainsString('getTimestampManifest()', $contents,
+                'The worker must pass the timestamp manifest so unchanged entities skip full loads');
+        }
+
+        public function test_worker_does_not_eager_load_the_corpus(): void {
+            $contents = $this->workerSource();
+            // loadMultiple() is fine for the handful of search_api_server
+            // config entities (autoRebuildDelay); node loading must go
+            // through the streaming gatherer exclusively.
+            $this->assertStringNotContainsString("getStorage('node')", $contents,
+                'The worker must not load nodes itself — that is the memory blowup the streaming gatherer exists to avoid');
+            $this->assertStringNotContainsString("'field_body'", $contents,
+                'The worker must not carry its own body-extraction block — ScoltaContentGatherer owns content conversion');
+        }
+
+        public function test_worker_drains_duplicate_queue_items_after_success(): void {
+            $contents = $this->workerSource();
+            $this->assertStringContainsString('function drainQueue()', $contents);
+            $this->assertMatchesRegularExpression(
+                '/if \(\$report->success\) \{.*?\$this->drainQueue\(\);/s',
+                $contents,
+                'A successful build must drain the remaining duplicate rebuild requests'
+            );
+        }
+
+        public function test_worker_reads_auto_rebuild_delay(): void {
+            $contents = $this->workerSource();
+            $this->assertStringContainsString("'auto_rebuild_delay'", $contents,
+                'The debounce must consume the form-exposed auto_rebuild_delay backend setting');
+            $this->assertStringContainsString("'scolta.rebuild_requested_at'", $contents,
+                'The debounce must consume the rebuild_requested_at state written on every node save');
         }
 
         // -------------------------------------------------------------------
@@ -153,28 +220,25 @@ namespace Drupal\scolta\Tests {
         // -------------------------------------------------------------------
 
         public function test_worker_implements_container_factory_plugin_interface(): void {
-            $contents = $this->workerSource();
             $this->assertStringContainsString(
                 'implements ContainerFactoryPluginInterface',
-                $contents,
+                $this->workerSource(),
                 'ScoltaRebuildWorker must implement ContainerFactoryPluginInterface for injected dependencies'
             );
         }
 
         public function test_worker_has_no_static_drupal_calls(): void {
-            $contents = $this->workerSource();
             $this->assertStringNotContainsString(
                 '\Drupal::',
-                $contents,
+                $this->workerSource(),
                 'ScoltaRebuildWorker must use injected services, not \Drupal:: statics'
             );
         }
 
         public function test_worker_does_not_call_undefined_get_logger(): void {
-            $contents = $this->workerSource();
             $this->assertStringNotContainsString(
                 '$this->getLogger(',
-                $contents,
+                $this->workerSource(),
                 'QueueWorkerBase has no getLogger() — the worker must use its injected logger'
             );
         }
@@ -192,20 +256,6 @@ namespace Drupal\scolta\Tests {
             return file_get_contents(
                 dirname(__DIR__, 2) . '/src/Plugin/QueueWorker/ScoltaRebuildWorker.php'
             );
-        }
-
-    }
-
-    /**
-     * Collects log records for assertions.
-     */
-    class SpyLogger extends AbstractLogger {
-
-        /** @var array<int, array{level: string, message: string}> */
-        public array $records = [];
-
-        public function log($level, string|\Stringable $message, array $context = []): void {
-            $this->records[] = ['level' => (string) $level, 'message' => (string) $message];
         }
 
     }

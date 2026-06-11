@@ -48,6 +48,11 @@ display:
 
 # --- Cache ---
 cache_ttl: 2592000                  # AI response cache in seconds (30 days)
+flood:                              # Rate limiting for the anonymous AI endpoints
+  ai_ip_limit: 60                   # Max AI API requests per IP per window (0 disables)
+  ai_ip_window: 60                  # Per-IP window in seconds
+  ai_global_limit: 1000             # Max AI API requests site-wide per window (0 disables)
+  ai_global_window: 60              # Site-wide window in seconds
 
 # --- Custom Prompts (leave empty for built-in defaults) ---
 prompt_expand_query: ''

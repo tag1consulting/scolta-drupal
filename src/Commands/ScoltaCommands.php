@@ -12,6 +12,7 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Progress\DrushProgressReporter;
+use Drupal\scolta\Service\IndexLocator;
 use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
@@ -58,6 +59,8 @@ class ScoltaCommands extends DrushCommands {
    *   The file system service.
    * @param \Drupal\Core\Cache\CacheTagsInvalidatorInterface $cacheTagsInvalidator
    *   The cache tags invalidator.
+   * @param \Drupal\scolta\Service\IndexLocator $indexLocator
+   *   The index locator.
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -70,6 +73,7 @@ class ScoltaCommands extends DrushCommands {
     private readonly ScoltaContentGatherer $contentGatherer,
     private readonly FileSystemInterface $fileSystem,
     private readonly CacheTagsInvalidatorInterface $cacheTagsInvalidator,
+    private readonly IndexLocator $indexLocator,
   ) {
     parent::__construct();
   }
@@ -792,10 +796,10 @@ class ScoltaCommands extends DrushCommands {
     else {
       $resolvedDir = $outputDir;
     }
-    if (file_exists($resolvedDir . '/pagefind/pagefind.js')) {
-      // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- glob() used for counting fragment files; scanDirectory() would be heavier for a simple count.
-      $fragmentCount = count(glob($resolvedDir . '/pagefind/fragment/*') ?: []);
-      $mtime = filemtime($resolvedDir . '/pagefind/pagefind.js');
+    $location = $this->indexLocator->locate($resolvedDir);
+    if ($location !== NULL) {
+      $fragmentCount = $this->indexLocator->countFragments($location);
+      $mtime = filemtime($location['indexFile']);
       $this->logger()->notice("  Path:       {$outputDir}");
       $this->logger()->notice("  Fragments:  {$fragmentCount}");
       $this->logger()->notice("  Last built: " . ($mtime ? date('Y-m-d H:i:s', $mtime) : 'unknown'));

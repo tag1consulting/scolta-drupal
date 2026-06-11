@@ -46,6 +46,11 @@ display:
   ai_summary_top_n: 10
   ai_summary_max_chars: 4000
 cache_ttl: 2592000
+flood:
+  ai_ip_limit: 60
+  ai_ip_window: 60
+  ai_global_limit: 1000
+  ai_global_window: 60
 prompt_expand_query: ''
 prompt_summarize: ''
 prompt_follow_up: ''

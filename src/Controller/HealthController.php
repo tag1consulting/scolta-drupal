@@ -6,6 +6,7 @@ namespace Drupal\scolta\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\scolta\Service\IndexLocator;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -33,11 +34,19 @@ class HealthController extends ControllerBase {
   protected StreamWrapperManagerInterface $streamWrapperManager;
 
   /**
+   * The index locator.
+   *
+   * @var \Drupal\scolta\Service\IndexLocator
+   */
+  protected IndexLocator $indexLocator;
+
+  /**
    * {@inheritdoc}
    */
-  public function __construct(ScoltaAiService $aiService, StreamWrapperManagerInterface $streamWrapperManager) {
+  public function __construct(ScoltaAiService $aiService, StreamWrapperManagerInterface $streamWrapperManager, IndexLocator $indexLocator) {
     $this->aiService = $aiService;
     $this->streamWrapperManager = $streamWrapperManager;
+    $this->indexLocator = $indexLocator;
   }
 
   /**
@@ -47,6 +56,7 @@ class HealthController extends ControllerBase {
     return new static(
       $container->get('scolta.ai_service'),
       $container->get('stream_wrapper_manager'),
+      $container->get('scolta.index_locator'),
     );
   }
 
@@ -87,20 +97,16 @@ class HealthController extends ControllerBase {
       $result['ai_configured'] = TRUE;
     }
 
-    // Drupal-specific: index detail enrichment.
-    if ($result['index_exists']) {
-      // Determine the actual index file location (pagefind/ subdirectory
-      // or legacy root).
-      $indexFile = file_exists($outputDir . '/pagefind/pagefind.js')
-        ? $outputDir . '/pagefind/pagefind.js'
-        : $outputDir . '/pagefind.js';
-      $fragmentDir = file_exists($outputDir . '/pagefind/pagefind.js')
-        ? $outputDir . '/pagefind/fragment'
-        : $outputDir . '/fragment';
+    // Drupal-specific: index detail enrichment. The shared locator decides
+    // what "index exists" means (modern pagefind/ layout or legacy root).
+    $location = $this->indexLocator->locate($outputDir);
+    $result['index_exists'] = $location !== NULL;
+    if ($location !== NULL) {
+      $indexFile = $location['indexFile'];
 
       $mtime = filemtime($indexFile);
       // phpcs:ignore Drupal.Functions.DiscouragedFunctions.Discouraged -- path is already resolved from stream wrapper.
-      $fragments = glob($fragmentDir . '/*') ?: [];
+      $fragments = glob($location['fragmentDir'] . '/*') ?: [];
 
       $result['index'] = [
         'built' => TRUE,
