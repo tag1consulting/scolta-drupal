@@ -48,10 +48,12 @@ scolta.followup:
   requirements:
     _permission: 'use scolta ai'
 
+# Reachable anonymously so uptime monitors always work; the controller
+# returns status-only unless the caller has 'administer scolta'.
 scolta.health:
   path: '/api/scolta/v1/health'
   defaults:
     _controller: '\Drupal\scolta\Controller\HealthController::handle'
   methods: [GET]
   requirements:
-    _permission: 'use scolta ai'
+    _access: 'TRUE'

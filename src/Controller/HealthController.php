@@ -16,6 +16,10 @@ use Tag1\Scolta\Health\HealthChecker;
  * Health check endpoint for monitoring.
  *
  * GET /api/scolta/v1/health.
+ *
+ * Reachable anonymously so uptime monitors always work, but anonymous
+ * callers receive only the overall status. The full diagnostic payload
+ * (provider, index integrity, fragment counts) requires 'administer scolta'.
  */
 class HealthController extends ControllerBase {
 
@@ -142,6 +146,14 @@ class HealthController extends ControllerBase {
     }
     else {
       $result['index'] = ['built' => FALSE];
+    }
+
+    // The full report is always computed first so the trimmed status still
+    // reflects integrity degradation. Callers without the admin permission
+    // get exactly ['status' => ...] — enough for uptime monitors, nothing
+    // an anonymous visitor shouldn't see.
+    if (!$this->currentUser()->hasPermission('administer scolta')) {
+      return new JsonResponse(['status' => $result['status']]);
     }
 
     return new JsonResponse($result);

@@ -210,6 +210,8 @@ Scolta defines a **Use Scolta AI features** permission (`use scolta ai`) that ga
 
 To restrict AI features to specific roles (e.g. authenticated users only), revoke the permission from the anonymous role at *Administration > People > Permissions*.
 
+The health endpoint (`GET /api/scolta/v1/health`) is reachable without any permission so uptime monitors always work, but callers without **Administer Scolta** (`administer scolta`) receive only `{"status": "ok"|"degraded"}`. The full diagnostic payload (AI provider, index integrity, fragment counts) requires `administer scolta`.
+
 ### Configuration
 
 Visit *Administration > Configuration > Search and Metadata > Scolta AI Search* to configure the AI provider, API key, model, and indexing options.
