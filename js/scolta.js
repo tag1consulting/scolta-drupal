@@ -75,6 +75,8 @@
       CROSS_LIST_BONUS: s.CROSS_LIST_BONUS ?? 0.05,
       EXPAND_SUBWORD_MAX_FREQ: s.EXPAND_SUBWORD_MAX_FREQ ?? 0.05,
       EXPAND_SUBWORD_DENYLIST: s.EXPAND_SUBWORD_DENYLIST ?? [],
+      FILTER_HINT_MIN_RESULTS: s.FILTER_HINT_MIN_RESULTS ?? 5,
+      FILTER_HINT_MIN_RATIO: s.FILTER_HINT_MIN_RATIO ?? 0.1,
       EXPANSION_COMBINE_MODE: s.EXPANSION_COMBINE_MODE ?? 'relevance_union',
       EXPANSION_PER_TERM_TOP_K: s.EXPANSION_PER_TERM_TOP_K ?? 3,
       AI_MAX_FOLLOWUPS: s.AI_MAX_FOLLOWUPS ?? 3,
@@ -254,8 +256,10 @@
   let pagefindBase = '';   // Set during initPagefind(); used by resolveUrl().
   let currentSortOverride = null;    // { field, direction } or null — active sort override
   let llmAppliedFilters = {};        // { dimension: value } — filters injected by LLM expansion
+  let offeredLlmFilters = {};        // { dimension: value } — LLM hints the recall guard declined to auto-apply
   let expansionInFlight = false;     // true while an expand-query HTTP request is pending
   let cachedPagefindFilters = null;  // { dimension: { value: count } } — from pagefind.filters()
+  let cachedPagefindPageCount = null; // total indexed pages across languages — from pagefind-entry.json
 
   // Detect default language filter from instanceConfig.currentLanguage or <html lang>.
   // Applied on every fresh search unless the URL already specifies f_language.
@@ -301,6 +305,8 @@
       CROSS_LIST_BONUS: s.CROSS_LIST_BONUS ?? 0.05,
       EXPAND_SUBWORD_MAX_FREQ: s.EXPAND_SUBWORD_MAX_FREQ ?? 0.05,
       EXPAND_SUBWORD_DENYLIST: s.EXPAND_SUBWORD_DENYLIST ?? [],
+      FILTER_HINT_MIN_RESULTS: s.FILTER_HINT_MIN_RESULTS ?? 5,
+      FILTER_HINT_MIN_RATIO: s.FILTER_HINT_MIN_RATIO ?? 0.1,
       EXPANSION_COMBINE_MODE: s.EXPANSION_COMBINE_MODE ?? 'relevance_union',
       EXPANSION_PER_TERM_TOP_K: s.EXPANSION_PER_TERM_TOP_K ?? 3,
       AI_MAX_FOLLOWUPS: s.AI_MAX_FOLLOWUPS ?? 3,
@@ -394,6 +400,15 @@
     try {
       const resp = await fetch(basePath + 'pagefind-entry.json?ts=' + Date.now());
       const entry = await resp.json();
+      // Record the total page count while the entry file is in hand — it is the
+      // exact corpus size the sub-word frequency guard needs, and reading it
+      // here avoids the match-all pagefind search that used to compute it (which
+      // downloads the entire word index — see subwordCorpusSize()).
+      const totalPages = Object.values(entry.languages || {})
+        .reduce((sum, l) => sum + (l.page_count || 0), 0);
+      if (totalPages > 0) {
+        cachedPagefindPageCount = totalPages;
+      }
       const primaryLang = (document.querySelector('html')?.getAttribute('lang') || 'en')
         .toLowerCase().split('-')[0];
       const absoluteBase = new URL(basePath, window.location.href).href;
@@ -524,6 +539,12 @@
       }
       const data = await resp.json();
       debugLog("[scolta:expand] response:", data);
+      if (data && data.degraded) {
+        // Server AI call failed and the response is an unexpanded fallback
+        // (HTTP 200 by design). Surface it so an AI outage is visible in the
+        // console instead of masquerading as a normal empty expansion.
+        console.warn("[scolta:expand] degraded response (server AI unavailable):", data.degraded_reason || 'unknown');
+      }
       if (Array.isArray(data)) {
         return { terms: data, sort_hint: null, subject_terms: null, filter_hint: null };
       }
@@ -760,6 +781,36 @@
     return div.innerHTML;
   }
 
+  // Escape a value for interpolation into an HTML attribute. escapeHtml (a
+  // textContent → innerHTML round-trip) does not escape quotes, so a value
+  // containing `"` could break out of the attribute and inject new ones.
+  // Use this for every `attr="${...}"` interpolation; escapeHtml stays for
+  // text nodes.
+  function escapeAttr(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  // Whether a URL is safe to emit as an href: absolute http(s) or relative
+  // (scheme-less). Anything with another scheme (javascript:, data:, …) is
+  // not. Control characters and whitespace are stripped before scheme
+  // detection because browsers ignore them when parsing a scheme.
+  // Mirrors PHP MarkdownRenderer::isSafeLinkUrl().
+  function isSafeLinkUrl(url) {
+    const cleaned = String(url).replace(/[\u0000-\u0020\u007f]+/g, "");
+    if (/^https?:\/\//i.test(cleaned)) return true;
+    return !/^[a-z][a-z0-9+.\-]*:/i.test(cleaned);
+  }
+
+  // Attribute-escape a URL for use in href; unsafe schemes become inert "#".
+  function sanitizeUrlAttr(url) {
+    return isSafeLinkUrl(url) ? escapeAttr(url) : "#";
+  }
+
   // Prepare a raw query for display inside the results header, which wraps the
   // query in its own pair of double-quotes. A quoted-phrase search ("merge
   // conflict") already carries surrounding quotes, so without trimming a single
@@ -775,9 +826,11 @@
   }
 
   function stripHtml(text) {
-    const div = document.createElement("div");
-    div.innerHTML = text;
-    return div.textContent || div.innerText || "";
+    // DOMParser produces an inert document: scripts never run and resources
+    // (e.g. <img onerror>) never load, unlike innerHTML on a live detached
+    // div, whose subtree shares the page's document and loads eagerly.
+    const doc = new DOMParser().parseFromString(String(text ?? ""), "text/html");
+    return doc.body.textContent || "";
   }
 
   // Build a metadata annotation line from a result's meta fields.
@@ -832,7 +885,11 @@
   }
 
   // Repair markdown truncated by the AI hitting max_tokens mid-output.
-  // Mirrors PHP MarkdownRenderer::cleanBrokenLinks() logic.
+  // Superset of PHP MarkdownRenderer::cleanBrokenLinks(): both repair a
+  // truncated [text](url link; this side also salvages a bare trailing
+  // "[label" and closes unbalanced bold/italic/backtick markers. The shared
+  // rendering contract between the two renderers is pinned by the fixtures
+  // in tests/fixtures/render-parity/ (asserted by Jest and PHPUnit).
   function cleanBrokenMarkdown(text) {
     if (!text) return text;
 
@@ -893,14 +950,22 @@
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, url) => {
+        // Scheme gate (mirrors PHP MarkdownRenderer): only http(s) and
+        // relative URLs may become links, even when no domain allowlist is
+        // configured. escapeAttr on the href: the summary was escaped with
+        // escapeHtml, which leaves `"` intact — unescaped it could break out
+        // of the href attribute.
+        if (!isSafeLinkUrl(url)) {
+          return linkText;
+        }
         if (allowedDomains.length === 0) {
-          return `<a href="${url}" target="_blank" rel="noopener">${linkText}</a>`;
+          return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener">${linkText}</a>`;
         }
         try {
           const parsed = new URL(url);
           const host = parsed.hostname.replace(/^www\./, '');
           if (allowedDomains.some(d => host === d || host.endsWith('.' + d))) {
-            return `<a href="${url}" target="_blank" rel="noopener">${linkText}</a>`;
+            return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener">${linkText}</a>`;
           }
         } catch {}
         // Non-allowed or invalid URL — show text only, no link
@@ -1057,7 +1122,7 @@
     container.style.display = "flex";
     container.innerHTML = '<span style="font-size:0.8rem;color:#666;margin-right:0.2rem;">Also try:</span>' +
       filtered
-        .map(t => `<span class="scolta-expanded-term" data-scolta-search-term="${escapeHtml(t)}">${escapeHtml(t)}</span>`)
+        .map(t => `<span class="scolta-expanded-term" data-scolta-search-term="${escapeAttr(t)}">${escapeHtml(t)}</span>`)
         .join("");
   }
 
@@ -1092,7 +1157,7 @@
   function renderFilterBadges() {
     const el = els.filterIndicator;
     if (!el) return;
-    if (Object.keys(llmAppliedFilters).length === 0) {
+    if (Object.keys(llmAppliedFilters).length === 0 && Object.keys(offeredLlmFilters).length === 0) {
       el.style.display = 'none';
       el.innerHTML = '';
       return;
@@ -1101,10 +1166,30 @@
     let html = '';
     for (const [dim, val] of Object.entries(llmAppliedFilters)) {
       html += '<span class="scolta-filter-badge">Filtered: ' + escapeHtml(dim) + ' = ' + escapeHtml(val) +
-        ' <button class="scolta-filter-dismiss" data-scolta-filter-dismiss="' + escapeHtml(dim) +
+        ' <button class="scolta-filter-dismiss" data-scolta-filter-dismiss="' + escapeAttr(dim) +
         '" aria-label="Remove filter">×</button></span> ';
     }
+    // Hints the recall guard declined: suggested, not applied. Clicking
+    // applies the filter explicitly — the user opted in, so no guard.
+    for (const [dim, val] of Object.entries(offeredLlmFilters)) {
+      html += '<span class="scolta-filter-badge scolta-filter-offer">' +
+        '<button class="scolta-filter-apply" data-scolta-filter-offer-dim="' + escapeAttr(dim) +
+        '" data-scolta-filter-offer-val="' + escapeAttr(val) +
+        '">Filter by ' + escapeHtml(dim) + ': ' + escapeHtml(val) + '</button></span> ';
+    }
     el.innerHTML = html;
+  }
+
+  function applyOfferedLlmFilter(dim, val) {
+    if (offeredLlmFilters[dim] !== val) return;
+    delete offeredLlmFilters[dim];
+    llmAppliedFilters[dim] = val;
+    if (!activeFilters[dim]) {
+      activeFilters[dim] = new Set();
+    }
+    activeFilters[dim].add(val);
+    renderFilterBadges();
+    doSearch(true);
   }
 
   function dismissLlmFilter(dim) {
@@ -1142,6 +1227,87 @@
       searchOpts.sort = { [sortHint.field]: sortHint.direction };
     }
     return pagefind.search(query, searchOpts);
+  }
+
+  // Count distinct results across the union of search terms under the given
+  // filters. Mirrors the union the real merged search performs, but only
+  // counts result ids — no fragment loads — so it is cheap enough to run as
+  // a probe before committing to a filter.
+  async function countUnionResults(terms, filters) {
+    const seen = new Set();
+    const searches = await Promise.all(terms.map(async (term) => {
+      try {
+        return await pagefindSearch(term, filters);
+      } catch (_) {
+        return { results: [] };
+      }
+    }));
+    for (const search of searches) {
+      for (const r of (search.results || [])) {
+        seen.add(r.id);
+      }
+    }
+    return seen.size;
+  }
+
+  // Recall guard for LLM filter hints (2026-06-09 regression: auto-applied
+  // topic filters that are individually plausible but jointly near-empty
+  // collapsed "most popular git workflows" from 76 results to 1 on the
+  // git-manual corpus). The LLM cannot know corpus counts, so no prompt fix
+  // can be complete — the client is the only layer holding ground truth.
+  //
+  // Hints are evaluated sequentially against the JOINT result count (each
+  // accepted hint tightens the base for the next), so stacked hints whose
+  // intersection collapses are caught even when each marginal looks healthy.
+  // A hint is auto-applied only when the filtered union keeps at least
+  // FILTER_HINT_MIN_RESULTS results (clamped to the unfiltered count for tiny
+  // corpora) AND at least FILTER_HINT_MIN_RATIO of the unfiltered union.
+  // Declined hints are returned as "offered" — rendered as a clickable
+  // suggestion chip instead of silently narrowing the results. Setting both
+  // knobs to 0 restores the previous always-apply behavior.
+  async function partitionFilterHintByRecall(filterHint, probeTerms, baseFilters, CONFIG) {
+    const applied = {};
+    const offered = {};
+
+    const minResults = CONFIG.FILTER_HINT_MIN_RESULTS;
+    const minRatio = CONFIG.FILTER_HINT_MIN_RATIO;
+
+    const acceptedFilters = {};
+    for (const [dim, vals] of Object.entries(baseFilters)) {
+      acceptedFilters[dim] = new Set(vals);
+    }
+
+    const baseCount = await countUnionResults(probeTerms, acceptedFilters);
+
+    for (const [dim, val] of Object.entries(filterHint)) {
+      const trialFilters = {};
+      for (const [d, vals] of Object.entries(acceptedFilters)) {
+        trialFilters[d] = new Set(vals);
+      }
+      if (!trialFilters[dim]) trialFilters[dim] = new Set();
+      trialFilters[dim].add(val);
+
+      const trialCount = await countUnionResults(probeTerms, trialFilters);
+
+      if (trialCount >= Math.min(minResults, baseCount) && trialCount >= baseCount * minRatio) {
+        applied[dim] = val;
+        acceptedFilters[dim] = trialFilters[dim];
+      } else if (trialCount > 0) {
+        offered[dim] = val;
+        debugLog('[scolta:filter] Recall guard declined hint', dim, '=', val,
+          '(' + trialCount + ' of ' + baseCount + ' results) — offering instead of applying');
+      } else {
+        // Zero matches: the hint names a dimension or value the index does
+        // not have (observed live: a filter_fields config naming "topic"
+        // while the index exposes "section" — the hint can never match).
+        // Offering a known-dead filter would just be a one-click path to an
+        // empty page, so drop it entirely.
+        debugLog('[scolta:filter] Recall guard dropped hint', dim, '=', val,
+          '(0 of ' + baseCount + ' results — dimension/value absent from the index)');
+      }
+    }
+
+    return { applied, offered };
   }
 
   const SKIP_FILTER_DIMENSIONS = new Set(['site', 'language', 'content_type', 'entity_type']);
@@ -1627,6 +1793,46 @@
     return results;
   }
 
+  // Corpus size for the sub-word frequency guard's denominator. This used to
+  // run pagefind.search(null, filters), but a match-all search makes pagefind
+  // download the ENTIRE word index — on a large long-form corpus that is
+  // thousands of requests (111 MB / 5,678 chunks on a 6,900-page site), and
+  // because the AI summary is gated behind the expansion merge, the AI Overview
+  // stalled for minutes on production while the index streamed in. The same
+  // totals are available without touching the word index: pagefind.filters()
+  // value counts and the per-language page counts in pagefind-entry.json, both
+  // already cached at init.
+  function subwordCorpusSize(filters) {
+    // Scoped: pagefind ORs values within a dimension and ANDs across
+    // dimensions. The AND-count is unknowable from per-value totals, so use the
+    // smallest dimension's selected-value sum as an upper bound. A too-large
+    // denominator under-measures frequency and admits a sub-word the exact
+    // count might have blocked — the recall-friendly direction.
+    const dimCounts = [];
+    if (filters && cachedPagefindFilters) {
+      for (const [dim, vals] of Object.entries(filters)) {
+        const counts = cachedPagefindFilters[dim];
+        if (!counts) continue;
+        const selected = vals instanceof Set ? [...vals] : Array.isArray(vals) ? vals : [vals];
+        if (selected.length === 0) continue;
+        dimCounts.push(selected.reduce((sum, v) => sum + (counts[v] || 0), 0));
+      }
+    }
+    if (dimCounts.length > 0) return Math.min(...dimCounts);
+    // Unscoped: exact total from pagefind-entry.json.
+    if (cachedPagefindPageCount !== null) return cachedPagefindPageCount;
+    // Last resort: the largest filter dimension's value-count sum. Exact when
+    // any dimension covers every page; an undercount otherwise, which
+    // over-measures frequency and blocks more sub-words — the fail-closed,
+    // precision-preserving direction the guard already takes on errors.
+    let max = 0;
+    for (const counts of Object.values(cachedPagefindFilters || {})) {
+      const sum = Object.values(counts).reduce((a, b) => a + b, 0);
+      if (sum > max) max = sum;
+    }
+    return max; // 0 when no data — the caller fails closed
+  }
+
   async function mergeExpandedSearchResults(expandedTerms, originalQuery, searchQuery, preserveFilters, version, sortOverride, subjectTerms) {
     const CONFIG = getInstanceConfig();
     const validTerms = expandedTerms
@@ -1655,10 +1861,13 @@
     // recall lost in v1.0.0 — but a word is only added as a search term when
     // its corpus frequency is below EXPAND_SUBWORD_MAX_FREQ. Low-frequency
     // domain words ("vegetarian", "cuisine") get added; high-frequency noise
-    // words ("recipes", "cooking") are blocked. Frequency is measured against
+    // words ("recipes", "cooking") are blocked. The numerator is probed with
     // the same active filters the real search uses (including the language
-    // partition when auto_language_filter is on), so numerator and denominator
-    // share scope. 0 reproduces v1.0.0 (no sub-words); >=1 admits all sub-words.
+    // partition when auto_language_filter is on); the denominator comes from
+    // subwordCorpusSize(), which scopes to those filters via cached totals
+    // instead of a match-all search (the match-all downloaded the entire word
+    // index and stalled the AI summary for minutes on large corpora).
+    // 0 reproduces v1.0.0 (no sub-words); >=1 admits all sub-words.
     const subwordMaxFreq = CONFIG.EXPAND_SUBWORD_MAX_FREQ;
     // Fix A+D (issue #156 follow-up): the frequency guard must never drop a word
     // the USER actually typed — frequency is a leaky proxy for "generic," and in a
@@ -1681,8 +1890,7 @@
       let allowed = false;
       try {
         if (subwordCorpusTotal === null) {
-          const all = await pagefindSearch(null, activeFilters);
-          subwordCorpusTotal = all.results.length;
+          subwordCorpusTotal = subwordCorpusSize(activeFilters);
         }
         if (subwordCorpusTotal > 0) {
           const hit = await pagefindSearch(word, activeFilters);
@@ -1706,9 +1914,15 @@
       if (hasFilterMatch) {
         debugLog('[scolta:sort] Subject filter match:', JSON.stringify(subjectFilters));
       } else if (subjectTerms && subjectTerms.length > 0) {
-        debugLog('[scolta:sort] No filter match for subject terms — dropping sort, using relevance');
-        currentSortOverride = null;
-        useSortPath = false;
+        // An unmatched subject must NOT drop the sort: generic subjects that
+        // name the corpus itself ("posts" on a blog, "crystals" in a crystal
+        // shop) never map to a facet, and dropping silently ignored the
+        // user's explicit sort intent ("newest posts" → no reorder, no
+        // badge). Fall through to an unscoped sort instead — the sort badge
+        // stays visible and dismissible, topical subjects usually map via
+        // the exact/substring/subcategory passes above, and a sort field
+        // absent from all results still falls back to relevance below.
+        debugLog('[scolta:sort] No filter match for subject terms — applying sort unscoped');
       } else {
         debugLog('[scolta:sort] No subject terms, using sort only');
       }
@@ -2017,9 +2231,13 @@
       if (!preserveFilters) {
         lastExpandedTerms = expansion;
         currentSortOverride = sortHint;
-        // Apply LLM-detected filter intent by merging into activeFilters.
+        // Apply LLM-detected filter intent by merging into activeFilters —
+        // but only the hints that survive the recall guard; the rest become
+        // offered (clickable, not applied) chips.
         llmAppliedFilters = {};
+        offeredLlmFilters = {};
         if (filterHint) {
+          const canonicalHint = {};
           for (const [dim, val] of Object.entries(filterHint)) {
             if (typeof dim === 'string' && dim && typeof val === 'string' && val) {
               let canonicalVal = val;
@@ -2031,12 +2249,31 @@
                   if (ciMatch) canonicalVal = ciMatch;
                 }
               }
-              llmAppliedFilters[dim] = canonicalVal;
-              if (!activeFilters[dim]) {
-                activeFilters[dim] = new Set();
-              }
-              activeFilters[dim].add(canonicalVal);
+              canonicalHint[dim] = canonicalVal;
             }
+          }
+
+          // Probe with the same term union the merged search will run, under
+          // the filters already active (including the language auto-filter),
+          // so the guard's baseline is exactly what the user would see
+          // without the hint.
+          const probeTerms = [query];
+          for (const t of (expandedTerms || [])) {
+            if (typeof t === 'string' && t && !probeTerms.includes(t)) probeTerms.push(t);
+          }
+          const partition = await partitionFilterHintByRecall(
+            canonicalHint, probeTerms, activeFilters, CONFIG);
+
+          // The probes are async — a newer search may have started meanwhile.
+          if (version !== searchVersion) return;
+
+          offeredLlmFilters = partition.offered;
+          for (const [dim, val] of Object.entries(partition.applied)) {
+            llmAppliedFilters[dim] = val;
+            if (!activeFilters[dim]) {
+              activeFilters[dim] = new Set();
+            }
+            activeFilters[dim].add(val);
           }
         }
       }
@@ -2083,6 +2320,7 @@
     activeFilters = {};
     currentSortOverride = null;
     llmAppliedFilters = {};
+    offeredLlmFilters = {};
     expansionInFlight = false;
 
     // Remove search query and filter params from URL.
@@ -2147,8 +2385,8 @@
         const checked = isActive ? "checked" : "";
         const activeClass = isActive ? " active" : "";
         html += `<label class="scolta-filter-item${activeClass}">
-          <input type="checkbox" value="${escapeHtml(val)}" ${checked}${disabled}
-                 data-scolta-filter-dim="${escapeHtml(dim)}" data-scolta-filter-val="${escapeHtml(val)}">
+          <input type="checkbox" value="${escapeAttr(val)}" ${checked}${disabled}
+                 data-scolta-filter-dim="${escapeAttr(dim)}" data-scolta-filter-val="${escapeAttr(val)}">
           ${escapeHtml(filterDisplayValue(dim, val))} <span class="scolta-filter-count">(${count})</span>
         </label>`;
       }
@@ -2252,15 +2490,19 @@
 
       const safeTitle = escapeHtml(stripHtml(title));
       const displayTitle = safeTitle.length > 90 ? safeTitle.substring(0, 87) + "\u2026" : safeTitle;
+      // URLs come from index metadata; attribute-escape them and neutralize
+      // non-http(s) schemes so a poisoned document can't plant a
+      // javascript: link.
+      const safeUrl = sanitizeUrlAttr(url);
 
       html += `<div class="scolta-result-card">
-        <a class="scolta-result-title" href="${url}" target="_blank" rel="noopener"
-           title="${safeTitle.replace(/"/g, '&quot;')}">${highlightTerms(displayTitle)}</a>
+        <a class="scolta-result-title" href="${safeUrl}" target="_blank" rel="noopener"
+           title="${escapeAttr(stripHtml(title))}">${highlightTerms(displayTitle)}</a>
         <div class="scolta-result-meta">
           ${site ? `<span class="scolta-site-badge">${escapeHtml(site)}</span>` : ""}
           ${date ? `<span class="scolta-result-date">${escapeHtml(date)}</span>` : ""}
         </div>
-        <a class="scolta-result-url" href="${url}" target="_blank" rel="noopener">${escapeHtml(url)}</a>
+        <a class="scolta-result-url" href="${safeUrl}" target="_blank" rel="noopener">${escapeHtml(url)}</a>
         <div class="scolta-result-excerpt">${highlighted}</div>
       </div>`;
     }
@@ -2375,6 +2617,12 @@
       const filterDismissEl = e.target.closest("[data-scolta-filter-dismiss]");
       if (filterDismissEl) {
         dismissLlmFilter(filterDismissEl.dataset.scoltaFilterDismiss);
+        return;
+      }
+      // Offered filter chip → apply the recall-guard-declined hint explicitly
+      const filterOfferEl = e.target.closest("[data-scolta-filter-offer-dim]");
+      if (filterOfferEl) {
+        applyOfferedLlmFilter(filterOfferEl.dataset.scoltaFilterOfferDim, filterOfferEl.dataset.scoltaFilterOfferVal);
         return;
       }
       // Follow-up submit button
