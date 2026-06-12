@@ -451,3 +451,21 @@
   margin-left: 0.1rem;
 }
 .scolta-filter-dismiss:hover { color: var(--scolta-primary); opacity: 0.7; }
+
+/* Offered (not auto-applied) filter hint chips — the recall guard declined
+   to apply them; clicking opts in. Dashed border distinguishes "suggestion"
+   from the solid applied-filter badge. */
+.scolta-filter-offer {
+  background: none;
+  border-style: dashed;
+}
+.scolta-filter-apply {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: inherit;
+  line-height: 1;
+  padding: 0;
+}
+.scolta-filter-apply:hover { color: var(--scolta-primary); opacity: 0.7; }
