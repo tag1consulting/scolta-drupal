@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Controller;
 
+use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\scolta\Cache\DrupalCacheDriver;
 use Drupal\scolta\Service\IndexLocator;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -45,12 +47,23 @@ class HealthController extends ControllerBase {
   protected IndexLocator $indexLocator;
 
   /**
+   * The cache backend used for KeyExpiryRecovery auth-failure markers.
+   *
+   * The SAME backend ScoltaAiService writes recovery markers to, so health
+   * reflects whether the stored Amazee key actually authenticates.
+   *
+   * @var \Drupal\Core\Cache\CacheBackendInterface|null
+   */
+  protected ?CacheBackendInterface $cache;
+
+  /**
    * {@inheritdoc}
    */
-  public function __construct(ScoltaAiService $aiService, StreamWrapperManagerInterface $streamWrapperManager, IndexLocator $indexLocator) {
+  public function __construct(ScoltaAiService $aiService, StreamWrapperManagerInterface $streamWrapperManager, IndexLocator $indexLocator, ?CacheBackendInterface $cache = NULL) {
     $this->aiService = $aiService;
     $this->streamWrapperManager = $streamWrapperManager;
     $this->indexLocator = $indexLocator;
+    $this->cache = $cache;
   }
 
   /**
@@ -61,6 +74,7 @@ class HealthController extends ControllerBase {
       $container->get('scolta.ai_service'),
       $container->get('stream_wrapper_manager'),
       $container->get('scolta.index_locator'),
+      $container->get('cache.default'),
     );
   }
 
@@ -83,11 +97,16 @@ class HealthController extends ControllerBase {
       }
     }
 
+    // Hand HealthChecker the same cache ScoltaAiService records recovery
+    // markers in, so `ai_usable` reflects whether the key still authenticates.
+    $cacheDriver = $this->cache !== NULL ? new DrupalCacheDriver($this->cache) : NULL;
+
     $checker = new HealthChecker(
       config: $scoltaConfig,
       indexOutputDir: $outputDir,
       pagefindBinaryPath: $config->get('pagefind.binary'),
       projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
+      cache: $cacheDriver,
     );
 
     $result = $checker->check();
