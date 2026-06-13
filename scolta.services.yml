@@ -13,7 +13,7 @@ services:
 
   scolta.ai_service:
     class: Drupal\scolta\Service\ScoltaAiService
-    arguments: ['@http_client', '@config.factory', '@logger.channel.scolta', '@state', '@scolta.amazee_budget_handler', '@scolta.amazee_config_storage', '@?ai.provider']
+    arguments: ['@http_client', '@config.factory', '@logger.channel.scolta', '@state', '@scolta.amazee_budget_handler', '@scolta.amazee_config_storage', '@?ai.provider', '@cache.default']
 
   scolta.pagefind_exporter:
     class: Drupal\scolta\Service\PagefindExporter

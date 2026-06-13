@@ -6,10 +6,12 @@ namespace Drupal\scolta\Service;
 
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatInput;
+use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
 use Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler;
+use Drupal\scolta\Cache\DrupalCacheDriver;
 use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
 use Tag1\Scolta\AiClient;
@@ -17,6 +19,8 @@ use Tag1\Scolta\AiProvider\Amazee\AmazeeBudgetExceededException;
 use Tag1\Scolta\AiProvider\Amazee\AutoProvisioner;
 use Tag1\Scolta\AiProvider\Amazee\BudgetAwareProviderDecorator;
 use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
+use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
+use Tag1\Scolta\Cache\CacheDriverInterface;
 use Tag1\Scolta\Config\ScoltaConfig;
 use Tag1\Scolta\Service\AiServiceAdapter;
 
@@ -78,9 +82,22 @@ class ScoltaAiService extends AiServiceAdapter {
   /**
    * Amazee credential storage used for lazy auto-provisioning.
    *
+   * Protected so createKeyExpiryRecovery() (and test subclasses that inject a
+   * stubbed AmazeeClient) can reuse the same store the provisioner writes to.
+   *
    * @var \Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface|null
    */
-  private ?ConfigStorageInterface $amazeeConfigStorage;
+  protected ?ConfigStorageInterface $amazeeConfigStorage;
+
+  /**
+   * Cache backend used for the KeyExpiryRecovery markers and AI response cache.
+   *
+   * The SAME backend HealthController hands to HealthChecker, so a recorded
+   * auth failure makes both the call path recover and /health report the truth.
+   *
+   * @var \Drupal\Core\Cache\CacheBackendInterface|null
+   */
+  private ?CacheBackendInterface $cache;
 
   /**
    * The Drupal AI module's provider plugin manager, when installed.
@@ -101,6 +118,7 @@ class ScoltaAiService extends AiServiceAdapter {
     ?BudgetExceededHandler $budgetHandler = NULL,
     ?ConfigStorageInterface $amazeeConfigStorage = NULL,
     ?object $aiProviderManager = NULL,
+    ?CacheBackendInterface $cache = NULL,
   ) {
     $this->httpClient = $httpClient;
     $this->configFactory = $configFactory;
@@ -110,8 +128,73 @@ class ScoltaAiService extends AiServiceAdapter {
     $this->budgetHandler = $budgetHandler;
     $this->amazeeConfigStorage = $amazeeConfigStorage;
     $this->aiProviderManager = $aiProviderManager;
+    $this->cache = $cache;
 
     parent::__construct($this->buildConfig());
+
+    $this->maybeWireKeyExpiryRecovery();
+  }
+
+  /**
+   * Wire Amazee key-expiry recovery — but only on the auto-provisioned path.
+   *
+   * An Amazee trial key is revoked server-side when the trial ends; the next
+   * AI call then fails authentication and (before this) AI silently died while
+   * /health kept reporting it configured. Wiring KeyExpiryRecovery makes that
+   * failure trigger a one-shot re-provision of a fresh trial, plus one retry.
+   *
+   * Recovery is wired ONLY on the auto-provisioned path. An explicit user key
+   * (SCOLTA_API_KEY / settings.php) or the 'drupal_ai' provider must never
+   * trigger a behind-the-scenes re-provision: a failing explicit key is the
+   * user's to fix, and the Drupal AI module owns its own credentials. The base
+   * AiServiceAdapter wires recovery unconditionally once set, so the path gate
+   * lives here at wire time (mirroring scolta-node's explicit-key guard).
+   *
+   * @since 1.0.4
+   * @stability experimental
+   */
+  private function maybeWireKeyExpiryRecovery(): void {
+    if ($this->cache === NULL || $this->amazeeConfigStorage === NULL) {
+      return;
+    }
+    if ($this->getApiKey() !== '' || $this->getConfig()->aiProvider === 'drupal_ai') {
+      return;
+    }
+
+    $this->setKeyExpiryRecovery($this->createKeyExpiryRecovery(new DrupalCacheDriver($this->cache)));
+  }
+
+  /**
+   * Build the KeyExpiryRecovery over the Amazee credential store and cache.
+   *
+   * Overridable so tests can inject a pre-configured AmazeeClient instead of
+   * the live control-plane client.
+   *
+   * @since 1.0.4
+   * @stability experimental
+   */
+  protected function createKeyExpiryRecovery(CacheDriverInterface $cache): KeyExpiryRecovery {
+    return new KeyExpiryRecovery(
+      storage: $this->amazeeConfigStorage,
+      cache: $cache,
+      logger: $this->logger,
+    );
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Inject Drupal's HTTP client into the re-provisioned client, mirroring
+   * createClient(). Without this override the base would build the retry
+   * client on scolta-php's default Guzzle instance instead of Drupal's.
+   */
+  protected function createRecoveredClient(array $credentials): AiClient {
+    $config = $this->getConfig()->toAiClientConfig();
+    $config['provider'] = 'openai';
+    $config['api_key'] = $credentials['litellm_token'];
+    $config['base_url'] = $credentials['litellm_api_url'];
+
+    return new AiClient($config, $this->httpClient);
   }
 
   /**
