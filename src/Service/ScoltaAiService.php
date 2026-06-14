@@ -476,11 +476,76 @@ class ScoltaAiService extends AiServiceAdapter {
           }
           $config->save();
         },
+        // Tell AutoProvisioner whether a genuinely resolved model is already
+        // persisted. When credentials are stored but model resolution never
+        // succeeded (the provision's /model/info step failed), this returns
+        // FALSE and the provisioner re-resolves against the ALREADY-STORED key
+        // — self-healing the half-provisioned state — instead of no-opping
+        // forever on the stored credentials. The predicate MUST treat the
+        // shipped dated default as unresolved: createClient() only ran because
+        // getApiKeySource() === 'none', and config still carries the install
+        // default model, so a naive "ai_model is non-empty" check would always
+        // report TRUE and the self-heal would never fire.
+        hasResolvedModels: fn (): bool => self::modelIsResolved(
+          $this->configFactory->get('scolta.settings')->get('ai_model'),
+        ),
       );
+      // Provisioning may have just stored Amazee credentials. If it did but
+      // model resolution still has not succeeded, the only model in config is
+      // the shipped dated default — which the Amazee LiteLLM gateway rejects
+      // with HTTP 400, breaking AI permanently and silently. Degrade instead:
+      // a key-less client makes the call throw ApiKeyMissingException, which
+      // the AI controllers turn into an unexpanded/no-summary HTTP 200 (same
+      // path as a wholly unconfigured site). The state self-heals on a later
+      // request once /model/info recovers (hasResolvedModels reports FALSE →
+      // re-resolve). Mirrors scolta-node's AmazeeAiService::buildClient().
+      if ($this->isAmazeeActive()
+        && !self::modelIsResolved($this->configFactory->get('scolta.settings')->get('ai_model'))) {
+        return $this->createDegradedClient();
+      }
       // Re-read state in case provisioning just stored new credentials.
       return new AiClient($this->buildConfig()->toAiClientConfig(), $this->httpClient);
     }
     return new AiClient($this->getConfig()->toAiClientConfig(), $this->httpClient);
+  }
+
+  /**
+   * Whether a genuinely resolved AI model name is persisted.
+   *
+   * Reports FALSE for the unresolved state: a NULL/empty model, or the shipped
+   * dated default (`AiClient::DEFAULT_MODEL`, identical to
+   * `ScoltaSettingsForm::DEFAULT_AI_MODEL`), which is what config carries
+   * before Amazee model resolution writes a real name (e.g.
+   * `claude-sonnet-4-5`). The dated default is precisely the value the Amazee
+   * gateway rejects with HTTP 400, so it must never count as "resolved" —
+   * otherwise the self-heal in createClient() becomes a no-op that ships the
+   * bug.
+   *
+   * @since 1.0.4
+   * @stability experimental
+   */
+  protected static function modelIsResolved(?string $aiModel): bool {
+    return $aiModel !== NULL
+      && $aiModel !== ''
+      && $aiModel !== AiClient::DEFAULT_MODEL;
+  }
+
+  /**
+   * Build a key-less client that degrades rather than calling the gateway.
+   *
+   * Used on the Amazee path when credentials are stored but no model is
+   * resolved: stripping the API key makes AiClient throw ApiKeyMissingException
+   * on the first call, which the AI controllers degrade to an HTTP 200
+   * unexpanded/no-summary response — never the HTTP 400 the dated default would
+   * trigger against the LiteLLM gateway.
+   *
+   * @since 1.0.4
+   * @stability experimental
+   */
+  protected function createDegradedClient(): AiClient {
+    $config = $this->getConfig()->toAiClientConfig();
+    $config['api_key'] = '';
+    return new AiClient($config, $this->httpClient);
   }
 
 }
