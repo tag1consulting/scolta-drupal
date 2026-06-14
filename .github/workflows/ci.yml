@@ -410,6 +410,14 @@ jobs:
           print(f"Lock guard OK: tag1/scolta-php {ver} via {dist}")
           PY
 
+  dist-archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate drupal.org distribution tarball
+        run: scripts/validate-dist-archive.sh
+
   antipatterns:
     runs-on: ubuntu-latest
     steps:
