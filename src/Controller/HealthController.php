@@ -128,8 +128,8 @@ class HealthController extends ControllerBase {
       $indexFile = $location['indexFile'];
 
       $mtime = filemtime($indexFile);
-      // phpcs:ignore Drupal.Functions.DiscouragedFunctions.Discouraged -- path is already resolved from stream wrapper.
-      $fragments = glob($location['fragmentDir'] . '/*') ?: [];
+      // Shares the one fragment-directory glob with countFragments().
+      $fragments = $this->indexLocator->fragmentFiles($location);
 
       $result['index'] = [
         'built' => TRUE,
