@@ -63,14 +63,31 @@ class IndexLocator {
   }
 
   /**
+   * Enumerate fragment files for a located index.
+   *
+   * The single owner of the fragment-directory glob. Consumed by
+   * countFragments() (count only) and HealthController (count plus the file
+   * list for its integrity check), so the glob pattern lives in one place.
+   *
+   * @param array{indexFile: string, fragmentDir: string, entryFile: string} $location
+   *   A location returned by locate().
+   *
+   * @return string[]
+   *   The fragment file paths, or an empty array when none exist.
+   */
+  public function fragmentFiles(array $location): array {
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- glob() to enumerate fragments; scanDirectory() is heavier.
+    return glob($location['fragmentDir'] . '/*') ?: [];
+  }
+
+  /**
    * Count fragment files for a located index.
    *
    * @param array{indexFile: string, fragmentDir: string, entryFile: string} $location
    *   A location returned by locate().
    */
   public function countFragments(array $location): int {
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- glob() for a simple count; scanDirectory() is heavier.
-    return count(glob($location['fragmentDir'] . '/*') ?: []);
+    return count($this->fragmentFiles($location));
   }
 
 }

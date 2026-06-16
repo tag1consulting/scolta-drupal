@@ -243,6 +243,26 @@ namespace Drupal\scolta\Tests {
             );
         }
 
+        public function test_worker_carries_no_fingerprint_or_get_logger_path(): void {
+            // The v1.0.3 worker computed and wrote a change-detection
+            // fingerprint, and its write-error branch called the undefined
+            // QueueWorkerBase::getLogger() (a baselined runtime fatal). That
+            // whole path is gone — change detection now lives in
+            // IndexBuildOrchestrator's timestamp manifest. Both assertions
+            // fail against the v1.0.3 worker and pass now.
+            $contents = $this->workerSource();
+            $this->assertStringNotContainsString(
+                'getLogger(',
+                $contents,
+                'The worker must not call getLogger() at all — QueueWorkerBase does not define it'
+            );
+            $this->assertStringNotContainsString(
+                'computeFingerprint(',
+                $contents,
+                'The worker must not compute a fingerprint — IndexBuildOrchestrator owns change detection via its timestamp manifest'
+            );
+        }
+
         public function test_baseline_no_longer_carries_the_get_logger_fatal(): void {
             $baseline = file_get_contents(dirname(__DIR__, 2) . '/phpstan-baseline.neon');
             $this->assertStringNotContainsString(
