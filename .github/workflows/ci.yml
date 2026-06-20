@@ -262,6 +262,15 @@ jobs:
         run: |
           composer config repositories.scolta-drupal path "$GITHUB_WORKSPACE"
           composer config repositories.scolta-php path "$GITHUB_WORKSPACE/scolta-php"
+          # This /tmp/drupal site is a disposable functional-test harness, not a
+          # shipped artifact. Composer 2.9 excludes advisory-flagged packages from
+          # the solver pool ("block-insecure"), so the pinned drupal/core 11.3.10
+          # stopped resolving the moment new SA-CORE advisories were published —
+          # breaking every PR with no code change. Disable install-time advisory
+          # blocking for this throwaway install so the smoke test stays green
+          # regardless of the latest core advisory churn (the real audit gate
+          # belongs on the shipped module, not on this scratch site).
+          composer config audit.block-insecure false
 
       - name: Install Drupal + scolta + drush
         working-directory: /tmp/drupal
