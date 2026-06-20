@@ -338,6 +338,37 @@ class StructuralIntegrityTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
+  // Asset-sync drift guard covers the WASM pair (not just scolta.js)
+  // -------------------------------------------------------------------
+
+  /**
+   * The CI "Verify duplicated assets" step must checksum all four canonical
+   * runtime assets — including the WASM glue + binary pair — in BOTH the
+   * manifest-present branch and the manifest-absent fallback. The fallback
+   * previously verified only js/scolta.js and exited 0, so a sync that
+   * refreshed the JS but left scolta_core.js / scolta_core_bg.wasm stale
+   * passed CI (this is how demos shipped a stale browser WASM scorer).
+   */
+  public function testAssetVerifyStepChecksumsWasmPair(): void {
+    $ci = file_get_contents($this->moduleRoot . '/.github/workflows/ci.yml');
+
+    // Isolate the manifest-absent fallback branch: from "MANIFEST not found"
+    // up to the "Manifest present" section that follows it.
+    $start = strpos($ci, 'MANIFEST not found');
+    $this->assertNotFalse($start,
+      'ci.yml must contain the asset-verification step with a manifest-absent fallback');
+    $end = strpos($ci, '# Manifest present', $start);
+    $this->assertNotFalse($end,
+      'ci.yml asset-verification step must retain its manifest-present branch');
+    $fallback = substr($ci, $start, $end - $start);
+
+    foreach (['scolta_core.js', 'scolta_core_bg.wasm', 'scolta.css'] as $asset) {
+      $this->assertStringContainsString($asset, $fallback,
+        "CI asset-verification fallback must verify {$asset}, not just scolta.js");
+    }
+  }
+
+  // -------------------------------------------------------------------
   // Release workflow lock guard
   // -------------------------------------------------------------------
 
