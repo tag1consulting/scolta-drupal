@@ -17,6 +17,10 @@
  * ```
  *
  * Output: JSON string — array of `{ url, title, context }` objects.
+ *
+ * # Errors
+ * `JsError` if the input is not valid JSON, `query` is missing or
+ * wrong-typed, or `items` is missing or unparseable.
  * @param {string} input
  * @returns {string}
  */
@@ -50,6 +54,10 @@ export function batch_extract_context(input) {
 /**
  * Score multiple queries against their respective result sets in a single call.
  *
+ * # Stability
+ * Status: stable
+ * Since: 0.2.2
+ *
  * Input: JSON string with shape:
  * ```json
  * {
@@ -65,6 +73,10 @@ export function batch_extract_context(input) {
  *
  * Output: JSON string — array of arrays of scored results, one inner array
  * per input query, in the same order.
+ *
+ * # Errors
+ * `JsError` if the input is not valid JSON, `queries` is missing or not an
+ * array, or any entry lacks `query`/`results`.
  * @param {string} input
  * @returns {string}
  */
@@ -97,22 +109,38 @@ export function batch_score_results(input) {
 
 /**
  * Return a JSON description of all available functions.
+ *
+ * # Stability
+ * Status: stable
+ * Since: 0.1.0
+ *
+ * # Errors
+ * `JsError` if the manifest fails to serialize — unreachable in practice,
+ * but surfaced as a thrown error instead of a silent empty string.
  * @returns {string}
  */
 export function describe() {
-    let deferred1_0;
-    let deferred1_1;
+    let deferred2_0;
+    let deferred2_1;
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         wasm.describe(retptr);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-        deferred1_0 = r0;
-        deferred1_1 = r1;
-        return getStringFromWasm0(r0, r1);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        var ptr1 = r0;
+        var len1 = r1;
+        if (r3) {
+            ptr1 = 0; len1 = 0;
+            throw takeObject(r2);
+        }
+        deferred2_0 = ptr1;
+        deferred2_1 = len1;
+        return getStringFromWasm0(ptr1, len1);
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
-        wasm.__wbindgen_export3(deferred1_0, deferred1_1, 1);
+        wasm.__wbindgen_export3(deferred2_0, deferred2_1, 1);
     }
 }
 
@@ -133,6 +161,10 @@ export function describe() {
  * ```
  *
  * Output: JSON string — extracted context string.
+ *
+ * # Errors
+ * `JsError` if the input is not valid JSON or `content`/`query` are missing
+ * or wrong-typed.
  * @param {string} input
  * @returns {string}
  */
@@ -166,8 +198,15 @@ export function extract_context(input) {
 /**
  * Get a raw prompt template by name.
  *
+ * # Stability
+ * Status: stable
+ * Since: 0.1.0
+ *
  * Input: Prompt name string ("expand_query", "summarize", "follow_up").
  * Output: Raw template string with {SITE_NAME} and {SITE_DESCRIPTION} placeholders.
+ *
+ * # Errors
+ * `JsError` if the template name is not recognized.
  * @param {string} name
  * @returns {string}
  */
@@ -211,6 +250,10 @@ export function get_prompt(name) {
  * ```
  *
  * Output: JSON string — array of matching priority page objects.
+ *
+ * # Errors
+ * `JsError` if the input is not valid JSON, `query` is missing or
+ * wrong-typed, or `priority_pages` is missing or unparseable.
  * @param {string} input
  * @returns {string}
  */
@@ -244,6 +287,10 @@ export function match_priority_pages(input) {
 /**
  * Merge N scored result sets with per-set weights and deduplication.
  *
+ * # Stability
+ * Status: stable
+ * Since: 0.1.0
+ *
  * Input: JSON string with shape:
  * ```json
  * {
@@ -259,6 +306,9 @@ export function match_priority_pages(input) {
  * ```
  *
  * Output: JSON string — merged, weighted, and deduplicated results array.
+ *
+ * # Errors
+ * `JsError` if the input is not valid JSON or `sets` is missing or unparseable.
  * @param {string} input
  * @returns {string}
  */
@@ -292,6 +342,10 @@ export function merge_results(input) {
 /**
  * Parse an LLM expansion response into individual search terms.
  *
+ * # Stability
+ * Status: stable
+ * Since: 0.1.0
+ *
  * Accepts two input forms:
  *
  * 1. **Bare string** — treated as the raw LLM response; language defaults to `"en"`.
@@ -311,6 +365,11 @@ export function merge_results(input) {
  *    ```
  *
  * Output: JSON string — array of extracted, filtered terms.
+ *
+ * # Errors
+ * `JsError` only if the term array cannot be serialized back to JSON;
+ * unparseable LLM responses fall back to plain-text splitting instead of
+ * erroring.
  * @param {string} input
  * @returns {string}
  */
@@ -344,10 +403,18 @@ export function parse_expansion(input) {
 /**
  * Resolve a prompt template with variable substitution.
  *
+ * # Stability
+ * Status: stable
+ * Since: 0.1.0
+ *
  * Input: JSON string with shape:
  *   `{ "prompt_name": "expand_query", "site_name": "...", "site_description": "..." }`
  *
  * Output: The resolved prompt string.
+ *
+ * # Errors
+ * `JsError` if the input is not valid JSON, `prompt_name` is missing or
+ * wrong-typed, or the template name is not recognized.
  * @param {string} input
  * @returns {string}
  */
@@ -394,6 +461,10 @@ export function resolve_prompt(input) {
  * ```
  *
  * Output: JSON string — sanitized query string.
+ *
+ * # Errors
+ * `JsError` if the input is not valid JSON, `query` is missing or
+ * wrong-typed, or any custom pattern is malformed or has an invalid regex.
  * @param {string} input
  * @returns {string}
  */
@@ -427,10 +498,18 @@ export function sanitize_query(input) {
 /**
  * Score search results against a query.
  *
+ * # Stability
+ * Status: stable
+ * Since: 0.1.0
+ *
  * Input: JSON string with shape:
  *   `{ "query": "search terms", "results": [...], "config": {...} }`
  *
  * Output: JSON string — array of scored results, sorted descending.
+ *
+ * # Errors
+ * `JsError` if the input is not valid JSON, `query`/`results` are missing or
+ * wrong-typed, or the results array cannot be parsed.
  * @param {string} input
  * @returns {string}
  */
@@ -477,6 +556,10 @@ export function score_results(input) {
  * ```
  *
  * Output: JSON string — trimmed messages array.
+ *
+ * # Errors
+ * `JsError` if the input is not valid JSON or `messages` is missing or
+ * unparseable.
  * @param {string} input
  * @returns {string}
  */
@@ -509,6 +592,10 @@ export function truncate_conversation(input) {
 
 /**
  * Return the scolta-core version string.
+ *
+ * # Stability
+ * Status: stable
+ * Since: 0.1.0
  * @returns {string}
  */
 export function version() {
@@ -540,6 +627,9 @@ function __wbg_get_imports() {
         __wbg_now_a9b7df1cbee90986: function() {
             const ret = Date.now();
             return ret;
+        },
+        __wbg_warn_e3d23af230dc9bc7: function(arg0, arg1) {
+            console.warn(getStringFromWasm0(arg0, arg1));
         },
     };
     return {
