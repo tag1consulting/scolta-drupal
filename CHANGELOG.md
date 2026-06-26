@@ -4,6 +4,8 @@ All notable changes to scolta-drupal will be documented in this file.
 
 This project uses [Semantic Versioning](https://semver.org/). Major versions are synchronized across all Scolta packages; minor and patch versions are released independently per package.
 
+## [Unreleased]
+
 ## [1.0.4] - 2026-06-26
 
 ### Fixed
