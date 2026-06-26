@@ -4,7 +4,7 @@ All notable changes to scolta-drupal will be documented in this file.
 
 This project uses [Semantic Versioning](https://semver.org/). Major versions are synchronized across all Scolta packages; minor and patch versions are released independently per package.
 
-## [Unreleased]
+## [1.0.4] - 2026-06-26
 
 ### Fixed
 - **Functional CI job no longer breaks when new Drupal core security advisories are published.** The `functional` job builds a disposable `drupal/drupal:11.3.10` site and `composer require`s the module into it. Composer 2.9 excludes advisory-flagged packages from the solver pool (`audit.block-insecure`), so the pinned core stopped resolving the instant SA-CORE-2026-005..009 were published — failing every PR (and `main`) with no code change. The throwaway test site now sets `composer config audit.block-insecure false` before install, so the smoke test is decoupled from latest-core advisory churn. This only affects the scratch `/tmp/drupal` harness; the audit gate on the shipped module is unchanged.
