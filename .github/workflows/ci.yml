@@ -64,27 +64,41 @@ jobs:
           }
 
           if [ ! -f "$MANIFEST" ]; then
-            # Backward-compat: scolta-php in the lock predates the manifest.
-            # Fall back to the per-file scolta.js checksum so this adapter can
-            # merge before scolta-php is released, then upgrade automatically
-            # once the lock is bumped to a manifest-bearing scolta-php.
-            echo "NOTE: $MANIFEST not found (older scolta-php in lock); falling back to scolta.js.sha256 check."
-            SHA256_FILE=vendor/tag1/scolta-php/assets/js/scolta.js.sha256
-            if [ ! -f "$SHA256_FILE" ]; then
-              echo "ERROR: $SHA256_FILE not found. scolta-php must include a checksum file."
-              echo "Generate it in scolta-php: sha256sum assets/js/scolta.js | awk '{print \$1}' > assets/js/scolta.js.sha256"
+            # Backward-compat: scolta-php in the lock predates the ASSETS.sha256
+            # manifest. Verify EVERY canonical asset (js/css AND the WASM pair)
+            # directly against the vendored scolta-php source, so a stale WASM
+            # cannot slip through. The earlier fallback only checksummed
+            # js/scolta.js and exited 0 — a JS-only sync that left scolta_core.js
+            # / scolta_core_bg.wasm stale passed CI, which is how the demos
+            # shipped a stale browser WASM scorer.
+            echo "NOTE: $MANIFEST not found (older scolta-php in lock); verifying each asset against the vendored scolta-php source."
+            fail=0
+            for REL in js/scolta.js css/scolta.css wasm/scolta_core.js wasm/scolta_core_bg.wasm; do
+              SRC="vendor/tag1/scolta-php/assets/$REL"
+              DEST=$(committed_path "$REL")
+              if [ ! -f "$SRC" ]; then
+                echo "ERROR: canonical source $SRC is missing from the vendored scolta-php."
+                fail=1
+                continue
+              fi
+              if [ ! -f "$DEST" ]; then
+                echo "ERROR: committed asset $DEST is missing."
+                fail=1
+                continue
+              fi
+              if [ "$(sha256sum "$SRC" | awk '{print $1}')" != "$(sha256sum "$DEST" | awk '{print $1}')" ]; then
+                echo "ERROR: $DEST is out of sync with canonical source ($SRC)."
+                echo "Run: composer copy-assets"
+                fail=1
+              else
+                echo "OK: $DEST matches canonical ($SRC)."
+              fi
+            done
+            if [ "$fail" -ne 0 ]; then
+              echo "Duplicated assets are out of sync. Run: composer copy-assets"
               exit 1
             fi
-            EXPECTED=$(cat "$SHA256_FILE")
-            ACTUAL=$(sha256sum js/scolta.js | awk '{print $1}')
-            if [ "$EXPECTED" != "$ACTUAL" ]; then
-              echo "ERROR: js/scolta.js is out of sync with canonical source (scolta-php)."
-              echo "Expected: $EXPECTED"
-              echo "Actual:   $ACTUAL"
-              echo "Run: composer copy-assets"
-              exit 1
-            fi
-            echo "OK: js/scolta.js checksum matches canonical (scolta-php)."
+            echo "OK: all duplicated assets match the vendored scolta-php source."
             exit 0
           fi
 
@@ -248,6 +262,15 @@ jobs:
         run: |
           composer config repositories.scolta-drupal path "$GITHUB_WORKSPACE"
           composer config repositories.scolta-php path "$GITHUB_WORKSPACE/scolta-php"
+          # This /tmp/drupal site is a disposable functional-test harness, not a
+          # shipped artifact. Composer 2.9 excludes advisory-flagged packages from
+          # the solver pool ("block-insecure"), so the pinned drupal/core 11.3.10
+          # stopped resolving the moment new SA-CORE advisories were published —
+          # breaking every PR with no code change. Disable install-time advisory
+          # blocking for this throwaway install so the smoke test stays green
+          # regardless of the latest core advisory churn (the real audit gate
+          # belongs on the shipped module, not on this scratch site).
+          composer config audit.block-insecure false
 
       - name: Install Drupal + scolta + drush
         working-directory: /tmp/drupal
