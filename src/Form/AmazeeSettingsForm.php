@@ -7,12 +7,14 @@ namespace Drupal\scolta\Form;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage;
+use Drupal\scolta\Cache\DrupalCacheDriver;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeAccountUpgrader;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeApiException;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeClient;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeModelResolver;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeTrialProvisioner;
+use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 
 /**
  * Multi-step form for connecting Scolta to the Amazee.ai AI provider.
@@ -35,6 +37,7 @@ class AmazeeSettingsForm extends FormBase {
     private readonly DrupalConfigStorage $storage,
     private readonly AmazeeTrialProvisioner $trialProvisioner,
     private readonly AmazeeAccountUpgrader $upgrader,
+    private readonly KeyExpiryRecovery $keyRecovery,
   ) {}
 
   /**
@@ -48,6 +51,10 @@ class AmazeeSettingsForm extends FormBase {
       $storage,
       new AmazeeTrialProvisioner($amazeeClient, $storage, NULL, new AmazeeModelResolver($amazeeClient)),
       new AmazeeAccountUpgrader($amazeeClient, $storage),
+      // Reads/clears the same re-authentication marker the admin notice and
+      // /health observe, over the default cache bin ScoltaAiService records it
+      // in. A successful reconnect clears it so the prompt goes away.
+      new KeyExpiryRecovery($storage, new DrupalCacheDriver($container->get('cache.default'))),
     );
   }
 
@@ -241,6 +248,9 @@ class AmazeeSettingsForm extends FormBase {
 
     try {
       $result = $this->trialProvisioner->provision($email);
+      // Fresh credentials are stored — clear any pending re-authentication
+      // prompt so the admin notice and /health recover.
+      $this->keyRecovery->clearUpgradeNeeded();
 
       if ($result->aiModel !== NULL || $result->aiExpansionModel !== NULL) {
         $config = $this->configFactory()->getEditable('scolta.settings');
@@ -316,6 +326,9 @@ class AmazeeSettingsForm extends FormBase {
 
     try {
       $this->upgrader->upgrade($sessionToken, $regionId);
+      // Fresh credentials are stored — clear any pending re-authentication
+      // prompt so the admin notice and /health recover.
+      $this->keyRecovery->clearUpgradeNeeded();
       $form_state->set('amazee_step', 'start');
       $form_state->setRebuild(TRUE);
       $this->messenger()->addStatus($this->t('Successfully connected to Amazee.ai.'));
