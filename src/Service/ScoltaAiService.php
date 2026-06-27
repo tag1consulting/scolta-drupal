@@ -93,11 +93,22 @@ class ScoltaAiService extends AiServiceAdapter {
    * Cache backend used for the KeyExpiryRecovery markers and AI response cache.
    *
    * The SAME backend HealthController hands to HealthChecker, so a recorded
-   * auth failure makes both the call path recover and /health report the truth.
+   * auth failure makes both /health report the truth and the admin notice
+   * surface the re-authentication prompt.
    *
    * @var \Drupal\Core\Cache\CacheBackendInterface|null
    */
   private ?CacheBackendInterface $cache;
+
+  /**
+   * The Amazee key-expiry recovery, wired only on the managed Amazee.ai path.
+   *
+   * Held so the admin-notice surface can read the persistent re-authentication
+   * marker (isAmazeeReauthNeeded()) and clear it after a successful reconnect.
+   *
+   * @var \Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery|null
+   */
+  private ?KeyExpiryRecovery $keyExpiryRecovery = NULL;
 
   /**
    * The Drupal AI module's provider plugin manager, when installed.
@@ -136,19 +147,27 @@ class ScoltaAiService extends AiServiceAdapter {
   }
 
   /**
-   * Wire Amazee key-expiry recovery — but only on the auto-provisioned path.
+   * Wire Amazee key-expiry recovery — but only on the managed Amazee.ai path.
    *
-   * An Amazee trial key is revoked server-side when the trial ends; the next
-   * AI call then fails authentication and (before this) AI silently died while
-   * /health kept reporting it configured. Wiring KeyExpiryRecovery makes that
-   * failure trigger a one-shot re-provision of a fresh trial, plus one retry.
+   * When the stored Amazee.ai credentials stop being accepted, the next AI
+   * call fails authentication and (before this) AI silently died while /health
+   * kept reporting it configured. Wiring KeyExpiryRecovery makes that failure
+   * degrade cleanly: it records the failure so /health reports AI as degraded
+   * and sets a persistent marker so the admin UI prompts the operator to
+   * re-authenticate (reconnect/upgrade) with Amazee.ai. The stored credentials
+   * are left in place.
    *
-   * Recovery is wired ONLY on the auto-provisioned path. An explicit user key
-   * (SCOLTA_API_KEY / settings.php) or the 'drupal_ai' provider must never
-   * trigger a behind-the-scenes re-provision: a failing explicit key is the
-   * user's to fix, and the Drupal AI module owns its own credentials. The base
-   * AiServiceAdapter wires recovery unconditionally once set, so the path gate
-   * lives here at wire time (mirroring scolta-node's explicit-key guard).
+   * Policy: an Amazee.ai credential that is no longer accepted must route the
+   * operator to the re-authentication/upgrade flow. It must NEVER cause a new
+   * Amazee.ai connection to be obtained behind the operator's back — recovery
+   * is a deliberate, admin-initiated step through AmazeeSettingsForm.
+   *
+   * Recovery is wired ONLY on the managed Amazee.ai path. An explicit user key
+   * (SCOLTA_API_KEY / settings.php) or the 'drupal_ai' provider must never be
+   * touched: a failing explicit key is the user's to fix, and the Drupal AI
+   * module owns its own credentials. The base AiServiceAdapter wires recovery
+   * unconditionally once set, so the path gate lives here at wire time
+   * (mirroring scolta-node's explicit-key guard).
    *
    * @since 1.0.4
    * @stability experimental
@@ -161,7 +180,8 @@ class ScoltaAiService extends AiServiceAdapter {
       return;
     }
 
-    $this->setKeyExpiryRecovery($this->createKeyExpiryRecovery(new DrupalCacheDriver($this->cache)));
+    $this->keyExpiryRecovery = $this->createKeyExpiryRecovery(new DrupalCacheDriver($this->cache));
+    $this->setKeyExpiryRecovery($this->keyExpiryRecovery);
   }
 
   /**
@@ -182,19 +202,33 @@ class ScoltaAiService extends AiServiceAdapter {
   }
 
   /**
-   * {@inheritdoc}
+   * Whether the stored Amazee.ai credentials need admin re-authentication.
    *
-   * Inject Drupal's HTTP client into the re-provisioned client, mirroring
-   * createClient(). Without this override the base would build the retry
-   * client on scolta-php's default Guzzle instance instead of Drupal's.
+   * True once an auth-class failure of the managed Amazee.ai credentials has
+   * been recorded — scolta-php sets a persistent marker on that path. Admin
+   * UIs read this to prompt the operator to reconnect/upgrade with Amazee.ai.
+   * False on the explicit-key and 'drupal_ai' paths (recovery is not wired
+   * there) and whenever the marker is unset. A cache-marker read only, never a
+   * live API call, so it is safe to call on every admin page load.
+   *
+   * @since 1.0.5
+   * @stability experimental
    */
-  protected function createRecoveredClient(array $credentials): AiClient {
-    $config = $this->getConfig()->toAiClientConfig();
-    $config['provider'] = 'openai';
-    $config['api_key'] = $credentials['litellm_token'];
-    $config['base_url'] = $credentials['litellm_api_url'];
+  public function isAmazeeReauthNeeded(): bool {
+    return $this->keyExpiryRecovery?->isUpgradeNeeded() ?? FALSE;
+  }
 
-    return new AiClient($config, $this->httpClient);
+  /**
+   * Clear the re-authentication marker after a successful reconnect.
+   *
+   * Called once the operator has completed the Amazee.ai email-verification
+   * flow and fresh credentials are stored, so the admin notice goes away.
+   *
+   * @since 1.0.5
+   * @stability experimental
+   */
+  public function clearAmazeeReauthNeeded(): void {
+    $this->keyExpiryRecovery?->clearUpgradeNeeded();
   }
 
   /**

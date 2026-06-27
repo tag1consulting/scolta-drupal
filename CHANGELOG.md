@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Changed
+- **When the Amazee.ai connection needs re-authentication, the admin UI now surfaces a clear prompt to reconnect/upgrade, and AI health status reflects the credential state.** If the stored Amazee.ai credentials stop being accepted, AI search degrades gracefully (unexpanded query / no summary) and the failure is no longer swallowed: `GET /api/scolta/v1/health` reports `ai_usable: false` / `ai_auth_failing: true` (status `degraded`), and a persistent admin notice renders on admin pages with a "Continue with Amazee.ai" call to action that routes to the existing Amazee.ai settings flow (`scolta.settings.amazee`) to re-authenticate. Completing that flow clears the prompt. The stored credentials are left in place and no connection is established on the operator's behalf — reconnecting is a deliberate, admin-initiated step through `AmazeeSettingsForm`. Surfaced only on the managed Amazee.ai path; an explicit `SCOLTA_API_KEY`/`settings.php` key or the `drupal_ai` provider is untouched. Updated to **scolta-php 1.0.5**, which exposes the persistent re-authentication signal (`KeyExpiryRecovery::isUpgradeNeeded()` / `clearUpgradeNeeded()`). Covered by `AmazeeCredentialRecoveryWiringTest` (degrade + flag-for-re-authentication contract through the Drupal cache bridge, health truthfulness, wiring structure) and the functional `AmazeeReauthNoticeTest` (the notice and its CTA render for admins when re-authentication is needed, stay hidden otherwise, clear once the marker is cleared, and never show to non-admins).
+
 ## [1.0.4] - 2026-06-26
 
 ### Fixed

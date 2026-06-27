@@ -26,12 +26,7 @@ namespace Drupal\Core\Cache {
 namespace Drupal\scolta\Tests {
 
     use Drupal\scolta\Cache\DrupalCacheDriver;
-    use GuzzleHttp\Client;
-    use GuzzleHttp\Handler\MockHandler;
-    use GuzzleHttp\HandlerStack;
-    use GuzzleHttp\Psr7\Response;
     use PHPUnit\Framework\TestCase;
-    use Tag1\Scolta\AiProvider\Amazee\AmazeeClient;
     use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
     use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
     use Tag1\Scolta\Cache\CacheDriverInterface;
@@ -39,31 +34,29 @@ namespace Drupal\scolta\Tests {
     use Tag1\Scolta\Health\HealthChecker;
 
     /**
-     * Coverage for the Amazee key-expiry recovery wiring.
+     * Coverage for the Amazee.ai credential-recovery wiring.
      *
-     * Regression (django demo, 2026-06-09): an Amazee trial key expired
-     * server-side, every AI call returned 400 expired_key, and the adapter
-     * neither recovered nor reported the truth — expand echoed the query while
-     * /health still claimed `ai_configured: true`. ScoltaAiService now wires
-     * KeyExpiryRecovery on the auto-provisioned path and HealthController hands
-     * the same cache to HealthChecker.
+     * When the stored Amazee.ai credentials are no longer accepted, the next AI
+     * call fails authentication. The adapter must degrade cleanly rather than
+     * swallow it: record the failure so `/health` reports AI as degraded, set a
+     * persistent marker so the admin UI prompts the operator to re-authenticate
+     * (reconnect/upgrade), and leave the stored credentials in place — no new
+     * connection is requested on this path. scolta-php 1.0.5 owns that
+     * behaviour; these tests prove the Drupal-specific wiring that feeds it.
      *
      * The unit-test vendor lacks drupal/core, so ScoltaAiService itself cannot
-     * be instantiated here (same reason the other AI-service tests are
-     * source-level). These tests prove the Drupal-specific wiring two ways:
-     * behaviorally, that the Drupal cache bridge satisfies KeyExpiryRecovery's
-     * marker contract and keeps HealthChecker truthful; and structurally, that
-     * ScoltaAiService / HealthController / services.yml carry the wiring with
-     * the correct Amazee-path gate. scolta-php's AiServiceAdapterTest proves the
-     * base recover-and-retry loop the wiring feeds.
+     * be instantiated here. The wiring is proved two ways: behaviourally, that
+     * the Drupal cache bridge satisfies KeyExpiryRecovery's marker contract and
+     * keeps both `/health` and the re-authentication prompt truthful; and
+     * structurally, that ScoltaAiService / scolta.module / AmazeeSettingsForm /
+     * services.yml carry the wiring with the correct Amazee-path gate.
+     * scolta-php's AiServiceAdapterTest proves the base call-path behaviour the
+     * wiring feeds.
      */
-    class KeyExpiryRecoveryWiringTest extends TestCase {
+    class AmazeeCredentialRecoveryWiringTest extends TestCase {
 
-        private const FRESH_TRIAL_RESPONSE = '{"key": {"litellm_token": "sk-fresh-token", "litellm_api_url": "https://llm.test.amazee.ai", "region": "test-region"}}';
-        private const MODEL_INFO_RESPONSE = '{"data": [{"model_name": "claude-sonnet-4-5"}, {"model_name": "claude-haiku-4-5"}]}';
-
-        private const EXPIRED_CREDS = [
-            'litellm_token' => 'sk-expired-token',
+        private const STORED_CREDS = [
+            'litellm_token' => 'sk-stored-token',
             'litellm_api_url' => 'https://llm.test.amazee.ai',
             'region' => 'test-region',
         ];
@@ -76,14 +69,14 @@ namespace Drupal\scolta\Tests {
             $driver = new DrupalCacheDriver(new InMemoryRecoveryCacheBackend());
 
             // Record an auth failure exactly as a failing AI call would.
-            $recovery = new KeyExpiryRecovery(new InMemoryRecoveryStorage(self::EXPIRED_CREDS), $driver);
+            $recovery = new KeyExpiryRecovery(new InMemoryRecoveryStorage(self::STORED_CREDS), $driver);
             $recovery->recordAuthFailure();
 
             $result = $this->runHealthCheck($driver);
 
             $this->assertTrue($result['ai_configured'], 'Credentials are still present');
             $this->assertTrue($result['ai_auth_failing'], 'The recorded marker must surface');
-            $this->assertFalse($result['ai_usable'], 'Known-expired credentials must not report usable');
+            $this->assertFalse($result['ai_usable'], 'Known-bad credentials must not report usable');
             $this->assertSame('degraded', $result['status']);
         }
 
@@ -108,37 +101,44 @@ namespace Drupal\scolta\Tests {
         }
 
         // ---------------------------------------------------------------
-        // Recovery once-per-window through the Drupal cache bridge
+        // The auth-failure contract through the Drupal cache bridge:
+        // degrade + flag for re-authentication, never swallow, never mint.
         // ---------------------------------------------------------------
 
-        public function testRecoveryReprovisionsOncePerWindowThroughDrupalBridge(): void {
+        public function testAuthFailureDegradesAndFlagsReauthLeavingCredentialsInPlace(): void {
             $driver = new DrupalCacheDriver(new InMemoryRecoveryCacheBackend());
-            $storage = new InMemoryRecoveryStorage(self::EXPIRED_CREDS);
-            $recovery = new KeyExpiryRecovery(
-                storage: $storage,
-                cache: $driver,
-                client: $this->makeAmazeeClient([
-                    new Response(200, [], self::FRESH_TRIAL_RESPONSE),
-                    new Response(200, [], self::MODEL_INFO_RESPONSE),
-                ], $mock),
+            $storage = new InMemoryRecoveryStorage(self::STORED_CREDS);
+            // No client is supplied: the recovery path must never reach out to
+            // obtain a connection, so there is nothing for it to call.
+            $recovery = new KeyExpiryRecovery($storage, $driver);
+
+            $handled = $recovery->handleAuthFailure(new \RuntimeException('code: expired_key'));
+
+            $this->assertFalse($handled, 'The failure is not silently recovered — the caller degrades gracefully');
+            $this->assertTrue($recovery->isAuthFailing(), 'Health must report AI as degraded');
+            $this->assertTrue($recovery->isUpgradeNeeded(), 'The admin must be prompted to re-authenticate');
+            $this->assertSame(
+                self::STORED_CREDS,
+                $recovery->credentials(),
+                'The stored credentials are left in place — no new connection is requested'
             );
+        }
 
-            $first = $recovery->handleAuthFailure(new \RuntimeException('code: expired_key'));
+        public function testReauthMarkerClearsThroughDrupalBridge(): void {
+            $driver = new DrupalCacheDriver(new InMemoryRecoveryCacheBackend());
+            $recovery = new KeyExpiryRecovery(new InMemoryRecoveryStorage(self::STORED_CREDS), $driver);
 
-            $this->assertTrue($first, 'An expired key triggers a re-provision');
-            $this->assertSame('sk-fresh-token', $recovery->credentials()['litellm_token'], 'Fresh credentials stored');
-            $this->assertFalse($recovery->isAuthFailing(), 'Successful recovery clears the marker via the Drupal cache');
-            $this->assertSame(0, $mock->count(), 'Both provisioning calls (trial + models) ran');
+            $recovery->flagUpgradeNeeded();
+            $this->assertTrue($recovery->isUpgradeNeeded(), 'Marker round-trips through the Drupal cache backend');
 
-            // A second failure inside the window must not hit the provisioning
-            // API again — the MockHandler queue is empty, so any call throws.
-            $second = $recovery->handleAuthFailure(new \RuntimeException('code: expired_key'));
-            $this->assertFalse($second, 'The window guard (read through the Drupal cache) blocks a second attempt');
+            // A successful reconnect clears it so the admin notice goes away.
+            $recovery->clearUpgradeNeeded();
+            $this->assertFalse($recovery->isUpgradeNeeded(), 'Clearing removes the re-authentication prompt');
         }
 
         public function testRecordAuthFailureVisibleThroughDrupalBridge(): void {
             $driver = new DrupalCacheDriver(new InMemoryRecoveryCacheBackend());
-            $recovery = new KeyExpiryRecovery(new InMemoryRecoveryStorage(self::EXPIRED_CREDS), $driver);
+            $recovery = new KeyExpiryRecovery(new InMemoryRecoveryStorage(self::STORED_CREDS), $driver);
 
             $this->assertFalse($recovery->isAuthFailing());
 
@@ -162,12 +162,35 @@ namespace Drupal\scolta\Tests {
             $this->assertStringContainsString("aiProvider === 'drupal_ai'", $src);
         }
 
-        public function testServiceOverridesRecoveredClientWithDrupalHttpClient(): void {
+        public function testServiceExposesReauthMarkerAccessors(): void {
             $src = $this->source('src/Service/ScoltaAiService.php');
 
-            $this->assertStringContainsString('function createRecoveredClient(', $src);
-            $this->assertStringContainsString('new AiClient($config, $this->httpClient)', $src);
-            $this->assertStringContainsString('?CacheBackendInterface $cache', $src);
+            // The admin notice reads this; AmazeeSettingsForm clears it.
+            $this->assertStringContainsString('public function isAmazeeReauthNeeded(): bool', $src);
+            $this->assertStringContainsString('->isUpgradeNeeded()', $src);
+            $this->assertStringContainsString('public function clearAmazeeReauthNeeded(): void', $src);
+            $this->assertStringContainsString('->clearUpgradeNeeded()', $src);
+        }
+
+        public function testHookRendersReauthNoticeRoutingToAmazeeSettings(): void {
+            $src = $this->source('scolta.module');
+
+            // hook_page_top surfaces the prompt by reading the service marker
+            // and routes the operator to the Amazee.ai settings flow.
+            $this->assertStringContainsString('isAmazeeReauthNeeded()', $src);
+            $this->assertStringContainsString("Url::fromRoute('scolta.settings.amazee')", $src);
+        }
+
+        public function testSettingsFormClearsReauthMarkerOnReconnect(): void {
+            $src = $this->source('src/Form/AmazeeSettingsForm.php');
+
+            $this->assertStringContainsString('use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;', $src);
+            // Completing the reconnect (either entry point) clears it.
+            $this->assertSame(
+                2,
+                substr_count($src, '$this->keyRecovery->clearUpgradeNeeded();'),
+                'Both reconnect paths must clear the re-authentication marker'
+            );
         }
 
         public function testServicesYamlPassesCacheToAiService(): void {
@@ -212,17 +235,6 @@ namespace Drupal\scolta\Tests {
             );
 
             return $checker->check();
-        }
-
-        /**
-         * Build an AmazeeClient backed by a MockHandler queue.
-         */
-        private function makeAmazeeClient(array $responses, ?MockHandler &$mock = NULL): AmazeeClient {
-            $mock = new MockHandler($responses);
-            return new AmazeeClient(
-                'https://api.amazee.ai',
-                new Client(['handler' => HandlerStack::create($mock)]),
-            );
         }
 
     }

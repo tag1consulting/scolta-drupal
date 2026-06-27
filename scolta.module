@@ -8,6 +8,7 @@
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
 
 /**
@@ -38,9 +39,10 @@ function scolta_entity_update(EntityInterface $entity) {
 /**
  * Implements hook_page_top().
  *
- * Renders the persistent rebuild-notice from State on every admin page load,
- * checking per-user dismissal via the user.data service. The notice shows
- * until the admin explicitly dismisses it or a new rebuild replaces it.
+ * Renders Scolta's persistent admin notices on every admin page load:
+ *  - the Amazee.ai re-authentication prompt, when the stored credentials are no
+ *    longer accepted and the operator must reconnect/upgrade;
+ *  - the index rebuild notice, with per-user dismissal.
  */
 function scolta_page_top(array &$page_top) {
   // Only show to users with admin access on admin routes.
@@ -55,6 +57,68 @@ function scolta_page_top(array &$page_top) {
     return;
   }
 
+  _scolta_amazee_reauth_notice($page_top);
+  _scolta_rebuild_notice($page_top, $current_user);
+}
+
+/**
+ * Render the Amazee.ai re-authentication notice when credentials need it.
+ *
+ * When the stored Amazee.ai credentials are no longer accepted, AI search
+ * degrades and the operator must reconnect/upgrade. ScoltaAiService exposes the
+ * persistent marker (set by scolta-php on an auth-class failure); this surfaces
+ * it as a warning with a clear call to action that routes to the Amazee.ai
+ * settings flow. The error is never swallowed: while the marker is set the
+ * operator sees this prompt and a path forward on every admin screen.
+ *
+ * @param array $page_top
+ *   The page_top render array, modified by reference.
+ */
+function _scolta_amazee_reauth_notice(array &$page_top): void {
+  /** @var \Drupal\scolta\Service\ScoltaAiService $ai_service */
+  $ai_service = \Drupal::service('scolta.ai_service');
+  if (!$ai_service->isAmazeeReauthNeeded()) {
+    return;
+  }
+
+  $page_top['scolta_amazee_reauth_notice'] = [
+    '#type' => 'container',
+    '#attributes' => [
+      'role' => 'contentinfo',
+      'class' => ['messages', 'messages--warning'],
+    ],
+    // Above the rebuild notice (-100): AI being down is the more urgent fix.
+    '#weight' => -101,
+    // Reflects the request-time credential-state marker — never cache it.
+    '#cache' => ['max-age' => 0],
+    'content' => [
+      '#type' => 'container',
+      '#attributes' => ['class' => ['messages__content']],
+      'text' => [
+        '#markup' => t('Your Amazee.ai connection needs to be re-authenticated before AI search features can work again.'),
+        '#suffix' => ' ',
+      ],
+      'cta' => [
+        '#type' => 'link',
+        '#title' => t('Continue with Amazee.ai'),
+        '#url' => Url::fromRoute('scolta.settings.amazee'),
+        '#attributes' => ['class' => ['button', 'button--primary', 'button--small']],
+      ],
+    ],
+  ];
+}
+
+/**
+ * Render the persistent index rebuild notice with per-user dismissal.
+ *
+ * Shows until the admin explicitly dismisses it or a new rebuild replaces it.
+ *
+ * @param array $page_top
+ *   The page_top render array, modified by reference.
+ * @param \Drupal\Core\Session\AccountInterface $current_user
+ *   The current user (already checked for the 'administer scolta' permission).
+ */
+function _scolta_rebuild_notice(array &$page_top, AccountInterface $current_user): void {
   $notice = \Drupal::state()->get('scolta.rebuild_notice');
   if (!$notice || empty($notice['notice_id'])) {
     return;
