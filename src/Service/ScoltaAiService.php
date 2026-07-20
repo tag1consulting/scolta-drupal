@@ -422,8 +422,8 @@ class ScoltaAiService extends AiServiceAdapter {
     /** @var \Drupal\ai\AiProviderPluginManager $pluginManager */
     $pluginManager = $this->aiProviderManager;
 
-    $defaultProviderId = $pluginManager->getDefaultProviderForOperationType('chat');
-    if (empty($defaultProviderId)) {
+    $default = $pluginManager->getDefaultProviderForOperationType('chat');
+    if (empty($default) || empty($default['provider_id'])) {
       throw new \RuntimeException('No default AI provider configured in the Drupal AI module for chat operations. Configure a provider at /admin/config/ai/providers.');
     }
 
@@ -432,8 +432,8 @@ class ScoltaAiService extends AiServiceAdapter {
       new ChatMessage('user', $userMessage),
     ]);
 
-    $provider = $pluginManager->createInstance($defaultProviderId);
-    $response = $provider->chat($input, '', ['max_tokens' => $maxTokens]);
+    $provider = $pluginManager->createInstance($default['provider_id']);
+    $response = $provider->chat($input, $default['model_id'] ?? '', ['max_tokens' => $maxTokens]);
 
     return $response->getNormalized()->getText();
   }
@@ -448,8 +448,8 @@ class ScoltaAiService extends AiServiceAdapter {
     /** @var \Drupal\ai\AiProviderPluginManager $pluginManager */
     $pluginManager = $this->aiProviderManager;
 
-    $defaultProviderId = $pluginManager->getDefaultProviderForOperationType('chat');
-    if (empty($defaultProviderId)) {
+    $default = $pluginManager->getDefaultProviderForOperationType('chat');
+    if (empty($default) || empty($default['provider_id'])) {
       throw new \RuntimeException('No default AI provider configured in the Drupal AI module for chat operations. Configure a provider at /admin/config/ai/providers.');
     }
 
@@ -462,8 +462,8 @@ class ScoltaAiService extends AiServiceAdapter {
 
     $input = new ChatInput($chatMessages);
 
-    $provider = $pluginManager->createInstance($defaultProviderId);
-    $response = $provider->chat($input, '', ['max_tokens' => $maxTokens]);
+    $provider = $pluginManager->createInstance($default['provider_id']);
+    $response = $provider->chat($input, $default['model_id'] ?? '', ['max_tokens' => $maxTokens]);
 
     return $response->getNormalized()->getText();
   }

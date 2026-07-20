@@ -13,13 +13,19 @@ use PHPUnit\Framework\TestCase;
  * - messageViaDrupalAi() and conversationViaDrupalAi() use the Drupal AI
  *   module's configured default provider (via getDefaultProviderForOperationType)
  *   rather than creating an instance with Scolta's own provider config.
- * - Neither method passes Scolta's aiModel to the provider — model selection
- *   is delegated to the Drupal AI module's own configuration.
+ * - The array returned by getDefaultProviderForOperationType() is unpacked:
+ *   its 'provider_id' is passed to createInstance() and its 'model_id' to
+ *   chat() — the raw array is never handed to createInstance().
  * - Both methods throw when no default provider is configured.
  *
- * This guards against the previous bug where createInstance($config->aiProvider)
- * was called with 'drupal_ai' as the plugin ID — a value that is not a valid
- * Drupal AI provider plugin and would fail at runtime.
+ * This guards against two runtime bugs:
+ * - createInstance($config->aiProvider) with 'drupal_ai' as the plugin ID —
+ *   a value that is not a valid Drupal AI provider plugin.
+ * - Passing the whole getDefaultProviderForOperationType() return value to
+ *   createInstance(). That method returns an array
+ *   (['provider_id' => ..., 'model_id' => ...]), not a string; passing the
+ *   array throws "Cannot access offset of type array" in the plugin manager,
+ *   which broke every AI feature on the drupal_ai path (issue #163).
  */
 class ScoltaAiServiceDrupalAiServiceLayerTest extends TestCase {
 
@@ -51,14 +57,38 @@ class ScoltaAiServiceDrupalAiServiceLayerTest extends TestCase {
     );
   }
 
-  public function testMessageViaDrupalAiPassesEmptyModelString(): void {
-    // Passing '' as the model lets the provider use its configured default.
-    // Passing $config->aiModel would inject Scolta's model config into the
-    // Drupal AI module's provider, overriding the admin's choice there.
+  public function testMessageViaDrupalAiPassesResolvedModelId(): void {
+    // getDefaultProviderForOperationType('chat') returns
+    // ['provider_id' => ..., 'model_id' => ...]. The resolved model_id (the
+    // admin's own choice in the Drupal AI module) must be passed to chat();
+    // Scolta's own aiModel is never injected.
     $this->assertStringContainsString(
-      "->chat(\$input, '', ",
+      "->chat(\$input, \$default['model_id'] ?? '', ",
       $this->serviceContents,
-      "messageViaDrupalAi() must pass '' as model so the Drupal AI provider uses its own configured default"
+      "messageViaDrupalAi() must pass the resolved model_id from the default-provider array to chat()"
+    );
+  }
+
+  public function testMessageViaDrupalAiUnpacksProviderIdForCreateInstance(): void {
+    // getDefaultProviderForOperationType() returns an array, not a string.
+    // createInstance() must receive the unpacked 'provider_id', never the
+    // raw array (which throws "Cannot access offset of type array"). See #163.
+    preg_match(
+      '/protected function messageViaDrupalAi\(.*?\{(.*?)(?=\n  protected function|\n  public function|\n})/s',
+      $this->serviceContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      "createInstance(\$default['provider_id'])",
+      $body,
+      "messageViaDrupalAi() must pass the unpacked 'provider_id' string to createInstance()"
+    );
+    $this->assertStringNotContainsString(
+      'createInstance($defaultProviderId)',
+      $body,
+      'messageViaDrupalAi() must not pass the raw getDefaultProviderForOperationType() array to createInstance() — it returns an array, not a plugin ID string (#163)'
     );
   }
 
@@ -110,7 +140,7 @@ class ScoltaAiServiceDrupalAiServiceLayerTest extends TestCase {
     );
   }
 
-  public function testConversationViaDrupalAiPassesEmptyModelString(): void {
+  public function testConversationViaDrupalAiPassesResolvedModelId(): void {
     preg_match(
       '/protected function conversationViaDrupalAi\(.*?\{(.*?)(?=\n  protected function|\n  public function|\n})/s',
       $this->serviceContents,
@@ -119,9 +149,29 @@ class ScoltaAiServiceDrupalAiServiceLayerTest extends TestCase {
     $body = $match[1] ?? '';
 
     $this->assertStringContainsString(
-      "->chat(\$input, '', ",
+      "->chat(\$input, \$default['model_id'] ?? '', ",
       $body,
-      "conversationViaDrupalAi() must pass '' as model so the Drupal AI provider uses its own default"
+      "conversationViaDrupalAi() must pass the resolved model_id from the default-provider array to chat()"
+    );
+  }
+
+  public function testConversationViaDrupalAiUnpacksProviderIdForCreateInstance(): void {
+    preg_match(
+      '/protected function conversationViaDrupalAi\(.*?\{(.*?)(?=\n  protected function|\n  public function|\n})/s',
+      $this->serviceContents,
+      $match
+    );
+    $body = $match[1] ?? '';
+
+    $this->assertStringContainsString(
+      "createInstance(\$default['provider_id'])",
+      $body,
+      "conversationViaDrupalAi() must pass the unpacked 'provider_id' string to createInstance()"
+    );
+    $this->assertStringNotContainsString(
+      'createInstance($defaultProviderId)',
+      $body,
+      'conversationViaDrupalAi() must not pass the raw getDefaultProviderForOperationType() array to createInstance() (#163)'
     );
   }
 
