@@ -433,7 +433,11 @@ class ScoltaAiService extends AiServiceAdapter {
     ]);
 
     $provider = $pluginManager->createInstance($default['provider_id']);
-    $response = $provider->chat($input, $default['model_id'] ?? '', ['max_tokens' => $maxTokens]);
+    // The third chat() argument is $tags, not options — a token limit set there
+    // is silently ignored. max_tokens must go through setConfiguration() before
+    // the call (see #163 review).
+    $provider->setConfiguration(['max_tokens' => $maxTokens]);
+    $response = $provider->chat($input, $default['model_id'] ?? '', ['scolta']);
 
     return $response->getNormalized()->getText();
   }
@@ -463,7 +467,10 @@ class ScoltaAiService extends AiServiceAdapter {
     $input = new ChatInput($chatMessages);
 
     $provider = $pluginManager->createInstance($default['provider_id']);
-    $response = $provider->chat($input, $default['model_id'] ?? '', ['max_tokens' => $maxTokens]);
+    // See messageViaDrupalAi(): max_tokens goes through setConfiguration(), not
+    // the chat() $tags argument (#163 review).
+    $provider->setConfiguration(['max_tokens' => $maxTokens]);
+    $response = $provider->chat($input, $default['model_id'] ?? '', ['scolta']);
 
     return $response->getNormalized()->getText();
   }

@@ -92,11 +92,13 @@ namespace Drupal\scolta\Tests {
       return new class($default) {
         public array $createInstanceArgs = [];
         public array $chatCalls = [];
+        public array $setConfigurationCalls = [];
+        public ?string $requestedOperationType = NULL;
 
         public function __construct(private array $default) {}
 
         public function getDefaultProviderForOperationType(string $operationType): array {
-          $this->chatCalls['operationType'] = $operationType;
+          $this->requestedOperationType = $operationType;
           return $this->default;
         }
 
@@ -107,8 +109,13 @@ namespace Drupal\scolta\Tests {
           return new class($recorder) {
             public function __construct(private object $recorder) {}
 
-            public function chat(object $input, mixed $model, array $options): object {
-              $this->recorder->chatCalls[] = ['model' => $model, 'options' => $options];
+            public function setConfiguration(array $configuration): void {
+              // max_tokens is applied here, NOT via the chat() $tags argument.
+              $this->recorder->setConfigurationCalls[] = $configuration;
+            }
+
+            public function chat(object $input, mixed $model, array $tags): object {
+              $this->recorder->chatCalls[] = ['model' => $model, 'tags' => $tags];
               return new class {
                 public function getNormalized(): object {
                   return new class {
@@ -154,7 +161,21 @@ namespace Drupal\scolta\Tests {
       $this->invoke($service, 'messageViaDrupalAi', ['system', 'user', 321]);
 
       $this->assertSame('claude-sonnet-4-5-20250929', $manager->chatCalls[0]['model']);
-      $this->assertSame(['max_tokens' => 321], $manager->chatCalls[0]['options']);
+      // max_tokens is applied via setConfiguration(), not the chat() $tags arg.
+      $this->assertSame(['max_tokens' => 321], $manager->setConfigurationCalls[0]);
+      $this->assertSame(['scolta'], $manager->chatCalls[0]['tags']);
+    }
+
+    public function testMessageRequestsChatOperationType(): void {
+      $manager = $this->fakeManager([
+        'provider_id' => 'anthropic',
+        'model_id' => 'claude-sonnet-4-5-20250929',
+      ]);
+      $service = $this->serviceWithManager($manager);
+
+      $this->invoke($service, 'messageViaDrupalAi', ['system', 'user', 512]);
+
+      $this->assertSame('chat', $manager->requestedOperationType);
     }
 
     public function testMessageThrowsWhenNoDefaultProvider(): void {
@@ -196,15 +217,42 @@ namespace Drupal\scolta\Tests {
       $service = $this->serviceWithManager($manager);
 
       $messages = [['role' => 'user', 'content' => 'hi']];
-      $result = $this->invoke($service, 'conversationViaDrupalAi', ['system', $messages, 512]);
+      $result = $this->invoke($service, 'conversationViaDrupalAi', ['system', $messages, 321]);
 
       $this->assertSame('GENERATED_TEXT', $result);
       $this->assertSame(['anthropic'], $manager->createInstanceArgs);
       $this->assertSame('claude-sonnet-4-5-20250929', $manager->chatCalls[0]['model']);
+      $this->assertSame('chat', $manager->requestedOperationType);
+      // max_tokens is applied via setConfiguration(), not the chat() $tags arg.
+      $this->assertSame(['max_tokens' => 321], $manager->setConfigurationCalls[0]);
+      $this->assertSame(['scolta'], $manager->chatCalls[0]['tags']);
+    }
+
+    public function testConversationDefaultsModelToEmptyStringWhenAbsent(): void {
+      // Mirrors testMessageDefaultsModelToEmptyStringWhenAbsent for the
+      // conversation path: provider_id present but no model_id → chat() gets ''.
+      $manager = $this->fakeManager(['provider_id' => 'openai']);
+      $service = $this->serviceWithManager($manager);
+
+      $messages = [['role' => 'user', 'content' => 'hi']];
+      $this->invoke($service, 'conversationViaDrupalAi', ['system', $messages, 100]);
+
+      $this->assertSame(['openai'], $manager->createInstanceArgs);
+      $this->assertSame('', $manager->chatCalls[0]['model']);
     }
 
     public function testConversationThrowsWhenNoDefaultProvider(): void {
       $service = $this->serviceWithManager($this->fakeManager([]));
+
+      $this->expectException(\RuntimeException::class);
+      $this->invoke($service, 'conversationViaDrupalAi', ['system', [], 512]);
+    }
+
+    public function testConversationThrowsWhenDefaultLacksProviderId(): void {
+      // Mirrors testMessageThrowsWhenDefaultLacksProviderId for the conversation
+      // path: a malformed default (model but no provider_id) must not reach
+      // createInstance().
+      $service = $this->serviceWithManager($this->fakeManager(['model_id' => 'x']));
 
       $this->expectException(\RuntimeException::class);
       $this->invoke($service, 'conversationViaDrupalAi', ['system', [], 512]);
