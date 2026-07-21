@@ -78,7 +78,8 @@
         "sort-packages": true,
         "allow-plugins": {
             "dealerdirect/phpcodesniffer-composer-installer": true,
-            "drupal/core-composer-scaffold": false
+            "drupal/core-composer-scaffold": false,
+            "symfony/runtime": true
         },
         "audit": {
             "ignore": [

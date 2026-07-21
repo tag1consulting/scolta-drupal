@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- **CI's `phpstan` job (and local `composer update` in this repo) no longer aborts on the `symfony/runtime` Composer plugin.** `drupal/core 11.4.4` requires `symfony/runtime (^7.4)` as part of the Symfony 7.4 upgrade, and this repo's `config.allow-plugins` did not list it, so Composer refused to proceed: *"symfony/runtime contains a Composer plugin which is blocked by your allow-plugins config"*. The `phpstan` job installs real Drupal core on purpose (it needs the source to analyse against, so unlike the `test` job it does not `provide: drupal/core`), so it took the failure on every run once core 11.4 shipped; `composer update` in a local checkout fails the same way. Added `symfony/runtime: true` to `config.allow-plugins`. `config` is only honored in the root `composer.json`, so this affects development and CI in this repo only — sites installing the module are governed by their own root config and are unaffected. Verified locally (PHP 8.5 / Composer 2.10): the install fails identically before the change, and after it both `composer update` and `phpstan analyse --no-progress` complete clean (`[OK] No errors`).
+
 ### Changed
 - Opened 1.0.6-dev development cycle.
 
