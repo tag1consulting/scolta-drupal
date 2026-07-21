@@ -214,6 +214,12 @@
     content_type: 'Content Type',
   };
 
+  // Index-chunk preloading (see schedulePreload()). The debounce keeps the
+  // per-keystroke WASM chunk lookup off the typing path while still firing
+  // long before a human reaches Enter.
+  const PRELOAD_DEBOUNCE_MS = 150;
+  const PRELOAD_MIN_CHARS = 2;
+
   function filterDisplayValue(dimension, value) {
     if (dimension === 'language') return LANGUAGE_NAMES[value] || value;
     return value;
@@ -260,6 +266,8 @@
   let expansionInFlight = false;     // true while an expand-query HTTP request is pending
   let cachedPagefindFilters = null;  // { dimension: { value: count } } — from pagefind.filters()
   let cachedPagefindPageCount = null; // total indexed pages across languages — from pagefind-entry.json
+  let preloadTimer = null;           // trailing-debounce handle for schedulePreload()
+  let lastPreloadedTerm = '';        // last term handed to pagefind.preload(); skips repeat work
 
   // Detect default language filter from instanceConfig.currentLanguage or <html lang>.
   // Applied on every fresh search unless the URL already specifies f_language.
@@ -1227,6 +1235,52 @@
       searchOpts.sort = { [sortHint.field]: sortHint.direction };
     }
     return pagefind.search(query, searchOpts);
+  }
+
+  // Warm the alphabetical index chunk(s) for the term being typed, so the
+  // search that fires on Enter/click finds them already in memory.
+  // pagefind.preload() runs the chunk resolution half of a search and bails
+  // out before scoring; loaded chunks are memoized, so repeat calls are free.
+  //
+  // Deliberately NOT pagefind.debouncedSearch(): that is a plain input
+  // debounce, and adopting it would bypass the abortController +
+  // searchVersion staleness guards that protect the multi-phase pipeline
+  // (expand → merge → summarize → follow-up).
+  //
+  // No filters are passed: initPagefind() already calls pagefind.filters(),
+  // which loads every filter chunk, so filters here would only duplicate work.
+  function schedulePreload(raw) {
+    if (preloadTimer) {
+      clearTimeout(preloadTimer);
+      preloadTimer = null;
+    }
+    const term = (raw || '').trim();
+    // One stray character would fetch a chunk the user may never search.
+    if (term.length < PRELOAD_MIN_CHARS || term === lastPreloadedTerm) return;
+    preloadTimer = setTimeout(() => {
+      preloadTimer = null;
+      // Feature-detected: index builds from older Pagefind releases predate
+      // preload(), and a missing warm-up must never break the search box.
+      if (!pagefind || typeof pagefind.preload !== 'function') return;
+      lastPreloadedTerm = term;
+      try {
+        Promise.resolve(pagefind.preload(term)).catch((e) => {
+          debugLog('[scolta] preload failed', e);
+        });
+      } catch (e) {
+        debugLog('[scolta] preload failed', e);
+      }
+    }, PRELOAD_DEBOUNCE_MS);
+  }
+
+  // Cancel any pending preload — used by clearSearch(), which empties the
+  // input without firing an "input" event.
+  function cancelPreload() {
+    if (preloadTimer) {
+      clearTimeout(preloadTimer);
+      preloadTimer = null;
+    }
+    lastPreloadedTerm = '';
   }
 
   // Count distinct results across the union of search terms under the given
@@ -2301,6 +2355,7 @@
   function clearSearch() {
     if (abortController) abortController.abort();
     abortController = null;
+    cancelPreload();
     els.queryInput.value = '';
     els.searchClear.style.display = "none";
     els.layout.style.display = "none";
@@ -2591,6 +2646,7 @@
 
     els.queryInput.addEventListener("input", () => {
       els.searchClear.style.display = els.queryInput.value.length > 0 ? "block" : "none";
+      schedulePreload(els.queryInput.value);
     });
 
     els.searchClear.addEventListener("click", clearSearch);
