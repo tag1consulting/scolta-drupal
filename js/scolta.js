@@ -718,6 +718,15 @@
         contextHeader += '[User has filtered results by ' + userFilterParts.join('; ') + ']\n';
       }
     }
+    // Weak-match signal. When the full query matched nothing and the result set
+    // was assembled by the broadened OR fallback, say so. Without this the model
+    // receives a thin, off-target slice with no indication that it is a fallback,
+    // and generalizes that slice into a claim about the entire collection ("this
+    // collection has no dedicated article on X") — a claim it can never support
+    // from one search. The ranked list already shows the user the same caveat.
+    if (usedOrFallback) {
+      contextHeader += '[No result matched the full query; these excerpts come from a broadened partial-match search and are not representative of the collection]\n';
+    }
     if (contextHeader) {
       context = contextHeader + '\n' + context;
     }
