@@ -75,6 +75,9 @@
       CROSS_LIST_BONUS: s.CROSS_LIST_BONUS ?? 0.05,
       EXPAND_SUBWORD_MAX_FREQ: s.EXPAND_SUBWORD_MAX_FREQ ?? 0.05,
       EXPAND_SUBWORD_DENYLIST: s.EXPAND_SUBWORD_DENYLIST ?? [],
+      SPECIFICITY_WEIGHTING: s.SPECIFICITY_WEIGHTING ?? true,
+      SPECIFICITY_FLOOR: s.SPECIFICITY_FLOOR ?? 0.15,
+      SPECIFICITY_STRONG_MATCH: s.SPECIFICITY_STRONG_MATCH ?? 0.55,
       FILTER_HINT_MIN_RESULTS: s.FILTER_HINT_MIN_RESULTS ?? 5,
       FILTER_HINT_MIN_RATIO: s.FILTER_HINT_MIN_RATIO ?? 0.1,
       EXPANSION_COMBINE_MODE: s.EXPANSION_COMBINE_MODE ?? 'relevance_union',
@@ -259,6 +262,11 @@
   let lastExpandedTerms = null;
   let searchVersion = 0;
   let usedOrFallback = false;
+  // True when at least one high-specificity (rare) term produced results in the
+  // current search. Distinguishes a retrieval-mode fallback that still found the
+  // on-intent documents from a genuine content gap, so the "partial matches"
+  // banner and the AI-summary absence hedge don't cry failure over a strong hit.
+  let hadSpecificMatch = false;
   let pagefindBase = '';   // Set during initPagefind(); used by resolveUrl().
   let currentSortOverride = null;    // { field, direction } or null — active sort override
   let llmAppliedFilters = {};        // { dimension: value } — filters injected by LLM expansion
@@ -313,6 +321,9 @@
       CROSS_LIST_BONUS: s.CROSS_LIST_BONUS ?? 0.05,
       EXPAND_SUBWORD_MAX_FREQ: s.EXPAND_SUBWORD_MAX_FREQ ?? 0.05,
       EXPAND_SUBWORD_DENYLIST: s.EXPAND_SUBWORD_DENYLIST ?? [],
+      SPECIFICITY_WEIGHTING: s.SPECIFICITY_WEIGHTING ?? true,
+      SPECIFICITY_FLOOR: s.SPECIFICITY_FLOOR ?? 0.15,
+      SPECIFICITY_STRONG_MATCH: s.SPECIFICITY_STRONG_MATCH ?? 0.55,
       FILTER_HINT_MIN_RESULTS: s.FILTER_HINT_MIN_RESULTS ?? 5,
       FILTER_HINT_MIN_RATIO: s.FILTER_HINT_MIN_RATIO ?? 0.1,
       EXPANSION_COMBINE_MODE: s.EXPANSION_COMBINE_MODE ?? 'relevance_union',
@@ -718,14 +729,22 @@
         contextHeader += '[User has filtered results by ' + userFilterParts.join('; ') + ']\n';
       }
     }
-    // Weak-match signal. When the full query matched nothing and the result set
-    // was assembled by the broadened OR fallback, say so. Without this the model
-    // receives a thin, off-target slice with no indication that it is a fallback,
-    // and generalizes that slice into a claim about the entire collection ("this
-    // collection has no dedicated article on X") — a claim it can never support
-    // from one search. The ranked list already shows the user the same caveat.
-    if (usedOrFallback) {
+    // Weak-match signal, graded by specificity. When the result set was
+    // assembled by the broadened OR fallback the model needs to know it is a
+    // fallback, or it generalizes a thin slice into a claim about the whole
+    // collection ("this collection has no dedicated article on X") — a claim it
+    // can never support from one search. But that decline is only warranted when
+    // NO high-specificity term matched anything: a retrieval miss where a rare
+    // on-intent term ("papilledema", "oxygen tank") did match is not a content
+    // gap, and telling the model the excerpts are "not representative" makes it
+    // wrongly hedge over documents that are exactly on point. So:
+    //   - no specific match  -> strong marker, decline is appropriate
+    //   - specific match hit  -> soft marker: the literal phrase missed, but the
+    //     excerpts are on-intent; attribute any gap to the search, not the corpus
+    if (usedOrFallback && !hadSpecificMatch) {
       contextHeader += '[No result matched the full query; these excerpts come from a broadened partial-match search and are not representative of the collection]\n';
+    } else if (usedOrFallback) {
+      contextHeader += '[The full query phrase did not match as-is, but specific on-topic terms did; these excerpts are relevant. Attribute any missing detail to this search, not to the collection.]\n';
     }
     if (contextHeader) {
       context = contextHeader + '\n' + context;
@@ -1804,13 +1823,43 @@
     return scoreResults(loaded, query, weight);
   }
 
-  async function searchAndLoadParallel(queries, filters, originalQuery) {
+  async function searchAndLoadParallel(queries, filters, originalQuery, specificityOpts) {
     const CONFIG = getInstanceConfig();
     if (queries.length === 0) return [];
 
     const searches = await Promise.all(
       queries.map(q => pagefindSearch(q.term, filters))
     );
+
+    // Specificity weighting: damp each sub-query by how common its term is in
+    // the corpus, so a rare on-intent term ("papilledema", "vegetarian")
+    // outranks a ubiquitous one ("lunar", "apollo", "dinner") instead of
+    // counting the same. df is the term's own (scoped) Pagefind match count;
+    // total is the corpus size. Rare term -> multiplier ~1 (weight unchanged, so
+    // already-discriminating corpora are untouched), ubiquitous term -> ~FLOOR.
+    // Disabled or unknown total -> no change. This is what closes the two guard
+    // bypasses: a high-frequency word the user TYPED (routed here via the OR
+    // fallback) and a common sub-word leaked from an expansion PHRASE are both
+    // down-weighted here rather than flooding the head of the list.
+    const specByTerm = new Map();
+    if (specificityOpts && specificityOpts.enabled) {
+      const total = specificityOpts.corpusTotal;
+      const strongCut = CONFIG.SPECIFICITY_STRONG_MATCH ?? 0.55;
+      for (let i = 0; i < searches.length; i++) {
+        const df = searches[i].results.length;
+        const w = specificityWeight(df, total, CONFIG);
+        if (w != null) {
+          specByTerm.set(queries[i].term, w);
+          // Report a strong (rare) match via the caller's opts object rather
+          // than touching the module-level hadSpecificMatch here: this runs
+          // before the caller's searchVersion staleness check, so a stale or
+          // discarded search must not be allowed to flip the flag the CURRENT
+          // search reads. The caller applies it only after confirming the
+          // search is still current.
+          if (w >= strongCut && df > 0) specificityOpts.strongMatched = true;
+        }
+      }
+    }
 
     const loadPromises = [];
     for (let i = 0; i < searches.length; i++) {
@@ -1833,7 +1882,8 @@
 
     let results = [];
     for (const [term, items] of byTerm) {
-      const weight = items[0].weight;
+      const spec = specByTerm.get(term);
+      const weight = items[0].weight * (spec != null ? spec : 1);
       const loaded = items.map(i => i.data);
       // Stamp expansion provenance onto each loaded result so the summary
       // candidate selector can group by sub-query (issue #170). This survives
@@ -1865,6 +1915,34 @@
   // totals are available without touching the word index: pagefind.filters()
   // value counts and the per-language page counts in pagefind-entry.json, both
   // already cached at init.
+  // Specificity (inverse-document-frequency) weight for a search term.
+  //
+  // The ranker rewards matching a term in proportion to how much intent it
+  // carries, and a term's intent is inversely related to how many documents
+  // contain it: a word in almost every page ("lunar", "apollo", "dinner")
+  // discriminates nothing, a word in a handful of pages ("papilledema",
+  // "vegetarian") pins the query. This reuses the same corpus-frequency signal
+  // the sub-word guard already computes — df is the term's own Pagefind match
+  // count (scoped to the active filters), total is the corpus size from
+  // subwordCorpusSize().
+  //
+  //   weight = clamp( ln(total / df) / ln(total + 1), FLOOR, 1 )
+  //
+  //   df = 1        -> ~1.0  (unique term, full weight)
+  //   df = total    -> FLOOR (ubiquitous term, floored, never zero so recall
+  //                           and the good already-discriminating corpora are
+  //                           preserved — a rare-term query is unaffected)
+  //
+  // Returns null when total is unknown (0), so callers keep their existing
+  // weight and behavior is unchanged where the frequency signal is unavailable.
+  function specificityWeight(df, total, CONFIG) {
+    if (!total || total <= 0 || !df || df <= 0) return null;
+    const floor = (CONFIG && CONFIG.SPECIFICITY_FLOOR != null) ? CONFIG.SPECIFICITY_FLOOR : 0.15;
+    const clampedDf = Math.min(df, total);
+    const idf = Math.log(total / clampedDf) / Math.log(total + 1);
+    return Math.max(floor, Math.min(idf, 1));
+  }
+
   function subwordCorpusSize(filters) {
     // Scoped: pagefind ORs values within a dimension and ANDs across
     // dimensions. The AND-count is unknowable from per-value totals, so use the
@@ -1947,7 +2025,11 @@
       if (subwordMaxFreq <= 0) return false;   // v1.0.0 behavior: no sub-words
       if (subwordMaxFreq >= 1) return true;    // pre-v1.0.0 behavior: all sub-words
       // Fix A: a sub-word the user literally typed is wanted by definition —
-      // bypass the frequency check. Fix D: unless it's on the guard denylist.
+      // bypass the ADMISSION check so recall is preserved. Fix D: unless it's on
+      // the guard denylist. Note: admitting a ubiquitous typed word no longer
+      // lets it flood — searchAndLoadParallel now damps it by specificity at
+      // rank time (specificityWeight), so the exemption costs recall nothing
+      // while the rare terms still lead.
       if (queryTokens.has(word) && !subwordDenylist.has(word)) return true;
       if (subwordFreqCache.has(word)) return subwordFreqCache.get(word);
       let allowed = false;
@@ -2120,12 +2202,26 @@
         }
       }
 
-      const expandedResults = await searchAndLoadParallel(queries, activeFilters, searchQuery);
+      // Specificity weighting so a common word leaked from an expansion phrase
+      // ("dinner" out of "meat-free dinner recipes") is scored by its rarity,
+      // not counted equal to the rare words that carry the intent. The phrase
+      // itself and its rare sub-words keep near-full weight; ubiquitous
+      // sub-words are damped toward the floor.
+      const expandSpecificity = {
+        enabled: CONFIG.SPECIFICITY_WEIGHTING,
+        corpusTotal: subwordCorpusSize(activeFilters),
+        strongMatched: false,
+      };
+      const expandedResults = await searchAndLoadParallel(queries, activeFilters, searchQuery, expandSpecificity);
 
       if (version !== searchVersion) {
         debugLog('[scolta:expand] Discarding stale expansion after load (version', version, 'vs current', searchVersion, ')');
         return;
       }
+
+      // Adopt the specificity signal only now that the staleness check has
+      // passed, so a discarded expansion cannot flip the current search's flag.
+      if (expandSpecificity.strongMatched) hadSpecificMatch = true;
 
       allScoredResults = mergeResults(
         allScoredResults,
@@ -2166,6 +2262,7 @@
 
     displayedCount = 0;
     allScoredResults = [];
+    hadSpecificMatch = false;
     conversationMessages = [];
     followUpCount = 0;
     if (!preserveFilters) {
@@ -2238,7 +2335,20 @@
     if (!isForcedPhrase && meaningfulTerms.length > 1 && primarySearch.results.length === 0) {
       debugLog('[scolta:search] AND returned 0 results — running OR fallback');
       const orQueries = meaningfulTerms.map(term => ({ term, weight: 0.6 }));
-      const orResults = await searchAndLoadParallel(orQueries, activeFilters, searchQuery);
+      // Specificity weighting so the OR fallback leads with the rare on-intent
+      // term, not the ubiquitous typed word. Closes the typed-word exemption:
+      // a common word the user typed is still searched (recall) but no longer
+      // floods the head of the list.
+      const orSpecificity = {
+        enabled: CONFIG.SPECIFICITY_WEIGHTING,
+        corpusTotal: subwordCorpusSize(activeFilters),
+        strongMatched: false,
+      };
+      const orResults = await searchAndLoadParallel(orQueries, activeFilters, searchQuery, orSpecificity);
+      // Only adopt the specificity signal if this search is still current — a
+      // newer doSearch() resets hadSpecificMatch, and a late-resolving stale OR
+      // fallback must not repollute it.
+      if (version === searchVersion && orSpecificity.strongMatched) hadSpecificMatch = true;
       allScoredResults = mergeResults(allScoredResults, orResults);
       usedOrFallback = allScoredResults.length > 0;
     }
@@ -2431,7 +2541,6 @@
     els.layout.classList.add("has-filters");
     let html = "";
     for (const dim of dims) {
-      html += `<div class="scolta-filter-group"><h3>${escapeHtml(filterDimLabel(dim))}</h3>`;
       const dimFilters = activeFilters[dim] || new Set();
       const dimCounts = queryFacetCounts[dim] || {};
       // Values come from the taxonomy, sorted alphabetically by display value —
@@ -2440,21 +2549,30 @@
       const vals = Object.keys(taxonomy[dim]).sort(
         (a, b) => filterDisplayValue(dim, a).localeCompare(filterDisplayValue(dim, b))
       );
+      let itemsHtml = "";
       for (const val of vals) {
         const count = dimCounts[val] ?? 0;
         const isActive = dimFilters.has(val);
-        // Uniform zero policy: a count-0 value is shown but disabled, UNLESS it
-        // is currently active (an active value must always remain uncheckable).
-        const disabled = (count === 0 && !isActive) ? " disabled" : "";
+        // Hide zero-count values (unless currently active): a value that matches
+        // none of this query's results is not a useful facet, and rendering it
+        // buries the useful ones — the social feed's tag dimension has hundreds
+        // of hashtags, all but a few zero for any query, and showing them all
+        // made the sidebar unreadable. An active value must always remain
+        // visible and uncheckable even at zero. Counts are fixed per typed
+        // query, so the visible set is stable across facet clicks.
+        if (count === 0 && !isActive) continue;
         const checked = isActive ? "checked" : "";
         const activeClass = isActive ? " active" : "";
-        html += `<label class="scolta-filter-item${activeClass}">
-          <input type="checkbox" value="${escapeAttr(val)}" ${checked}${disabled}
+        itemsHtml += `<label class="scolta-filter-item${activeClass}">
+          <input type="checkbox" value="${escapeAttr(val)}" ${checked}
                  data-scolta-filter-dim="${escapeAttr(dim)}" data-scolta-filter-val="${escapeAttr(val)}">
           ${escapeHtml(filterDisplayValue(dim, val))} <span class="scolta-filter-count">(${count})</span>
         </label>`;
       }
-      html += `</div>`;
+      // Skip a dimension whose values are all zero for this query — an empty
+      // group is just a dangling header.
+      if (itemsHtml === "") continue;
+      html += `<div class="scolta-filter-group"><h3>${escapeHtml(filterDimLabel(dim))}</h3>${itemsHtml}</div>`;
     }
     container.innerHTML = html;
   }
@@ -2537,7 +2655,13 @@
           .map(([dim, vals]) => [...vals].map(v => filterDisplayValue(dim, v)).join(', '))
           .join('; ')
       : '';
-    const orFallbackLabel = usedOrFallback ? ' — no exact matches found, showing partial matches' : '';
+    // The OR fallback is a retrieval mode, not a failure. Only call it out as
+    // "no exact matches" when nothing specific was actually found; when a rare,
+    // high-specificity term did match, the list is genuinely relevant, so frame
+    // it as best matches rather than crying failure over a strong hit.
+    const orFallbackLabel = usedOrFallback
+      ? (hadSpecificMatch ? ' — showing best matches' : ' — no exact matches found, showing partial matches')
+      : '';
     const resultNoun = filtered.length === 1 ? 'result' : 'results';
     header.innerHTML = `<span>${filtered.length.toLocaleString()} ${resultNoun} for "${escapeHtml(displayQuery(currentQuery))}"${filterLabel}${expandLabel}${orFallbackLabel}</span>
                         <span>Showing ${showing}</span>`;
