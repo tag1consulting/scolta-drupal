@@ -1850,7 +1850,13 @@
         const w = specificityWeight(df, total, CONFIG);
         if (w != null) {
           specByTerm.set(queries[i].term, w);
-          if (w >= strongCut && df > 0) hadSpecificMatch = true;
+          // Report a strong (rare) match via the caller's opts object rather
+          // than touching the module-level hadSpecificMatch here: this runs
+          // before the caller's searchVersion staleness check, so a stale or
+          // discarded search must not be allowed to flip the flag the CURRENT
+          // search reads. The caller applies it only after confirming the
+          // search is still current.
+          if (w >= strongCut && df > 0) specificityOpts.strongMatched = true;
         }
       }
     }
@@ -2204,6 +2210,7 @@
       const expandSpecificity = {
         enabled: CONFIG.SPECIFICITY_WEIGHTING,
         corpusTotal: subwordCorpusSize(activeFilters),
+        strongMatched: false,
       };
       const expandedResults = await searchAndLoadParallel(queries, activeFilters, searchQuery, expandSpecificity);
 
@@ -2211,6 +2218,10 @@
         debugLog('[scolta:expand] Discarding stale expansion after load (version', version, 'vs current', searchVersion, ')');
         return;
       }
+
+      // Adopt the specificity signal only now that the staleness check has
+      // passed, so a discarded expansion cannot flip the current search's flag.
+      if (expandSpecificity.strongMatched) hadSpecificMatch = true;
 
       allScoredResults = mergeResults(
         allScoredResults,
@@ -2331,8 +2342,13 @@
       const orSpecificity = {
         enabled: CONFIG.SPECIFICITY_WEIGHTING,
         corpusTotal: subwordCorpusSize(activeFilters),
+        strongMatched: false,
       };
       const orResults = await searchAndLoadParallel(orQueries, activeFilters, searchQuery, orSpecificity);
+      // Only adopt the specificity signal if this search is still current — a
+      // newer doSearch() resets hadSpecificMatch, and a late-resolving stale OR
+      // fallback must not repollute it.
+      if (version === searchVersion && orSpecificity.strongMatched) hadSpecificMatch = true;
       allScoredResults = mergeResults(allScoredResults, orResults);
       usedOrFallback = allScoredResults.length > 0;
     }
