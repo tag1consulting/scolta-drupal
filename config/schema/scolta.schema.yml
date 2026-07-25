@@ -112,6 +112,24 @@ scolta.settings:
         expand_subword_max_frequency:
           type: float
           label: 'Sub-word maximum corpus frequency'
+        specificity_weighting:
+          type: boolean
+          label: 'Specificity-weighted ranking'
+        specificity_floor:
+          type: float
+          label: 'Specificity floor'
+        specificity_strong_match:
+          type: float
+          label: 'Specificity strong-match threshold'
+        specificity_cooccurrence:
+          type: float
+          label: 'Co-occurrence agreement bonus'
+        specificity_agreement_gate:
+          type: float
+          label: 'Co-occurrence agreement gate'
+        specificity_agreement_decay:
+          type: float
+          label: 'Co-occurrence agreement decay'
         expansion_combine_mode:
           type: string
           label: 'Expansion combine mode'

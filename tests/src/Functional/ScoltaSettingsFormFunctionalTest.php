@@ -333,6 +333,66 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * The hide-empty-facets opt-out must survive the form and reach the browser.
+   *
+   * Deliberately a full form round-trip rather than the config-set shortcut the
+   * block tests above use, and deliberately tests the FALSE direction. The
+   * browser default is to hide, so a bridge that drops the value entirely still
+   * looks correct in the on state: only unticking the box can prove the saved
+   * value is honoured end to end. This is exactly the class of bug that once
+   * shipped an admin field ignoring what it saved.
+   *
+   * Both halves matter. Submitting the form and asserting on config catches a
+   * form-field-name typo; rendering a node page and asserting on drupalSettings
+   * catches a missing bridge in ScoltaSearchBlock::build(). The settings page
+   * carries no search block, so asserting on the form response alone would find
+   * no drupalSettings.scolta at all.
+   */
+  public function testHideEmptyFacetsOptOutReachesTheBrowser(): void {
+    $this->drupalCreateContentType(['type' => 'page']);
+    $node = $this->drupalCreateNode([
+      'type' => 'page',
+      'title' => 'Search',
+      'status' => 1,
+    ]);
+    $this->drupalPlaceBlock('scolta_search', ['region' => 'content']);
+
+    // Half one: the form saves the unticked checkbox as FALSE.
+    $this->drupalLogin($this->adminUser);
+    $this->drupalGet('/admin/config/search/scolta');
+    $this->submitForm(['hide_empty_facets' => FALSE], 'Save configuration');
+    $this->assertSession()->pageTextContains('The configuration options have been saved.');
+    $this->assertFalse($this->config('scolta.settings')->get('hide_empty_facets'));
+
+    // Half two: the saved FALSE reaches window.scolta on a rendered page.
+    $this->drupalGet($node->toUrl());
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->responseContains('"hideEmptyFacets":false');
+  }
+
+  /**
+   * The default install state must emit hideEmptyFacets as TRUE.
+   *
+   * Pins the default direction so the key is always present in the payload.
+   * An absent key is read by scolta.js as "hide" (only a literal false
+   * disables it), which is the same visible behavior as true — so without this
+   * assertion a bridge that emitted nothing at all would look identical.
+   */
+  public function testHideEmptyFacetsDefaultRendersTrue(): void {
+    $this->drupalCreateContentType(['type' => 'page']);
+    $node = $this->drupalCreateNode([
+      'type' => 'page',
+      'title' => 'Search',
+      'status' => 1,
+    ]);
+    $this->drupalPlaceBlock('scolta_search', ['region' => 'content']);
+
+    $this->drupalGet($node->toUrl());
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->responseContains('"hideEmptyFacets":true');
+  }
+
+  /**
    * Tests that the settings form is access-controlled.
    */
   public function testSettingsFormRequiresPermission(): void {

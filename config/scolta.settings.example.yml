@@ -31,6 +31,12 @@ scoring:
   expand_primary_weight: 0.7        # Weight for original vs expanded terms (0-1)
   cross_list_bonus: 0.05            # Bonus when a result matches both primary + expanded sets
   expand_subword_max_frequency: 0.05 # Max corpus frequency for an expansion sub-word to be searched (0 disables)
+  specificity_weighting: true        # Weight partial matches by how rare the term is (false restores flat weighting)
+  specificity_floor: 0.15           # Floor for a ubiquitous term's specificity weight (0-1, lower damps harder)
+  specificity_strong_match: 0.55    # Specificity at which a match counts as strong and on-intent (0-1)
+  specificity_cooccurrence: 0.9     # Bonus multiplier for agreeing with several terms at once (0 disables)
+  specificity_agreement_gate: 0.45  # Specificity a term must clear to count toward the agreement bonus (0-1)
+  specificity_agreement_decay: 1.0  # Geometric factor per successive agreeing term (below 1 saturates the bonus)
   expansion_combine_mode: relevance_union # How expansion sub-query results feed the AI summary: 'relevance_union' or 'round_robin' (preset-defaulted; round_robin on content_catalog/blog/ecommerce)
   language: 'en'                    # ISO 639-1 language code for stop word filtering
   custom_stop_words: []             # Extra stop words: ['drupal', 'cms']

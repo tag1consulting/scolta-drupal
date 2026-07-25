@@ -103,6 +103,18 @@ class ScoltaAiServiceTest extends TestCase {
     // longer appear in install config.
     $this->assertEquals('relevance_union', $this->getInstallDefaults()['scoring']['expansion_combine_mode']);
     $this->assertArrayNotHasKey('expansion_per_term_top_k', $this->getInstallDefaults()['scoring']);
+    // The six specificity settings ship in install config. Their defaults must
+    // match the scolta.js `??` fallbacks exactly, or a Drupal site silently
+    // ranks differently from an unconfigured one. Asserted structurally, like
+    // the sub-word guard above, so the check does not depend on the installed
+    // scolta-php version having the typed properties.
+    $scoring = $this->getInstallDefaults()['scoring'];
+    $this->assertTrue($scoring['specificity_weighting']);
+    $this->assertEquals(0.15, $scoring['specificity_floor']);
+    $this->assertEquals(0.55, $scoring['specificity_strong_match']);
+    $this->assertEquals(0.9, $scoring['specificity_cooccurrence']);
+    $this->assertEquals(0.45, $scoring['specificity_agreement_gate']);
+    $this->assertEquals(1.0, $scoring['specificity_agreement_decay']);
   }
 
   public function testDisplayConfigFlattensCorrectly(): void {
