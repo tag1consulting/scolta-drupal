@@ -762,6 +762,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('When enabled, a "Powered by Scolta" notice is appended to the search block output.'),
     ];
 
+    $form['display']['hide_empty_facets'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Hide empty facet values'),
+      '#default_value' => $config->get('hide_empty_facets') ?? TRUE,
+      '#description' => $this->t('When enabled (default), a facet value with zero results for the current query is hidden, and a filter group whose values are all zero is dropped. An active (checked) value stays visible so it can be unchecked. Disable to show every value, rendering a zero-count one as a disabled "(0)" option.'),
+    ];
+
     // ── Cache Section ──
     $form['cache'] = [
       '#type' => 'details',
@@ -1259,6 +1266,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('display.ai_summary_max_chars', (int) $form_state->getValue('ai_summary_max_chars'))
       // Display: attribution.
       ->set('show_attribution', (bool) $form_state->getValue('show_attribution'))
+      // Display: facet visibility.
+      ->set('hide_empty_facets', (bool) $form_state->getValue('hide_empty_facets'))
       // Cache.
       ->set('cache_ttl', (int) $form_state->getValue('cache_ttl'))
       // Rate limiting.
