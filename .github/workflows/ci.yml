@@ -6,6 +6,16 @@ on:
   pull_request:
     branches: [main]
 
+# Composer resolves the tag1consulting/scolta-php VCS repo and every packagist
+# dist through api.github.com. Unauthenticated that is 60 req/hour/IP, and when
+# it runs dry composer cannot prompt under no-interaction and dies with
+# "Could not authenticate against github.com" (AuthHelper.php:152, exit 100).
+# The run's own token raises it to 1,000 req/hour/repo. Read-only is enough:
+# scolta-php is public, so GITHUB_TOKEN can read it even though the token is
+# scoped to this repository.
+env:
+  COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
+
 jobs:
   test:
     runs-on: ubuntu-latest
