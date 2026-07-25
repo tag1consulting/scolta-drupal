@@ -567,6 +567,63 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t("Advanced: how aggressively multi-word searches broaden. Higher returns more results but can pull in loosely-related matches; lower keeps results tight. Most sites should pick a Site Type preset above instead of changing this by hand. Default: 0.05 (the Recipe &amp; Content Catalog preset raises it to 0.10). Set to 0 to disable sub-word expansion; values at or above 1 search every sub-word."),
     ];
 
+    $form['scoring']['specificity_weighting'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Specificity-weighted ranking'),
+      '#default_value' => $config->get('scoring.specificity_weighting') ?? TRUE,
+      '#description' => $this->t('Weight each partial match by how rare its term is in the corpus, so a match on a rare intent-bearing term outranks a match on a ubiquitous one. This is what stops a common word, typed or leaked from an expansion phrase, from flooding the head of the result list. Uncheck to restore flat sub-query weighting.'),
+    ];
+
+    $form['scoring']['specificity_floor'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Specificity floor'),
+      '#default_value' => $config->get('scoring.specificity_floor') ?? 0.15,
+      '#step' => 'any',
+      '#min' => 0,
+      '#max' => 1,
+      '#description' => $this->t('Floor for the specificity weight of a ubiquitous term. A term appearing in nearly every document is damped to this multiplier rather than to zero, so it still contributes to recall while ranking far below rare terms. Lower is more aggressive damping. Default: 0.15.'),
+    ];
+
+    $form['scoring']['specificity_strong_match'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Specificity strong-match threshold'),
+      '#default_value' => $config->get('scoring.specificity_strong_match') ?? 0.55,
+      '#step' => 'any',
+      '#min' => 0,
+      '#max' => 1,
+      '#description' => $this->t('Specificity at or above which a matched term counts as a strong, on-intent hit. When a term this specific matched, the partial-match banner and the AI summary stop framing the result set as a failure and attribute any gap to the search rather than the collection. Default: 0.55.'),
+    ];
+
+    $form['scoring']['specificity_cooccurrence'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Co-occurrence agreement bonus'),
+      '#default_value' => $config->get('scoring.specificity_cooccurrence') ?? 0.9,
+      '#step' => 'any',
+      '#min' => 0,
+      '#max' => 5,
+      '#description' => $this->t('Scales the bonus a result earns for agreeing with several query and expansion terms at once, rather than matching one term strongly. A page that is on-topic across the whole query usually answers it better than one that spikes on a single rare word. Default: 0.9. Set to 0 to score each result purely by its single best-matching sub-query.'),
+    ];
+
+    $form['scoring']['specificity_agreement_gate'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Co-occurrence agreement gate'),
+      '#default_value' => $config->get('scoring.specificity_agreement_gate') ?? 0.45,
+      '#step' => 'any',
+      '#min' => 0,
+      '#max' => 1,
+      '#description' => $this->t('Specificity a term must clear before it counts toward the agreement bonus. Terms below the gate are too common for their presence to be evidence of topical agreement, so they are excluded rather than inflating the count. Default: 0.45.'),
+    ];
+
+    $form['scoring']['specificity_agreement_decay'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Co-occurrence agreement decay'),
+      '#default_value' => $config->get('scoring.specificity_agreement_decay') ?? 1.0,
+      '#step' => 'any',
+      '#min' => 0,
+      '#max' => 5,
+      '#description' => $this->t('Geometric factor applied to each successive agreeing term, so the second is worth this fraction of the first and so on. Values below 1 make the bonus saturate, which keeps a long page matching many mid-specificity terms from overtaking a focused page matching a genuinely rare one. Default: 1.0 (every agreeing term weighted equally).'),
+    ];
+
     $form['scoring']['expansion_combine_mode'] = [
       '#type' => 'select',
       '#title' => $this->t('Expansion combine mode'),
@@ -1237,6 +1294,12 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('scoring.expand_primary_weight', (float) $form_state->getValue('expand_primary_weight'))
       ->set('scoring.cross_list_bonus', (float) $form_state->getValue('cross_list_bonus'))
       ->set('scoring.expand_subword_max_frequency', (float) $form_state->getValue('expand_subword_max_frequency'))
+      ->set('scoring.specificity_weighting', (bool) $form_state->getValue('specificity_weighting'))
+      ->set('scoring.specificity_floor', (float) $form_state->getValue('specificity_floor'))
+      ->set('scoring.specificity_strong_match', (float) $form_state->getValue('specificity_strong_match'))
+      ->set('scoring.specificity_cooccurrence', (float) $form_state->getValue('specificity_cooccurrence'))
+      ->set('scoring.specificity_agreement_gate', (float) $form_state->getValue('specificity_agreement_gate'))
+      ->set('scoring.specificity_agreement_decay', (float) $form_state->getValue('specificity_agreement_decay'))
       ->set('scoring.expansion_combine_mode', in_array($form_state->getValue('expansion_combine_mode'), [
         'relevance_union', 'round_robin',
       ], TRUE) ? $form_state->getValue('expansion_combine_mode') : 'relevance_union')

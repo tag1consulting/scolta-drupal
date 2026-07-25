@@ -29,6 +29,12 @@ scoring:
   expand_primary_weight: 0.5
   cross_list_bonus: 0.05
   expand_subword_max_frequency: 0.05
+  specificity_weighting: true
+  specificity_floor: 0.15
+  specificity_strong_match: 0.55
+  specificity_cooccurrence: 0.9
+  specificity_agreement_gate: 0.45
+  specificity_agreement_decay: 1.0
   expansion_combine_mode: relevance_union
   exact_title_match_boost: 5.0
   phrase_adjacent_multiplier: 2.5
