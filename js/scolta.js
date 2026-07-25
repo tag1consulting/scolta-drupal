@@ -283,6 +283,11 @@
   let cachedPagefindPageCount = null; // total indexed pages across languages — from pagefind-entry.json
   let preloadTimer = null;           // trailing-debounce handle for schedulePreload()
   let lastPreloadedTerm = '';        // last term handed to pagefind.preload(); skips repeat work
+  // Per-search-cycle memo of in-flight Pagefind searches, keyed by
+  // searchMemoKey(). Cleared at the top of every doSearch() — see the comment
+  // above pagefindSearch() for why identical searches within one cycle are both
+  // safe to share and expensive to repeat.
+  let searchMemo = new Map();
 
   // Detect default language filter from instanceConfig.currentLanguage or <html lang>.
   // Applied on every fresh search unless the URL already specifies f_language.
@@ -1255,6 +1260,50 @@
 
   // --- Pagefind search helper ---
 
+  // Stable key for a resolved Pagefind search: the query plus the options that
+  // actually go to pagefind.search(). Keyed on the RESOLVED options, not the
+  // caller's `filters` argument, so two callers that express the same scope in
+  // different shapes (a one-value Set vs. the scalar it resolves to) share a
+  // key — and, just as importantly, two callers whose scope genuinely DIFFERS
+  // never do. Dimension keys and value arrays are sorted so key equality is
+  // insertion-order independent; the sort hint is part of the key because a
+  // sorted search returns a different result order.
+  function searchMemoKey(query, searchOpts) {
+    const filters = searchOpts.filters || null;
+    const filterKey = filters
+      ? Object.keys(filters).sort().map(dim => {
+          const v = filters[dim];
+          const vals = (v && typeof v === 'object' && Array.isArray(v.any)) ? [...v.any] : [v];
+          return dim + '=' + vals.map(String).sort().join(',');
+        }).join('&')
+      : '';
+    const sort = searchOpts.sort
+      ? Object.keys(searchOpts.sort).sort().map(f => f + ':' + searchOpts.sort[f]).join(',')
+      : '';
+    return JSON.stringify([query, filterKey, sort]);
+  }
+
+  // Run a Pagefind search, memoized for the duration of one search cycle.
+  //
+  // Why memoize: on a production-size index, once pagefind.filters() has loaded
+  // the filter chunks every pagefind.search() also computes per-value counts
+  // across every distinct filter value, which costs roughly 1.45 ms per matched
+  // result (measured: 7,789 results -> 115 ms before filters() had run, 11,255 ms
+  // after). Scolta issues the same search twice per cycle in the common case:
+  // computeQueryFacetCounts() searches the typed query under structural-only
+  // filters, which is byte-identical to the primary search whenever the user has
+  // applied no non-structural facet, and on the OR-fallback path
+  // computeUnionFacetCounts() repeats every per-term search the result path just
+  // ran. Within a single cycle the index is immutable, so an identical search
+  // must return identical results and sharing one is free.
+  //
+  // The memo holds the PROMISE, not the awaited value, so two concurrent callers
+  // with the same key share one in-flight search instead of racing. It is cleared
+  // at the top of every doSearch() cycle, so no result is ever reused across
+  // cycles. A search whose resolved filters differ still misses and runs: that is
+  // the correctness boundary, because structuralFilters drops the user's facet
+  // selections and collapsing it into the primary search would silently change
+  // the facet counts.
   async function pagefindSearch(query, filters, sortHint) {
     const searchOpts = {};
     if (filters && typeof filters === 'object') {
@@ -1272,7 +1321,12 @@
     if (sortHint && sortHint.field && sortHint.direction) {
       searchOpts.sort = { [sortHint.field]: sortHint.direction };
     }
-    return pagefind.search(query, searchOpts);
+    const key = searchMemoKey(query, searchOpts);
+    const memoized = searchMemo.get(key);
+    if (memoized) return memoized;
+    const search = pagefind.search(query, searchOpts);
+    searchMemo.set(key, search);
+    return search;
   }
 
   // Warm the alphabetical index chunk(s) for the term being typed, so the
@@ -2583,6 +2637,9 @@
     hadSpecificMatch = false;
     conversationMessages = [];
     followUpCount = 0;
+    // Fresh cycle, fresh memo: identical searches are shared WITHIN a cycle
+    // only, so a count from an earlier query can never leak into this one.
+    searchMemo = new Map();
     if (!preserveFilters) {
       var effectiveFilters = initialFilters ? Object.assign({}, initialFilters) : {};
       if (!effectiveFilters.language && defaultLangCode && CONFIG.AUTO_LANGUAGE_FILTER) {
@@ -2698,16 +2755,41 @@
       }
     }
 
+    // Paint the results BEFORE computing facet counts. The count pass below is a
+    // second full Pagefind search, and on a production-size index that is the
+    // dominant cost of the whole cycle (measured: results ready at 24,558 ms,
+    // first paint at 35,626 ms — the user waited 11 seconds for numbers in the
+    // filter panel while the list they asked for sat finished in memory).
+    //
+    // The filter panel is deliberately NOT repainted in the gap. renderFilters()
+    // is count-driven — under the default hideEmptyFacets policy a zero-count
+    // value is hidden entirely — so rendering it against counts that have not
+    // been updated yet would show the PREVIOUS query's visible value set and then
+    // reshuffle when the real counts land. Holding the last painted panel until
+    // then introduces no new visual state: it never flashes empty, and on the
+    // first search of a page load the panel simply appears when the counts
+    // arrive, exactly as it did before this reorder.
+    renderResults();
+
     // Counts are a fixed property of the typed query: compute them once, only
     // when the typed query changes (!preserveFilters). A facet toggle, sort, or
     // load-more (preserveFilters === true) reuses the stored counts so the panel
     // numbers never move on click.
     if (!preserveFilters) {
-      queryFacetCounts = await computeQueryFacetCounts(searchQuery, activeFilters, meaningfulTerms, isForcedPhrase);
+      const counts = await computeQueryFacetCounts(searchQuery, activeFilters, meaningfulTerms, isForcedPhrase);
+      // The count pass is async, so a newer doSearch() may have superseded this
+      // cycle while it ran. Late counts from an abandoned query must neither
+      // overwrite the current ones nor repaint the panel.
+      if (version !== searchVersion) {
+        debugLog('[scolta:search] Discarding stale facet counts (version', version, 'vs current', searchVersion, ')');
+      } else {
+        queryFacetCounts = counts;
+        renderFilters();
+      }
+    } else {
+      // Nothing to wait for: preserveFilters reuses the stored counts.
+      renderFilters();
     }
-
-    renderFilters();
-    renderResults();
 
     // Phase 2+3: Expand, merge, then summarize with the final reordered results.
     // Summarize is intentionally deferred until after expansion so the AI sees
