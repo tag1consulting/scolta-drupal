@@ -21,6 +21,10 @@
  *                                            When set, search results are pre-filtered to this language.
  *                                            URL filter params (f_language=...) take precedence.
  *                                            Falls back to <html lang> detection when omitted.
+ *   hideEmptyFacets: true                  — Optional (default true): hide facet values whose count is
+ *                                            zero for the current query (and their now-empty groups).
+ *                                            Set false to render zero-count values as disabled (0) rows.
+ *                                            An active value stays visible even at zero either way.
  *
  * Entry point: Scolta.init(containerSelector)
  *
@@ -2854,6 +2858,19 @@
     }
 
     els.layout.classList.add("has-filters");
+    // hideEmptyFacets (top-level instance config, default true) governs the
+    // zero-count policy. Default: a value matching none of this query's results
+    // is hidden, and a dimension whose values are all hidden drops its whole
+    // group — mainstream faceted-search UX, and the reason the social feed's tag
+    // dimension (hundreds of hashtags, all but a few zero for any query) no
+    // longer buries the useful values under dead ones. Opt-out (set false to
+    // restore the prior behavior): every taxonomy value is rendered, a zero-
+    // count one as a disabled (0) checkbox, so the value list stays positionally
+    // fixed. Under either policy an active value is always visible and
+    // uncheckable even at zero, so the user can remove it. The value list is
+    // sorted alphabetically (never by count) and counts are fixed per typed
+    // query, so ordering and the visible set stay stable across facet clicks.
+    const hideEmptyFacets = !(instanceConfig && instanceConfig.hideEmptyFacets === false);
     let html = "";
     for (const dim of dims) {
       const dimFilters = activeFilters[dim] || new Set();
@@ -2868,24 +2885,22 @@
       for (const val of vals) {
         const count = dimCounts[val] ?? 0;
         const isActive = dimFilters.has(val);
-        // Hide zero-count values (unless currently active): a value that matches
-        // none of this query's results is not a useful facet, and rendering it
-        // buries the useful ones — the social feed's tag dimension has hundreds
-        // of hashtags, all but a few zero for any query, and showing them all
-        // made the sidebar unreadable. An active value must always remain
-        // visible and uncheckable even at zero. Counts are fixed per typed
-        // query, so the visible set is stable across facet clicks.
-        if (count === 0 && !isActive) continue;
+        const isEmpty = count === 0 && !isActive;
+        // Skip the value entirely under the default policy; under the opt-out,
+        // fall through and render it disabled with its (0) count.
+        if (isEmpty && hideEmptyFacets) continue;
         const checked = isActive ? "checked" : "";
         const activeClass = isActive ? " active" : "";
+        const disabled = isEmpty ? " disabled" : "";
         itemsHtml += `<label class="scolta-filter-item${activeClass}">
-          <input type="checkbox" value="${escapeAttr(val)}" ${checked}
+          <input type="checkbox" value="${escapeAttr(val)}" ${checked}${disabled}
                  data-scolta-filter-dim="${escapeAttr(dim)}" data-scolta-filter-val="${escapeAttr(val)}">
           ${escapeHtml(filterDisplayValue(dim, val))} <span class="scolta-filter-count">(${count})</span>
         </label>`;
       }
-      // Skip a dimension whose values are all zero for this query — an empty
-      // group is just a dangling header.
+      // Skip a dimension whose values are all hidden for this query — an empty
+      // group is just a dangling header. Under the opt-out itemsHtml is never
+      // empty, so every dimension with values keeps its group.
       if (itemsHtml === "") continue;
       html += `<div class="scolta-filter-group"><h3>${escapeHtml(filterDimLabel(dim))}</h3>${itemsHtml}</div>`;
     }

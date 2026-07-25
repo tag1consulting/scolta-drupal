@@ -134,6 +134,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       'wasmPath' => $wasmPath,
       'siteName' => $config->siteName ?: $this->configFactory->get('system.site')->get('name'),
       'filterFieldDescriptions' => $config->filterFieldDescriptions,
+      'hideEmptyFacets' => $config->hideEmptyFacets,
       'container' => '#scolta-search',
       'allowedLinkDomains' => [],
       'disclaimer' => '',

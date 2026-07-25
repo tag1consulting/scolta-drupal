@@ -223,6 +223,9 @@ scolta.settings:
     show_attribution:
       type: boolean
       label: 'Show Scolta attribution on search page'
+    hide_empty_facets:
+      type: boolean
+      label: 'Hide facet values with zero results for the current query'
     pagefind:
       type: mapping
       label: 'Pagefind configuration'
