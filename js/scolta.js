@@ -389,6 +389,296 @@
     }
   }
 
+  // --- Scolta facet index ---
+  //
+  // Scolta needs exactly two things from Pagefind's filter feature: the values
+  // of each dimension with their corpus-wide totals, and per-query counts. Both
+  // come from `scolta.facets`, an artifact the index build emits, and reading it
+  // means no `.pf_filter` chunk is ever fetched.
+  //
+  // Why it is worth an artifact: Pagefind's get_filters counts by scanning the
+  // matched-result set linearly for every (value, page) posting in every LOADED
+  // filter chunk, and it runs twice per search. So the moment any chunk is
+  // loaded, every later search costs `matched results x loaded postings` — and
+  // there is no unload path short of pagefind.destroy(). Measured on a
+  // 109,308-page corpus (3,208,134 postings across ten dimensions), a query
+  // matching 7,789 results took 155 ms with no chunk loaded and 18,589 ms with
+  // all ten loaded. The cost tracks postings, not distinct values: a 19-value
+  // dimension carrying 491,074 postings cost 2,859 ms, while a 55-value
+  // dimension carrying 6,468 postings cost 104 ms, and collapsing a 3,421-value
+  // dimension to 4 values while keeping every posting changed nothing
+  // (10,151 ms to 10,178 ms). Doing the same counting here against the same
+  // matched set takes about 4 ms.
+  //
+  // Two consequences for the code below. Counts must be computed over the FULL
+  // matched set, not the ~75 fragments Scolta loads, or facet counts would move.
+  // And filter application has to move too, not just counting: passing anything
+  // in searchOpts.filters makes Pagefind lazily fetch that dimension's chunk,
+  // after which every subsequent search pays the per-result cost for the life of
+  // the page.
+  //
+  // Wire format, whole file gzipped:
+  //   <json header>\n
+  //   <one fragment hash per line, pageCount lines>
+  //   <posting bodies, dimension order then value order from the header>
+  // Each body is self-delimiting: tag 0x00 is a varint count then that many
+  // varint deltas of ascending page indices, tag 0x01 is a ceil(pageCount / 8)
+  // byte bitmap. The header carries every value's total, so the facet panel's
+  // value list needs no posting decode at all.
+  let facetIndex = null;
+  // pf_meta hash of the index actually loaded, read from the cache-busted
+  // pagefind-entry.json, and whether a secondary language index was merged in.
+  let facetIndexExpectedHash = null;
+  let facetIndexMergedLanguages = false;
+
+  // Resolve the directory the index files live in, from the pagefind.js path.
+  function facetIndexBase(pagefindPath) {
+    return String(pagefindPath || '').replace(/pagefind\.js(\?.*)?$/, '');
+  }
+
+  async function gunzipToBytes(buffer) {
+    const bytes = new Uint8Array(buffer);
+    // A server may or may not have applied transport compression of its own. The
+    // header is JSON, so an opening brace means the bytes arrived decompressed.
+    if (bytes[0] === 0x7b) return bytes;
+    if (typeof DecompressionStream !== 'function') {
+      throw new Error('DecompressionStream unavailable');
+    }
+    const stream = new Response(bytes).body.pipeThrough(new DecompressionStream('gzip'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  function readVarint(state) {
+    let value = 0;
+    let shift = 1;
+    for (;;) {
+      const byte = state.bytes[state.off++];
+      if (byte === undefined) throw new Error('facet index truncated');
+      value += (byte & 0x7f) * shift;
+      if (byte < 0x80) return value;
+      shift *= 128;
+    }
+  }
+
+  function parseFacetIndex(bytes) {
+    // One decoder for the whole parse: the id table is one entry per page, and
+    // allocating a TextDecoder per line dominated the decode on a large corpus.
+    const decoder = new TextDecoder();
+    const newline = bytes.indexOf(10);
+    if (newline < 0) throw new Error('facet index has no header');
+    const header = JSON.parse(decoder.decode(bytes.subarray(0, newline)));
+    if (header.format !== 'scolta-facets') {
+      throw new Error('unexpected format ' + header.format);
+    }
+    if (header.version !== 1) {
+      throw new Error('unsupported facet index version ' + header.version);
+    }
+
+    // The id table: pageCount newline-separated fragment hashes. Page index is
+    // the line number, and that is the numbering the posting lists refer to.
+    let off = newline + 1;
+    const pageOf = new Map();
+    for (let i = 0; i < header.pageCount; i++) {
+      const end = bytes.indexOf(10, off);
+      if (end < 0) throw new Error('facet index id table truncated');
+      pageOf.set(decoder.decode(bytes.subarray(off, end)), i);
+      off = end + 1;
+    }
+
+    const bitmapBytes = (header.pageCount + 7) >> 3;
+    const state = { bytes: bytes, off: off };
+    const postings = {};
+    for (const dim of header.dimensions) {
+      const values = header.values[dim] || [];
+      const decoded = [];
+      for (let v = 0; v < values.length; v++) {
+        const tag = state.bytes[state.off++];
+        if (tag === 1) {
+          decoded.push({
+            value: values[v][0],
+            bitmap: state.bytes.subarray(state.off, state.off + bitmapBytes),
+          });
+          state.off += bitmapBytes;
+        } else if (tag === 0) {
+          const count = readVarint(state);
+          const pages = new Int32Array(count);
+          let prev = 0;
+          for (let i = 0; i < count; i++) {
+            prev += readVarint(state);
+            pages[i] = prev;
+          }
+          decoded.push({ value: values[v][0], pages: pages });
+        } else {
+          throw new Error('facet index has unknown posting tag ' + tag);
+        }
+      }
+      postings[dim] = decoded;
+    }
+
+    return {
+      indexHash: header.indexHash || '',
+      pageCount: header.pageCount,
+      dimensions: header.dimensions,
+      values: header.values,
+      pageOf: pageOf,
+      postings: postings,
+      mask: new Uint8Array(header.pageCount),
+    };
+  }
+
+  async function loadFacetIndex(basePath) {
+    if (typeof fetch !== 'function') throw new Error('fetch unavailable');
+    const url = basePath + 'scolta.facets';
+    const resp = await fetch(url);
+    if (!resp || !resp.ok) throw new Error('HTTP ' + (resp && resp.status));
+    return parseFacetIndex(await gunzipToBytes(await resp.arrayBuffer()));
+  }
+
+  // The value list plus corpus-wide totals — byte for byte what
+  // pagefind.filters() returned, since Pagefind reports posting-list lengths.
+  function facetIndexTotals(index) {
+    const totals = {};
+    for (const dim of index.dimensions) {
+      const map = {};
+      for (const [value, total] of (index.values[dim] || [])) map[value] = total;
+      totals[dim] = map;
+    }
+    return totals;
+  }
+
+  // Page indices of a result list, skipping ids the index does not know (an
+  // index older than the artifact, or a merged secondary language index).
+  function facetPageIndices(index, results) {
+    const pages = [];
+    for (const r of (results || [])) {
+      const p = index.pageOf.get(r.id);
+      if (p !== undefined) pages.push(p);
+    }
+    return pages;
+  }
+
+  function postingHasPage(posting, page) {
+    if (posting.bitmap) return (posting.bitmap[page >> 3] & (1 << (page & 7))) !== 0;
+    const pages = posting.pages;
+    let lo = 0;
+    let hi = pages.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const v = pages[mid];
+      if (v === page) return true;
+      if (v < page) lo = mid + 1; else hi = mid - 1;
+    }
+    return false;
+  }
+
+  // Per-value counts over the full matched set — the replacement for
+  // search.filters. Every value is reported, including at zero, exactly as
+  // Pagefind reported it.
+  function facetCountsFor(index, results) {
+    const pages = facetPageIndices(index, results);
+    const mask = index.mask;
+    mask.fill(0);
+    for (let i = 0; i < pages.length; i++) mask[pages[i]] = 1;
+    const counts = {};
+    for (const dim of index.dimensions) {
+      const dimCounts = {};
+      for (const posting of index.postings[dim]) {
+        let n = 0;
+        if (posting.bitmap) {
+          // Walk the smaller side: the matched set, testing the bitmap.
+          const bitmap = posting.bitmap;
+          for (let i = 0; i < pages.length; i++) {
+            const p = pages[i];
+            if (bitmap[p >> 3] & (1 << (p & 7))) n++;
+          }
+        } else {
+          const list = posting.pages;
+          for (let i = 0; i < list.length; i++) if (mask[list[i]]) n++;
+        }
+        dimCounts[posting.value] = n;
+      }
+      counts[dim] = dimCounts;
+    }
+    return counts;
+  }
+
+  // Apply the user's facet selection: OR within a dimension, AND across
+  // dimensions — the same semantics Pagefind applies, just without handing it a
+  // filter object and triggering a chunk load.
+  function applyFacetFilters(index, results, filters) {
+    if (!filters || typeof filters !== 'object') return results;
+    const active = [];
+    for (const [dim, vals] of Object.entries(filters)) {
+      const selected = vals instanceof Set ? [...vals]
+        : Array.isArray(vals) ? vals
+          : (vals === undefined || vals === null || vals === '') ? [] : [vals];
+      if (selected.length === 0) continue;
+      // An unknown dimension matches nothing, which is what Pagefind does with
+      // a filter it has no index for. A stale saved facet must not silently
+      // widen the result set.
+      const dimPostings = index.postings[dim] || [];
+      const chosen = dimPostings.filter(p => selected.indexOf(p.value) !== -1);
+      active.push(chosen);
+    }
+    if (active.length === 0) return results;
+    return (results || []).filter(r => {
+      const page = index.pageOf.get(r.id);
+      // An id the artifact does not describe cannot be evaluated. The merge
+      // guard and the index-hash check make that unreachable in practice; if it
+      // happens anyway, keep the result. Admitting one result the facet should
+      // have hidden is a smaller failure than silently dropping results the user
+      // searched for.
+      if (page === undefined) return true;
+      for (const chosen of active) {
+        let hit = false;
+        for (const posting of chosen) {
+          if (postingHasPage(posting, page)) { hit = true; break; }
+        }
+        if (!hit) return false;
+      }
+      return true;
+    });
+  }
+
+  // Load the facet taxonomy. The artifact is the fast path; an index built
+  // before it existed has none, and then Pagefind's own filters() is used so
+  // facets keep working — slowly — rather than disappearing.
+  async function loadFacetTaxonomy(pagefindPath) {
+    try {
+      // pagefind.mergeIndex() adds a second language index whose result ids the
+      // artifact does not describe, and there is one artifact per built index.
+      // Counting or filtering a merged corpus against it would be wrong in a way
+      // the user would see, so the slow path is the correct path there.
+      if (facetIndexMergedLanguages) {
+        throw new Error('a secondary language index was merged in');
+      }
+      facetIndex = await loadFacetIndex(facetIndexBase(pagefindPath));
+      if (facetIndexExpectedHash && facetIndex.indexHash
+          && facetIndex.indexHash !== facetIndexExpectedHash) {
+        throw new Error('artifact was built against index ' + facetIndex.indexHash
+          + ' but the loaded index is ' + facetIndexExpectedHash + ' (stale cached artifact)');
+      }
+      cachedPagefindFilters = facetIndexTotals(facetIndex);
+      debugLog('[scolta] Scolta facet index loaded:', facetIndex.dimensions.join(', '),
+        '(' + facetIndex.pageCount + ' pages)');
+      return;
+    } catch (e) {
+      facetIndex = null;
+      console.warn(
+        '[scolta] No Scolta facet index at ' + facetIndexBase(pagefindPath) + 'scolta.facets ('
+        + (e && e.message ? e.message : e) + '). Falling back to pagefind.filters(), which loads '
+        + 'every filter chunk and makes each subsequent search cost time proportional to matched '
+        + 'results times filter postings. Rebuild the search index to emit the facet index.',
+      );
+    }
+    try {
+      cachedPagefindFilters = await pagefind.filters();
+      debugLog('[scolta] Pagefind filters cached:', Object.keys(cachedPagefindFilters));
+    } catch (e) {
+      console.warn('[scolta] Failed to cache Pagefind filters:', e.message);
+    }
+  }
+
   // Initialize Pagefind and preload the WASM index.
   async function initPagefind() {
     const pagefindPath = (instanceConfig && instanceConfig.pagefindPath) || '/pagefind/pagefind.js';
@@ -399,10 +689,11 @@
       try {
         pagefindBase = base.startsWith('http') ? new URL(base).pathname : base;
       } catch (_) { pagefindBase = base; }
-      if (!cachedPagefindFilters) {
-        try {
-          cachedPagefindFilters = await pagefind.filters();
-        } catch (_) { /* ignore — filters are optional */ }
+      // Re-entry against an instance a previous init() already created (a second
+      // container on the page, or a re-mount). The taxonomy is module state, so
+      // it is only loaded when it is not already in hand.
+      if (!cachedPagefindFilters && !facetIndex) {
+        await loadFacetTaxonomy(pagefindPath);
       }
       return;
     }
@@ -445,10 +736,17 @@
       }
       const primaryLang = (document.querySelector('html')?.getAttribute('lang') || 'en')
         .toLowerCase().split('-')[0];
+      // The facet index is stamped with the pf_meta hash it was built against.
+      // This entry file is cache-busted, so it is the trustworthy statement of
+      // which index the browser is actually using.
+      const primaryEntry = (entry.languages || {})[primaryLang]
+        || Object.values(entry.languages || {})[0];
+      facetIndexExpectedHash = (primaryEntry && primaryEntry.hash) || null;
       const absoluteBase = new URL(basePath, window.location.href).href;
       for (const lang of Object.keys(entry.languages || {})) {
         if (lang !== primaryLang) {
           await pagefind.mergeIndex(absoluteBase, { language: lang });
+          facetIndexMergedLanguages = true;
         }
       }
     } catch (e) {
@@ -458,12 +756,7 @@
     // Warm the index: triggers WASM compilation + fragment download.
     await pagefind.search("");
 
-    try {
-      cachedPagefindFilters = await pagefind.filters();
-      debugLog('[scolta] Pagefind filters cached:', Object.keys(cachedPagefindFilters));
-    } catch (e) {
-      console.warn('[scolta] Failed to cache Pagefind filters:', e.message);
-    }
+    await loadFacetTaxonomy(pagefindPath);
 
     debugLog("[scolta] Pagefind index preloaded");
   }
@@ -1304,9 +1597,20 @@
   // the correctness boundary, because structuralFilters drops the user's facet
   // selections and collapsing it into the primary search would silently change
   // the facet counts.
+  // When the facet index is present NOTHING is ever put in searchOpts.filters:
+  // naming a dimension there makes Pagefind's browser client lazily fetch that
+  // dimension's chunk before running the search, and from then on get_filters
+  // iterates it on every subsequent search for the life of the page. So the
+  // first facet click would reintroduce the whole cost the artifact exists to
+  // remove. Scolta applies the selection itself instead, against the artifact,
+  // before the result list is sliced and fragments are loaded.
+  //
+  // A useful side effect: with filters out of the search options, the same query
+  // under different facet selections is ONE Pagefind search, shared through the
+  // memo, and only the cheap post-filter differs.
   async function pagefindSearch(query, filters, sortHint) {
     const searchOpts = {};
-    if (filters && typeof filters === 'object') {
+    if (!facetIndex && filters && typeof filters === 'object') {
       const pagefindFilters = {};
       for (const [dim, vals] of Object.entries(filters)) {
         if (vals instanceof Set && vals.size > 0) {
@@ -1322,11 +1626,32 @@
       searchOpts.sort = { [sortHint.field]: sortHint.direction };
     }
     const key = searchMemoKey(query, searchOpts);
-    const memoized = searchMemo.get(key);
-    if (memoized) return memoized;
-    const search = pagefind.search(query, searchOpts);
-    searchMemo.set(key, search);
-    return search;
+    let search = searchMemo.get(key);
+    if (!search) {
+      search = pagefind.search(query, searchOpts);
+      searchMemo.set(key, search);
+    }
+    if (!facetIndex) return search;
+
+    const raw = await search;
+    const index = facetIndex;
+    const results = applyFacetFilters(index, raw.results, filters);
+    let counts = null;
+    const out = Object.assign({}, raw, { results: results });
+    // Defined separately, and deliberately NOT passed through Object.assign:
+    // Object.assign copies an accessor property by READING it, so a getter in
+    // one of its sources fires immediately and lands as a plain value. That
+    // would run the count over the full matched set on every single search,
+    // including the warm-up and preload ones that never look at it.
+    Object.defineProperty(out, 'filters', {
+      enumerable: true,
+      configurable: true,
+      get() {
+        if (counts === null) counts = facetCountsFor(index, results);
+        return counts;
+      },
+    });
+    return out;
   }
 
   // Warm the alphabetical index chunk(s) for the term being typed, so the
@@ -1339,8 +1664,11 @@
   // searchVersion staleness guards that protect the multi-phase pipeline
   // (expand → merge → summarize → follow-up).
   //
-  // No filters are passed: initPagefind() already calls pagefind.filters(),
-  // which loads every filter chunk, so filters here would only duplicate work.
+  // No filters are passed, and that is load-bearing rather than an optimization:
+  // naming a dimension in a search's filter object makes Pagefind fetch that
+  // dimension's filter chunk, and once a chunk is loaded every later search pays
+  // a per-matched-result counting cost that nothing can unload. Scolta applies
+  // facets itself against the facet index, so a warm-up never needs them.
   function schedulePreload(raw) {
     if (preloadTimer) {
       clearTimeout(preloadTimer);
