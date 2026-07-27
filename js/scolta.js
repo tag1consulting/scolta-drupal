@@ -253,6 +253,20 @@
   // so every createInstance() call shares it without re-calling init().
   let pagefindInstance = null;
 
+  // Platform-supplied result renderer, registered through
+  // Scolta.setResultRenderer(). Module-scoped rather than per-instance so
+  // registration works before any instance exists — the common case, since a
+  // platform registers on script load and Scolta.init() runs on DOMContentLoaded.
+  // An instance that registers its own (instance.setResultRenderer) overrides it.
+  //
+  // Deliberately a registration function and NOT a config key: a function cannot
+  // survive the PHP → ScoltaConfig::toBrowserConfig() → drupalSettings → JSON
+  // round trip, and a browser config key that no PHP layer emits would need a
+  // BrowserConfigParityTest::REVERSE_ALLOWLIST entry with a written
+  // justification. Registration keeps the config surface untouched. Do not
+  // "simplify" this into a config key.
+  let globalResultRenderer = null;
+
   function createInstance(containerSelector, instanceConfig) {
 
   // --- Instance state (local to this closure) ---
@@ -305,6 +319,17 @@
 
   // --- DOM references (set during init) ---
   let els = {};
+  let rootEl = null;                    // mount point; lifecycle events bubble through it
+  let scaffoldNodes = [];               // exactly the nodes init() inserted — destroy() removes these and nothing else
+  let instanceResultRenderer = null;    // per-instance override of globalResultRenderer
+  // What is currently painted in #scolta-results, in DOM order:
+  // [{ key, nodes: [Node, ...] }]. Drives the keyed reconcile in renderResults()
+  // so a repaint that changes nothing moves no nodes.
+  let paintedEntries = [];
+  // Highlight terms the painted built-in cards were built with. Expansion grows
+  // allHighlightTerms, so a card painted before it carries stale <mark> spans and
+  // must be rebuilt even when its position and identity are unchanged.
+  let paintedHighlightSignature = null;
 
   // Instance-specific config readers that use the provided config object.
   function getInstanceConfig() {
@@ -2941,7 +2966,12 @@
     // expansion; only the result list and header count change.
     renderFilters();
 
-    renderResults(true);
+    // renderResults() reconciles the container by result identity, so when the
+    // expansion pass produces the same ordered list as the first paint this
+    // costs zero node churn: the header gains its "(with expanded terms)" label
+    // and every result node — with whatever a platform swapped into it — stays
+    // exactly where it is.
+    renderResults(true, 'expansion');
     debugLog(`[scolta:expand] ${sortOverride ? 'Native sort' : 'Merged'}: ${allScoredResults.length} results`);
   }
 
@@ -2997,7 +3027,11 @@
     }
 
     els.layout.style.display = "grid";
+    emitBeforeResults('loading');
     els.results.innerHTML = '<p class="scolta-searching">Searching...</p>';
+    paintedEntries = [];
+    paintedHighlightSignature = null;
+    emitResultsRendered([], [], [], false);
     els.resultsHeader.innerHTML = "";
     els.noResults.style.display = "none";
     els.aiSummary.style.display = "none";
@@ -3097,7 +3131,7 @@
     // then introduces no new visual state: it never flashes empty, and on the
     // first search of a page load the panel simply appears when the counts
     // arrive, exactly as it did before this reorder.
-    renderResults();
+    renderResults(false, 'search');
 
     // Counts are a fixed property of the typed query: compute them once, only
     // when the typed query changes (!preserveFilters). A facet toggle, sort, or
@@ -3187,7 +3221,7 @@
       // If mergeExpandedSearchResults returned early (no valid terms, no sort override),
       // it did not call renderResults(); show the final state now.
       if (allScoredResults.length === 0) {
-        renderResults();
+        renderResults(false, 'expansion');
       }
 
       renderSortIndicator(currentSortOverride);
@@ -3218,6 +3252,8 @@
     }
     allScoredResults = [];
     displayedCount = 0;
+    paintedEntries = [];
+    paintedHighlightSignature = null;
     conversationMessages = [];
     followUpCount = 0;
     activeFilters = {};
@@ -3242,6 +3278,88 @@
     els.queryInput.focus();
   }
 
+  // --- Result renderer registration ---
+  //
+  // Register a function that returns the markup for one result, replacing the
+  // built-in card. See the documented contract on Scolta.setResultRenderer()
+  // below; this is the per-instance form and takes precedence over the global
+  // one for this instance only. Pass null to go back to the built-in card.
+  function setResultRenderer(fn) {
+    if (fn !== null && fn !== undefined && typeof fn !== 'function') {
+      throw new TypeError('[scolta] setResultRenderer expects a function or null');
+    }
+    instanceResultRenderer = fn || null;
+    return instanceResultRenderer;
+  }
+
+  function activeResultRenderer() {
+    return instanceResultRenderer || globalResultRenderer;
+  }
+
+  // --- Render lifecycle events ---
+  //
+  // Scolta owns the search UI, so a platform that decorates result markup
+  // (server-rendered cards, a lazily swapped fragment, behaviours bound to a
+  // card) needs to know when that markup is about to be destroyed and when it
+  // has been rebuilt. These four events are that seam, and they are the only
+  // supported one. Nothing here knows about any particular host platform.
+  //
+  //   scolta:before-results-render  { container, reason }
+  //   scolta:results-rendered       { container, results, rendered, reused, appended, query }
+  //   scolta:before-filters-render  { container }
+  //   scolta:filters-rendered       { container }
+  //
+  // `container` is always the element being written and is identical to
+  // event.target. The events bubble, so one listener on the mount point or on
+  // document sees every render. They are deliberately NOT cancellable: a render
+  // a consumer could veto would make every state assumption downstream
+  // conditional, for a use case nobody has yet.
+  function emitLifecycle(target, name, detail) {
+    if (!target || typeof target.dispatchEvent !== 'function') return;
+    if (typeof global.CustomEvent !== 'function') return;
+    try {
+      target.dispatchEvent(new global.CustomEvent(name, {
+        bubbles: true,
+        cancelable: false,
+        detail: detail,
+      }));
+    } catch (e) {
+      // A broken listener must never take the render down with it.
+      console.warn('[scolta] lifecycle listener failed for', name, e);
+    }
+  }
+
+  function emitBeforeResults(reason) {
+    emitLifecycle(els.results, 'scolta:before-results-render', {
+      container: els.results,
+      reason: reason,
+    });
+  }
+
+  // `results` is everything in the DOM after this write, in DOM order.
+  // `rendered` is the slice this write produced. `reused` lists the results
+  // whose DOM node was carried over rather than rebuilt — a superset check on
+  // `appended` for consumers that initialise nodes once. `appended` is true only
+  // on the additive "show more" path.
+  function emitResultsRendered(results, rendered, reused, appended) {
+    emitLifecycle(els.results, 'scolta:results-rendered', {
+      container: els.results,
+      results: results,
+      rendered: rendered,
+      reused: reused,
+      appended: appended,
+      query: currentQuery,
+    });
+  }
+
+  function emitBeforeFilters() {
+    emitLifecycle(els.filters, 'scolta:before-filters-render', { container: els.filters });
+  }
+
+  function emitFiltersRendered() {
+    emitLifecycle(els.filters, 'scolta:filters-rendered', { container: els.filters });
+  }
+
   // --- Filter handling ---
 
   function renderFilters() {
@@ -3262,8 +3380,10 @@
     dims.sort((a, b) => filterDimLabel(a).localeCompare(filterDimLabel(b)));
 
     if (dims.length === 0) {
+      emitBeforeFilters();
       container.innerHTML = "";
       els.layout.classList.remove("has-filters");
+      emitFiltersRendered();
       return;
     }
 
@@ -3314,7 +3434,9 @@
       if (itemsHtml === "") continue;
       html += `<div class="scolta-filter-group"><h3>${escapeHtml(filterDimLabel(dim))}</h3>${itemsHtml}</div>`;
     }
+    emitBeforeFilters();
     container.innerHTML = html;
+    emitFiltersRendered();
   }
 
   async function toggleFilter(dimension, value) {
@@ -3352,8 +3474,95 @@
     return (lastSpace > maxLen * 0.8 ? truncated.substring(0, lastSpace) : truncated) + "\u2026";
   }
 
-  function renderResults(isExpanded) {
+  // Identity of a scored result for DOM reconciliation. deduplicateByTitle() has
+  // already collapsed near-duplicates by the time a list is painted, so the URL
+  // a card links to is unique within it; the title is the fallback for a
+  // fragment carrying no URL at all.
+  function resultKey(scored) {
+    const data = (scored && scored.data) || {};
+    const meta = data.meta || {};
+    return String(meta.url || data.url || meta.title || '');
+  }
+
+  // The built-in result card. Every value it interpolates arrives pre-escaped in
+  // `parts`, which is the same object handed to a platform renderer as `ctx` —
+  // so the markup below IS the reference implementation of the renderer
+  // contract, and a platform that wants the default look plus one extra element
+  // can reproduce it exactly without redoing any escaping.
+  function buildDefaultCard(parts) {
+    return `<div class="scolta-result-card">
+        <a class="scolta-result-title" href="${parts.safeUrl}" target="_blank" rel="noopener"
+           title="${parts.titleAttr}">${parts.titleHtml}</a>
+        <div class="scolta-result-meta">
+          ${parts.siteHtml ? `<span class="scolta-site-badge">${parts.siteHtml}</span>` : ""}
+          ${parts.dateHtml ? `<span class="scolta-result-date">${parts.dateHtml}</span>` : ""}
+        </div>
+        <a class="scolta-result-url" href="${parts.safeUrl}" target="_blank" rel="noopener">${parts.urlText}</a>
+        <div class="scolta-result-excerpt">${parts.excerptHtml}</div>
+      </div>`;
+  }
+
+  // Build the markup for one result: the registered platform renderer if there
+  // is one, the built-in card otherwise. A renderer that returns anything other
+  // than a string — null, undefined, a mistake — falls back to the built-in card
+  // for THAT result only, so a platform able to render some entity types and not
+  // others does not have to render any of them.
+  function buildResultHtml(scored, index, renderer, CONFIG) {
+    const data = scored.data;
+    const title = data.meta?.title || "Untitled";
+    const url = data.meta?.url || resolveUrl(data.url || '') || data.url || "#";
+    const site = data.meta?.site || "";
+    const date = data.meta?.date || "";
+    const excerpt = truncateExcerpt(data.excerpt || "", CONFIG.EXCERPT_LENGTH);
+    const safeTitle = escapeHtml(stripHtml(title));
+    const displayTitle = safeTitle.length > 90 ? safeTitle.substring(0, 87) + "\u2026" : safeTitle;
+
+    const parts = {
+      index: index,
+      // Raw user input, NOT html-escaped: it is here so a renderer can build a
+      // request URL or compare terms, not to be pasted into markup. Every value
+      // whose name ends in Html/Attr/Text, plus safeUrl, is already escaped
+      // exactly as the built-in card escapes it.
+      query: currentQuery,
+      highlightTerms: allHighlightTerms.slice(),
+      excerptHtml: highlightTerms(excerpt),
+      titleHtml: highlightTerms(displayTitle),
+      titleAttr: escapeAttr(stripHtml(title)),
+      // URLs come from index metadata; attribute-escaped and with non-http(s)
+      // schemes neutralized so a poisoned document can't plant a javascript: link.
+      safeUrl: sanitizeUrlAttr(url),
+      urlText: escapeHtml(url),
+      siteHtml: site ? escapeHtml(site) : "",
+      dateHtml: date ? escapeHtml(date) : "",
+      score: scored.score,
+    };
+
+    if (renderer) {
+      let out = null;
+      try {
+        out = renderer(data, parts);
+      } catch (e) {
+        console.warn('[scolta] result renderer threw; falling back to the built-in card', e);
+        out = null;
+      }
+      if (typeof out === 'string') return out;
+    }
+    return buildDefaultCard(parts);
+  }
+
+  // Parse one result's markup into detached nodes. <template> rather than a
+  // detached div because a platform renderer is free to return markup a div
+  // cannot host (a <tr>, say) and free to return more than one top-level node,
+  // so a result is a GROUP of nodes, not necessarily a single element.
+  function parseResultNodes(html) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    return Array.prototype.slice.call(tpl.content.childNodes);
+  }
+
+  function renderResults(isExpanded, renderReason) {
     isExpanded = isExpanded || false;
+    const reason = renderReason || 'search';
     const CONFIG = getInstanceConfig();
     const container = els.results;
     const header = els.resultsHeader;
@@ -3373,21 +3582,31 @@
         // expansion adds hits. The terminal state (results or "No results
         // found.") is rendered by the final renderResults() call after the
         // expand promise settles.
+        emitBeforeResults('loading');
         container.innerHTML = '<p class="scolta-searching">Searching…</p>';
+        paintedEntries = [];
+        paintedHighlightSignature = null;
         header.innerHTML = "";
         noResults.style.display = "none";
         loadMore.style.display = "none";
+        emitResultsRendered([], [], [], false);
         return;
       }
+      emitBeforeResults(reason);
       container.innerHTML = "";
+      paintedEntries = [];
+      paintedHighlightSignature = null;
       header.innerHTML = "";
       noResults.style.display = "block";
       loadMore.style.display = "none";
+      emitResultsRendered([], [], [], false);
       return;
     }
 
     noResults.style.display = "none";
-    const showing = Math.min(displayedCount + CONFIG.RESULTS_PER_PAGE, filtered.length);
+    const startIndex = displayedCount;
+    const appended = startIndex > 0;
+    const showing = Math.min(startIndex + CONFIG.RESULTS_PER_PAGE, filtered.length);
     const expandLabel = isExpanded ? ' (with expanded terms)' : '';
     const filterLabel = Object.keys(activeFilters).length > 0
       ? ' in ' + Object.entries(activeFilters)
@@ -3406,50 +3625,128 @@
     header.innerHTML = `<span>${filtered.length.toLocaleString()} ${resultNoun} for "${escapeHtml(displayQuery(currentQuery))}"${filterLabel}${expandLabel}${orFallbackLabel}</span>
                         <span>Showing ${showing}</span>`;
 
-    let html = "";
-    for (let i = displayedCount; i < showing; i++) {
-      const { data } = filtered[i];
-      const title = data.meta?.title || "Untitled";
-      const url = data.meta?.url || resolveUrl(data.url || '') || data.url || "#";
-      const site = data.meta?.site || "";
-      const date = data.meta?.date || "";
-      const excerpt = truncateExcerpt(data.excerpt || "", CONFIG.EXCERPT_LENGTH);
-      const highlighted = highlightTerms(excerpt);
+    const renderer = activeResultRenderer();
+    // Cheap identity of the current highlight set. Expansion grows
+    // allHighlightTerms, so a built-in card painted before it carries <mark>
+    // spans that no longer match the terms in play.
+    const highlightSignature = allHighlightTerms.join(' ');
 
-      const safeTitle = escapeHtml(stripHtml(title));
-      const displayTitle = safeTitle.length > 90 ? safeTitle.substring(0, 87) + "\u2026" : safeTitle;
-      // URLs come from index metadata; attribute-escape them and neutralize
-      // non-http(s) schemes so a poisoned document can't plant a
-      // javascript: link.
-      const safeUrl = sanitizeUrlAttr(url);
-
-      html += `<div class="scolta-result-card">
-        <a class="scolta-result-title" href="${safeUrl}" target="_blank" rel="noopener"
-           title="${escapeAttr(stripHtml(title))}">${highlightTerms(displayTitle)}</a>
-        <div class="scolta-result-meta">
-          ${site ? `<span class="scolta-site-badge">${escapeHtml(site)}</span>` : ""}
-          ${date ? `<span class="scolta-result-date">${escapeHtml(date)}</span>` : ""}
-        </div>
-        <a class="scolta-result-url" href="${safeUrl}" target="_blank" rel="noopener">${escapeHtml(url)}</a>
-        <div class="scolta-result-excerpt">${highlighted}</div>
-      </div>`;
+    if (appended) {
+      // "Show more" is strictly additive: existing nodes are never re-parsed,
+      // so a platform's already-initialised cards survive untouched. That is
+      // what `appended: true` on the event promises.
+      // Parse each result's markup on its own so the node-to-result grouping
+      // stays exact: a platform renderer may emit any number of top-level nodes,
+      // and the renderer is called exactly once per result either way.
+      const addedEntries = [];
+      for (let i = startIndex; i < showing; i++) {
+        addedEntries.push({
+          key: resultKey(filtered[i]),
+          nodes: parseResultNodes(buildResultHtml(filtered[i], i, renderer, CONFIG)),
+        });
+      }
+      emitBeforeResults('append');
+      const addFrag = document.createDocumentFragment();
+      for (const entry of addedEntries) {
+        for (const node of entry.nodes) addFrag.appendChild(node);
+      }
+      container.appendChild(addFrag);
+      paintedEntries = paintedEntries.concat(addedEntries);
+      paintedHighlightSignature = highlightSignature;
+      displayedCount = showing;
+      loadMore.style.display = (showing < filtered.length) ? "block" : "none";
+      emitResultsRendered(
+        filtered.slice(0, showing),
+        filtered.slice(startIndex, showing),
+        [],
+        true,
+      );
+      return;
     }
 
-    if (displayedCount === 0) {
-      container.innerHTML = html;
-    } else {
-      // Append without re-parsing existing DOM nodes (avoids tearing down
-      // and rebuilding all existing result cards on "show more").
-      container.insertAdjacentHTML('beforeend', html);
+    // Full repaint. Reconcile by result identity rather than blowing the
+    // container away: after AI query expansion resolves,
+    // mergeExpandedSearchResults() repaints from index 0, and on most queries
+    // the expansion pass returns the same results in the same order. Rebuilding
+    // every node there destroyed whatever a platform had lazily swapped in one
+    // to two seconds earlier and made it do the work over again — the entire
+    // reason this seam exists.
+    //
+    // A carried-over node keeps its markup. That is exactly right when a
+    // platform renderer owns it, and exactly wrong for the built-in card once
+    // the highlight terms have moved, so built-in cards are only reused while
+    // the highlight signature is unchanged (a facet toggle or sort change,
+    // where every card's content is genuinely identical).
+    const reusable = new Map();
+    if (renderer || highlightSignature === paintedHighlightSignature) {
+      for (const entry of paintedEntries) {
+        if (!entry.key || reusable.has(entry.key)) continue;
+        // A node the platform detached itself is not ours to move back.
+        if (!entry.nodes.length || entry.nodes.some(n => n.parentNode !== container)) continue;
+        reusable.set(entry.key, entry.nodes);
+      }
     }
+
+    const nextEntries = [];
+    const reusedResults = [];
+    for (let i = 0; i < showing; i++) {
+      const key = resultKey(filtered[i]);
+      const carried = key ? reusable.get(key) : undefined;
+      if (carried) {
+        reusable.delete(key);
+        nextEntries.push({ key: key, nodes: carried });
+        reusedResults.push(filtered[i]);
+      } else {
+        nextEntries.push({
+          key: key,
+          nodes: parseResultNodes(buildResultHtml(filtered[i], i, renderer, CONFIG)),
+        });
+      }
+    }
+
+    emitBeforeResults(reason);
+    // Sync the container in place, touching only what actually has to move. A
+    // node already sitting where it belongs is left completely alone — not
+    // detached and re-attached, which would restart CSS transitions, reload an
+    // iframe and fire disconnected/connectedCallback on a custom element, all
+    // for a list that did not change. When the expansion pass reorders nothing,
+    // this loop performs zero DOM mutations.
+    //
+    // insertBefore() on a node that is already in the document MOVES it: the
+    // browser does not clone or re-parse it, so listeners, lazily swapped server
+    // markup and any other platform state ride along through a genuine reorder.
+    let cursor = container.firstChild;
+    for (const entry of nextEntries) {
+      for (const node of entry.nodes) {
+        if (cursor === node) {
+          cursor = cursor.nextSibling;
+        } else {
+          container.insertBefore(node, cursor);
+        }
+      }
+    }
+    // Whatever the walk did not claim is leaving.
+    while (cursor) {
+      const leaving = cursor;
+      cursor = cursor.nextSibling;
+      container.removeChild(leaving);
+    }
+
+    paintedEntries = nextEntries;
+    paintedHighlightSignature = highlightSignature;
     displayedCount = showing;
-
     loadMore.style.display = (showing < filtered.length) ? "block" : "none";
+    emitResultsRendered(
+      filtered.slice(0, showing),
+      filtered.slice(startIndex, showing),
+      reusedResults,
+      false,
+    );
   }
 
   function showMore() {
     const terms = Array.isArray(lastExpandedTerms) ? lastExpandedTerms : lastExpandedTerms?.terms;
-    renderResults(terms && terms.length > 0);
+    renderResults(terms && terms.length > 0, 'append');
   }
 
   // ==========================================================================
@@ -3463,9 +3760,16 @@
       return;
     }
 
+    rootEl = root;
+
     // Build the search UI inside the container.
-    root.innerHTML = `
-      <div class="scolta-search-box">
+    //
+    // Every top-level node carries data-scolta-scaffold: it marks what this
+    // instance owns, so a re-init can remove its own previous UI (duplicate ids
+    // would be worse than useless) and destroy() can take out exactly that and
+    // nothing else.
+    const scaffoldHtml = `
+      <div class="scolta-search-box" data-scolta-scaffold>
         <div class="scolta-search-input-wrap">
           <input type="text" id="scolta-query" placeholder="Search..."
                  autofocus autocomplete="off">
@@ -3475,9 +3779,9 @@
         <button class="scolta-search-btn" id="scolta-search-btn">Search</button>
       </div>
 
-      <div id="scolta-expanded-terms" class="scolta-expanded-terms" style="display:none;"></div>
+      <div id="scolta-expanded-terms" class="scolta-expanded-terms" style="display:none;" data-scolta-scaffold></div>
 
-      <div class="scolta-layout" id="scolta-layout" style="display:none;">
+      <div class="scolta-layout" id="scolta-layout" style="display:none;" data-scolta-scaffold>
         <aside class="scolta-filters" id="scolta-filters"></aside>
         <div>
           <div id="scolta-ai-summary" style="display:none;"></div>
@@ -3489,11 +3793,47 @@
         </div>
       </div>
 
-      <div class="scolta-no-results" id="scolta-no-results" style="display:none;">
+      <div class="scolta-no-results" id="scolta-no-results" style="display:none;" data-scolta-scaffold>
         <p style="font-size:1.2rem;">No results found.</p>
         <p style="margin-top:0.5rem;">Try different keywords or clear your site filters.</p>
       </div>
     `;
+
+    // Non-destructive mount. init() used to run `root.innerHTML = scaffold`,
+    // which destroyed whatever the server had already rendered inside the mount
+    // point — and a platform bridge calling Scolta.init() directly bypasses
+    // autoInit()'s guard entirely, so any platform attempting server-side
+    // rendering into the container silently lost it. It is a trap for exactly
+    // the integration this render seam exists to support.
+    //
+    // Now: a previous Scolta scaffold in this container is removed, and
+    // everything else is left where it is with its node identity intact. The
+    // scaffold goes in at the top, so the search box still sits above whatever
+    // the platform put there.
+    //
+    // Opt out with data-scolta-replace on the mount element to get the old
+    // clear-everything behaviour back. That is a DOM attribute rather than a
+    // config key: markup decisions belong on the platform side of the seam, and
+    // it keeps the browser config surface — and BrowserConfigParityTest —
+    // untouched.
+    if (root.hasAttribute('data-scolta-replace')) {
+      root.innerHTML = '';
+    } else {
+      const stale = [];
+      for (let i = 0; i < root.children.length; i++) {
+        if (root.children[i].hasAttribute('data-scolta-scaffold')) stale.push(root.children[i]);
+      }
+      for (const node of stale) root.removeChild(node);
+    }
+
+    const scaffold = document.createElement('template');
+    scaffold.innerHTML = scaffoldHtml;
+    scaffoldNodes = Array.prototype.slice.call(scaffold.content.childNodes);
+    if (root.firstChild) {
+      root.insertBefore(scaffold.content, root.firstChild);
+    } else {
+      root.appendChild(scaffold.content);
+    }
 
     // Cache DOM references.
     els = {
@@ -3642,9 +3982,10 @@
 
   // Initialize the instance by building the UI inside the container.
   init(containerSelector);
-  // If init failed to find the container, root will be empty.
-  var root = document.querySelector(containerSelector || '#scolta-search');
-  if (!root || !root.hasChildNodes()) {
+  // If init failed to find the container it never cached any DOM reference.
+  // (The old check — root.hasChildNodes() — no longer distinguishes success from
+  // failure now that init() leaves pre-existing platform markup in place.)
+  if (!rootEl || !els.results) {
     return null;
   }
 
@@ -3657,9 +3998,18 @@
     doSearch,
     batchScoreResults,
     showMore,
+    setResultRenderer,
     destroy: function() {
       if (abortController) abortController.abort();
-      root.innerHTML = '';
+      // Remove only what init() inserted. Clearing the whole mount point would
+      // take out platform markup this instance never owned — the same bug the
+      // non-destructive init() fixes at the other end of the lifecycle.
+      for (const node of scaffoldNodes) {
+        if (node.parentNode) node.parentNode.removeChild(node);
+      }
+      scaffoldNodes = [];
+      paintedEntries = [];
+      paintedHighlightSignature = null;
       els = {};
     },
   };
@@ -3678,6 +4028,61 @@
     return createInstance(containerSelector, config);
   };
 
+  /**
+   * Register the platform's result renderer.
+   *
+   *   Scolta.setResultRenderer(function (data, ctx) { return html || null; });
+   *
+   * Called once per result in place of the built-in card. `data` is the raw
+   * Pagefind fragment object. `ctx` carries:
+   *
+   *   index          — position of this result in the full list
+   *   query          — the current query, RAW (not escaped): it is here to build
+   *                    a request or compare terms, not to be pasted into markup
+   *   highlightTerms — array of raw highlight terms, same caveat
+   *   excerptHtml    — the escaped, <mark>-wrapped excerpt the built-in card
+   *                    would have shown, ready to drop into a slot
+   *   titleHtml      — the escaped, truncated, <mark>-wrapped title text
+   *   titleAttr      — attribute-escaped full title, for title="…"
+   *   safeUrl        — attribute-escaped URL with non-http(s) schemes neutralized
+   *   urlText        — html-escaped URL, as link text
+   *   siteHtml       — html-escaped site badge value, or ""
+   *   dateHtml       — html-escaped date, or ""
+   *   score          — this result's score
+   *
+   * Return an HTML string, or null to fall back to the built-in card for that
+   * one result — the right answer when a platform can render some result types
+   * and not others. A renderer that throws also falls back, with a console
+   * warning; one bad result never takes the list down.
+   *
+   * Two parts of the contract matter:
+   *
+   *   - ESCAPING. The returned string is inserted as markup, so from that point
+   *     the platform owns its own escaping. Every ctx value whose name ends in
+   *     Html/Attr/Text, plus safeUrl, is already escaped exactly as the built-in
+   *     card escapes it, so composing from those is the safe path AND the easy
+   *     one. `query` and `highlightTerms` are raw; escape them yourself.
+   *   - DELEGATED HANDLERS. Scolta's click and change handlers are bound once on
+   *     the mount point and dispatch on data-scolta-* attributes, so platform
+   *     markup carrying those attributes keeps working with no re-binding after
+   *     any render.
+   *
+   * Pass null to restore the built-in card. This is deliberately a registration
+   * function, not a config key: a function cannot travel through
+   * ScoltaConfig::toBrowserConfig() and the platform's settings JSON, and a
+   * browser config key PHP never emits would be dead weight the parity test has
+   * to be told to ignore.
+   *
+   * Applies to every instance that has not registered its own renderer via
+   * instance.setResultRenderer(); safe to call before Scolta.init().
+   */
+  global.Scolta.setResultRenderer = function(fn) {
+    if (fn !== null && fn !== undefined && typeof fn !== 'function') {
+      throw new TypeError('[scolta] Scolta.setResultRenderer expects a function or null');
+    }
+    globalResultRenderer = fn || null;
+  };
+
   // Backward-compatible init: creates a default instance from window.scolta.
   global.Scolta.init = function(containerSelector) {
     if (global.Scolta.defaultInstance) return; // already initialized
@@ -3685,7 +4090,10 @@
       containerSelector || '#scolta-search',
       global.scolta
     );
-    // Expose instance methods on Scolta for backward compat.
+    // Expose instance methods on Scolta for backward compat. setResultRenderer
+    // is deliberately NOT among them: Scolta.setResultRenderer is the global
+    // registration, which must keep working when it is called before init() —
+    // the usual order, since a platform registers on script load.
     if (global.Scolta.defaultInstance) {
       var inst = global.Scolta.defaultInstance;
       global.Scolta.searchTerm = inst.searchTerm;
@@ -3702,7 +4110,12 @@
   function autoInit() {
     if (global.scolta && global.scolta.container) {
       var container = document.querySelector(global.scolta.container);
-      if (container && !container.hasChildNodes()) {
+      // Guard against double-init, not against pre-existing markup. The old
+      // !hasChildNodes() test also blocked auto-init on any mount point holding
+      // server-rendered content, which is why platform bridges call
+      // Scolta.init() directly and bypass this guard. init() is non-destructive
+      // now, so the only thing worth refusing is a second scaffold.
+      if (container && !container.querySelector('[data-scolta-scaffold]')) {
         global.Scolta.init(global.scolta.container);
       }
     }
