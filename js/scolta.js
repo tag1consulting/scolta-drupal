@@ -3705,17 +3705,32 @@
     }
 
     emitBeforeResults(reason);
-    // Appending a node that is already in the document MOVES it: the browser
-    // does not clone or re-parse it, so listeners, lazily swapped server markup
-    // and any other platform state ride along through the reorder. Filling the
-    // fragment first detaches every carried-over node from the container, so the
-    // clear below removes only what is genuinely leaving.
-    const frag = document.createDocumentFragment();
+    // Sync the container in place, touching only what actually has to move. A
+    // node already sitting where it belongs is left completely alone — not
+    // detached and re-attached, which would restart CSS transitions, reload an
+    // iframe and fire disconnected/connectedCallback on a custom element, all
+    // for a list that did not change. When the expansion pass reorders nothing,
+    // this loop performs zero DOM mutations.
+    //
+    // insertBefore() on a node that is already in the document MOVES it: the
+    // browser does not clone or re-parse it, so listeners, lazily swapped server
+    // markup and any other platform state ride along through a genuine reorder.
+    let cursor = container.firstChild;
     for (const entry of nextEntries) {
-      for (const node of entry.nodes) frag.appendChild(node);
+      for (const node of entry.nodes) {
+        if (cursor === node) {
+          cursor = cursor.nextSibling;
+        } else {
+          container.insertBefore(node, cursor);
+        }
+      }
     }
-    while (container.firstChild) container.removeChild(container.firstChild);
-    container.appendChild(frag);
+    // Whatever the walk did not claim is leaving.
+    while (cursor) {
+      const leaving = cursor;
+      cursor = cursor.nextSibling;
+      container.removeChild(leaving);
+    }
 
     paintedEntries = nextEntries;
     paintedHighlightSignature = highlightSignature;
