@@ -3669,7 +3669,7 @@
     // mergeExpandedSearchResults() repaints from index 0, and on most queries
     // the expansion pass returns the same results in the same order. Rebuilding
     // every node there destroyed whatever a platform had lazily swapped in one
-    // to two seconds earlier and made it do the work over again \u2014 the entire
+    // to two seconds earlier and made it do the work over again — the entire
     // reason this seam exists.
     //
     // A carried-over node keeps its markup. That is exactly right when a
