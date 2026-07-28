@@ -68,12 +68,23 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
     ]);
     // ScoltaSearchBlock::build() attaches no drupalSettings at all when the
     // Pagefind index is missing, so the bridge assertions need a fake one.
+    // Every write is checked: a fixture that half-succeeds surfaces later as
+    // "the page carries no drupalSettings.scolta", which reads as a broken
+    // bridge rather than as a broken fixture.
     $outputUri = \Drupal::config('scolta.settings')->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
     $realDir = \Drupal::service('stream_wrapper_manager')->getViaUri($outputUri)->realpath();
-    if ($realDir !== FALSE) {
-      @mkdir($realDir . '/pagefind', 0777, TRUE);
-      file_put_contents($realDir . '/pagefind/pagefind.js', '// fake index');
-      file_put_contents($realDir . '/pagefind/pagefind-entry.json', '{}');
+    $this->assertNotFalse($realDir, "Could not resolve {$outputUri} to a real path for the fake index fixture");
+
+    $indexDir = $realDir . '/pagefind';
+    $this->assertTrue(
+      is_dir($indexDir) || mkdir($indexDir, 0777, TRUE),
+      "Could not create the fake index directory {$indexDir}"
+    );
+    foreach (['pagefind.js' => '// fake index', 'pagefind-entry.json' => '{}'] as $name => $contents) {
+      $this->assertNotFalse(
+        file_put_contents($indexDir . '/' . $name, $contents),
+        "Could not write the fake index file {$indexDir}/{$name}"
+      );
     }
   }
 
