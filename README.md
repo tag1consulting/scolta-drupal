@@ -210,6 +210,8 @@ Scolta defines a **Use Scolta AI features** permission (`use scolta ai`) that ga
 
 On a site installed before that grant existed, the permission is backfilled by a database update: run `drush updatedb` (or visit `/update.php`) after updating the module. Until that update runs, anonymous requests to the AI endpoints return 403. The update grants the permission only where it is missing, and does not run again afterwards, so a later decision to revoke it stands.
 
+**If the site manages permissions through exported configuration, the update alone is not enough.** Run the update in the environment you export from, then `drush cex`, and commit the changed `user.role.anonymous.yml` and `user.role.authenticated.yml`. `drush deploy` runs `config:import` after `updatedb`, so on a site whose exported config predates the update, the import reverts the grant seconds after the hook applies it and anonymous requests keep returning 403 — the update having run and the permission being absent at the same time is exactly what this looks like. Re-exporting also makes the grant survive every later `config:import`, which running the update on each environment separately does not.
+
 To restrict AI features to specific roles (e.g. authenticated users only), revoke the permission from the anonymous role at *Administration > People > Permissions*.
 
 The health endpoint (`GET /api/scolta/v1/health`) is reachable without any permission so uptime monitors always work, but callers without **Administer Scolta** (`administer scolta`) receive only `{"status": "ok"|"degraded"}`. The full diagnostic payload (AI provider, index integrity, fragment counts) requires `administer scolta`.

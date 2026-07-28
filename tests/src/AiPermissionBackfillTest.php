@@ -25,9 +25,12 @@ class AiPermissionBackfillTest extends TestCase {
    */
   private string $updateBody;
 
+  private string $readme;
+
   protected function setUp(): void {
     $this->installSource = file_get_contents(dirname(__DIR__, 2) . '/scolta.install');
     $this->updateBody = $this->functionBody('scolta_update_10001');
+    $this->readme = file_get_contents(dirname(__DIR__, 2) . '/README.md');
   }
 
   // -------------------------------------------------------------------
@@ -135,6 +138,45 @@ class AiPermissionBackfillTest extends TestCase {
       'use Drupal\user\Entity\Role;',
       $this->installSource,
       'scolta.install must import the Role entity class it calls Role::load() on'
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // The update alone does not hold on a config-managed site, and the
+  // README has to say so — nothing in the code can fix that for them.
+  // -------------------------------------------------------------------
+
+  public function testReadmeTellsSitesToRunTheUpdate(): void {
+    $this->assertStringContainsString(
+      'drush updatedb',
+      $this->readme,
+      'README must name the command that backfills the permission on an existing site'
+    );
+  }
+
+  public function testReadmeTellsConfigManagedSitesToReExport(): void {
+    $this->assertStringContainsString(
+      'drush cex',
+      $this->readme,
+      "README must tell config-managed sites to re-export after the update, or config:import silently reverts the grant"
+    );
+  }
+
+  public function testReadmeNamesTheRoleConfigToCommit(): void {
+    foreach (['user.role.anonymous.yml', 'user.role.authenticated.yml'] as $file) {
+      $this->assertStringContainsString(
+        $file,
+        $this->readme,
+        "README must name {$file} so it is clear what the re-export is expected to change"
+      );
+    }
+  }
+
+  public function testReadmeExplainsWhyDeployRevertsTheGrant(): void {
+    $this->assertStringContainsString(
+      'config:import',
+      $this->readme,
+      'README must name config:import as the mechanism that reverts the grant, not just the workaround'
     );
   }
 
