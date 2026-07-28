@@ -23,19 +23,17 @@ const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
 
-// css/scolta.css is populated by `composer install` (post-install-cmd copies
-// it from vendor/tag1/scolta-php/assets/css/scolta.css).
+// css/scolta.css is committed to this repository, because the committed copy
+// is the one a site installing drupal/scolta receives. Composer no longer
+// refreshes it on install: `copy-assets` is a manual re-vendor command, and
+// the assets-in-sync CI job is what proves the committed copy matches
+// scolta-php. So these specs deliberately read the committed file — the CSS
+// this branch would actually ship.
 const CSS_PATH = path.resolve(__dirname, '../../css/scolta.css');
 
 let scoltaCss = '';
 if (fs.existsSync(CSS_PATH)) {
     scoltaCss = fs.readFileSync(CSS_PATH, 'utf-8');
-} else {
-    // Fallback: read directly from vendor if copy-assets hasn't run yet.
-    const fallback = path.resolve(__dirname, '../../vendor/tag1/scolta-php/assets/css/scolta.css');
-    if (fs.existsSync(fallback)) {
-        scoltaCss = fs.readFileSync(fallback, 'utf-8');
-    }
 }
 
 test.describe('Scolta layout width at 1440 px viewport', () => {

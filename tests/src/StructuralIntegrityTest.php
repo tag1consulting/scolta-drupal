@@ -338,34 +338,135 @@ class StructuralIntegrityTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // Asset-sync drift guard covers the WASM pair (not just scolta.js)
+  // The module version comes from scolta.info.yml, not composer.json.
   // -------------------------------------------------------------------
 
   /**
-   * The CI "Verify duplicated assets" step must checksum all four canonical
-   * runtime assets — including the WASM glue + binary pair — in BOTH the
-   * manifest-present branch and the manifest-absent fallback. The fallback
-   * previously verified only js/scolta.js and exited 0, so a sync that
-   * refreshed the JS but left scolta_core.js / scolta_core_bg.wasm stale
-   * passed CI (this is how demos shipped a stale browser WASM scorer).
+   * composer.json must not declare a "version".
+   *
+   * A declared version overrides the one Composer derives from the branch or
+   * tag, which is what the extra.branch-alias beside it exists to describe.
+   * Packagist ignores the declared string; the drupal.org Composer facade
+   * does not, so drupal/scolta presented itself as a fixed "1.0.6-dev"
+   * whatever branch it was built from. A consuming site constrained to
+   * dev-1.0.x could `composer update` (Composer knows the provenance of what
+   * it just fetched) but the resulting lock recorded "1.0.6-dev", and
+   * `composer install` compares only that recorded string against the
+   * constraint — so it failed on every clean checkout. That broke a client's
+   * CI on 2026-07-27 while the site installed fine on developer machines.
    */
-  public function testAssetVerifyStepChecksumsWasmPair(): void {
+  public function testComposerJsonDeclaresNoVersion(): void {
+    $composer = json_decode(file_get_contents($this->moduleRoot . '/composer.json'), TRUE);
+
+    $this->assertArrayNotHasKey('version', $composer,
+      'composer.json must not declare a version. scolta.info.yml is the source ' .
+      'of the module version (drupal.org injects the release version there at ' .
+      'packaging time); extra.branch-alias describes the dev-main mapping.');
+  }
+
+  /**
+   * scolta.info.yml must declare the version, since composer.json no longer
+   * does. Removing both would leave the module with no version at all.
+   */
+  public function testInfoYmlDeclaresTheVersion(): void {
+    $info = Yaml::parseFile($this->moduleRoot . '/scolta.info.yml');
+
+    $this->assertArrayHasKey('version', $info,
+      'scolta.info.yml is now the only place the module version is declared.');
+    $this->assertNotEmpty($info['version']);
+  }
+
+  // -------------------------------------------------------------------
+  // The asset parity gate must be a real gate.
+  // -------------------------------------------------------------------
+
+  /**
+   * No Composer hook may rewrite the committed assets.
+   *
+   * `copy-assets` overwrites tracked files from vendor/. Wiring it to
+   * post-install-cmd / post-update-cmd put a fixer and a checker in the same
+   * pipeline, and the fixer ran first: every CI job that ran `composer
+   * update` refreshed js/scolta.js from the vendored scolta-php before the
+   * verification step compared them, so the check could not fail on a stale
+   * committed copy. It also meant the test suites exercised scolta-php
+   * main's bundle rather than the one this branch would ship.
+   *
+   * copy-assets stays as a command a human runs when re-vendoring.
+   */
+  public function testComposerDoesNotAutoRewriteCommittedAssets(): void {
+    $composer = json_decode(file_get_contents($this->moduleRoot . '/composer.json'), TRUE);
+
+    foreach (['post-install-cmd', 'post-update-cmd'] as $hook) {
+      $this->assertArrayNotHasKey($hook, $composer['scripts'],
+        "composer.json must not run copy-assets from {$hook}: a Composer hook that " .
+        'rewrites a tracked file defeats the assets-in-sync check, which is the ' .
+        'only thing verifying what this module ships.');
+    }
+
+    $this->assertArrayHasKey('copy-assets', $composer['scripts'],
+      'copy-assets must remain available as a manual re-vendor command.');
+  }
+
+  /**
+   * The assets-in-sync job must byte-compare every committed asset.
+   *
+   * All four canonical runtime assets are duplicated here — the JS bundle,
+   * the CSS, and the WASM glue + binary pair. An earlier verification step
+   * checked only js/scolta.js in one of its branches, which is the class of
+   * gap behind demos shipping a stale browser WASM scorer.
+   */
+  public function testAssetsInSyncJobComparesEveryCommittedAsset(): void {
     $ci = file_get_contents($this->moduleRoot . '/.github/workflows/ci.yml');
 
-    // Isolate the manifest-absent fallback branch: from "MANIFEST not found"
-    // up to the "Manifest present" section that follows it.
-    $start = strpos($ci, 'MANIFEST not found');
-    $this->assertNotFalse($start,
-      'ci.yml must contain the asset-verification step with a manifest-absent fallback');
-    $end = strpos($ci, '# Manifest present', $start);
-    $this->assertNotFalse($end,
-      'ci.yml asset-verification step must retain its manifest-present branch');
-    $fallback = substr($ci, $start, $end - $start);
+    $this->assertStringContainsString('assets-in-sync:', $ci,
+      'ci.yml must define an assets-in-sync job.');
 
-    foreach (['scolta_core.js', 'scolta_core_bg.wasm', 'scolta.css'] as $asset) {
-      $this->assertStringContainsString($asset, $fallback,
-        "CI asset-verification fallback must verify {$asset}, not just scolta.js");
+    $start = strpos($ci, 'Compare committed assets against the vendored canonical');
+    $this->assertNotFalse($start,
+      'ci.yml must contain the byte-comparison step of the assets-in-sync job.');
+    $end = strpos($ci, 'upstream-preview:', $start);
+    $this->assertNotFalse($end, 'Could not delimit the assets-in-sync job.');
+    $step = substr($ci, $start, $end - $start);
+
+    $this->assertStringContainsString('cmp -s', $step,
+      'The check must compare bytes: a byte comparison needs no manifest and ' .
+      'cannot be subtly wrong.');
+
+    // Committed path => canonical path under scolta-php assets/.
+    $expected = [
+      'js/scolta.js' => 'js/scolta.js',
+      'css/scolta.css' => 'css/scolta.css',
+      'js/wasm/scolta_core.js' => 'wasm/scolta_core.js',
+      'js/wasm/scolta_core_bg.wasm' => 'wasm/scolta_core_bg.wasm',
+    ];
+    foreach ($expected as $committed => $canonical) {
+      $this->assertStringContainsString("compare {$canonical}", $step,
+        "assets-in-sync must compare the canonical asset {$canonical}.");
+      $this->assertStringContainsString($committed, $step,
+        "assets-in-sync must compare the committed asset {$committed}.");
     }
+
+    // The failure message has to tell a reviewer which of the two causes they
+    // are looking at. The coordinated-change case is the common one, and
+    // "fix it with composer copy-assets" is the wrong advice for it.
+    $this->assertStringContainsString('STALE COMMITTED COPY', $step);
+    $this->assertStringContainsString('UPSTREAM HAS NOT MERGED YET', $step);
+  }
+
+  /**
+   * The gate must live in exactly one job.
+   *
+   * Several jobs run `composer update` and resolve scolta-php from dev-main.
+   * Repeating the comparison in each would multiply a single red signal
+   * across unrelated checks; worse, a copy of it in a job that resolves a
+   * stable release from Packagist would assert something different while
+   * looking identical.
+   */
+  public function testAssetComparisonLivesInOneJobOnly(): void {
+    $ci = file_get_contents($this->moduleRoot . '/.github/workflows/ci.yml');
+
+    $this->assertSame(1, substr_count($ci, 'Compare committed assets against the vendored canonical'),
+      'The asset comparison must appear in exactly one job.');
   }
 
   // -------------------------------------------------------------------
