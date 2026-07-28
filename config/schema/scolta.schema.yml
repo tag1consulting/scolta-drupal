@@ -244,6 +244,36 @@ scolta.settings:
     hide_empty_facets:
       type: boolean
       label: 'Hide facet values with zero results for the current query'
+    sayt_enabled:
+      type: boolean
+      label: 'Enable search as you type'
+    sayt_min_chars:
+      type: integer
+      label: 'Minimum characters before suggestions are requested'
+    sayt_debounce_ms:
+      type: integer
+      label: 'Suggestion debounce in milliseconds'
+    sayt_max_suggestions:
+      type: integer
+      label: 'Maximum suggestions shown'
+    sayt_recent_searches:
+      type: boolean
+      label: 'Offer the visitor their own recent searches'
+    sayt_max_recent:
+      type: integer
+      label: 'Maximum recent searches shown'
+    sayt_expand:
+      type: boolean
+      label: 'Enrich suggestions with AI query expansion'
+    sayt_expand_per_minute:
+      type: integer
+      label: 'Maximum SAYT AI expansion calls per minute'
+    sayt_expansion_delay_ms:
+      type: integer
+      label: 'Idle delay before the AI enrichment call, in milliseconds'
+    sayt_suggestion_action:
+      type: string
+      label: 'What selecting a title suggestion does (navigate or search)'
     pagefind:
       type: mapping
       label: 'Pagefind configuration'

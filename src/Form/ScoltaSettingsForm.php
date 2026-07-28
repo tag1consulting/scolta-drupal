@@ -826,6 +826,102 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('When enabled (default), a facet value with zero results for the current query is hidden, and a filter group whose values are all zero is dropped. An active (checked) value stays visible so it can be unchecked. Disable to show every value, rendering a zero-count one as a disabled "(0)" option.'),
     ];
 
+    // ── Search As You Type Section ──
+    $form['sayt'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Search as you type'),
+      '#open' => FALSE,
+      '#description' => $this->t('Typing in the search box opens a suggestions dropdown underneath it. Typing alone never runs a search: the full pipeline (AI expansion, summary, follow-ups) still waits for Enter, the search button, or a selected suggestion. Existing indexes need no rebuild — suggestions read the same fragments the result list does.'),
+    ];
+
+    $form['sayt']['sayt_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable search as you type'),
+      '#default_value' => $config->get('sayt_enabled') ?? TRUE,
+      '#description' => $this->t('When disabled, the search widget behaves exactly as it did before this feature existed: no dropdown, no combobox roles on the input, and nothing read from or written to browser storage.'),
+    ];
+
+    $form['sayt']['sayt_min_chars'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Minimum characters'),
+      '#default_value' => $config->get('sayt_min_chars') ?? 2,
+      '#min' => 1,
+      '#max' => 10,
+      '#description' => $this->t('How much the visitor must type before suggestions are fetched. Counted in characters as a person sees them, so an emoji or a Devanagari cluster counts as one. Sites in Chinese, Japanese or Korean generally want 1: a single character is already a meaningful query.'),
+    ];
+
+    $form['sayt']['sayt_debounce_ms'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Debounce (milliseconds)'),
+      '#default_value' => $config->get('sayt_debounce_ms') ?? 150,
+      '#min' => 0,
+      '#max' => 2000,
+      '#description' => $this->t('Idle time after the last keystroke before a suggestion pass runs. Default: 150.'),
+    ];
+
+    $form['sayt']['sayt_max_suggestions'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Maximum suggestions'),
+      '#default_value' => $config->get('sayt_max_suggestions') ?? 6,
+      '#min' => 1,
+      '#max' => 20,
+      '#description' => $this->t('Rows shown in the dropdown, and the hard cap on how many result fragments each pass loads.'),
+    ];
+
+    $form['sayt']['sayt_recent_searches'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Offer recent searches'),
+      '#default_value' => $config->get('sayt_recent_searches') ?? TRUE,
+      '#description' => $this->t('Suggest the visitor their own recent searches, stored in their browser. When disabled, nothing is read from or written to browser storage.'),
+    ];
+
+    $form['sayt']['sayt_max_recent'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Maximum recent searches'),
+      '#default_value' => $config->get('sayt_max_recent') ?? 3,
+      '#min' => 0,
+      '#max' => 10,
+      '#description' => $this->t('How many recent searches the dropdown shows.'),
+    ];
+
+    $form['sayt']['sayt_expand'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enrich suggestions with AI query expansion'),
+      '#default_value' => $config->get('sayt_expand') ?? TRUE,
+      '#description' => $this->t('Once typing settles, run one query expansion for the typed prefix and merge the documents it finds into the dropdown. Inert when AI query expansion is off or no AI provider is configured.'),
+    ];
+
+    $form['sayt']['sayt_expand_per_minute'] = [
+      '#type' => 'number',
+      '#title' => $this->t('AI enrichment calls per minute'),
+      '#default_value' => $config->get('sayt_expand_per_minute') ?? 6,
+      '#min' => 0,
+      '#max' => 60,
+      '#description' => $this->t("Cap on suggestion-driven AI expansion calls per visitor per minute. It exists because these expansions share the AI flood budget with committed searches: expansion, summarize and follow-up all count against the same per-IP limit above, so an unbudgeted suggest path would spend a visitor's whole allowance on prefixes they never submitted and leave the search they actually ran with no expansion and no summary. Over the cap, suggestions silently fall back to keyword matches."),
+    ];
+
+    $form['sayt']['sayt_expansion_delay_ms'] = [
+      '#type' => 'number',
+      '#title' => $this->t('AI enrichment delay (milliseconds)'),
+      '#default_value' => $config->get('sayt_expansion_delay_ms') ?? 500,
+      '#min' => 0,
+      '#max' => 5000,
+      '#description' => $this->t('Idle time before the AI enrichment call fires. Deliberately longer than the debounce above: keyword suggestions should appear while typing, an AI call should not. Default: 500.'),
+    ];
+
+    $form['sayt']['sayt_suggestion_action'] = [
+      '#type' => 'radios',
+      '#title' => $this->t('Selecting a suggestion'),
+      // Anything unrecognized clamps to 'navigate', matching what the browser
+      // bundle does with a value it does not know.
+      '#default_value' => $config->get('sayt_suggestion_action') === 'search' ? 'search' : 'navigate',
+      '#options' => [
+        'navigate' => $this->t('Go to that result'),
+        'search' => $this->t('Search for that title'),
+      ],
+      '#description' => $this->t('"Go to that result" renders each suggestion as a real link, so middle-click, ctrl-click and "copy link address" work — choose it when suggestions are documents the visitor wants to open. "Search for that title" puts the suggestion in the box and runs the full search, AI summary and all — choose it when the value is in the result set rather than the single document. A recent-search suggestion always runs the search, whichever option is selected: navigating to a stored query string is meaningless.'),
+    ];
+
     // ── Cache Section ──
     $form['cache'] = [
       '#type' => 'details',
@@ -1331,6 +1427,19 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('show_attribution', (bool) $form_state->getValue('show_attribution'))
       // Display: facet visibility.
       ->set('hide_empty_facets', (bool) $form_state->getValue('hide_empty_facets'))
+      // Search as you type. The bounds repeat the #min/#max on the fields:
+      // those are enforced server-side and an out-of-range value never reaches
+      // here, so this is a floor under a value arriving by any other route.
+      ->set('sayt_enabled', (bool) $form_state->getValue('sayt_enabled'))
+      ->set('sayt_min_chars', max(1, (int) $form_state->getValue('sayt_min_chars')))
+      ->set('sayt_debounce_ms', max(0, (int) $form_state->getValue('sayt_debounce_ms')))
+      ->set('sayt_max_suggestions', max(1, (int) $form_state->getValue('sayt_max_suggestions')))
+      ->set('sayt_recent_searches', (bool) $form_state->getValue('sayt_recent_searches'))
+      ->set('sayt_max_recent', max(0, (int) $form_state->getValue('sayt_max_recent')))
+      ->set('sayt_expand', (bool) $form_state->getValue('sayt_expand'))
+      ->set('sayt_expand_per_minute', max(0, (int) $form_state->getValue('sayt_expand_per_minute')))
+      ->set('sayt_expansion_delay_ms', max(0, (int) $form_state->getValue('sayt_expansion_delay_ms')))
+      ->set('sayt_suggestion_action', $form_state->getValue('sayt_suggestion_action') === 'search' ? 'search' : 'navigate')
       // Cache.
       ->set('cache_ttl', (int) $form_state->getValue('cache_ttl'))
       // Rate limiting.

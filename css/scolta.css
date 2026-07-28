@@ -23,6 +23,16 @@
   --scolta-summary-bg-mid: #e8f4fe;
   --scolta-summary-border: #c4d9f2;
   --scolta-badge-bg: #e8f0fe;
+
+  /* Search as you type (see docs/SAYT.md). Restyle the dropdown by overriding
+     these; nothing below needs a selector more specific than one class. */
+  --scolta-sayt-bg: var(--scolta-card-bg);
+  --scolta-sayt-border: var(--scolta-border);
+  --scolta-sayt-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  --scolta-sayt-radius: 8px;
+  --scolta-sayt-max-height: 22rem;
+  --scolta-sayt-active-bg: var(--scolta-badge-bg);
+  --scolta-sayt-z-index: 50;
 }
 
 /* Search box */
@@ -74,6 +84,52 @@
   cursor: pointer;
 }
 .scolta-search-btn:hover { background: var(--scolta-primary-hover); }
+
+/* Search-as-you-type dropdown.
+   Absolutely positioned inside .scolta-search-input-wrap (which is already
+   position:relative), so opening, updating and closing it shift no layout. */
+.scolta-sayt {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 0.25rem;
+  z-index: var(--scolta-sayt-z-index);
+  background: var(--scolta-sayt-bg);
+  border: 1px solid var(--scolta-sayt-border);
+  border-radius: var(--scolta-sayt-radius);
+  box-shadow: var(--scolta-sayt-shadow);
+  max-height: var(--scolta-sayt-max-height);
+  overflow-y: auto;
+  text-align: left;
+}
+.scolta-sayt-option {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  color: var(--scolta-text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--scolta-sayt-border);
+}
+.scolta-sayt-option:last-child { border-bottom: none; }
+.scolta-sayt-option-active { background: var(--scolta-sayt-active-bg); }
+/* A recent search reads as history, not as a document. */
+.scolta-sayt-option-recent .scolta-sayt-title { color: var(--scolta-text-muted); }
+.scolta-sayt-kind {
+  display: inline-block;
+  width: 1.1rem;
+  color: var(--scolta-text-light);
+}
+.scolta-sayt-title { font-weight: 500; }
+.scolta-sayt-excerpt {
+  display: block;
+  margin-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--scolta-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Layout */
 .scolta-layout {

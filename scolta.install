@@ -263,3 +263,54 @@ function scolta_update_10001() {
     '@roles' => implode(', ', $granted),
   ]);
 }
+
+/**
+ * Adds the search-as-you-type defaults to existing sites.
+ *
+ * The install defaults in config/install/scolta.settings.yml only ever apply to
+ * a fresh install, so an existing site updating into this release has none of
+ * the ten SAYT keys. The browser bundle falls back to its own hardcoded
+ * defaults for an absent key, and those match the shipped ones — so the
+ * feature would appear to work while the settings form showed values that were
+ * nowhere in config, and a site that saved the form would suddenly be writing
+ * keys that had never existed. This makes the config state explicit instead.
+ *
+ * Only absent keys are written. A site that set any of them ahead of the
+ * update (drush config:set, a config import, settings.php) keeps its value,
+ * including a deliberate FALSE: the guard tests for an absent key, not for a
+ * falsy one.
+ */
+function scolta_update_10002() {
+  $defaults = [
+    'sayt_enabled' => TRUE,
+    'sayt_min_chars' => 2,
+    'sayt_debounce_ms' => 150,
+    'sayt_max_suggestions' => 6,
+    'sayt_recent_searches' => TRUE,
+    'sayt_max_recent' => 3,
+    'sayt_expand' => TRUE,
+    'sayt_expand_per_minute' => 6,
+    'sayt_expansion_delay_ms' => 500,
+    'sayt_suggestion_action' => 'navigate',
+  ];
+
+  $config = \Drupal::configFactory()->getEditable('scolta.settings');
+  $added = [];
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $added[] = $key;
+    }
+  }
+
+  if (!$added) {
+    return t('Search as you type was already configured; no settings changed.');
+  }
+
+  $config->save();
+
+  return t('Search as you type is on by default. Added @count setting(s) to scolta.settings: @keys. Adjust them at Administration › Configuration › Search and metadata › Scolta, under "Search as you type". No index rebuild is needed.', [
+    '@count' => count($added),
+    '@keys' => implode(', ', $added),
+  ]);
+}

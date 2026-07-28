@@ -192,6 +192,33 @@ One further advanced knob controls how a multi-term query expansion feeds the AI
 
 For the evidence behind each preset — the scoring sweeps and the per-parameter data — see [scolta-php's `docs/TUNING.md`](https://github.com/tag1consulting/scolta-php/blob/main/docs/TUNING.md).
 
+## Search as you type
+
+**On by default.** Typing in the search box opens a suggestions dropdown underneath it. Typing alone never runs a search: the full pipeline (AI query expansion, the merge, facet counts, the AI overview, follow-ups) still waits for Enter, the search button, or a selected suggestion. **No index rebuild is needed** — suggestions read the same fragments the result list does, so the feature works on an index built by any earlier release.
+
+Everything is configurable at *Administration > Configuration > Search and Metadata > Scolta AI Search*, in the **Search as you type** section:
+
+| Setting | Config key | Default | What it does |
+| ------- | ---------- | ------- | ------------ |
+| Enable search as you type | `sayt_enabled` | `true` | The off switch (see below) |
+| Minimum characters | `sayt_min_chars` | `2` | How much must be typed before suggestions are fetched |
+| Debounce | `sayt_debounce_ms` | `150` | Idle milliseconds after the last keystroke before a suggestion pass runs |
+| Maximum suggestions | `sayt_max_suggestions` | `6` | Rows shown, and the cap on fragment loads per pass |
+| Offer recent searches | `sayt_recent_searches` | `true` | Suggest the visitor their own recent searches |
+| Maximum recent searches | `sayt_max_recent` | `3` | How many recent searches are shown |
+| Enrich with AI query expansion | `sayt_expand` | `true` | Merge AI expansion matches into the dropdown |
+| AI enrichment calls per minute | `sayt_expand_per_minute` | `6` | Per-visitor cap on those AI calls |
+| AI enrichment delay | `sayt_expansion_delay_ms` | `500` | Idle milliseconds before the AI call fires |
+| Selecting a suggestion | `sayt_suggestion_action` | `navigate` | `navigate` opens the result, `search` runs the full search for it |
+
+**The off switch.** Set **Enable search as you type** to off (`drush config:set scolta.settings sayt_enabled 0`) and the search widget behaves exactly as it did before this feature existed: no dropdown, no combobox roles on the input, no browser storage touched on any path, and no suggestion searches. The results, ranking and AI overview are unaffected either way.
+
+**Sites in Chinese, Japanese or Korean generally want `sayt_min_chars: 1`.** The count is in characters as a person sees them, and a single han character is already a meaningful query; a floor of two means a CJK visitor gets no suggestions until their query is twice as specific as an English speaker's needs to be.
+
+**Why the enrichment cap exists.** Suggestion-driven AI expansions share the AI flood budget with committed searches — expansion, summarize and follow-up all count against the same per-IP limit described under [AI endpoint rate limiting](#ai-endpoint-rate-limiting) (60 requests/minute by default). Without a cap, a visitor's whole allowance could be spent on prefixes they never submitted, and the search they actually ran would come back with no expansion and no AI overview. Over the cap, suggestions silently fall back to keyword matches until the window rolls.
+
+**On an existing site**, `drush updatedb` (or `/update.php`) adds these defaults to `scolta.settings`. Any of the ten you had already set by hand is left alone, including `sayt_enabled: false`. Sites that manage permissions and settings through exported configuration should `drush cex` afterwards and commit the changed `scolta.settings.yml`.
+
 ## Troubleshooting
 
 ### "No search results"
