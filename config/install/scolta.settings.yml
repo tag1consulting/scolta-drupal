@@ -15,6 +15,16 @@ sortable_field_descriptions: {}
 filter_fields: []
 filter_field_descriptions: {}
 hide_empty_facets: true
+sayt_enabled: true
+sayt_min_chars: 2
+sayt_debounce_ms: 150
+sayt_max_suggestions: 6
+sayt_recent_searches: true
+sayt_max_recent: 3
+sayt_expand: true
+sayt_expand_per_minute: 6
+sayt_expansion_delay_ms: 500
+sayt_suggestion_action: navigate
 field_mappings:
   sortable: {}
   filters: {}

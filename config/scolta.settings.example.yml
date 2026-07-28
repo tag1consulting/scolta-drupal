@@ -52,6 +52,21 @@ display:
   ai_summary_top_n: 5               # Top N results sent to AI for summary
   ai_summary_max_chars: 2000        # Max context chars sent to AI
 
+# --- Search As You Type ---
+# Typing opens a suggestions dropdown under the search box. Typing alone never
+# runs a search: the full pipeline still waits for Enter, the search button, or
+# a selected suggestion. No index rebuild is needed either way.
+sayt_enabled: true                  # Master switch; false restores the pre-1.1.0 widget exactly
+sayt_min_chars: 2                   # Characters (graphemes) typed before suggestions are fetched; CJK sites usually want 1
+sayt_debounce_ms: 150               # Trailing debounce before a suggest cycle fires
+sayt_max_suggestions: 6             # Rows shown, and the cap on fragment loads per pass
+sayt_recent_searches: true          # Offer the visitor their own recent searches (false = no localStorage access)
+sayt_max_recent: 3                  # Recent searches shown
+sayt_expand: true                   # Enrich the dropdown with AI query-expansion matches
+sayt_expand_per_minute: 6           # Cap on those AI calls per minute; they share the AI flood budget with committed searches
+sayt_expansion_delay_ms: 500        # Idle time before the AI enrichment call fires
+sayt_suggestion_action: navigate    # 'navigate' opens the result, 'search' runs the full search for it
+
 # --- Cache ---
 cache_ttl: 2592000                  # AI response cache in seconds (30 days)
 flood:                              # Rate limiting for the anonymous AI endpoints

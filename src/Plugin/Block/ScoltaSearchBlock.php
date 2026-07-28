@@ -139,6 +139,24 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       'allowedLinkDomains' => [],
       'disclaimer' => '',
       'currentLanguage' => $currentLanguage,
+      // Search as you type. Ten top-level keys the committed bundle reads off
+      // the instance config, taken from Drupal config rather than from
+      // ScoltaConfig so the shipped bundle's suggestions work against any
+      // scolta-php in the supported ^1.0 range: the SAYT implementation lives
+      // entirely in js/scolta.js, which this module vendors and ships itself.
+      // Defaults repeat the install defaults so a site that never ran the
+      // update hook still gets the documented behavior.
+      'saytEnabled' => (bool) ($drupalConfig->get('sayt_enabled') ?? TRUE),
+      'saytMinChars' => (int) ($drupalConfig->get('sayt_min_chars') ?? 2),
+      'saytDebounceMs' => (int) ($drupalConfig->get('sayt_debounce_ms') ?? 150),
+      'saytMaxSuggestions' => (int) ($drupalConfig->get('sayt_max_suggestions') ?? 6),
+      'saytRecentSearches' => (bool) ($drupalConfig->get('sayt_recent_searches') ?? TRUE),
+      'saytMaxRecent' => (int) ($drupalConfig->get('sayt_max_recent') ?? 3),
+      'saytExpand' => (bool) ($drupalConfig->get('sayt_expand') ?? TRUE),
+      'saytExpandPerMinute' => (int) ($drupalConfig->get('sayt_expand_per_minute') ?? 6),
+      'saytExpansionDelayMs' => (int) ($drupalConfig->get('sayt_expansion_delay_ms') ?? 500),
+      // An unrecognized action clamps to 'navigate', as the bundle does.
+      'saytSuggestionAction' => $drupalConfig->get('sayt_suggestion_action') === 'search' ? 'search' : 'navigate',
     ];
 
     $markup = '<div id="scolta-search"></div>';

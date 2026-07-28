@@ -25,6 +25,16 @@
  *                                            zero for the current query (and their now-empty groups).
  *                                            Set false to render zero-count values as disabled (0) rows.
  *                                            An active value stays visible even at zero either way.
+ *   saytEnabled: true                      — Optional: search as you type. See docs/SAYT.md for the
+ *   saytMinChars: 2                          full behaviour and for when to change each of these.
+ *   saytDebounceMs: 150                      Suggestions populate a dropdown while typing; the full
+ *   saytMaxSuggestions: 6                    pipeline still runs only on Enter or on selecting a
+ *   saytRecentSearches: true                 suggestion. saytEnabled:false restores the pre-1.1.0
+ *   saytMaxRecent: 3                         widget exactly: no dropdown node, no combobox roles,
+ *   saytExpand: true                         no storage access, no suggest searches.
+ *   saytExpandPerMinute: 6
+ *   saytExpansionDelayMs: 500
+ *   saytSuggestionAction: 'navigate'       — 'navigate' | 'search'
  *
  * Entry point: Scolta.init(containerSelector)
  *
@@ -230,6 +240,99 @@
   const PRELOAD_DEBOUNCE_MS = 150;
   const PRELOAD_MIN_CHARS = 2;
 
+  // ==========================================================================
+  // SEARCH AS YOU TYPE (SAYT)
+  // ==========================================================================
+  //
+  // Suggestions populate a dropdown while the user types; the full pipeline
+  // (expand -> merge -> summarize -> follow-up) still runs only on Enter, on the
+  // search button, or on selecting a suggestion. The two paths are deliberately
+  // separate machines: doSearch() owns searchVersion, the abortController, the
+  // per-cycle search memo, history and every results-region element, and the
+  // suggest path owns none of them. See docs/SAYT.md.
+  //
+  // Every default below is byte-equal to the corresponding ScoltaConfig PHP
+  // default; BrowserConfigParityTest pins the two key sets together in both
+  // directions, and ScoltaConfigTest pins the values.
+  const SAYT_DEFAULTS = Object.freeze({
+    enabled: true,
+    minChars: 2,
+    debounceMs: 150,
+    maxSuggestions: 6,
+    recentSearches: true,
+    maxRecent: 3,
+    expand: true,
+    expandPerMinute: 6,
+    expansionDelayMs: 500,
+    suggestionAction: 'navigate',
+  });
+
+  const SAYT_ACTIONS = ['navigate', 'search'];
+
+  // localStorage is per-origin, so every Scolta instance on one origin shares
+  // one recent-search history. That is deliberate (a visitor's recent searches
+  // are a property of the visitor, not of the widget) and documented.
+  const SAYT_RECENT_KEY = 'scolta:recent-searches';
+
+  // How many recent searches are STORED, independent of how many are shown
+  // (sayt_max_recent). Keeping a couple of spares means the prefix filter still
+  // has something to match after the newest entries stop matching.
+  const SAYT_RECENT_STORED_MAX = 5;
+
+  // How long an enrichment call stays in the sliding window, in ms.
+  const SAYT_EXPAND_WINDOW_MS = 60000;
+
+  // Weight applied when scoring documents an AI expansion term found, rather
+  // than the prefix the user typed. Same reduction the result path's OR
+  // fallback uses: an expansion hit is real but it is not what was typed, so it
+  // must not outrank a direct prefix match in a six-row dropdown.
+  const SAYT_EXPANDED_WEIGHT = 0.6;
+
+  // Lazily built once: constructing an Intl.Segmenter is expensive relative to
+  // the keystroke path it runs on. null means "not tried yet", false means
+  // "unavailable in this engine".
+  let saytSegmenter = null;
+
+  // Count USER-PERCEIVED characters, not UTF-16 code units. "\u{1F1EE}\u{1F1F9}"
+  // is one flag to a reader and four to `.length`, and a Devanagari or Hangul
+  // cluster is one character to the person typing it. Intl.Segmenter is the
+  // correct answer; the spread fallback at least collapses surrogate pairs.
+  function saytGraphemeLength(str) {
+    const s = String(str == null ? '' : str);
+    if (saytSegmenter === null) {
+      try {
+        saytSegmenter = (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function')
+          ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+          : false;
+      } catch (e) {
+        saytSegmenter = false;
+      }
+    }
+    if (saytSegmenter) {
+      try {
+        let n = 0;
+        for (const _ of saytSegmenter.segment(s)) n++;
+        return n;
+      } catch (e) {
+        // Fall through to the spread count.
+      }
+    }
+    return [...s].length;
+  }
+
+  // Coerce a config value that a CMS settings layer may hand over as a string.
+  function saytBool(value, fallback) {
+    if (value === undefined || value === null || value === '') return fallback;
+    if (typeof value === 'string') return value !== '0' && value.toLowerCase() !== 'false';
+    return !!value;
+  }
+
+  function saytInt(value, fallback, min) {
+    const n = parseInt(value, 10);
+    if (!isFinite(n)) return fallback;
+    return (min !== undefined && n < min) ? min : n;
+  }
+
   function filterDisplayValue(dimension, value) {
     if (dimension === 'language') return LANGUAGE_NAMES[value] || value;
     return value;
@@ -297,6 +400,32 @@
   let cachedPagefindPageCount = null; // total indexed pages across languages — from pagefind-entry.json
   let preloadTimer = null;           // trailing-debounce handle for schedulePreload()
   let lastPreloadedTerm = '';        // last term handed to pagefind.preload(); skips repeat work
+
+  // --- SAYT state ---
+  // suggestVersion is to the suggest path what searchVersion is to doSearch():
+  // incremented at the start of every cycle and re-checked after every await, so
+  // a late-resolving cycle whose input has moved on performs ZERO DOM writes.
+  // Cancelling is just an increment (cancelSuggest), which is why nothing here
+  // needs an AbortController of its own.
+  let suggestVersion = 0;
+  let suggestTimer = null;           // trailing-debounce handle for scheduleSuggest()
+  let suggestExpandTimer = null;     // idle handle for the AI enrichment call
+  let suggestions = [];              // the rendered dropdown model, in DOM order
+  let activeSuggestion = -1;         // index into suggestions; -1 = nothing active
+  let suggestOpen = false;
+  let suggestQuery = '';             // the prefix the open dropdown describes
+  let suggestBlurTimer = null;
+  let saytExpandCalls = [];          // ms timestamps, for the sliding-window budget
+  let saytActionWarned = false;      // warn once per instance, not once per keystroke
+  // searchVersion of the doSearch() cycle that has started but not yet painted,
+  // or 0 when none is. No suggest cycle runs while it is set: the user has
+  // committed, and a dropdown repainting over a search that is mid-flight is
+  // noise. A version rather than a boolean because doSearch() cycles overlap —
+  // the window belongs to whichever cycle opened it last, and only that cycle
+  // may release it. doSearch() releases it in a finally covering the whole
+  // pre-paint region, so a search that throws anywhere cannot wedge the suggest
+  // path off for the life of the page.
+  let paintingVersion = 0;
   // Per-search-cycle memo of in-flight Pagefind searches, keyed by
   // searchMemoKey(). Cleared at the top of every doSearch() — see the comment
   // above pagefindSearch() for why identical searches within one cycle are both
@@ -401,6 +530,43 @@
 
   function getInstancePriorityPages() {
     return (instanceConfig && instanceConfig.priority_pages) || [];
+  }
+
+  // SAYT settings are TOP-LEVEL instance config, not `scoring` keys — the
+  // hideEmptyFacets pattern. They govern UI behaviour, not ranking, and
+  // toJsScoringConfig() stays at exactly 40 keys.
+  function getSaytConfig() {
+    if (!instanceConfig) return SAYT_DEFAULTS;
+
+    let action = instanceConfig.saytSuggestionAction;
+    if (action === undefined || action === null || action === '') {
+      action = SAYT_DEFAULTS.suggestionAction;
+    } else if (SAYT_ACTIONS.indexOf(String(action)) === -1) {
+      // Clamp rather than throw: a typo in a site's settings form must degrade
+      // to the safe default, not break the search box.
+      if (!saytActionWarned) {
+        saytActionWarned = true;
+        console.warn('[scolta:sayt] Unknown sayt_suggestion_action', JSON.stringify(String(action)) +
+          '; expected one of ' + SAYT_ACTIONS.join(', ') + '. Falling back to ' +
+          SAYT_DEFAULTS.suggestionAction + '.');
+      }
+      action = SAYT_DEFAULTS.suggestionAction;
+    } else {
+      action = String(action);
+    }
+
+    return {
+      enabled: saytBool(instanceConfig.saytEnabled, SAYT_DEFAULTS.enabled),
+      minChars: saytInt(instanceConfig.saytMinChars, SAYT_DEFAULTS.minChars, 1),
+      debounceMs: saytInt(instanceConfig.saytDebounceMs, SAYT_DEFAULTS.debounceMs, 0),
+      maxSuggestions: saytInt(instanceConfig.saytMaxSuggestions, SAYT_DEFAULTS.maxSuggestions, 1),
+      recentSearches: saytBool(instanceConfig.saytRecentSearches, SAYT_DEFAULTS.recentSearches),
+      maxRecent: saytInt(instanceConfig.saytMaxRecent, SAYT_DEFAULTS.maxRecent, 0),
+      expand: saytBool(instanceConfig.saytExpand, SAYT_DEFAULTS.expand),
+      expandPerMinute: saytInt(instanceConfig.saytExpandPerMinute, SAYT_DEFAULTS.expandPerMinute, 0),
+      expansionDelayMs: saytInt(instanceConfig.saytExpansionDelayMs, SAYT_DEFAULTS.expansionDelayMs, 0),
+      suggestionAction: action,
+    };
   }
 
   // Sanitize a query before logging to strip PII (emails, phones, SSNs, etc.).
@@ -1728,6 +1894,557 @@
     lastPreloadedTerm = '';
   }
 
+  // ==========================================================================
+  // SEARCH AS YOU TYPE — suggest cycle, dropdown, recent searches, enrichment
+  // ==========================================================================
+
+  // --- Recent searches (localStorage) ---
+  //
+  // Every access is wrapped: Safari private browsing throws on setItem, some
+  // enterprise policies throw on getItem, and a storage failure must never take
+  // the search box with it. Stored values are user-typed strings and are treated
+  // as untrusted on render, exactly like index metadata.
+
+  function readRecentSearches() {
+    if (!getSaytConfig().recentSearches) return [];
+    try {
+      const store = global.localStorage;
+      if (!store) return [];
+      const raw = store.getItem(SAYT_RECENT_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter(v => typeof v === 'string' && v.trim() !== '')
+        .slice(0, SAYT_RECENT_STORED_MAX);
+    } catch (e) {
+      debugLog('[scolta:sayt] recent-search read failed', e);
+      return [];
+    }
+  }
+
+  // Record a COMMITTED query. Called from doSearch(), never from the suggest
+  // path: a prefix the user typed on the way to a real query is not a search.
+  function recordRecentSearch(query) {
+    const cfg = getSaytConfig();
+    if (!cfg.enabled || !cfg.recentSearches) return;
+    const q = String(query || '').trim();
+    if (!q) return;
+    try {
+      const store = global.localStorage;
+      if (!store) return;
+      const lower = q.toLowerCase();
+      const next = [q].concat(
+        readRecentSearches().filter(v => v.toLowerCase() !== lower)
+      ).slice(0, SAYT_RECENT_STORED_MAX);
+      store.setItem(SAYT_RECENT_KEY, JSON.stringify(next));
+    } catch (e) {
+      debugLog('[scolta:sayt] recent-search write failed', e);
+    }
+  }
+
+  // Recent searches that relate to what is being typed. Prefix matches come
+  // first because they are what the user is most likely completing; substring
+  // matches follow. The typed term itself is never offered back.
+  function matchingRecentSearches(term, cfg) {
+    if (!cfg.recentSearches || cfg.maxRecent <= 0) return [];
+    const lower = term.toLowerCase();
+    const prefix = [];
+    const substring = [];
+    for (const value of readRecentSearches()) {
+      const v = value.toLowerCase();
+      if (v === lower) continue;
+      if (v.startsWith(lower)) prefix.push(value);
+      else if (v.indexOf(lower) !== -1) substring.push(value);
+    }
+    return prefix.concat(substring).slice(0, cfg.maxRecent).map(value => ({
+      type: 'recent',
+      title: value,
+      url: '',
+      excerpt: '',
+    }));
+  }
+
+  // --- Suggest cycle ---
+
+  // Invalidate any pending or in-flight suggest work. Bumping the version is
+  // the whole cancellation mechanism: every await in the cycle re-checks it, so
+  // a search already in flight simply throws its results away on return.
+  function cancelSuggest() {
+    if (suggestTimer) {
+      clearTimeout(suggestTimer);
+      suggestTimer = null;
+    }
+    if (suggestExpandTimer) {
+      clearTimeout(suggestExpandTimer);
+      suggestExpandTimer = null;
+    }
+    if (suggestBlurTimer) {
+      clearTimeout(suggestBlurTimer);
+      suggestBlurTimer = null;
+    }
+    suggestVersion++;
+  }
+
+  // Extend the typing path. schedulePreload() still runs alongside this and is
+  // untouched: it warms index chunks, this produces suggestions, and the two
+  // debounces are independent by design (a site may want suggestions slower or
+  // faster than chunk warm-up).
+  function scheduleSuggest(raw) {
+    const cfg = getSaytConfig();
+    if (!cfg.enabled || !els.sayt) return;
+
+    cancelSuggest();
+
+    const term = (raw || '').trim();
+    if (saytGraphemeLength(term) < cfg.minChars) {
+      // Below the floor is a close, not a no-op: the user backspaced out of a
+      // query that had a dropdown open.
+      closeSuggestions();
+      return;
+    }
+
+    suggestTimer = setTimeout(() => {
+      suggestTimer = null;
+      runSuggestCycle(term);
+    }, cfg.debounceMs);
+  }
+
+  // Run one suggest cycle for `term`.
+  //
+  // Never uses pagefindSearch(): that memo belongs to the doSearch() cycle and
+  // applies the user's facet selections. Suggestions are query completion, not
+  // a filtered result list, so they run against the whole index — and the
+  // options object is ALWAYS `{}`. Naming a dimension in a search's filters
+  // makes Pagefind fetch that dimension's filter chunk, and on an index without
+  // the scolta.facets artifact a loaded chunk taxes every later search with a
+  // per-matched-result scan that nothing can unload short of destroy(). A
+  // keystroke-rate path must never be what triggers that.
+  async function runSuggestCycle(term) {
+    const cfg = getSaytConfig();
+    if (!cfg.enabled || !els.sayt || !pagefind || typeof pagefind.search !== 'function') return;
+    // The user has committed and the results region is mid-paint; stand down.
+    if (paintingVersion !== 0) return;
+
+    const version = ++suggestVersion;
+
+    let rows = [];
+    let usedOr = false;
+    try {
+      const search = await pagefind.search(term, {});
+      if (version !== suggestVersion) return;
+      rows = (search && search.results) || [];
+
+      // Pagefind ANDs every word, so a multi-word prefix ("chocolate br") often
+      // matches nothing until the last word is complete. Same shape as the
+      // result path's OR fallback: search each word, union by fragment id, and
+      // score the union at the reduced weight the fallback uses.
+      const words = term.split(/\s+/).filter(w => w.length > 0);
+      if (rows.length === 0 && words.length > 1) {
+        const perTerm = await Promise.all(words.map(
+          w => Promise.resolve(pagefind.search(w, {})).catch(() => ({ results: [] }))
+        ));
+        if (version !== suggestVersion) return;
+        const seenIds = new Set();
+        rows = [];
+        for (const s of perTerm) {
+          for (const r of ((s && s.results) || [])) {
+            if (seenIds.has(r.id)) continue;
+            seenIds.add(r.id);
+            rows.push(r);
+          }
+        }
+        usedOr = rows.length > 0;
+      }
+    } catch (e) {
+      // A genuine search failure is not the same as "no matches", and leaving
+      // the previous prefix's suggestions on screen would claim it is. Take the
+      // dropdown down instead — but only if this cycle is still the current one.
+      debugLog('[scolta:sayt] suggest search failed', e);
+      if (version === suggestVersion) closeSuggestions();
+      return;
+    }
+
+    const merged = await buildSuggestions(term, rows, usedOr, version, cfg);
+    if (merged === null) return;   // superseded mid-load
+
+    renderSuggestions(merged, term);
+
+    // Enrichment is scheduled from here rather than from the input handler so
+    // it measures idle time from the settled prefix, not from the last
+    // keystroke of a query the user is still extending.
+    scheduleSuggestExpansion(term, version, cfg);
+  }
+
+  // Load fragments for at most maxSuggestions rows, score them through the same
+  // path the result list uses, dedupe by title, and merge recent searches ahead
+  // of them. Returns null if the cycle was superseded while loading.
+  async function buildSuggestions(term, rows, usedOr, version, cfg) {
+    const cap = cfg.maxSuggestions;
+    let titleSuggestions = [];
+
+    if (rows.length > 0) {
+      // The hard cap on fragment loads for this pass. Each .data() is a network
+      // fetch on a cold cache, and this runs at typing speed.
+      const slice = rows.slice(0, cap);
+      // allSettled, not all: one fragment that fails to fetch must cost the
+      // user that one suggestion, not the whole dropdown.
+      const settled = await Promise.allSettled(slice.map(r => r.data()));
+      if (version !== suggestVersion) return null;
+      const loaded = [];
+      for (const outcome of settled) {
+        if (outcome.status === 'fulfilled') loaded.push(outcome.value);
+        else debugLog('[scolta:sayt] fragment load failed', outcome.reason);
+      }
+
+      // Every fragment failed. Fall through rather than returning: recent
+      // searches do not depend on the index and are still worth showing.
+      if (loaded.length > 0) {
+        const scored = scoreResults(loaded, term, usedOr ? 0.6 : 1.0);
+        scored.sort((a, b) => b.score - a.score);
+        titleSuggestions = deduplicateByTitle(scored)
+          .map(toTitleSuggestion)
+          .filter(s => s.title !== '');
+      }
+    }
+
+    return mergeSuggestions(matchingRecentSearches(term, cfg), titleSuggestions, cap);
+  }
+
+  // A scored result becomes a suggestion. `url` stays raw for the safety gate
+  // and `safeUrl` is the same attribute-escaped, scheme-neutralized value the
+  // result card puts in its href — one sanitizer, one behaviour.
+  function toTitleSuggestion(scored) {
+    const data = scored.data || {};
+    const rawUrl = data.meta?.url || resolveUrl(data.url || '') || data.url || '';
+    return {
+      type: 'title',
+      title: String(data.meta?.title || '').trim(),
+      url: rawUrl,
+      safeUrl: sanitizeUrlAttr(rawUrl),
+      excerpt: data.excerpt || '',
+    };
+  }
+
+  // Recent searches first (they are what the user already wanted), then title
+  // suggestions, deduped case-insensitively by title across both groups, total
+  // capped at `cap`.
+  function mergeSuggestions(recents, titles, cap) {
+    const out = [];
+    const seen = new Set();
+    for (const list of [recents, titles]) {
+      for (const s of list) {
+        if (out.length >= cap) break;
+        const key = s.title.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(s);
+      }
+    }
+    return out;
+  }
+
+  // --- Dropdown rendering ---
+
+  function suggestOptionId(index) {
+    return 'scolta-sayt-option-' + index;
+  }
+
+  // Render lifecycle events for the suggest path, matching the result-render
+  // seam exactly: dispatched on the element being written, bubbling,
+  // non-cancellable, listener exceptions caught and logged. Documented in
+  // docs/RENDER_SEAM.md.
+  function emitBeforeSuggestions(query) {
+    emitLifecycle(els.sayt, 'scolta:before-suggestions-render', {
+      container: els.sayt,
+      query: query,
+    });
+  }
+
+  function emitSuggestionsRendered(list, query) {
+    emitLifecycle(els.sayt, 'scolta:suggestions-rendered', {
+      container: els.sayt,
+      suggestions: list,
+      query: query,
+    });
+  }
+
+  function renderSuggestions(list, query) {
+    if (!els.sayt) return;
+
+    if (list.length === 0) {
+      emitBeforeSuggestions(query);
+      suggestions = [];
+      activeSuggestion = -1;
+      suggestQuery = query;
+      els.sayt.innerHTML = '';
+      setSuggestOpen(false);
+      emitSuggestionsRendered([], query);
+      return;
+    }
+
+    emitBeforeSuggestions(query);
+
+    const navigates = getSaytConfig().suggestionAction === 'navigate';
+    let html = '';
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      const isRecent = s.type === 'recent';
+      const cls = 'scolta-sayt-option' + (isRecent ? ' scolta-sayt-option-recent' : '');
+      // In `navigate` mode a title suggestion is a real anchor, so middle-click,
+      // ctrl-click and the browser's own link affordances all work and the href
+      // is the card's sanitized URL rather than something JS assembles at click
+      // time. Recent searches are never links: navigating to a stored query
+      // string is meaningless, so they always run the search.
+      const asLink = !isRecent && navigates && isSafeLinkUrl(s.url);
+      const tag = asLink ? 'a' : 'div';
+      const href = asLink ? ` href="${s.safeUrl}"` : '';
+      const excerpt = (!isRecent && s.excerpt) ? truncateExcerpt(s.excerpt, 120) : '';
+      html += `<${tag} class="${cls}" role="option" id="${suggestOptionId(i)}"`
+        + ` aria-selected="false" data-scolta-sayt-index="${i}"${href}>`
+        + `<span class="scolta-sayt-kind" aria-hidden="true">${isRecent ? '&#8635;' : '&#8250;'}</span>`
+        + `<span class="scolta-sayt-title">${escapeHtml(s.title)}</span>`
+        + (excerpt ? `<span class="scolta-sayt-excerpt">${excerpt}</span>` : '')
+        + `</${tag}>`;
+    }
+    els.sayt.innerHTML = html;
+
+    suggestions = list;
+    suggestQuery = query;
+    activeSuggestion = -1;
+    els.queryInput.removeAttribute('aria-activedescendant');
+    setSuggestOpen(true);
+
+    emitSuggestionsRendered(list, query);
+  }
+
+  function setSuggestOpen(open) {
+    if (!els.sayt) return;
+    suggestOpen = open;
+    els.sayt.style.display = open ? 'block' : 'none';
+    els.queryInput.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (!open) els.queryInput.removeAttribute('aria-activedescendant');
+  }
+
+  function closeSuggestions() {
+    if (!els.sayt) return;
+    if (suggestBlurTimer) {
+      clearTimeout(suggestBlurTimer);
+      suggestBlurTimer = null;
+    }
+    suggestions = [];
+    activeSuggestion = -1;
+    suggestQuery = '';
+    els.sayt.innerHTML = '';
+    setSuggestOpen(false);
+  }
+
+  // Move the active option. DOM focus never leaves the input — the combobox
+  // pattern tracks the active option through aria-activedescendant, so screen
+  // readers announce it while typing keeps working.
+  function setActiveSuggestion(index) {
+    if (!els.sayt) return;
+    const options = els.sayt.querySelectorAll('[role="option"]');
+    if (options.length === 0) return;
+    activeSuggestion = index;
+    for (let i = 0; i < options.length; i++) {
+      const on = i === index;
+      options[i].setAttribute('aria-selected', on ? 'true' : 'false');
+      if (on) options[i].classList.add('scolta-sayt-option-active');
+      else options[i].classList.remove('scolta-sayt-option-active');
+    }
+    if (index >= 0 && options[index]) {
+      els.queryInput.setAttribute('aria-activedescendant', options[index].id);
+    } else {
+      els.queryInput.removeAttribute('aria-activedescendant');
+    }
+  }
+
+  // --- Acting on a suggestion ---
+
+  function actOnSuggestion(index) {
+    const s = suggestions[index];
+    if (!s) return;
+    const cfg = getSaytConfig();
+    const runsSearch = s.type === 'recent' || cfg.suggestionAction !== 'navigate';
+
+    if (runsSearch) {
+      els.queryInput.value = s.title;
+      els.searchClear.style.display = 'block';
+      closeSuggestions();
+      cancelSuggest();
+      doSearch();
+      return;
+    }
+
+    // navigate: follow the option's own anchor, whose href is the card's
+    // sanitized URL. A title suggestion whose URL failed isSafeLinkUrl() was
+    // never rendered as a link, so there is nothing to follow and the dropdown
+    // simply closes.
+    // Follow the link while it is still in the document — a detached anchor's
+    // activation behaviour is not something to rely on — then tear down.
+    const el = els.sayt.querySelector('[data-scolta-sayt-index="' + index + '"]');
+    if (el && typeof el.click === 'function' && el.hasAttribute('href')) el.click();
+    closeSuggestions();
+    cancelSuggest();
+  }
+
+  // --- Keyboard ---
+  //
+  // Returns true when the event was consumed, so the caller leaves the existing
+  // Enter-runs-doSearch handler untouched for every case SAYT does not claim.
+  function handleSuggestKeydown(e) {
+    if (!getSaytConfig().enabled || !els.sayt) return false;
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!suggestOpen || suggestions.length === 0) return false;
+      e.preventDefault();
+      const n = suggestions.length;
+      const delta = e.key === 'ArrowDown' ? 1 : -1;
+      const next = activeSuggestion < 0
+        ? (delta > 0 ? 0 : n - 1)
+        : (activeSuggestion + delta + n) % n;   // wraps at both ends
+      setActiveSuggestion(next);
+      return true;
+    }
+
+    if (e.key === 'Escape') {
+      // Close without clearing the input. A second Escape falls through to
+      // whatever the host page does with it.
+      if (!suggestOpen) return false;
+      e.preventDefault();
+      closeSuggestions();
+      cancelSuggest();
+      return true;
+    }
+
+    if (e.key === 'Enter') {
+      // Enter with NO active option runs doSearch() exactly as it always has.
+      if (!suggestOpen || activeSuggestion < 0) return false;
+      e.preventDefault();
+      actOnSuggestion(activeSuggestion);
+      return true;
+    }
+
+    return false;
+  }
+
+  // --- AI enrichment ---
+
+  // Sliding-window budget. SAYT expansions share the platform's AI flood bucket
+  // with committed searches (expand + summarize + follow-up all count against
+  // the same per-IP limit), so an unbudgeted suggest path would spend a
+  // visitor's whole allowance on prefixes and starve the search they actually
+  // ran. Over budget, the dropdown silently stays keyword-only.
+  function saytExpandBudgetAllows(cfg) {
+    if (cfg.expandPerMinute <= 0) return false;
+    const cutoff = Date.now() - SAYT_EXPAND_WINDOW_MS;
+    saytExpandCalls = saytExpandCalls.filter(t => t > cutoff);
+    return saytExpandCalls.length < cfg.expandPerMinute;
+  }
+
+  function scheduleSuggestExpansion(term, version, cfg) {
+    if (!cfg.expand || !getInstanceConfig().AI_EXPAND_QUERY) return;
+    if (suggestExpandTimer) {
+      clearTimeout(suggestExpandTimer);
+      suggestExpandTimer = null;
+    }
+    suggestExpandTimer = setTimeout(() => {
+      suggestExpandTimer = null;
+      enrichSuggestions(term, version, cfg);
+    }, cfg.expansionDelayMs);
+  }
+
+  // One expandQuery() call for a prefix the user has stopped typing, then merge
+  // the expansion terms' title matches into the open dropdown. Every failure
+  // mode — over budget, network error, degraded server response, no new terms,
+  // superseded cycle — degrades silently to the keyword suggestions already on
+  // screen, because there is nothing useful to tell a user mid-keystroke.
+  async function enrichSuggestions(term, version, cfg) {
+    if (version !== suggestVersion || !suggestOpen || !els.sayt) return;
+    if (!saytExpandBudgetAllows(cfg)) {
+      debugLog('[scolta:sayt] expansion budget spent (' + cfg.expandPerMinute +
+        '/min); keyword suggestions only until the window rolls');
+      return;
+    }
+    saytExpandCalls.push(Date.now());
+
+    let expansion;
+    try {
+      expansion = await expandQuery(term);
+    } catch (e) {
+      debugLog('[scolta:sayt] expansion failed', e);
+      return;
+    }
+    if (version !== suggestVersion || !suggestOpen) return;
+
+    const rawTerms = Array.isArray(expansion) ? expansion : ((expansion && expansion.terms) || []);
+    const lower = term.toLowerCase();
+    const fresh = [];
+    for (const t of rawTerms) {
+      if (typeof t !== 'string') continue;
+      const trimmed = t.trim();
+      if (!trimmed || trimmed.toLowerCase() === lower) continue;
+      if (fresh.indexOf(trimmed) === -1) fresh.push(trimmed);
+    }
+    if (fresh.length === 0) return;
+
+    let rows = [];
+    try {
+      const searches = await Promise.all(fresh.map(
+        t => Promise.resolve(pagefind.search(t, {})).catch(() => ({ results: [] }))
+      ));
+      if (version !== suggestVersion || !suggestOpen) return;
+      const seenIds = new Set();
+      for (const s of searches) {
+        for (const r of ((s && s.results) || [])) {
+          if (seenIds.has(r.id)) continue;
+          seenIds.add(r.id);
+          rows.push(r);
+        }
+      }
+    } catch (e) {
+      debugLog('[scolta:sayt] expansion search failed', e);
+      return;
+    }
+    if (rows.length === 0) return;
+
+    // Same per-pass fragment cap as the keyword pass.
+    const slice = rows.slice(0, cfg.maxSuggestions);
+    let loaded;
+    try {
+      loaded = await Promise.all(slice.map(r => r.data()));
+    } catch (e) {
+      debugLog('[scolta:sayt] expansion fragment load failed', e);
+      return;
+    }
+    if (version !== suggestVersion || !suggestOpen) return;
+
+    const scored = scoreResults(loaded, term, SAYT_EXPANDED_WEIGHT);
+    scored.sort((a, b) => b.score - a.score);
+    const expandedSuggestions = deduplicateByTitle(scored)
+      .map(toTitleSuggestion)
+      .filter(s => s.title !== '');
+
+    const active = activeSuggestion >= 0 ? suggestions[activeSuggestion] : null;
+    const merged = mergeSuggestions(
+      suggestions,
+      expandedSuggestions,
+      cfg.maxSuggestions
+    );
+    if (merged.length === suggestions.length) return;   // nothing new survived the cap
+
+    renderSuggestions(merged, term);
+
+    // The list grew around the user's selection; keep it selected rather than
+    // silently dropping them back to "nothing active" mid-keyboard-navigation.
+    if (active) {
+      const activeKey = active.title.toLowerCase();
+      const idx = merged.findIndex(s => s.title.toLowerCase() === activeKey);
+      if (idx >= 0) setActiveSuggestion(idx);
+    }
+  }
+
   // Count distinct results across the union of search terms under the given
   // filters. Mirrors the union the real merged search performs, but only
   // counts result ids — no fragment loads — so it is cheap enough to run as
@@ -2983,155 +3700,189 @@
     const query = els.queryInput.value.trim();
     if (!query || !pagefind) return;
 
+    // The user committed. Any pending or in-flight suggest work is now noise:
+    // cancel it, take the dropdown down, and hold the suggest path off until
+    // the primary paint lands.
+    cancelSuggest();
+    closeSuggestions();
+    recordRecentSearch(query);
+
     const version = ++searchVersion;
 
-    if (abortController) abortController.abort();
-    abortController = new AbortController();
-
-    currentQuery = query;
-
-    displayedCount = 0;
-    allScoredResults = [];
-    hadSpecificMatch = false;
-    conversationMessages = [];
-    followUpCount = 0;
-    // Fresh cycle, fresh memo: identical searches are shared WITHIN a cycle
-    // only, so a count from an earlier query can never leak into this one.
-    searchMemo = new Map();
-    if (!preserveFilters) {
-      var effectiveFilters = initialFilters ? Object.assign({}, initialFilters) : {};
-      if (!effectiveFilters.language && defaultLangCode && CONFIG.AUTO_LANGUAGE_FILTER) {
-        var langs = CONFIG.AI_LANGUAGES || [];
-        if (langs.length > 1 && langs.includes(defaultLangCode)) {
-          effectiveFilters.language = new Set([defaultLangCode]);
-        }
-      }
-      activeFilters = effectiveFilters;
-    }
-
-    // Update URL with search query and active filter state.
-    try {
-      var url = new URL(window.location.href);
-      url.searchParams.set('q', query);
-      for (const key of [...url.searchParams.keys()]) {
-        if (key.startsWith('f_')) url.searchParams.delete(key);
-      }
-      for (const [dim, vals] of Object.entries(activeFilters)) {
-        if (vals instanceof Set && vals.size > 0) {
-          url.searchParams.set('f_' + dim, [...vals].join(','));
-        }
-      }
-      history.replaceState(null, '', url.toString());
-    } catch (e) {
-      // Silently ignore — URL sync is non-critical.
-    }
-
-    els.layout.style.display = "grid";
-    emitBeforeResults('loading');
-    els.results.innerHTML = '<p class="scolta-searching">Searching...</p>';
-    paintedEntries = [];
-    paintedHighlightSignature = null;
-    emitResultsRendered([], [], [], false);
-    els.resultsHeader.innerHTML = "";
-    els.noResults.style.display = "none";
-    els.aiSummary.style.display = "none";
-    els.loadMore.style.display = "none";
-    if (!preserveFilters) {
-      els.expandedTerms.style.display = "none";
-    }
-
-    const meaningfulTerms = extractSearchTerms(query);
-    const searchQuery = meaningfulTerms.length > 0 ? meaningfulTerms.join(' ') : query;
-    // Detect quoted phrase: user typed "hello world" with surrounding double-quotes.
-    // Pagefind receives the unquoted terms; the Rust scorer receives the quoted form
-    // so extract_query() can set forced_phrase = true and apply phrase multipliers.
-    const trimmedQuery = query.trim();
-    const isForcedPhrase =
-      trimmedQuery.startsWith('"') && trimmedQuery.endsWith('"') && trimmedQuery.length > 2;
-    const scorerQuery = isForcedPhrase ? trimmedQuery : searchQuery;
-    debugLog('[scolta:search] Filtered query:', JSON.stringify(sanitizeQueryForLogging(searchQuery)), '(original:', JSON.stringify(sanitizeQueryForLogging(query)), ')');
-
-    allHighlightTerms = meaningfulTerms.length > 0
-      ? meaningfulTerms.filter(t => t.length > 2)
-      : query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
-
-    // Phase 1: Primary search — render results IMMEDIATELY
-    const expandPromise = preserveFilters
-      ? Promise.resolve(lastExpandedTerms)
-      : expandQuery(query);
-    expansionInFlight = !preserveFilters && CONFIG.AI_EXPAND_QUERY;
-
-    const primarySearch = await pagefindSearch(searchQuery, activeFilters);
-    allScoredResults = await loadAndScoreSearch(primarySearch, scorerQuery, 1.0);
-
-    // OR fallback: only activate when AND search returns ZERO results.
-    // This prevents diluting precision when the user provides many terms
-    // to find a specific piece of content. Forced-phrase queries (quoted)
-    // never fall back to OR — the user explicitly asked for phrase results.
-    usedOrFallback = false;
-    if (!isForcedPhrase && meaningfulTerms.length > 1 && primarySearch.results.length === 0) {
-      debugLog('[scolta:search] AND returned 0 results — running OR fallback');
-      const orQueries = meaningfulTerms.map(term => ({ term, weight: 0.6 }));
-      // Specificity weighting so the OR fallback leads with the rare on-intent
-      // term, not the ubiquitous typed word. Closes the typed-word exemption:
-      // a common word the user typed is still searched (recall) but no longer
-      // floods the head of the list.
-      const orSpecificity = {
-        enabled: CONFIG.SPECIFICITY_WEIGHTING,
-        corpusTotal: subwordCorpusSize(activeFilters),
-        strongMatched: false,
-      };
-      const orResults = await searchAndLoadParallel(orQueries, activeFilters, searchQuery, orSpecificity);
-      // Only adopt the specificity signal if this search is still current — a
-      // newer doSearch() resets hadSpecificMatch, and a late-resolving stale OR
-      // fallback must not repollute it.
-      if (version === searchVersion && orSpecificity.strongMatched) hadSpecificMatch = true;
-      allScoredResults = mergeResults(allScoredResults, orResults);
-      applyAgreementBonus(allScoredResults, orResults);
-      usedOrFallback = allScoredResults.length > 0;
-    }
-
-    allScoredResults.sort((a, b) => b.score - a.score);
-    allScoredResults = deduplicateByTitle(allScoredResults);
-
-    const priorityPages = getInstancePriorityPages();
-    if (priorityPages.length > 0 && scoltaWasm && scoltaWasm.match_priority_pages) {
-      try {
-        const priorityInput = JSON.stringify({ query: currentQuery, priority_pages: priorityPages });
-        const priorityMatches = JSON.parse(scoltaWasm.match_priority_pages(priorityInput));
-        if (priorityMatches && priorityMatches.length > 0) {
-          const priorityMap = {};
-          priorityMatches.forEach(pm => {
-            priorityMap[(pm.url || '').replace(/\/$/, '').toLowerCase()] = pm;
-          });
-          allScoredResults.forEach(result => {
-            const url = resolveUrl(result.data.url || '').replace(/\/$/, '').toLowerCase();
-            if (priorityMap[url]) {
-              result.score = (result.score || 0) + (priorityMap[url].boost || 100);
-            }
-          });
-          allScoredResults.sort((a, b) => b.score - a.score);
-        }
-      } catch (e) {
-        console.warn('[scolta] Priority page matching failed', e);
-      }
-    }
-
-    // Paint the results BEFORE computing facet counts. The count pass below is a
-    // second full Pagefind search, and on a production-size index that is the
-    // dominant cost of the whole cycle (measured: results ready at 24,558 ms,
-    // first paint at 35,626 ms — the user waited 11 seconds for numbers in the
-    // filter panel while the list they asked for sat finished in memory).
+    // The suggest path stands down from here until the primary paint lands.
     //
-    // The filter panel is deliberately NOT repainted in the gap. renderFilters()
-    // is count-driven — under the default hideEmptyFacets policy a zero-count
-    // value is hidden entirely — so rendering it against counts that have not
-    // been updated yet would show the PREVIOUS query's visible value set and then
-    // reshuffle when the real counts land. Holding the last painted panel until
-    // then introduces no new visual state: it never flashes empty, and on the
-    // first search of a page load the panel simply appears when the counts
-    // arrive, exactly as it did before this reorder.
-    renderResults(false, 'search');
+    // Two things this has to get right. The window is owned by a VERSION
+    // rather than flagged by a boolean: two doSearch() cycles overlap whenever
+    // the user commits again while one is in flight, and with a boolean the
+    // first cycle's exit unsuppresses the suggest path in the middle of the
+    // second cycle's paint. And EVERYTHING inside the window lives in the try
+    // below, not just the awaits — anything that escapes without releasing the
+    // window leaves suggestions dead for the rest of the page's life, which is
+    // silent, permanent, and invisible in every test that does not fail a
+    // search on purpose (see tests/js/sayt.test.js).
+    paintingVersion = version;
+
+    // Declared out here because the tail of the cycle — the facet-count pass
+    // and the expansion phase, both of which run after the window closes —
+    // still reads them.
+    let meaningfulTerms, searchQuery, isForcedPhrase, expandPromise;
+
+    try {
+      if (abortController) abortController.abort();
+      abortController = new AbortController();
+
+      currentQuery = query;
+
+      displayedCount = 0;
+      allScoredResults = [];
+      hadSpecificMatch = false;
+      conversationMessages = [];
+      followUpCount = 0;
+      // Fresh cycle, fresh memo: identical searches are shared WITHIN a cycle
+      // only, so a count from an earlier query can never leak into this one.
+      searchMemo = new Map();
+      if (!preserveFilters) {
+        var effectiveFilters = initialFilters ? Object.assign({}, initialFilters) : {};
+        if (!effectiveFilters.language && defaultLangCode && CONFIG.AUTO_LANGUAGE_FILTER) {
+          var langs = CONFIG.AI_LANGUAGES || [];
+          if (langs.length > 1 && langs.includes(defaultLangCode)) {
+            effectiveFilters.language = new Set([defaultLangCode]);
+          }
+        }
+        activeFilters = effectiveFilters;
+      }
+
+      // Update URL with search query and active filter state.
+      try {
+        var url = new URL(window.location.href);
+        url.searchParams.set('q', query);
+        for (const key of [...url.searchParams.keys()]) {
+          if (key.startsWith('f_')) url.searchParams.delete(key);
+        }
+        for (const [dim, vals] of Object.entries(activeFilters)) {
+          if (vals instanceof Set && vals.size > 0) {
+            url.searchParams.set('f_' + dim, [...vals].join(','));
+          }
+        }
+        history.replaceState(null, '', url.toString());
+      } catch (e) {
+        // Silently ignore — URL sync is non-critical.
+      }
+
+      els.layout.style.display = "grid";
+      emitBeforeResults('loading');
+      els.results.innerHTML = '<p class="scolta-searching">Searching...</p>';
+      paintedEntries = [];
+      paintedHighlightSignature = null;
+      emitResultsRendered([], [], [], false);
+      els.resultsHeader.innerHTML = "";
+      els.noResults.style.display = "none";
+      els.aiSummary.style.display = "none";
+      els.loadMore.style.display = "none";
+      if (!preserveFilters) {
+        els.expandedTerms.style.display = "none";
+      }
+
+      meaningfulTerms = extractSearchTerms(query);
+      searchQuery = meaningfulTerms.length > 0 ? meaningfulTerms.join(' ') : query;
+      // Detect quoted phrase: user typed "hello world" with surrounding double-quotes.
+      // Pagefind receives the unquoted terms; the Rust scorer receives the quoted form
+      // so extract_query() can set forced_phrase = true and apply phrase multipliers.
+      const trimmedQuery = query.trim();
+      isForcedPhrase =
+        trimmedQuery.startsWith('"') && trimmedQuery.endsWith('"') && trimmedQuery.length > 2;
+      const scorerQuery = isForcedPhrase ? trimmedQuery : searchQuery;
+      debugLog('[scolta:search] Filtered query:', JSON.stringify(sanitizeQueryForLogging(searchQuery)), '(original:', JSON.stringify(sanitizeQueryForLogging(query)), ')');
+
+      allHighlightTerms = meaningfulTerms.length > 0
+        ? meaningfulTerms.filter(t => t.length > 2)
+        : query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+
+      // Phase 1: Primary search — render results IMMEDIATELY
+      expandPromise = preserveFilters
+        ? Promise.resolve(lastExpandedTerms)
+        : expandQuery(query);
+      expansionInFlight = !preserveFilters && CONFIG.AI_EXPAND_QUERY;
+
+      const primarySearch = await pagefindSearch(searchQuery, activeFilters);
+      allScoredResults = await loadAndScoreSearch(primarySearch, scorerQuery, 1.0);
+
+      // OR fallback: only activate when AND search returns ZERO results.
+      // This prevents diluting precision when the user provides many terms
+      // to find a specific piece of content. Forced-phrase queries (quoted)
+      // never fall back to OR — the user explicitly asked for phrase results.
+      usedOrFallback = false;
+      if (!isForcedPhrase && meaningfulTerms.length > 1 && primarySearch.results.length === 0) {
+        debugLog('[scolta:search] AND returned 0 results — running OR fallback');
+        const orQueries = meaningfulTerms.map(term => ({ term, weight: 0.6 }));
+        // Specificity weighting so the OR fallback leads with the rare on-intent
+        // term, not the ubiquitous typed word. Closes the typed-word exemption:
+        // a common word the user typed is still searched (recall) but no longer
+        // floods the head of the list.
+        const orSpecificity = {
+          enabled: CONFIG.SPECIFICITY_WEIGHTING,
+          corpusTotal: subwordCorpusSize(activeFilters),
+          strongMatched: false,
+        };
+        const orResults = await searchAndLoadParallel(orQueries, activeFilters, searchQuery, orSpecificity);
+        // Only adopt the specificity signal if this search is still current — a
+        // newer doSearch() resets hadSpecificMatch, and a late-resolving stale OR
+        // fallback must not repollute it.
+        if (version === searchVersion && orSpecificity.strongMatched) hadSpecificMatch = true;
+        allScoredResults = mergeResults(allScoredResults, orResults);
+        applyAgreementBonus(allScoredResults, orResults);
+        usedOrFallback = allScoredResults.length > 0;
+      }
+
+      allScoredResults.sort((a, b) => b.score - a.score);
+      allScoredResults = deduplicateByTitle(allScoredResults);
+
+      const priorityPages = getInstancePriorityPages();
+      if (priorityPages.length > 0 && scoltaWasm && scoltaWasm.match_priority_pages) {
+        try {
+          const priorityInput = JSON.stringify({ query: currentQuery, priority_pages: priorityPages });
+          const priorityMatches = JSON.parse(scoltaWasm.match_priority_pages(priorityInput));
+          if (priorityMatches && priorityMatches.length > 0) {
+            const priorityMap = {};
+            priorityMatches.forEach(pm => {
+              priorityMap[(pm.url || '').replace(/\/$/, '').toLowerCase()] = pm;
+            });
+            allScoredResults.forEach(result => {
+              const url = resolveUrl(result.data.url || '').replace(/\/$/, '').toLowerCase();
+              if (priorityMap[url]) {
+                result.score = (result.score || 0) + (priorityMap[url].boost || 100);
+              }
+            });
+            allScoredResults.sort((a, b) => b.score - a.score);
+          }
+        } catch (e) {
+          console.warn('[scolta] Priority page matching failed', e);
+        }
+      }
+
+      // Paint the results BEFORE computing facet counts. The count pass below is a
+      // second full Pagefind search, and on a production-size index that is the
+      // dominant cost of the whole cycle (measured: results ready at 24,558 ms,
+      // first paint at 35,626 ms — the user waited 11 seconds for numbers in the
+      // filter panel while the list they asked for sat finished in memory).
+      //
+      // The filter panel is deliberately NOT repainted in the gap. renderFilters()
+      // is count-driven — under the default hideEmptyFacets policy a zero-count
+      // value is hidden entirely — so rendering it against counts that have not
+      // been updated yet would show the PREVIOUS query's visible value set and then
+      // reshuffle when the real counts land. Holding the last painted panel until
+      // then introduces no new visual state: it never flashes empty, and on the
+      // first search of a page load the panel simply appears when the counts
+      // arrive, exactly as it did before this reorder.
+      renderResults(false, 'search');
+    } finally {
+      // Only the owner releases the window. If a newer cycle started while
+      // this one was in flight it owns the window now, and releasing it here
+      // would unsuppress the suggest path in the middle of that cycle's paint.
+      // `finally` without `catch` still rethrows, so a caller sees a failed
+      // search exactly as it did before any of this existed.
+      if (paintingVersion === version) paintingVersion = 0;
+    }
 
     // Counts are a fixed property of the typed query: compute them once, only
     // when the typed query changes (!preserveFilters). A facet toggle, sort, or
@@ -3238,6 +3989,9 @@
     if (abortController) abortController.abort();
     abortController = null;
     cancelPreload();
+    cancelSuggest();
+    closeSuggestions();
+    paintingVersion = 0;
     els.queryInput.value = '';
     els.searchClear.style.display = "none";
     els.layout.style.display = "none";
@@ -3768,13 +4522,28 @@
     // instance owns, so a re-init can remove its own previous UI (duplicate ids
     // would be worse than useless) and destroy() can take out exactly that and
     // nothing else.
+    // Search as you type is part of the scaffold only when it is on. With
+    // sayt_enabled false the input carries no combobox roles and no dropdown
+    // node exists, so the widget is byte-identical to the pre-1.1.0 one.
+    const saytCfg = getSaytConfig();
+    const comboAttrs = saytCfg.enabled
+      ? ` role="combobox" aria-autocomplete="list" aria-haspopup="listbox"`
+        + ` aria-expanded="false" aria-controls="scolta-sayt"`
+      : '';
+    const saytHtml = saytCfg.enabled
+      ? `<div class="scolta-sayt" id="scolta-sayt" role="listbox"
+                 aria-label="Search suggestions" style="display:none;"
+                 data-scolta-scaffold></div>`
+      : '';
+
     const scaffoldHtml = `
       <div class="scolta-search-box" data-scolta-scaffold>
         <div class="scolta-search-input-wrap">
           <input type="text" id="scolta-query" placeholder="Search..."
-                 autofocus autocomplete="off">
+                 autofocus autocomplete="off"${comboAttrs}>
           <button class="scolta-search-clear" id="scolta-search-clear"
                   style="display:none;" aria-label="Clear search">&times;</button>
+          ${saytHtml}
         </div>
         <button class="scolta-search-btn" id="scolta-search-btn">Search</button>
       </div>
@@ -3850,17 +4619,65 @@
       results: root.querySelector('#scolta-results'),
       loadMore: root.querySelector('#scolta-load-more'),
       noResults: root.querySelector('#scolta-no-results'),
+      sayt: root.querySelector('#scolta-sayt'),
     };
 
     // Event listeners.
     els.queryInput.addEventListener("keydown", (e) => {
+      // SAYT claims Arrow keys, Escape while the dropdown is open, and Enter
+      // while an option is active. Everything else — including Enter with no
+      // active option — falls through to the behaviour that shipped before it.
+      if (handleSuggestKeydown(e)) return;
       if (e.key === "Enter") doSearch();
     });
 
     els.queryInput.addEventListener("input", () => {
       els.searchClear.style.display = els.queryInput.value.length > 0 ? "block" : "none";
       schedulePreload(els.queryInput.value);
+      scheduleSuggest(els.queryInput.value);
     });
+
+    if (els.sayt) {
+      // mousedown, not click: preventing the default here stops the input from
+      // losing focus at all, so the option's own click still lands and the blur
+      // timer below never has to race it.
+      els.sayt.addEventListener("mousedown", (e) => {
+        if (e.target.closest('[data-scolta-sayt-index]')) e.preventDefault();
+      });
+
+      els.sayt.addEventListener("click", (e) => {
+        const optionEl = e.target.closest('[data-scolta-sayt-index]');
+        if (!optionEl) return;
+        const index = parseInt(optionEl.dataset.scoltaSaytIndex, 10);
+        if (!isFinite(index)) return;
+        // In navigate mode the option IS an anchor and the browser is already
+        // handling this click; only tidy up. Any other mode acts explicitly.
+        if (optionEl.hasAttribute('href')) {
+          closeSuggestions();
+          cancelSuggest();
+          return;
+        }
+        e.preventDefault();
+        actOnSuggestion(index);
+      });
+
+      els.sayt.addEventListener("mouseover", (e) => {
+        const optionEl = e.target.closest('[data-scolta-sayt-index]');
+        if (!optionEl) return;
+        const index = parseInt(optionEl.dataset.scoltaSaytIndex, 10);
+        if (isFinite(index)) setActiveSuggestion(index);
+      });
+
+      // Close on blur, but only after a beat: a click that started inside the
+      // dropdown must still land.
+      els.queryInput.addEventListener("blur", () => {
+        if (suggestBlurTimer) clearTimeout(suggestBlurTimer);
+        suggestBlurTimer = setTimeout(() => {
+          suggestBlurTimer = null;
+          closeSuggestions();
+        }, 150);
+      });
+    }
 
     els.searchClear.addEventListener("click", clearSearch);
     els.searchBtn.addEventListener("click", () => doSearch());
@@ -4001,6 +4818,10 @@
     setResultRenderer,
     destroy: function() {
       if (abortController) abortController.abort();
+      // Timers outlive the DOM they would write to; cancelSuggest() clears the
+      // debounce, the enrichment idle timer and the blur timer in one place.
+      cancelPreload();
+      cancelSuggest();
       // Remove only what init() inserted. Clearing the whole mount point would
       // take out platform markup this instance never owned — the same bug the
       // non-destructive init() fixes at the other end of the lifecycle.
