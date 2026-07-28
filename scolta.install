@@ -10,6 +10,7 @@ use Composer\InstalledVersions;
 use Drupal\Core\Site\Settings;
 use Tag1\Scolta\AiProvider\Amazee\AutoProvisioner;
 use Drupal\Core\File\FileExists;
+use Drupal\user\Entity\Role;
 use Drupal\user\RoleInterface;
 
 /**
@@ -218,4 +219,47 @@ function scolta_uninstall() {
 
   // Clean up per-user data (e.g. dismissed rebuild notices).
   \Drupal::service('user.data')->delete('scolta');
+}
+
+/**
+ * Grants 'use scolta ai' to the anonymous and authenticated roles.
+ *
+ * Backfills onto existing sites the grant that scolta_install() applies to
+ * fresh installs. Without it the fix ships in name only: the changelog says
+ * anonymous visitors get AI overviews, an already-installed site keeps the
+ * restrictive default it was installed with, and every anonymous request to
+ * /api/scolta/v1/* keeps returning 403 with nothing in the UI explaining why.
+ *
+ * This is the module's first update hook, so every site installed before it
+ * existed sits at the default schema version and runs it. A site installed
+ * afterwards records 10001 at install time and skips it, having already been
+ * granted the permission by scolta_install() — the grant never happens twice.
+ *
+ * The per-role guard keeps the function a no-op where the permission is
+ * already held: no config write, so no needless cache invalidation, and
+ * calling it a second time changes nothing. Sites that deliberately revoke
+ * the permission afterwards are unaffected, because an update hook that has
+ * run does not run again.
+ */
+function scolta_update_10001() {
+  $granted = [];
+
+  foreach ([RoleInterface::ANONYMOUS_ID, RoleInterface::AUTHENTICATED_ID] as $role_id) {
+    $role = Role::load($role_id);
+    // A site can have removed either role; nothing to backfill if so.
+    if (!$role || $role->hasPermission('use scolta ai')) {
+      continue;
+    }
+    $role->grantPermission('use scolta ai');
+    $role->save();
+    $granted[] = $role_id;
+  }
+
+  if (!$granted) {
+    return t('The "use scolta ai" permission was already in place; no roles changed.');
+  }
+
+  return t('Granted the "use scolta ai" permission to: @roles. Revoke it at Administration › People › Permissions to restrict AI features to specific roles.', [
+    '@roles' => implode(', ', $granted),
+  ]);
 }

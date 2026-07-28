@@ -208,6 +208,8 @@ If you have previously run `drush search-api:index`, that is not sufficient — 
 
 Scolta defines a **Use Scolta AI features** permission (`use scolta ai`) that gates the AI API endpoints. This permission is granted to the **anonymous** and **authenticated** roles automatically at module install, so search visitors receive AI overviews out of the box with no admin action required.
 
+On a site installed before that grant existed, the permission is backfilled by a database update: run `drush updatedb` (or visit `/update.php`) after updating the module. Until that update runs, anonymous requests to the AI endpoints return 403. The update grants the permission only where it is missing, and does not run again afterwards, so a later decision to revoke it stands.
+
 To restrict AI features to specific roles (e.g. authenticated users only), revoke the permission from the anonymous role at *Administration > People > Permissions*.
 
 The health endpoint (`GET /api/scolta/v1/health`) is reachable without any permission so uptime monitors always work, but callers without **Administer Scolta** (`administer scolta`) receive only `{"status": "ok"|"degraded"}`. The full diagnostic payload (AI provider, index integrity, fragment counts) requires `administer scolta`.
