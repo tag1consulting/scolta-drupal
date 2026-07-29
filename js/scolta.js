@@ -380,7 +380,7 @@
   let conversationMessages = [];
   let followUpCount = 0;
   let abortController = null;
-  let queryFacetCounts = {};   // { dimension: { value: count } } — fixed per typed query
+  let queryFacetCounts = {};   // { dimension: { value: count } } — per typed query, folded once when expansion lands
   let currentQuery = "";
   let allHighlightTerms = [];
   let lastExpandedTerms = null;
@@ -2706,19 +2706,49 @@
     }
   }
 
-  // Compute the query-fixed facet counts for a typed query.
+  // The structural-only projection of a filter object: the dimensions that
+  // scope the corpus (language/site/etc. in SKIP_FILTER_DIMENSIONS — typically
+  // the auto-language default) with every user-facing facet selection dropped.
+  // Every facet count in this file is computed under this scope and never under
+  // activeFilters, so the numbers are independent of which facets the user has
+  // clicked. Counting under the user's selection is the obvious shortcut and it
+  // is wrong: a page loaded with ?f_difficulty=Beginner would report 0 for every
+  // other value, hideEmptyFacets would hide them all, and the user could never
+  // switch facet value.
+  function structuralFilterScope(baseFilters) {
+    const structuralFilters = {};
+    for (const [dim, vals] of Object.entries(baseFilters || {})) {
+      if (SKIP_FILTER_DIMENSIONS.has(dim.toLowerCase())) {
+        structuralFilters[dim] = vals;
+      }
+    }
+    return structuralFilters;
+  }
+
+  // Add two count maps, per dimension per value. A value present in one and
+  // absent from the other starts at 0. Neither input is mutated.
+  function addFacetCounts(base, extra) {
+    const out = {};
+    for (const [dim, vals] of Object.entries(base || {})) {
+      out[dim] = Object.assign({}, vals);
+    }
+    for (const [dim, vals] of Object.entries(extra || {})) {
+      if (!out[dim]) out[dim] = {};
+      for (const [value, n] of Object.entries(vals)) {
+        out[dim][value] = (out[dim][value] || 0) + n;
+      }
+    }
+    return out;
+  }
+
+  // The typed query's facet counts AND the identity of the documents they were
+  // counted over, so the expansion pass can fold its own contribution in
+  // without counting any document twice. Returns
+  // { counts: { dimension: { value: count } }, ids: Set, urls: Set }.
   //
-  // Counts are a fixed property of the typed query: computed once when the query
-  // is submitted, never recomputed on a facet toggle or after AI expansion. A
-  // single Pagefind search returns per-value counts for every dimension in one
+  // A single Pagefind search returns per-value counts for every dimension in one
   // shot (`.filters`); the count next to a value means "N of the results for
-  // your search are tagged this." To keep counts stable yet correctly scoped,
-  // the search keeps only STRUCTURAL filter dimensions (language/site/etc. in
-  // SKIP_FILTER_DIMENSIONS — typically the auto-language default) and drops
-  // every user-facing facet selection, so the numbers are independent of which
-  // facets the user has clicked. Expansion is LLM-driven and nondeterministic,
-  // so deriving counts from the deterministic typed query keeps them stable
-  // run-to-run. Returns { dimension: { value: count } }.
+  // your search are tagged this."
   //
   // The count source must follow the same query-mode decision the result list
   // makes (see the OR fallback in doSearch). Pagefind ANDs every word of a
@@ -2739,50 +2769,149 @@
   // search — they can diverge (a user-applied facet may empty the primary search
   // while the structural search still matches), and counts describe the typed
   // query against structural scope, so the structural search's verdict governs.
-  async function computeQueryFacetCounts(query, baseFilters, meaningfulTerms, isForcedPhrase) {
-    const structuralFilters = {};
-    for (const [dim, vals] of Object.entries(baseFilters || {})) {
-      if (SKIP_FILTER_DIMENSIONS.has(dim.toLowerCase())) {
-        structuralFilters[dim] = vals;
-      }
+  //
+  // `urls` is populated only where fragments were loaded anyway (mode 2), so the
+  // expansion delta can collapse a document the result list collapses by URL. In
+  // mode 1 nothing is loaded — `search.filters` counts the FULL matched set
+  // without touching a fragment, which is the property that makes this pass
+  // nearly free — so `urls` is empty there and the delta dedups by fragment id
+  // alone. Two fragment ids sharing one normalized URL therefore still count
+  // twice across the typed/expansion boundary in mode 1, exactly as Pagefind's
+  // own native counts already do within it.
+  async function computeTypedFacetCounts(query, structuralFilters, meaningfulTerms, isForcedPhrase) {
+    const search = await pagefindSearch(query, structuralFilters);
+    // Mode 1: AND search matched — native per-value counts, exact.
+    if (search && search.results && search.results.length > 0) {
+      return {
+        counts: search.filters || {},
+        // Uncapped and free: `results` carries every match, and only `.data()`
+        // costs anything.
+        ids: new Set(search.results.map(r => r.id)),
+        urls: new Set(),
+      };
     }
+    // Mode 2: AND search empty but the OR fallback would populate the list —
+    // counts must follow the same union the result path shows.
+    const terms = Array.isArray(meaningfulTerms) ? meaningfulTerms : [];
+    if (!isForcedPhrase && terms.length > 1) {
+      return await computeUnionFacetCounts(terms, structuralFilters);
+    }
+    // Mode 3: empty and no fallback — zeros are truthful.
+    return {
+      counts: (search && search.filters) ? search.filters : {},
+      ids: new Set(),
+      urls: new Set(),
+    };
+  }
+
+  // Compute the query-fixed facet counts for a typed query, before expansion.
+  //
+  // Counts are a fixed property of the search: computed once when the query is
+  // submitted and never recomputed on a facet toggle, a sort or a load-more, so
+  // the panel numbers never move on click. They are recomputed exactly once
+  // more, when AI expansion lands and changes the result list under them — see
+  // computeExpandedFacetCounts(). Returns { dimension: { value: count } }.
+  //
+  // The mode decision and the scoping rules live in computeTypedFacetCounts();
+  // this is the thin caller the primary pass uses, which wants the counts alone.
+  async function computeQueryFacetCounts(query, baseFilters, meaningfulTerms, isForcedPhrase) {
+    const structuralFilters = structuralFilterScope(baseFilters);
     try {
-      const search = await pagefindSearch(query, structuralFilters);
-      // Mode 1: AND search matched — native per-value counts, exact.
-      if (search && search.results && search.results.length > 0) {
-        return search.filters || {};
-      }
-      // Mode 2: AND search empty but the OR fallback would populate the list —
-      // counts must follow the same union the result path shows.
-      const terms = Array.isArray(meaningfulTerms) ? meaningfulTerms : [];
-      if (!isForcedPhrase && terms.length > 1) {
-        return await computeUnionFacetCounts(terms, structuralFilters);
-      }
-      // Mode 3: empty and no fallback — zeros are truthful.
-      return (search && search.filters) ? search.filters : {};
+      const typed = await computeTypedFacetCounts(
+        query, structuralFilters, meaningfulTerms, isForcedPhrase);
+      return typed.counts;
     } catch (_) {
       return {};   // facet counts are best-effort — never block render
     }
   }
 
-  // Tally facet counts from the UNION of per-term matches — the count-path
-  // mirror of the result path's OR fallback. Runs one structural-only-filtered
-  // search per meaningful term, unions the results by fragment id (so a document
-  // matching several terms is counted ONCE — never sum per-term `.filters`, which
-  // double-counts), caps each term's results at MAX_PAGEFIND_RESULTS (the same
-  // cap the result path loads under), then tallies each unique fragment's
-  // `data.filters` into { dimension: { value: count } }. Fragment filter values
-  // may be a scalar or an array — both are handled. Every dimension found is
-  // tallied (renderFilters skips structural dims anyway). Fragment loads are
-  // Pagefind-cached by hash, and the result path loads largely the same
-  // fragments, so the marginal cost is small.
-  async function computeUnionFacetCounts(terms, structuralFilters) {
+  // Fold the AI expansion's contribution into the typed query's counts:
+  //
+  //   counts = countsOf(typed ids) + countsOf(expansion ids \ typed ids)
+  //
+  // Subtracting the typed set is what satisfies "never count the same document
+  // twice", and it is why the delta is computed against the id set the typed
+  // pass ended with rather than as a second independent tally. Both terms are
+  // computed under structuralFilters, never under activeFilters — see
+  // structuralFilterScope() for why.
+  //
+  // `expansionTerms` is the SEEDING query list, passed through from
+  // mergeExpandedSearchResults() rather than rebuilt here: it is assembled
+  // behind an async sub-word admission guard, and a second copy of that logic
+  // would drift from the one that decided the result list. Terms that only lend
+  // co-occurrence score (the user's typed words, agreement-only phrase
+  // sub-words) introduce no documents of their own and are excluded upstream —
+  // counting them would report documents that are not in the list.
+  //
+  // Returns the merged count map, or null when the typed pass itself failed, in
+  // which case the caller keeps whatever the panel already shows rather than
+  // blanking it.
+  async function computeExpandedFacetCounts(query, baseFilters, countContext, expansionTerms) {
+    const structuralFilters = structuralFilterScope(baseFilters);
+    const ctx = countContext || {};
+    let typed;
+    try {
+      typed = await computeTypedFacetCounts(
+        query, structuralFilters, ctx.meaningfulTerms, ctx.isForcedPhrase);
+    } catch (_) {
+      return null;   // best-effort — never blank a panel that is already right
+    }
+    const terms = [];
+    for (const term of (expansionTerms || [])) {
+      // The typed query is already counted; searching it again would be a memo
+      // hit but its documents are all in `typed.ids` anyway.
+      if (typeof term === 'string' && term && term !== query && terms.indexOf(term) === -1) {
+        terms.push(term);
+      }
+    }
+    if (terms.length === 0) return typed.counts;
+    try {
+      const delta = await computeUnionFacetCounts(terms, structuralFilters, typed);
+      return addFacetCounts(typed.counts, delta.counts);
+    } catch (_) {
+      return typed.counts;
+    }
+  }
+
+  // Tally facet counts from the UNION of per-term matches, over the documents a
+  // caller has not already counted. Two callers: the count-path mirror of the
+  // result path's OR fallback (no seed — the union IS the count), and the
+  // expansion delta (seeded with the typed pass's ids, so only documents
+  // expansion actually added are counted).
+  //
+  // Runs one structural-only-filtered search per term, unions the results by
+  // fragment id (so a document matching several terms is counted ONCE — never
+  // sum per-term `.filters`, which double-counts every document that matched
+  // more than one query), and caps each term's results at MAX_PAGEFIND_RESULTS,
+  // the same cap the result path loads under, so the tally describes the
+  // documents that actually reached the list.
+  //
+  // How the unique documents are then counted depends on the facet index:
+  //   - With the artifact: facetCountsFor() reads nothing but `r.id`, so the
+  //     delta costs ZERO fragment loads and is exact.
+  //   - Without it: load each unique fragment and tally `data.filters`. Filter
+  //     values may be a scalar or an array — both are handled — and a Set per
+  //     document guards against a repeated value within one document's array, so
+  //     a document carrying two values in one dimension adds one to each of
+  //     those two values and never two to one. Every dimension found is tallied
+  //     (renderFilters skips structural dims anyway). Fragment loads are
+  //     Pagefind-cached by hash, and the result path loads largely the same
+  //     fragments, so the marginal cost is small. Since the fragments are loaded
+  //     here anyway, documents are additionally collapsed by the normalized URL
+  //     mergeResults() dedups the RESULT list by, so the panel and the list
+  //     agree when one page is indexed under two fragment ids.
+  //
+  // `seed` is an optional { ids, urls } to start from — both sets are copied,
+  // never mutated. Returns { counts, ids, urls }: the counts for the documents
+  // this call added, and the sets it ended with.
+  async function computeUnionFacetCounts(terms, structuralFilters, seed) {
     const CONFIG = getInstanceConfig();
     const searches = await Promise.all(
       terms.map(term => pagefindSearch(term, structuralFilters))
     );
-    const seenIds = new Set();
-    const dataPromises = [];
+    const seenIds = new Set((seed && seed.ids) ? seed.ids : []);
+    const seenUrls = new Set((seed && seed.urls) ? seed.urls : []);
+    const fresh = [];
     for (const search of searches) {
       if (!search || !search.results) continue;
       const toLoad = Math.min(search.results.length, CONFIG.MAX_PAGEFIND_RESULTS);
@@ -2790,17 +2919,23 @@
         const r = search.results[j];
         if (seenIds.has(r.id)) continue;   // union by id — count each doc once
         seenIds.add(r.id);
-        dataPromises.push(r.data());
+        fresh.push(r);
       }
     }
-    const fragments = await Promise.all(dataPromises);
+    if (facetIndex) {
+      return { counts: facetCountsFor(facetIndex, fresh), ids: seenIds, urls: seenUrls };
+    }
+    const fragments = await Promise.all(fresh.map(r => r.data()));
     const counts = {};
     for (const data of fragments) {
+      const url = normalizeResultUrl(resolveUrl((data && data.url) || ''));
+      if (url) {
+        if (seenUrls.has(url)) continue;   // one page, however many fragment ids
+        seenUrls.add(url);
+      }
       const filters = data && data.filters;
       if (!filters) continue;
       for (const [dim, vals] of Object.entries(filters)) {
-        // Fragment filter values may be a scalar or an array; a Set per doc
-        // guards against a repeated value within one document's array.
         const values = new Set(Array.isArray(vals) ? vals : [vals]);
         if (!counts[dim]) counts[dim] = {};
         for (const v of values) {
@@ -2808,7 +2943,16 @@
         }
       }
     }
-    return counts;
+    return { counts, ids: seenIds, urls: seenUrls };
+  }
+
+  // The URL identity the result list is deduplicated by: strip `.html`, strip a
+  // trailing slash, lowercase — the same normalization the Rust merge applies
+  // before it dedups. Shared with the facet-count path so the panel collapses
+  // exactly the documents the list collapses, rather than a second, drifting
+  // definition of "the same page".
+  function normalizeResultUrl(u) {
+    return (u || '').replace(/\.html$/, '').replace(/\/$/, '').toLowerCase();
   }
 
   // Deduplicate results with near-identical titles using Jaccard similarity.
@@ -2891,7 +3035,7 @@
         // deduplication, so its output URLs may not match the raw keys from pagefind.
         // Build a multi-key map with normalized variants so we can always find the
         // original result object to attach its full data.
-        const normalizeUrl = u => (u || '').replace(/\.html$/, '').replace(/\/$/, '').toLowerCase();
+        const normalizeUrl = normalizeResultUrl;
         const dataByUrl = new Map();
         for (const r of [...currentResults, ...newResults]) {
           const rawUrl = resolveUrl(r.data.url || '');
@@ -2919,11 +3063,15 @@
         console.warn("[scolta] WASM merge_results failed, using fallback:", e.message);
       }
     }
-    // JS fallback merge
+    // JS fallback merge. Keyed by the SAME normalized URL the Rust merge dedups
+    // by (`normalize_urls: true` above), not the raw one: keeping two identities
+    // for "the same page" meant /foo and /foo.html stayed two results here and
+    // collapsed to one under WASM, and the facet-count path — which collapses
+    // them — would then agree with only one of the two merges.
     const BONUS = getInstanceConfig().CROSS_LIST_BONUS;
     const urlMap = new Map();
     for (const r of currentResults) {
-      const url = resolveUrl(r.data.url || '');
+      const url = normalizeResultUrl(resolveUrl(r.data.url || ''));
       if (!urlMap.has(url)) {
         urlMap.set(url, { ...r });
       } else {
@@ -2932,7 +3080,7 @@
       }
     }
     for (const r of newResults) {
-      const url = resolveUrl(r.data.url || '');
+      const url = normalizeResultUrl(resolveUrl(r.data.url || ''));
       if (!urlMap.has(url)) {
         urlMap.set(url, { ...r });
       } else {
@@ -3331,8 +3479,14 @@
     return max; // 0 when no data — the caller fails closed
   }
 
-  async function mergeExpandedSearchResults(expandedTerms, originalQuery, searchQuery, preserveFilters, version, sortOverride, subjectTerms) {
+  async function mergeExpandedSearchResults(expandedTerms, originalQuery, searchQuery, preserveFilters, version, sortOverride, subjectTerms, countContext) {
     const CONFIG = getInstanceConfig();
+    // The seeding queries this pass ends up running — the ones that introduce
+    // documents into the result list, and therefore the ones the facet counts
+    // have to cover. Filled by whichever branch below builds the list, and
+    // deliberately taken from the list that was actually searched rather than
+    // rebuilt at the point of use.
+    let countTerms = [];
     const validTerms = expandedTerms
       ? expandedTerms.filter(t => t.toLowerCase() !== originalQuery.toLowerCase())
       : [];
@@ -3562,7 +3716,13 @@
       if (withField.length === 0) {
         debugLog('[scolta:sort] Sort field "' + field + '" absent from all results, falling back to relevance');
         currentSortOverride = null;
+        // The union never replaced the list — allScoredResults is still the
+        // primary typed search — so the typed counts still describe it exactly.
       } else {
+        // Every term in the sorted union seeds: each one's documents go into
+        // urlMap and out to the list. The typed query is counted by the typed
+        // pass, so only the rest is the delta.
+        countTerms = [...termSet].filter(t => t !== searchQuery);
         withField.sort((a, b) => {
           const av = parseFloat(a.meta[field]);
           const bv = parseFloat(b.meta[field]);
@@ -3653,6 +3813,13 @@
         corpusTotal: subwordCorpusSize(activeFilters),
         strongMatched: false,
       };
+      // The same seeding test searchAndLoadParallel() applies, over the same
+      // array: a typed term or an agreement-only sub-word lends co-occurrence
+      // score to documents another query already found and never emits a URL of
+      // its own, so counting it would put documents in the panel that are not in
+      // the list.
+      countTerms = queries.filter(q => !q.isTyped && !q.agreementOnly).map(q => q.term);
+
       const expandedResults = await searchAndLoadParallel(queries, activeFilters, searchQuery, expandSpecificity);
 
       if (version !== searchVersion) {
@@ -3677,18 +3844,50 @@
 
     displayedCount = 0;
 
-    // queryFacetCounts is fixed for the typed query — computed once in doSearch's
-    // primary pass and deliberately NOT recomputed here. The panel (dimensions,
-    // values, counts, order) is therefore byte-identical before and after AI
-    // expansion; only the result list and header count change.
-    renderFilters();
-
     // renderResults() reconciles the container by result identity, so when the
     // expansion pass produces the same ordered list as the first paint this
     // costs zero node churn: the header gains its "(with expanded terms)" label
     // and every result node — with whatever a platform swapped into it — stays
     // exactly where it is.
+    //
+    // Painted BEFORE the count pass below, for the reason doSearch() paints
+    // before its own: the count pass awaits searches, and the list is what the
+    // user is waiting for. The panel holds its pre-expansion state across the
+    // gap rather than being repainted against counts that are about to change.
     renderResults(true, 'expansion');
+
+    // Expansion changed the result list, so the counts describing it are
+    // recomputed here — the one and only time they move within a typed query.
+    //
+    // They used to be left alone, on the argument that a panel derived from the
+    // deterministic typed query stays stable run-to-run while an LLM expansion
+    // does not. But the LIST is equally LLM-driven, and a panel that disagrees
+    // with the list beside it is worse than one that varies with it: every count
+    // read low, so filtering by a value returned more results than promised, and
+    // under the default hideEmptyFacets policy a value whose only matches came
+    // from expansion counted 0 and was hidden outright — taking its whole
+    // dimension group with it when every value was expansion-derived, which left
+    // the user unable to filter on content sitting in front of them.
+    //
+    // Still fixed against everything else: a facet click, a sort and a load-more
+    // are all preserveFilters cycles, which skip this and reuse the stored
+    // counts, so no count moves when the user clicks. Counts also stay
+    // selection-independent (structural scope only), which means an LLM-applied
+    // filter hint can narrow the list without narrowing the panel — a known and
+    // deliberate gap, since making counts follow that selection would reintroduce
+    // exactly the "every other value reads 0 and disappears" failure.
+    if (!preserveFilters && countTerms.length > 0) {
+      const counts = await computeExpandedFacetCounts(
+        searchQuery, activeFilters, countContext, countTerms);
+      // Several awaits deep: a newer doSearch() may own the panel by now, and
+      // late counts from an abandoned query must neither be stored nor rendered.
+      if (version !== searchVersion) {
+        debugLog('[scolta:expand] Discarding stale post-expansion facet counts (version', version, 'vs current', searchVersion, ')');
+        return;
+      }
+      if (counts) queryFacetCounts = counts;
+    }
+    renderFilters();
     debugLog(`[scolta:expand] ${sortOverride ? 'Native sort' : 'Merged'}: ${allScoredResults.length} results`);
   }
 
@@ -3884,10 +4083,12 @@
       if (paintingVersion === version) paintingVersion = 0;
     }
 
-    // Counts are a fixed property of the typed query: compute them once, only
-    // when the typed query changes (!preserveFilters). A facet toggle, sort, or
+    // Counts are a fixed property of the search: compute them once, only when
+    // the typed query changes (!preserveFilters). A facet toggle, sort, or
     // load-more (preserveFilters === true) reuses the stored counts so the panel
-    // numbers never move on click.
+    // numbers never move on click. They are folded over exactly once more, in
+    // mergeExpandedSearchResults(), when AI expansion changes the list they
+    // describe.
     if (!preserveFilters) {
       const counts = await computeQueryFacetCounts(searchQuery, activeFilters, meaningfulTerms, isForcedPhrase);
       // The count pass is async, so a newer doSearch() may have superseded this
@@ -3965,7 +4166,11 @@
         }
       }
       renderExpandedTerms(expandedTerms, query);
-      await mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version, currentSortOverride, subjectTerms);
+      // meaningfulTerms / isForcedPhrase ride along so the post-expansion count
+      // pass can reproduce the typed query's own counts under the same
+      // AND-or-OR-union mode decision this cycle made, without re-deriving
+      // either from the query string.
+      await mergeExpandedSearchResults(expandedTerms, query, searchQuery, preserveFilters, version, currentSortOverride, subjectTerms, { meaningfulTerms, isForcedPhrase });
 
       if (version !== searchVersion) return;
 
