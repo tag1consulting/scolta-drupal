@@ -177,12 +177,20 @@ jobs:
   # diff, a reviewer can see exactly what combination was tested, and nothing
   # depends on two repositories happening to use the same branch name. The file
   # being absent (or naming main, where this would just repeat `test`) skips
-  # the job, so a forgotten one is harmless. continue-on-error keeps a red
-  # preview out of the merge decision.
+  # the job, so a forgotten one is harmless.
+  #
+  # What keeps a red preview out of the merge decision is the branch's
+  # required-checks list, which this job is deliberately not on. It also carried
+  # a continue-on-error flag, which was redundant against that list and made the
+  # job's failure invisible on the pull request instead of merely non-blocking —
+  # the opposite of what an informational job is for. That flag additionally
+  # tripped the cross-package guard forbidding a muted CI failure anywhere in
+  # Scolta, and an exemption for one job would have blunted the guard for every
+  # other. (That guard greps this file as text and does not skip comments, so do
+  # not spell the flag out in prose here — it will be reported as a violation.)
   upstream-preview:
     name: upstream preview (informational)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
