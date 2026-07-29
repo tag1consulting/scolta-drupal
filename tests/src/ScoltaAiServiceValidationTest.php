@@ -125,10 +125,39 @@ class ScoltaAiServiceValidationTest extends TestCase {
   }
 
   public function testGetApiKeyFallsBackToSettings(): void {
+    // The fallback moved into settingsApiKey(), which both getApiKey() and
+    // getApiKeySource() call so they cannot disagree about the stored value.
     $this->assertStringContainsString(
-      "Settings::get('scolta.api_key'",
+      'return $this->settingsApiKey();',
       $this->serviceContents,
-      'getApiKey should fall back to Drupal Settings'
+      'getApiKey should fall back to the settings.php key via settingsApiKey()'
+    );
+    $this->assertStringContainsString(
+      "\$key = Settings::get('scolta.api_key', '');",
+      $this->serviceContents,
+      'settingsApiKey() should read the fallback from Drupal Settings'
+    );
+  }
+
+  public function testSettingsApiKeyCoercesNonStrings(): void {
+    // $settings['scolta.api_key'] = getenv('SCOLTA_API_KEY'); stores FALSE
+    // wherever the variable is undefined. Returning that from a method typed
+    // as string throws a TypeError and kills every Drush command on the site,
+    // so a wrongly-typed value must degrade the way an absent one does.
+    $this->assertStringContainsString(
+      'private function settingsApiKey(): string',
+      $this->serviceContents,
+      'ScoltaAiService must funnel the settings.php key through settingsApiKey()'
+    );
+    $this->assertStringContainsString(
+      'if (is_string($key)) {',
+      $this->serviceContents,
+      'settingsApiKey() must guard on is_string() before returning the stored value'
+    );
+    $this->assertStringContainsString(
+      '$settingsKey = $this->settingsApiKey();',
+      $this->serviceContents,
+      'getApiKeySource() must read the settings.php key through the same guard'
     );
   }
 
