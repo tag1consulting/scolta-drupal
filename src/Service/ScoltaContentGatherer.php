@@ -212,7 +212,23 @@ class ScoltaContentGatherer {
         foreach ($ids as $id) {
           $entityKey = (string) $id;
           $entry = $manifest->get($entityKey);
-          if ($entry !== NULL && ((int) ($timestamps[$id] ?? 0)) === $entry['ts']) {
+          $fresh = $entry !== NULL && ((int) ($timestamps[$id] ?? 0)) === $entry['ts'];
+          // A record written before metadata joined the manifest would yield
+          // cached references with an empty metadata array, silently dropping
+          // whatever hook_scolta_content_item_alter() put there. Treat it as
+          // changed so the entity is reloaded once and the record is rewritten
+          // with metadata. array_key_exists(), not isset() or a falsy check:
+          // an item whose metadata is legitimately empty must not be reloaded
+          // on every build forever.
+          if ($fresh) {
+            foreach ($entry['items'] as $itemData) {
+              if (!array_key_exists('metadata', $itemData)) {
+                $fresh = FALSE;
+                break;
+              }
+            }
+          }
+          if ($fresh) {
             // Entity unchanged — yield cached references, skip the full
             // entity load.
             foreach ($entry['items'] as $itemData) {
@@ -226,6 +242,7 @@ class ScoltaContentGatherer {
                 language: $itemData['language'],
                 filters: $itemData['filters'] ?? [],
                 sortable: $itemData['sortable'] ?? [],
+                metadata: $itemData['metadata'] ?? [],
               );
             }
           }
@@ -271,6 +288,7 @@ class ScoltaContentGatherer {
                 'language' => $contentItem->language,
                 'filters'  => $contentItem->filters,
                 'sortable' => $contentItem->sortable,
+                'metadata' => $contentItem->metadata,
               ];
             }
 
