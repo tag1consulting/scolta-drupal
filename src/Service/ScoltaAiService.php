@@ -309,7 +309,35 @@ class ScoltaAiService extends AiServiceAdapter {
       return $envKey;
     }
 
-    return Settings::get('scolta.api_key', '');
+    return $this->settingsApiKey();
+  }
+
+  /**
+   * Read the settings.php API key, coercing anything that is not a string.
+   *
+   * A site that writes $settings['scolta.api_key'] = getenv('SCOLTA_API_KEY');
+   * stores boolean FALSE in every environment that does not define the
+   * variable, and Settings::get() hands that back untouched. Returning it from
+   * getApiKey(), which declares a string return type, throws a TypeError; and
+   * because this service is constructed on nearly every code path, that takes
+   * down every Drush command in the environment rather than only the AI ones.
+   *
+   * An unconfigured key is a supported state that degrades AI gracefully, so a
+   * wrongly-typed one degrades the same way instead of being fatal. Both
+   * readers go through here so they cannot disagree about the same value.
+   */
+  private function settingsApiKey(): string {
+    $key = Settings::get('scolta.api_key', '');
+    if (is_string($key)) {
+      return $key;
+    }
+
+    $this->logger->warning(
+      "The settings.php value \$settings['scolta.api_key'] is a @type, not a string; ignoring it and treating the API key as unconfigured.",
+      ['@type' => gettype($key)]
+    );
+
+    return '';
   }
 
   /**
@@ -329,8 +357,8 @@ class ScoltaAiService extends AiServiceAdapter {
       return 'env';
     }
 
-    $settingsKey = Settings::get('scolta.api_key', '');
-    if (!empty($settingsKey)) {
+    $settingsKey = $this->settingsApiKey();
+    if ($settingsKey !== '') {
       return 'settings';
     }
 
