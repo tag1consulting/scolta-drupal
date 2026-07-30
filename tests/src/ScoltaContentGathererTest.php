@@ -388,4 +388,184 @@ class ScoltaContentGathererTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // Timestamp manifest round-trip: the write site and the read site are
+  // two halves of one contract and must not drift.
+  //
+  // gather() stores a record per ContentItem in the TimestampManifest
+  // (the write site, $itemsForManifest[]) and rebuilds a
+  // CachedContentReference out of that record when the entity's timestamp
+  // still matches (the read site). A ContentItem field that the write site
+  // stores but the read site never passes on, or vice versa, is silently
+  // lost for every unchanged entity, which is the normal case on an
+  // incremental build. Nothing warns: the orchestrator's slim proxy reads
+  // these fields with a null-coalescing fallback. That is how metadata was
+  // dropped, so these tests assert the shape of the contract rather than
+  // only the one field that went missing.
+  // -------------------------------------------------------------------
+
+  /**
+   * Extract the array keys stored in the manifest record at the write site.
+   *
+   * @return string[]
+   *   Quoted keys of the $itemsForManifest[] array literal, in source order.
+   */
+  private function manifestRecordKeys(): array {
+    $this->assertMatchesRegularExpression(
+      '/\$itemsForManifest\[\] = \[/',
+      $this->gathererContents,
+      'gather() must build its manifest record in an $itemsForManifest[] array literal; if this moved, update these tests rather than deleting them'
+    );
+    preg_match('/\$itemsForManifest\[\] = \[(.*?)\];/s', $this->gathererContents, $literal);
+    $this->assertNotEmpty(
+      $literal[1] ?? '',
+      'Could not capture the body of the $itemsForManifest[] array literal'
+    );
+    preg_match_all("/'([a-zA-Z]+)'\s*=>/", $literal[1], $keys);
+
+    return $keys[1];
+  }
+
+  /**
+   * Extract the named arguments passed to CachedContentReference.
+   *
+   * @return string[]
+   *   Named-argument labels of the new CachedContentReference() call, in
+   *   source order.
+   */
+  private function cachedReferenceArguments(): array {
+    $this->assertStringContainsString(
+      'new CachedContentReference(',
+      $this->gathererContents,
+      'gather() must construct CachedContentReference on the cached path; if this moved, update these tests rather than deleting them'
+    );
+    preg_match('/new CachedContentReference\((.*?)\);/s', $this->gathererContents, $call);
+    $this->assertNotEmpty(
+      $call[1] ?? '',
+      'Could not capture the argument list of the new CachedContentReference() call'
+    );
+    preg_match_all('/([a-zA-Z]+):\s/', $call[1], $args);
+
+    return $args[1];
+  }
+
+  public function testManifestRecordAndCachedReferenceStaySymmetric(): void {
+    $recordKeys = $this->manifestRecordKeys();
+    $referenceArgs = $this->cachedReferenceArguments();
+
+    // Tripwire: a reformat that breaks either regex must fail loudly here
+    // rather than pass while comparing two empty sets. These counts are
+    // lower bounds, not the current totals, so adding a field does not
+    // require editing this number.
+    $this->assertGreaterThanOrEqual(
+      8,
+      count($recordKeys),
+      'Parsed too few keys out of the manifest record; the regex no longer matches the source'
+    );
+    $this->assertGreaterThanOrEqual(
+      9,
+      count($referenceArgs),
+      'Parsed too few named arguments out of the CachedContentReference call; the regex no longer matches the source'
+    );
+
+    // Two deliberate asymmetries, both by design:
+    // - 'hash' is stored under that name and passed as 'contentHash',
+    //   because PageWordCache keys token data by it. Mapped, not excluded.
+    // - 'entityKey' is derived from the loop variable ($entityKey), not read
+    //   out of the record, because the record is looked up by that key in the
+    //   first place. It is therefore an argument with no stored counterpart.
+    $mapped = array_map(
+      static fn(string $key): string => $key === 'hash' ? 'contentHash' : $key,
+      $recordKeys
+    );
+    $derived = ['entityKey'];
+
+    sort($mapped);
+    $expected = array_values(array_diff($referenceArgs, $derived));
+    sort($expected);
+
+    $this->assertSame(
+      $expected,
+      $mapped,
+      'Every ContentItem field stored in the manifest record must also be passed to CachedContentReference, and vice versa. A field on one side only is silently lost for every unchanged entity.'
+    );
+  }
+
+  public function testManifestRecordStoresMetadata(): void {
+    $this->assertContains(
+      'metadata',
+      $this->manifestRecordKeys(),
+      "The manifest record must store 'metadata'. Without it, an unchanged entity is replayed with an empty metadata array and whatever hook_scolta_content_item_alter() set is lost."
+    );
+    $this->assertStringContainsString(
+      "'metadata' => \$contentItem->metadata,",
+      $this->gathererContents,
+      'The manifest record must store metadata straight off the ContentItem'
+    );
+  }
+
+  public function testCachedReferenceReceivesMetadata(): void {
+    $this->assertContains(
+      'metadata',
+      $this->cachedReferenceArguments(),
+      'CachedContentReference must be constructed with metadata: on the cached path, or the stored metadata never reaches the index.'
+    );
+    $this->assertStringContainsString(
+      "metadata: \$itemData['metadata'] ?? [],",
+      $this->gathererContents,
+      'The cached path must pass metadata through, defaulted so a record written by an earlier release cannot throw'
+    );
+  }
+
+  public function testCachedPathTreatsPreMetadataRecordAsChanged(): void {
+    // A manifest already on disk has no 'metadata' key in its items, so
+    // reading it back would produce empty metadata until someone happened to
+    // run a forced build. The read site therefore treats such an entry as
+    // changed: the entity is loaded once and its record rewritten in full.
+    $this->assertStringContainsString(
+      "array_key_exists('metadata', \$itemData)",
+      $this->gathererContents,
+      'The cached path must detect a manifest entry written before metadata joined the record'
+    );
+    // array_key_exists(), not isset() and not a falsy check: an item whose
+    // metadata is legitimately an empty array must not be reloaded on every
+    // build forever.
+    $this->assertStringNotContainsString(
+      "isset(\$itemData['metadata'])",
+      $this->gathererContents,
+      'The staleness check must use array_key_exists(), not isset(): a legitimately empty metadata array would reload the entity on every build forever'
+    );
+    $this->assertStringNotContainsString(
+      "empty(\$itemData['metadata'])",
+      $this->gathererContents,
+      'The staleness check must use array_key_exists(), not empty(): a legitimately empty metadata array would reload the entity on every build forever'
+    );
+
+    // A missing key must fall through to the reload path, not merely be
+    // noted. The guard clears the freshness flag whose else branch queues
+    // the entity in $toLoad.
+    $this->assertMatchesRegularExpression(
+      "/if \(!array_key_exists\('metadata', \\\$itemData\)\) \{\s*\\\$fresh = FALSE;/",
+      $this->gathererContents,
+      'A manifest item without a metadata key must clear the freshness flag so the entity is reloaded'
+    );
+    $this->assertStringContainsString(
+      '$toLoad[] = $id;',
+      $this->gathererContents,
+      'The not-fresh branch must queue the entity for a full load'
+    );
+
+    // The guard has to run before the cached references are yielded;
+    // checking after the yield would leave the stale references emitted.
+    $guardPos = strpos($this->gathererContents, "array_key_exists('metadata', \$itemData)");
+    $yieldPos = strpos($this->gathererContents, 'new CachedContentReference(');
+    $this->assertNotFalse($guardPos, 'metadata staleness guard must be present');
+    $this->assertNotFalse($yieldPos, 'CachedContentReference construction must be present');
+    $this->assertLessThan(
+      $yieldPos,
+      $guardPos,
+      'The metadata staleness guard must run before any cached reference is yielded'
+    );
+  }
+
 }
