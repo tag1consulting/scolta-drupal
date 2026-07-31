@@ -49,10 +49,12 @@ class AmazeeReauthNoticeTest extends BrowserTestBase {
     parent::setUp();
     $this->adminUser = $this->drupalCreateUser(['administer scolta']);
 
-    // Put the site on the Amazee.ai path: stored credentials with no explicit
-    // key, so ScoltaAiService wires the recovery whose marker drives the notice.
+    // Put the site on the Amazee.ai path: the provider selected and a stored
+    // connection, with no explicit key, so ScoltaAiService wires the recovery
+    // whose marker drives the notice.
     \Drupal::service('scolta.amazee_config_storage')
       ->store('sk-stored-token', 'https://llm.test.amazee.ai', 'test-region');
+    $this->config('scolta.settings')->set('ai_provider', 'amazee')->save();
   }
 
   /**
@@ -106,6 +108,23 @@ class AmazeeReauthNoticeTest extends BrowserTestBase {
 
     // A successful reconnect clears the marker (see AmazeeSettingsForm).
     $this->recovery()->clearUpgradeNeeded();
+
+    $this->drupalGet('/admin/config/search/scolta');
+    $this->assertSession()->pageTextNotContains(self::NOTICE_TEXT);
+  }
+
+  /**
+   * A site on its own provider never sees the reconnect prompt.
+   *
+   * The marker describes a managed-gateway connection. Once the operator has
+   * selected a different provider that connection governs nothing, so telling
+   * them AI is down until they reconnect it points at the wrong thing on
+   * every admin screen — and the banner had no dismiss of its own.
+   */
+  public function testNoNoticeWhenAnotherProviderIsSelected(): void {
+    $this->recovery()->flagUpgradeNeeded();
+    $this->config('scolta.settings')->set('ai_provider', 'anthropic')->save();
+    $this->drupalLogin($this->adminUser);
 
     $this->drupalGet('/admin/config/search/scolta');
     $this->assertSession()->pageTextNotContains(self::NOTICE_TEXT);

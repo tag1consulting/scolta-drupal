@@ -7,11 +7,17 @@ namespace Drupal\Tests\scolta\Functional;
 use Drupal\Tests\BrowserTestBase;
 
 /**
- * Flood control on the anonymous AI API endpoints.
+ * Flood control on the AI API endpoints.
  *
- * The three /api/scolta/v1/* routes are anonymous-by-default, cost-bearing
- * LLM calls. Requests beyond the configured per-IP threshold must be
- * rejected with HTTP 429 before any AI work happens.
+ * The three /api/scolta/v1/* routes make cost-bearing LLM calls. Requests
+ * beyond the configured per-IP threshold must be rejected with HTTP 429
+ * before any AI work happens.
+ *
+ * The requests are made as a logged-in user because the flood check lives in
+ * the controller, behind the route's 'use scolta ai' permission: an anonymous
+ * request is refused before the flood layer is reached, so it would prove
+ * nothing about throttling. The thresholds themselves are per-IP and
+ * site-wide, not per-account.
  *
  * @group scolta
  */
@@ -33,15 +39,22 @@ class AiEndpointFloodFunctionalTest extends BrowserTestBase {
   protected function setUp(): void {
     parent::setUp();
 
-    // Fake Amazee credentials pointing at a closed port: requests resolve
-    // instantly without auto-provisioning or real network traffic, and AI
-    // failures map to the normal error shape — which is all this test
-    // needs underneath the flood layer.
+    // Fake managed-gateway credentials pointing at a closed port, with the
+    // provider selected so they are actually in play: requests resolve
+    // instantly without real network traffic, and AI failures map to the
+    // normal error shape — which is all this test needs underneath the flood
+    // layer.
     \Drupal::state()->set('scolta.amazee.credentials', [
       'litellm_token' => 'test-token',
       'litellm_api_url' => 'http://127.0.0.1:1',
       'region' => 'test',
     ]);
+    $this->config('scolta.settings')
+      ->set('ai_provider', 'amazee')
+      ->set('amazee_model', 'claude-4-5-sonnet')
+      ->save();
+
+    $this->drupalLogin($this->drupalCreateUser(['use scolta ai']));
   }
 
   /**

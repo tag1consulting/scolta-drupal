@@ -450,9 +450,14 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * With nothing saved, an active Amazee trial is surfaced as the default.
+   * With nothing saved, a stored connection does not select the provider.
+   *
+   * The field used to fall back to detecting stored Amazee.ai credentials
+   * when no provider had been saved. That is the auto-selection the opt-in
+   * rule removes: the managed gateway governs AI traffic only when somebody
+   * selected it, so a connection existing must not preselect it.
    */
-  public function testProviderFieldFallsBackToAmazeeWhenUnset(): void {
+  public function testProviderFieldDoesNotSelectAmazeeFromStoredCredentials(): void {
     $this->activateAmazee();
     // Ensure no provider has been explicitly saved.
     $this->config('scolta.settings')->clear('ai_provider')->save();
@@ -461,8 +466,8 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->drupalGet('/admin/config/search/scolta');
 
     $field = $this->assertSession()->fieldExists('ai_provider');
-    $this->assertSame('amazee', $field->getValue(),
-      'With no saved provider and Amazee active, the field should default to amazee.');
+    $this->assertSame('anthropic', $field->getValue(),
+      'With no saved provider, the field must default to anthropic whatever is stored.');
   }
 
   /**

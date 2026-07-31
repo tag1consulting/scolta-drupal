@@ -118,19 +118,31 @@ class AiPermissionBackfillTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // The fresh-install path is untouched.
+  // What the fresh-install path grants today.
   // -------------------------------------------------------------------
 
-  public function testInstallHookStillGrantsThePermission(): void {
+  /**
+   * The install grant is authenticated-only now; 10001 is history.
+   *
+   * scolta_update_10001() granted both roles because that is what the install
+   * hook did when it shipped, and an update hook that has run is not rewritten
+   * afterwards — it is a record of a step a site already took. The anonymous
+   * half of it is undone for existing sites by scolta_update_10004(), pinned
+   * in \Drupal\scolta\Tests\ManagedGatewayOptInInstallTest.
+   */
+  public function testInstallHookGrantsTheAuthenticatedRoleOnly(): void {
     $installBody = $this->functionBody('scolta_install');
 
-    foreach (['RoleInterface::ANONYMOUS_ID', 'RoleInterface::AUTHENTICATED_ID'] as $role) {
-      $this->assertStringContainsString(
-        "user_role_grant_permissions({$role}, ['use scolta ai'])",
-        $installBody,
-        "scolta_install() must keep granting 'use scolta ai' to {$role} — the update hook backfills existing sites, it does not replace the install-time grant"
-      );
-    }
+    $this->assertStringContainsString(
+      "user_role_grant_permissions(RoleInterface::AUTHENTICATED_ID, ['use scolta ai'])",
+      $installBody,
+      "scolta_install() must grant 'use scolta ai' to authenticated users — logged-in AI search is intended"
+    );
+    $this->assertStringNotContainsString(
+      'RoleInterface::ANONYMOUS_ID',
+      $installBody,
+      "scolta_install() must not grant 'use scolta ai' to the anonymous role"
+    );
   }
 
   public function testRoleEntityIsImported(): void {

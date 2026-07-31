@@ -9,7 +9,6 @@ use Tag1\Scolta\Binary\PagefindBinary;
 use Composer\InstalledVersions;
 use Drupal\Core\Site\Settings;
 use Drupal\scolta\Form\ScoltaSettingsForm;
-use Tag1\Scolta\AiProvider\Amazee\AutoProvisioner;
 use Drupal\Core\File\FileExists;
 use Drupal\user\Entity\Role;
 use Drupal\user\RoleInterface;
@@ -20,14 +19,16 @@ use Drupal\user\RoleInterface;
 function scolta_install() {
   _scolta_deploy_assets();
 
-  // Attempt Amazee.ai auto-provisioning so search AI works out of the box.
-  _scolta_auto_provision_amazee();
-
-  // Grant 'use scolta ai' to anonymous and authenticated by default so that
-  // visitors can reach AI overviews, expansion, and follow-up out of the box.
-  // Site admins can revoke this at Administration › People › Permissions to
-  // restrict AI features to specific roles.
-  user_role_grant_permissions(RoleInterface::ANONYMOUS_ID, ['use scolta ai']);
+  // POLICY: installing the module configures no AI provider. The managed
+  // Amazee.ai gateway is enabled by an explicit operator action — selecting it
+  // on the AI settings screen and completing the connect flow — so nothing
+  // here reaches out to a gateway or writes credentials.
+  //
+  // Grant 'use scolta ai' to authenticated users only. Logged-in AI search is
+  // the intended out-of-the-box behavior; the anonymous role is deliberately
+  // left without it, so the cost-bearing AI endpoints are not open to
+  // unauthenticated traffic until a site admin decides otherwise at
+  // Administration › People › Permissions.
   user_role_grant_permissions(RoleInterface::AUTHENTICATED_ID, ['use scolta ai']);
 
   \Drupal::queue('scolta_rebuild')->createItem(['type' => 'install']);
@@ -35,28 +36,11 @@ function scolta_install() {
 }
 
 /**
- * Attempt Amazee.ai trial provisioning at module install time.
- *
- * No-op when the user has an explicit API key configured, or when
- * credentials are already stored. Failures are silenced — the install
- * succeeds regardless.
- */
-function _scolta_auto_provision_amazee(): void {
-  /** @var \Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface $storage */
-  $storage = \Drupal::service('scolta.amazee_config_storage');
-
-  AutoProvisioner::ensureAiAvailable(
-    $storage,
-    hasExplicitApiKey: _scolta_has_explicit_api_key(),
-  );
-}
-
-/**
  * Check whether the site has an explicit Scolta API key configured.
  *
  * Returns TRUE when SCOLTA_API_KEY env var, scolta.api_key in settings.php,
  * or scolta.settings ai_api_key in Drupal config is non-empty, meaning the
- * user has their own provider and auto-provisioning should be skipped.
+ * operator has a provider of their own.
  */
 function _scolta_has_explicit_api_key(): bool {
   $envKey = getenv('SCOLTA_API_KEY');
@@ -400,4 +384,68 @@ function scolta_update_10003() {
     '@model' => $strandedModel,
     '@default' => ScoltaSettingsForm::DEFAULT_AI_MODEL,
   ]);
+}
+
+/**
+ * Carries existing sites onto the explicit opt-in rules for AI.
+ *
+ * POLICY: the managed Amazee.ai gateway is now enabled only when an operator
+ * selects it as the AI provider. It is no longer configured for a site as a
+ * side effect of installing the module or of serving a request, and its stored
+ * connection is used only while 'amazee' is the selected provider. Two things
+ * follow for a site that predates the change, and this hook does both.
+ *
+ * 1. A site that has a stored managed-gateway connection while its saved
+ *    provider is still the shipped default was, in practice, running on that
+ *    gateway: the old rule injected the connection for every provider except
+ *    'drupal_ai'. Under the new rule that site would lose AI at update time
+ *    for no reason it could see, so its provider is set to 'amazee' — which is
+ *    what its traffic was already using. Two sites are left alone: one with an
+ *    explicit key (env, settings.php or config), because the explicit key
+ *    always won and the stored connection was never serving anything; and one
+ *    on 'drupal_ai', which manages its own provider, key and model.
+ *
+ * 2. The 'use scolta ai' permission is revoked from the anonymous role. The
+ *    install hook used to grant it, which left the cost-bearing AI endpoints
+ *    (/api/scolta/v1/expand-query, /summarize, /followup) reachable by
+ *    unauthenticated traffic on every site that took the default. The
+ *    authenticated grant stays: logged-in AI search is intended. A site that
+ *    wants anonymous AI can re-grant it at Administration › People ›
+ *    Permissions, and — being an explicit choice rather than a default — it
+ *    will not be revoked again, because an update hook that has run does not
+ *    run a second time.
+ */
+function scolta_update_10004() {
+  $messages = [];
+
+  // 1. Keep a legacy managed-gateway site on the gateway it was already using.
+  $credentials = \Drupal::state()->get('scolta.amazee.credentials');
+  $hasCredentials = is_array($credentials) && !empty($credentials['litellm_token']);
+
+  if ($hasCredentials && !_scolta_has_explicit_api_key()) {
+    $config = \Drupal::configFactory()->getEditable('scolta.settings');
+    $provider = $config->get('ai_provider') ?? '';
+
+    if ($provider !== 'amazee' && $provider !== 'drupal_ai') {
+      $config->set('ai_provider', 'amazee')->save();
+      $messages[] = t('Set the AI provider to Amazee.ai (it was "@old"). This site already had a stored Amazee.ai connection and no API key of its own, so its AI traffic was already going through that gateway; the setting now says so. Change it at Administration › Configuration › Search and metadata › Scolta.', [
+        '@old' => $provider !== '' ? $provider : '(unset)',
+      ]);
+    }
+  }
+
+  // 2. Close the anonymous AI endpoints.
+  $anonymous = Role::load(RoleInterface::ANONYMOUS_ID);
+  // A site can have removed the role; there is then nothing to revoke.
+  if ($anonymous && $anonymous->hasPermission('use scolta ai')) {
+    $anonymous->revokePermission('use scolta ai');
+    $anonymous->save();
+    $messages[] = t('Revoked the "use scolta ai" permission from the anonymous role, so the AI API endpoints are no longer open to unauthenticated visitors. Re-grant it at Administration › People › Permissions if your site intends anonymous AI search.');
+  }
+
+  if (!$messages) {
+    return t('No changes were needed: no stored Amazee.ai connection to carry over, and the anonymous role does not hold "use scolta ai".');
+  }
+
+  return implode(' ', array_map('strval', $messages));
 }

@@ -251,6 +251,7 @@ class AmazeeSettingsForm extends FormBase {
       // Fresh credentials are stored — clear any pending re-authentication
       // prompt so the admin notice and /health recover.
       $this->keyRecovery->clearUpgradeNeeded();
+      $this->selectAmazeeProvider();
 
       if ($result->aiModel !== NULL || $result->aiExpansionModel !== NULL) {
         // The provisioner resolves Amazee LiteLLM gateway aliases, which only
@@ -335,12 +336,31 @@ class AmazeeSettingsForm extends FormBase {
       // Fresh credentials are stored — clear any pending re-authentication
       // prompt so the admin notice and /health recover.
       $this->keyRecovery->clearUpgradeNeeded();
+      $this->selectAmazeeProvider();
       $form_state->set('amazee_step', 'start');
       $form_state->setRebuild(TRUE);
       $this->messenger()->addStatus($this->t('Successfully connected to Amazee.ai.'));
     }
     catch (AmazeeApiException $e) {
       $this->messenger()->addError($this->t('Connection failed: @error', ['@error' => $e->getMessage()]));
+    }
+  }
+
+  /**
+   * Select Amazee.ai as the AI provider on a completed connection.
+   *
+   * The stored connection is used only while 'amazee' is the selected
+   * provider, so finishing this flow has to set it — otherwise the operator
+   * completes a connection, is told they are connected, and AI keeps running
+   * on whatever provider was selected before, with the connection inert.
+   *
+   * This is not automatic enablement: it is the last step of an action the
+   * operator started by entering their email and pressing a button here.
+   */
+  private function selectAmazeeProvider(): void {
+    $config = $this->configFactory()->getEditable('scolta.settings');
+    if ($config->get('ai_provider') !== 'amazee') {
+      $config->set('ai_provider', 'amazee')->save();
     }
   }
 

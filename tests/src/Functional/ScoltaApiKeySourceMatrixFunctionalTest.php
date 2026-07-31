@@ -90,24 +90,35 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
    * cell rather than independence between cells.
    */
   public function testEverySourceAgreesAcrossEverySurface(): void {
-    // [env key, settings.php key, amazee stored] => expected source.
+    // [env key, settings.php key, amazee stored, selected provider]
+    //   => expected source.
+    //
+    // The provider is part of the matrix because it is now what makes a
+    // stored managed-gateway connection eligible at all: it is used when
+    // 'amazee' is selected and ignored otherwise, whatever is stored.
     $matrix = [
-      ['sk-env-key', '', FALSE, 'env'],
-      ['sk-env-key', '', TRUE, 'env'],
-      ['sk-env-key', 'sk-settings-key', FALSE, 'env'],
-      ['', 'sk-settings-key', FALSE, 'settings'],
-      ['', 'sk-settings-key', TRUE, 'settings'],
-      ['', '', TRUE, 'amazee:auto'],
-      ['', '', FALSE, 'none'],
+      ['sk-env-key', '', FALSE, 'anthropic', 'env'],
+      ['sk-env-key', '', TRUE, 'anthropic', 'env'],
+      // An explicit key still outranks the gateway even when it is selected.
+      ['sk-env-key', '', TRUE, 'amazee', 'env'],
+      ['sk-env-key', 'sk-settings-key', FALSE, 'anthropic', 'env'],
+      ['', 'sk-settings-key', FALSE, 'anthropic', 'settings'],
+      ['', 'sk-settings-key', TRUE, 'amazee', 'settings'],
+      ['', '', TRUE, 'amazee', 'amazee:operator'],
+      // Stored but not selected: reported, never used.
+      ['', '', TRUE, 'anthropic', 'none'],
+      ['', '', TRUE, 'drupal_ai', 'none'],
+      ['', '', FALSE, 'anthropic', 'none'],
     ];
 
-    foreach ($matrix as [$envKey, $settingsKey, $amazeeStored, $expectedSource]) {
-      $this->applyCell($envKey, $settingsKey, $amazeeStored);
+    foreach ($matrix as [$envKey, $settingsKey, $amazeeStored, $provider, $expectedSource]) {
+      $this->applyCell($envKey, $settingsKey, $amazeeStored, $provider);
       $label = sprintf(
-        'env=%s settings=%s amazee=%s',
+        'env=%s settings=%s amazee=%s provider=%s',
         $envKey === '' ? 'unset' : 'set',
         $settingsKey === '' ? 'unset' : 'set',
-        $amazeeStored ? 'stored' : 'absent'
+        $amazeeStored ? 'stored' : 'absent',
+        $provider
       );
 
       $service = $this->container->get('scolta.ai_service');
@@ -117,7 +128,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
       $this->assertSame($expectedSource, $resolved->source->value, $label);
       $this->assertSame($expectedSource, $service->getApiKeySource(), $label);
       $this->assertSame(
-        $expectedSource === 'amazee:auto',
+        $expectedSource === 'amazee:operator',
         $service->isAmazeeActive(),
         sprintf('%s: isAmazeeActive() must match the effective source', $label)
       );
@@ -126,7 +137,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
       $expectedKey = match ($expectedSource) {
         'env' => $envKey,
         'settings' => $settingsKey,
-        'amazee:auto' => self::AMAZEE_CREDENTIALS['litellm_token'],
+        'amazee:operator' => self::AMAZEE_CREDENTIALS['litellm_token'],
         default => '',
       };
       $this->assertSame($expectedKey, $service->getConfig()->aiApiKey, $label);
@@ -137,7 +148,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
       $this->drupalGet('/admin/config/search/scolta');
       $page = $this->getSession()->getPage()->getContent();
 
-      if ($expectedSource === 'amazee:auto') {
+      if ($expectedSource === 'amazee:operator') {
         $this->assertStringContainsString('Connected to', $page, $label);
         $this->assertStringContainsString('Amazee.ai', $page, $label);
       }
@@ -154,15 +165,22 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
       if ($overridden) {
         // The whole point: stored credentials that lost are named, not hidden,
         // and the state is never rendered in success green. Match the status
-        // span itself rather than the page, which carries other coloured spans.
+        // span itself rather than the page, which carries other coloured
+        // spans. Which sentence appears depends on what beat them — an
+        // explicit key, or the provider simply not being Amazee.ai — because
+        // the two need different fixes.
+        $phrase = $expectedSource === 'none'
+          ? 'stored but not in use'
+          : 'stored but overridden';
         $this->assertMatchesRegularExpression(
-          '#<span class="color--warning">[^<]*(<[^>]+>[^<]*)*stored but overridden#',
+          '#<span class="color--warning">[^<]*(<[^>]+>[^<]*)*' . preg_quote($phrase, '#') . '#',
           $page,
-          sprintf('%s: an overridden credential must be named, in the warning colour', $label)
+          sprintf('%s: an unused credential must be named, in the warning colour', $label)
         );
       }
       else {
         $this->assertStringNotContainsString('stored but overridden', $page, $label);
+        $this->assertStringNotContainsString('stored but not in use', $page, $label);
       }
 
       // 3. The health payload.
@@ -199,7 +217,11 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
         sprintf('%s: the CLI must not report an override as a pass', $label)
       );
       if ($overridden) {
-        $this->assertStringContainsString('stored but overridden by', $keyRow['message'], $label);
+        $this->assertStringContainsString(
+          $expectedSource === 'none' ? 'stored but not eligible' : 'stored but overridden by',
+          $keyRow['message'],
+          $label
+        );
       }
     }
   }
@@ -207,7 +229,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
   /**
    * Configure one cell of the matrix.
    */
-  private function applyCell(string $envKey, string $settingsKey, bool $amazeeStored): void {
+  private function applyCell(string $envKey, string $settingsKey, bool $amazeeStored, string $provider): void {
     if ($envKey === '') {
       putenv('SCOLTA_API_KEY');
     }
@@ -231,6 +253,11 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
     else {
       $state->delete('scolta.amazee.credentials');
     }
+
+    $this->container->get('config.factory')
+      ->getEditable('scolta.settings')
+      ->set('ai_provider', $provider)
+      ->save();
 
     $this->rebuildAll();
   }

@@ -7,11 +7,11 @@ namespace Drupal\scolta\Tests;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Verifies the auto-provisioning fallback wired into ScoltaAiService.
+ * Verifies how ScoltaAiService builds its client for the managed gateway.
  *
  * File-inspection tests — no Drupal bootstrap required.
  */
-class ScoltaAiServiceAutoProvisionTest extends TestCase {
+class ScoltaAiServiceGatewayClientTest extends TestCase {
 
   private string $serviceFile;
   private string $serviceSource;
@@ -37,28 +37,26 @@ class ScoltaAiServiceAutoProvisionTest extends TestCase {
     );
   }
 
-  public function testCreateClientChecksApiKeySource(): void {
-    // The guard reads the shared resolution rather than a source string.
-    // `amazeeCredentialsStored` rather than `source === none` is deliberate: a
-    // site whose provider is drupal_ai resolves to none while holding stored
-    // credentials, and must not provision a trial on top of them.
+  public function testCreateClientChecksTheSharedResolution(): void {
+    // The guard reads the shared resolution rather than a source string, so
+    // the client and every status surface agree about which key is in play.
     $this->assertStringContainsString(
       '$resolved = $this->resolveApiKey();',
       $this->serviceSource,
       'createClient() must take its answer from resolveApiKey()'
     );
     $this->assertStringContainsString(
-      '!$resolved->isConfigured() && !$resolved->amazeeCredentialsStored',
+      '$resolved->isAmazee() && $resolved->amazeeCredentialsStored',
       $this->serviceSource,
-      'createClient() must provision only when nothing is configured and nothing is stored'
+      'createClient() may reach the gateway only for a selected provider with a connection already stored'
     );
   }
 
-  public function testCreateClientCallsAutoProvisioner(): void {
+  public function testCreateClientResolvesGatewayModels(): void {
     $this->assertStringContainsString(
       'AutoProvisioner::ensureAiAvailable(',
       $this->serviceSource,
-      'createClient() must call AutoProvisioner::ensureAiAvailable()'
+      'createClient() must re-resolve gateway model names through AutoProvisioner::ensureAiAvailable()'
     );
   }
 
@@ -126,10 +124,15 @@ class ScoltaAiServiceAutoProvisionTest extends TestCase {
   }
 
   public function testCreateClientWiresThePersistCallback(): void {
-    $this->assertStringContainsString(
-      'onModelsResolved: $this->persistResolvedAmazeeModels(...)',
+    $this->assertMatchesRegularExpression(
+      '/onModelsResolved: function \(.*?\) use \(&\$healedModel\): void \{\s*\n\s*\$this->persistResolvedAmazeeModels\(\$aiModel, \$aiExpansionModel\);/',
       $this->serviceSource,
-      'createClient() must hand AutoProvisioner the persistResolvedAmazeeModels() callback'
+      'createClient() must persist whatever the resolution returned through persistResolvedAmazeeModels()'
+    );
+    $this->assertStringContainsString(
+      '$healedModel = $aiModel;',
+      $this->serviceSource,
+      'The degrade guard must key on what the resolution returned, not on a second config read'
     );
   }
 

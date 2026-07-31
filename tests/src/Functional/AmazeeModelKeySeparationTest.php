@@ -82,8 +82,9 @@ class AmazeeModelKeySeparationTest extends BrowserTestBase {
    */
   public function testOperatorModelIsEffectiveOnceAmazeeCredentialsAreGone(): void {
     $this->clearAmazeeCredentials();
-    // Aliases are retained, so flipping back needs no re-provisioning.
-    $this->setModels(self::ADMIN_CHOICE, '', self::GATEWAY_ALIAS, self::GATEWAY_EXPANSION_ALIAS);
+    // The aliases outlive the connection in config; what must not outlive it
+    // is their reaching a provider that does not understand them.
+    $this->setModels(self::ADMIN_CHOICE, '', self::GATEWAY_ALIAS, self::GATEWAY_EXPANSION_ALIAS, 'anthropic');
 
     $config = $this->service()->getConfig();
 
@@ -204,10 +205,15 @@ class AmazeeModelKeySeparationTest extends BrowserTestBase {
 
   /**
    * Set the operator-facing and gateway-scoped model keys together.
+   *
+   * The provider defaults to 'amazee' because most of these cases are about
+   * what the gateway is sent, and the gateway is only in play when it is the
+   * selected provider. The one case that is about life after the gateway
+   * passes 'anthropic'.
    */
-  private function setModels(string $aiModel, string $aiExpansionModel, string $amazeeModel, string $amazeeExpansionModel): void {
+  private function setModels(string $aiModel, string $aiExpansionModel, string $amazeeModel, string $amazeeExpansionModel, string $provider = 'amazee'): void {
     \Drupal::configFactory()->getEditable('scolta.settings')
-      ->set('ai_provider', 'anthropic')
+      ->set('ai_provider', $provider)
       ->set('ai_model', $aiModel)
       ->set('ai_expansion_model', $aiExpansionModel)
       ->set('amazee_model', $amazeeModel)
@@ -226,11 +232,9 @@ class AmazeeModelKeySeparationTest extends BrowserTestBase {
   /**
    * Take the site off the Amazee.ai path.
    *
-   * Not a no-op on a fresh test site: scolta_install() calls
-   * AutoProvisioner::ensureAiAvailable(), which provisions and stores a real
-   * Amazee.ai trial whenever the test runner can reach the control plane. A
-   * test about the uncredentialed case must therefore establish that state
-   * rather than assume it, or it passes or fails on network conditions.
+   * A fresh install stores nothing, so this is normally a no-op; it stays
+   * because a test about the unconnected case should establish that state
+   * rather than inherit it from whatever ran before.
    */
   private function clearAmazeeCredentials(): void {
     \Drupal::service('scolta.amazee_config_storage')->clear();

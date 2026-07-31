@@ -116,13 +116,16 @@ drush scolta:finalize
 
 Scolta supports three AI provider paths. The right path depends on where you are in your deployment:
 
-### Amazee.ai (zero-config default)
+### Amazee.ai (managed gateway, opt-in)
 
-On [Amazee.io](https://www.amazee.io/) hosting, Scolta auto-provisions a free Amazee.ai trial at install time — no API key needed, and search works immediately out of the box. This is the fastest path to a working AI-powered search, ideal for getting started or evaluating Scolta.
+Amazee.ai is a managed AI gateway you can enable without holding an API key of your own, and it comes with a no-cost evaluation. Enabling it takes two deliberate steps and never happens on its own:
 
-If you later want more control over your AI provider, you can switch to one of the options below at any time. Amazee.ai is the default, not a lock.
+1. Select **Amazee.ai (managed gateway)** as the **AI Provider** at *Administration > Configuration > Search and Metadata > Scolta AI Search > AI Configuration*, and save.
+2. Follow the **Set up Amazee.ai** link from that screen and complete the connect flow (enter your email, then start the evaluation or sign in to an existing Amazee account).
 
-**Model configuration on this path is separate.** Amazee.ai serves models through a LiteLLM gateway under its own names (`claude-4-5-sonnet`), which no provider's own API accepts. Scolta therefore keeps them apart: the gateway's names are resolved automatically into `amazee_model` and `amazee_expansion_model` and are read only while Amazee.ai credentials are in use, while the **AI Model** and **Expansion Model** fields on the settings form hold provider-native IDs (`claude-sonnet-4-5-20250929`, `gpt-4o`) and are what a direct provider key uses. The two gateway settings have no form field, because there is nothing to choose — they are whatever the gateway offers. Switching away from Amazee.ai therefore leaves your own model choice intact, and switching back does not re-provision.
+Installing the module configures no AI provider and stores no credentials, and no page request will establish a connection for you. Selecting any other provider afterwards removes the stored connection, so the gateway can never serve traffic for a site that has moved to its own key. Selecting Amazee.ai again and repeating the connect flow re-establishes it.
+
+**Model configuration on this path is separate.** Amazee.ai serves models through a LiteLLM gateway under its own names (`claude-4-5-sonnet`), which no provider's own API accepts. Scolta therefore keeps them apart: the gateway's names are resolved automatically into `amazee_model` and `amazee_expansion_model` and are read only while Amazee.ai credentials are in use, while the **AI Model** and **Expansion Model** fields on the settings form hold provider-native IDs (`claude-sonnet-4-5-20250929`, `gpt-4o`) and are what a direct provider key uses. The two gateway settings have no form field, because there is nothing to choose — they are whatever the gateway offers. Switching away from Amazee.ai therefore leaves your own model choice intact.
 
 Sites installed before this separation existed may have an Amazee.ai gateway name sitting in **AI Model**. `drush updatedb` moves it across and restores the shipped default, reporting what it moved; if you use a direct Anthropic or OpenAI key, check the **AI Model** field afterwards.
 
@@ -158,7 +161,7 @@ Finally, select **Drupal AI module** in Scolta settings at *Administration > Con
 
 Scolta will use the Drupal AI module's configured default provider and model. The model, API key, expansion model, and base URL fields in Scolta's settings are hidden when this provider is selected — the Drupal AI module manages all of these.
 
-**Upgrading from Amazee.ai:** If your site auto-provisioned with Amazee.ai and you want to switch to the Drupal AI module, install `drupal/ai`, configure a provider there, then change the dropdown in Scolta settings. Amazee.ai credentials remain stored (so you can switch back), but Scolta will route through the Drupal AI module once you select it.
+**Moving from Amazee.ai:** If your site is on the Amazee.ai gateway and you want to switch to the Drupal AI module, install `drupal/ai`, configure a provider there, then change the dropdown in Scolta settings. Saving the change removes the stored Amazee.ai connection, so nothing of it is left to shadow the provider you selected; to go back, select Amazee.ai again and complete the connect flow.
 
 ### Built-in providers (standalone)
 
@@ -237,13 +240,13 @@ If you have previously run `drush search-api:index`, that is not sufficient — 
 
 ### Permissions
 
-Scolta defines a **Use Scolta AI features** permission (`use scolta ai`) that gates the AI API endpoints. This permission is granted to the **anonymous** and **authenticated** roles automatically at module install, so search visitors receive AI overviews out of the box with no admin action required.
+Scolta defines a **Use Scolta AI features** permission (`use scolta ai`) that gates the AI API endpoints. This permission is granted to the **authenticated** role automatically at module install, so logged-in visitors receive AI overviews with no admin action required. The **anonymous** role is deliberately not granted it: the AI endpoints make cost-bearing LLM calls, and opening them to unauthenticated traffic is a decision for the site rather than a default.
 
-On a site installed before that grant existed, the permission is backfilled by a database update: run `drush updatedb` (or visit `/update.php`) after updating the module. Until that update runs, anonymous requests to the AI endpoints return 403. The update grants the permission only where it is missing, and does not run again afterwards, so a later decision to revoke it stands.
+To serve AI overviews to anonymous visitors, grant **Use Scolta AI features** to the anonymous role at *Administration > People > Permissions*. Until you do, anonymous requests to the AI endpoints return 403.
 
-**If the site manages permissions through exported configuration, the update alone is not enough.** Run the update in the environment you export from, then `drush cex`, and commit the changed `user.role.anonymous.yml` and `user.role.authenticated.yml`. `drush deploy` runs `config:import` after `updatedb`, so on a site whose exported config predates the update, the import reverts the grant seconds after the hook applies it and anonymous requests keep returning 403 — the update having run and the permission being absent at the same time is exactly what this looks like. Re-exporting also makes the grant survive every later `config:import`, which running the update on each environment separately does not.
+A site installed before this change may already hold the anonymous grant, which earlier releases applied automatically. A database update revokes it: run `drush updatedb` (or visit `/update.php`) after updating the module. It runs once, so a later decision to grant it again stands.
 
-To restrict AI features to specific roles (e.g. authenticated users only), revoke the permission from the anonymous role at *Administration > People > Permissions*.
+**If the site manages permissions through exported configuration, the update alone is not enough.** Run the update in the environment you export from, then `drush cex`, and commit the changed `user.role.anonymous.yml` and `user.role.authenticated.yml`. `drush deploy` runs `config:import` after `updatedb`, so on a site whose exported config predates the update, the import restores the old grant seconds after the hook removed it — the update having run and the permission still being present at the same time is exactly what this looks like. Re-exporting also makes the change survive every later `config:import`, which running the update on each environment separately does not.
 
 The health endpoint (`GET /api/scolta/v1/health`) is reachable without any permission so uptime monitors always work, but callers without **Administer Scolta** (`administer scolta`) receive only `{"status": "ok"|"degraded"}`. The full diagnostic payload (AI provider, index integrity, fragment counts) requires `administer scolta`.
 
@@ -253,7 +256,7 @@ Visit *Administration > Configuration > Search and Metadata > Scolta AI Search* 
 
 #### AI endpoint rate limiting
 
-The AI API endpoints (`/api/scolta/v1/expand-query`, `/api/scolta/v1/summarize`, `/api/scolta/v1/followup`) make cost-bearing LLM calls and are reachable by anonymous visitors by default. The **Rate Limiting** section of the settings form configures per-IP and site-wide flood thresholds (defaults: 60 requests/minute per IP, 1000 requests/minute site-wide); requests beyond a threshold are rejected with HTTP 429 before any AI work happens. Set a limit to 0 to disable that layer.
+The AI API endpoints (`/api/scolta/v1/expand-query`, `/api/scolta/v1/summarize`, `/api/scolta/v1/followup`) make cost-bearing LLM calls. They require the **Use Scolta AI features** permission, which is granted to authenticated users at install; flood limits apply to every caller regardless. The **Rate Limiting** section of the settings form configures per-IP and site-wide flood thresholds (defaults: 60 requests/minute per IP, 1000 requests/minute site-wide); requests beyond a threshold are rejected with HTTP 429 before any AI work happens. Set a limit to 0 to disable that layer.
 
 #### Auto-rebuild debounce
 
@@ -297,7 +300,7 @@ Scolta connects to external services under specific conditions. No data is sent 
 
 ### Amazee.ai
 
-**When:** On [Amazee.io](https://www.amazee.io/) hosting, Scolta automatically provisions a free Amazee.ai trial on first activation. Once provisioned, every search query made by site visitors is sent to the Amazee.ai API endpoint while AI features are active.
+**When:** Only after an administrator selects Amazee.ai as the AI provider and completes the connect flow in Scolta's settings. Once connected, every search query made by site visitors is sent to the Amazee.ai API endpoint while AI features are active.
 **What is sent:** The user's search query text, and selected page content excerpts (for result summarization).
 **Service:** Amazee.ai, operated by Amazee Group AG.
 **Amazee.ai:** https://amazee.ai/

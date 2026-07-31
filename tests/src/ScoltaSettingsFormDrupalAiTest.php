@@ -63,28 +63,33 @@ class ScoltaSettingsFormDrupalAiTest extends TestCase {
   // $defaultProvider respects stored 'drupal_ai'
   // -------------------------------------------------------------------
 
-  public function testDefaultProviderRespectsDrupalAiSelection(): void {
-    // When the admin stored 'drupal_ai' in config, that must be the default
-    // even if Amazee credentials exist. isAmazeeActive() must NOT override it.
-    $this->assertStringContainsString(
-      "=== 'drupal_ai'",
+  public function testDefaultProviderIsWhateverWasSaved(): void {
+    // A saved provider — 'drupal_ai' included — is shown as-is. It used to
+    // need defending: the field fell back to detecting a stored managed
+    // gateway, and every provider except 'drupal_ai' lost that contest (#125).
+    // With the gateway selected rather than detected there is no contest left.
+    $this->assertMatchesRegularExpression(
+      '/\$defaultProvider\s*=\s*\(\$storedProvider !== NULL && \$storedProvider !== \'\'\)/',
       $this->formContents,
-      "Form must check if stored provider is 'drupal_ai' before applying Amazee default"
+      'The provider field must default to the saved provider'
     );
   }
 
-  public function testDefaultProviderDrupalAiCheckPrecedesAmazeeCheck(): void {
-    $drupalAiCheckPos = strpos($this->formContents, "'drupal_ai'");
-    // "Is Amazee active" is now answered by the shared resolution, so stored
-    // credentials that lost to an explicit key cannot preselect Amazee.
-    $amazeeCheckPos = strpos($this->formContents, 'resolveApiKey()->isAmazee()');
+  public function testDefaultProviderNeverDetectsAStoredGateway(): void {
+    // The removed fallback, pinned so it cannot come back: a stored managed
+    // gateway connection must not preselect the provider that uses it. A
+    // connection existing is not the operator choosing it.
+    $start = strpos($this->formContents, '$storedProvider = $config->get(\'ai_provider\');');
+    $this->assertNotFalse($start, 'The form must read the saved provider');
+    $end = strpos($this->formContents, '$providerOptions = [', $start);
+    $this->assertNotFalse($end, 'The provider options must follow the default calculation');
+    $block = substr($this->formContents, $start, $end - $start);
 
-    $this->assertNotFalse($drupalAiCheckPos,
-      "Form must reference 'drupal_ai' when setting the default provider");
-    $this->assertNotFalse($amazeeCheckPos,
-      'Form must still ask whether Amazee is the effective source for non-drupal_ai providers');
-    $this->assertLessThan($amazeeCheckPos, $drupalAiCheckPos,
-      "The 'drupal_ai' check must appear before isAmazeeActive() in default provider logic");
+    $this->assertStringNotContainsString(
+      'isAmazee()',
+      $block,
+      'The default provider must not be derived from whether a gateway connection is stored'
+    );
   }
 
   // -------------------------------------------------------------------
