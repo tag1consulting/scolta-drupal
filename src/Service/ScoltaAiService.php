@@ -33,8 +33,10 @@ use Tag1\Scolta\Service\AiServiceAdapter;
  * Supports a three-path AI strategy:
  * 1. Amazee.ai (zero-config default): When Amazee credentials are stored in
  *    Drupal State and no explicit key or 'drupal_ai' provider is configured,
- *    buildConfig() injects the Amazee LiteLLM token and routes through the
- *    built-in AiClient as an OpenAI-compatible endpoint.
+ *    buildConfig() injects the Amazee LiteLLM token, the gateway-scoped model
+ *    alias from 'amazee_model', and routes through the built-in AiClient as an
+ *    OpenAI-compatible endpoint. The operator-facing 'ai_model' is left alone
+ *    on this path so a later switch to a direct provider key still works.
  * 2. Drupal AI module (opt-in): When the admin explicitly selects 'drupal_ai'
  *    as the provider, tryFrameworkAi() routes through the Drupal AI module's
  *    plugin manager. Amazee credentials are NOT injected in this path —
@@ -287,6 +289,25 @@ class ScoltaAiService extends AiServiceAdapter {
         $values['ai_provider'] = 'openai';
         $values['ai_api_key'] = $amazeeCreds['litellm_token'];
         $values['ai_base_url'] = $amazeeCreds['litellm_api_url'] ?? '';
+        // Amazee is the effective provider for this request, so the model
+        // sent to the gateway comes from the gateway-scoped keys, never from
+        // the operator-facing ones. amazee_model holds a LiteLLM alias
+        // (e.g. 'claude-4-5-sonnet') that only the gateway understands, and
+        // ai_model holds a provider-native ID that only the direct provider
+        // API understands; keeping them apart is what lets a site move
+        // between the two without losing either (scolta-php#251).
+        //
+        // ai_model is left in place when nothing has been resolved yet, so
+        // the shipped dated default remains and createClient()'s degrade
+        // guard — which reads the same gateway-scoped key — catches it
+        // before the gateway can reject it with HTTP 400. The expansion
+        // model is replaced unconditionally: an operator-chosen native
+        // expansion ID must not leak to the gateway, and an empty value
+        // already means "use the main model".
+        $values['ai_expansion_model'] = $values['amazee_expansion_model'] ?? '';
+        if (($values['amazee_model'] ?? '') !== '') {
+          $values['ai_model'] = $values['amazee_model'];
+        }
       }
     }
 
@@ -535,41 +556,32 @@ class ScoltaAiService extends AiServiceAdapter {
       AutoProvisioner::ensureAiAvailable(
         $this->amazeeConfigStorage,
         hasExplicitApiKey: FALSE,
-        onModelsResolved: function (string $aiModel, string $aiExpansionModel): void {
-          $config = $this->configFactory->getEditable('scolta.settings');
-          if ($aiModel !== '') {
-            $config->set('ai_model', $aiModel);
-          }
-          if ($aiExpansionModel !== '') {
-            $config->set('ai_expansion_model', $aiExpansionModel);
-          }
-          $config->save();
-        },
+        onModelsResolved: $this->persistResolvedAmazeeModels(...),
         // Tell AutoProvisioner whether a genuinely resolved model is already
         // persisted. When credentials are stored but model resolution never
         // succeeded (the provision's /model/info step failed), this returns
         // FALSE and the provisioner re-resolves against the ALREADY-STORED key
         // — self-healing the half-provisioned state — instead of no-opping
-        // forever on the stored credentials. The predicate MUST treat the
-        // shipped dated default as unresolved: createClient() only ran because
-        // getApiKeySource() === 'none', and config still carries the install
-        // default model, so a naive "ai_model is non-empty" check would always
-        // report TRUE and the self-heal would never fire.
+        // forever on the stored credentials. It reads the gateway-scoped key,
+        // the one onModelsResolved writes: reading ai_model here would report
+        // TRUE for any site whose operator had picked a model, and the
+        // self-heal would never fire on exactly the sites that need it.
         hasResolvedModels: fn (): bool => self::modelIsResolved(
-          $this->configFactory->get('scolta.settings')->get('ai_model'),
+          $this->configFactory->get('scolta.settings')->get('amazee_model'),
         ),
       );
       // Provisioning may have just stored Amazee credentials. If it did but
-      // model resolution still has not succeeded, the only model in config is
-      // the shipped dated default — which the Amazee LiteLLM gateway rejects
-      // with HTTP 400, breaking AI permanently and silently. Degrade instead:
+      // model resolution still has not succeeded, amazee_model is empty and
+      // buildConfig() leaves the shipped dated default in place — which the
+      // Amazee LiteLLM gateway rejects with HTTP 400, breaking AI permanently
+      // and silently. Degrade instead:
       // a key-less client makes the call throw ApiKeyMissingException, which
       // the AI controllers turn into an unexpanded/no-summary HTTP 200 (same
       // path as a wholly unconfigured site). The state self-heals on a later
       // request once /model/info recovers (hasResolvedModels reports FALSE →
       // re-resolve). Mirrors scolta-node's AmazeeAiService::buildClient().
       if ($this->isAmazeeActive()
-        && !self::modelIsResolved($this->configFactory->get('scolta.settings')->get('ai_model'))) {
+        && !self::modelIsResolved($this->configFactory->get('scolta.settings')->get('amazee_model'))) {
         return $this->createDegradedClient();
       }
       // Re-read state in case provisioning just stored new credentials.
@@ -579,16 +591,53 @@ class ScoltaAiService extends AiServiceAdapter {
   }
 
   /**
-   * Whether a genuinely resolved AI model name is persisted.
+   * Persist the models Amazee model resolution returned.
+   *
+   * The AutoProvisioner $onModelsResolved callback. The names it hands over are
+   * Amazee LiteLLM **gateway aliases** (e.g. `claude-4-5-sonnet`): valid only
+   * against the Amazee gateway, and rejected by Anthropic's and OpenAI's own
+   * APIs. They therefore go to the gateway-scoped `amazee_model` /
+   * `amazee_expansion_model`, never to the operator-facing `ai_model` /
+   * `ai_expansion_model`, which hold the provider-native IDs an administrator
+   * chose.
+   *
+   * Writing an alias into the operator-facing key is the defect this method
+   * exists to prevent: it overwrote an explicit administrator choice, and the
+   * moment the trial expired or a direct provider key was configured, the
+   * effective provider changed while the stored alias did not — leaving AI
+   * permanently degraded behind a generic ai_error (scolta-php#251).
+   *
+   * A method rather than a closure so it can be driven directly from a test
+   * without provisioning against the live control plane.
+   *
+   * @since 1.1.0
+   * @stability experimental
+   */
+  protected function persistResolvedAmazeeModels(string $aiModel, string $aiExpansionModel): void {
+    $config = $this->configFactory->getEditable('scolta.settings');
+    if ($aiModel !== '') {
+      $config->set('amazee_model', $aiModel);
+    }
+    if ($aiExpansionModel !== '') {
+      $config->set('amazee_expansion_model', $aiExpansionModel);
+    }
+    $config->save();
+  }
+
+  /**
+   * Whether a genuinely resolved Amazee gateway model name is persisted.
+   *
+   * Always called on `scolta.settings:amazee_model`, the gateway-scoped key
+   * `onModelsResolved` writes — never on the operator-facing `ai_model`.
    *
    * Reports FALSE for the unresolved state: a NULL/empty model, or the shipped
    * dated default (`AiClient::DEFAULT_MODEL`, identical to
-   * `ScoltaSettingsForm::DEFAULT_AI_MODEL`), which is what config carries
-   * before Amazee model resolution writes a real name (e.g.
-   * `claude-sonnet-4-5`). The dated default is precisely the value the Amazee
-   * gateway rejects with HTTP 400, so it must never count as "resolved" —
-   * otherwise the self-heal in createClient() becomes a no-op that ships the
-   * bug.
+   * `ScoltaSettingsForm::DEFAULT_AI_MODEL`), which is what a site migrated by
+   * scolta_update_10003() can carry before Amazee model resolution writes a
+   * real alias (e.g. `claude-sonnet-4-5`). The dated default is precisely the
+   * value the Amazee gateway rejects with HTTP 400, so it must never count as
+   * "resolved" — otherwise the self-heal in createClient() becomes a no-op
+   * that ships the bug.
    *
    * @since 1.0.4
    * @stability experimental

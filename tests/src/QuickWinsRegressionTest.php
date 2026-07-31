@@ -319,12 +319,25 @@ class QuickWinsRegressionTest extends TestCase {
     );
   }
 
-  public function testAmazeeTrialAutoApplyUsesTheConstant(): void {
-    $contents = $this->src('src/Form/AmazeeSettingsForm.php');
-    $this->assertStringContainsString('ScoltaSettingsForm::DEFAULT_AI_MODEL', $contents,
-      'The trial auto-apply comparison must reference the shared constant');
-    $this->assertStringNotContainsString("'claude-sonnet-", $contents,
-      'No duplicated model literal in AmazeeSettingsForm');
+  /**
+   * The default-model literal is never duplicated at an Amazee binding site.
+   *
+   * The trial form used to compare ai_model against the constant before
+   * overwriting it. Under scolta-drupal#187 that comparison is gone with the
+   * write itself — gateway aliases have their own key, so there is no
+   * operator-chosen value there to protect — and the only remaining consumer of
+   * the constant outside the settings form is the migration hook, which resets
+   * ai_model to it. Both files must still reach for the constant rather than
+   * repeating the literal.
+   */
+  public function testAmazeeBindingSitesNeverDuplicateTheDefaultModelLiteral(): void {
+    foreach (['src/Form/AmazeeSettingsForm.php', 'scolta.install'] as $file) {
+      $this->assertStringNotContainsString("'claude-sonnet-", $this->src($file),
+        "No duplicated model literal in {$file}");
+    }
+
+    $this->assertStringContainsString('ScoltaSettingsForm::DEFAULT_AI_MODEL', $this->src('scolta.install'),
+      'The migration hook must reset ai_model to the shared constant');
   }
 
   // -------------------------------------------------------------------

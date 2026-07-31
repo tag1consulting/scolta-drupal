@@ -82,17 +82,72 @@ class ScoltaAiServiceAutoProvisionTest extends TestCase {
     );
   }
 
-  public function testCreateClientPersistsResolvedModels(): void {
+  /**
+   * Resolved models are persisted, and only to the gateway-scoped keys.
+   *
+   * Updated for scolta-drupal#187: the callback used to write ai_model /
+   * ai_expansion_model, the keys an administrator uses to name a
+   * provider-native model. Those hold names the Amazee gateway never returns,
+   * so persisting a gateway alias there clobbered an explicit choice and broke
+   * AI outright once the effective provider changed.
+   */
+  public function testCreateClientPersistsResolvedModelsToTheGatewayKeys(): void {
+    $callback = $this->persistCallbackBody();
+
     $this->assertStringContainsString(
-      "'ai_model'",
-      $this->serviceSource,
-      'createClient() onModelsResolved callback must persist ai_model'
+      "\$config->set('amazee_model', \$aiModel)",
+      $callback,
+      'The onModelsResolved callback must persist the resolved model to amazee_model'
     );
     $this->assertStringContainsString(
-      "'ai_expansion_model'",
-      $this->serviceSource,
-      'createClient() onModelsResolved callback must persist ai_expansion_model'
+      "\$config->set('amazee_expansion_model', \$aiExpansionModel)",
+      $callback,
+      'The onModelsResolved callback must persist the resolved expansion model to amazee_expansion_model'
     );
+    $this->assertStringNotContainsString(
+      "set('ai_model'",
+      $callback,
+      'The onModelsResolved callback must never write the operator-facing ai_model'
+    );
+    $this->assertStringNotContainsString(
+      "set('ai_expansion_model'",
+      $callback,
+      'The onModelsResolved callback must never write the operator-facing ai_expansion_model'
+    );
+  }
+
+  public function testCreateClientWiresThePersistCallback(): void {
+    $this->assertStringContainsString(
+      'onModelsResolved: $this->persistResolvedAmazeeModels(...)',
+      $this->serviceSource,
+      'createClient() must hand AutoProvisioner the persistResolvedAmazeeModels() callback'
+    );
+  }
+
+  /**
+   * Nothing in the service may write a gateway alias to the operator keys.
+   */
+  public function testServiceNeverWritesTheOperatorFacingModelKeys(): void {
+    $this->assertDoesNotMatchRegularExpression(
+      "/getEditable\('scolta\.settings'\)(?:.|\n)*?->set\('ai_(?:expansion_)?model'/",
+      $this->serviceSource,
+      'ScoltaAiService must not persist any model into the operator-facing keys'
+    );
+  }
+
+  /**
+   * The body of persistResolvedAmazeeModels(), the onModelsResolved callback.
+   */
+  private function persistCallbackBody(): string {
+    $start = strpos($this->serviceSource, 'protected function persistResolvedAmazeeModels(');
+    $this->assertNotFalse(
+      $start,
+      'ScoltaAiService must define persistResolvedAmazeeModels() as the onModelsResolved callback'
+    );
+    $end = strpos($this->serviceSource, "\n  }", $start);
+    $this->assertNotFalse($end, 'persistResolvedAmazeeModels() must have a closing brace');
+
+    return substr($this->serviceSource, $start, $end - $start);
   }
 
 }
