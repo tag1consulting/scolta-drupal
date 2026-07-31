@@ -156,13 +156,19 @@ class ScoltaAiServiceDrupalAiOptInTest extends TestCase {
   }
 
   public function testBuildConfigUsesElseifWithDrupalAiGuard(): void {
-    // The Amazee credential injection must use elseif with the drupal_ai guard,
-    // so the exclusion is structurally part of the condition rather than a
-    // nested if inside an else block.
+    // The exclusion is now an input to the shared resolver rather than a
+    // branch here: eligibility travels with the resolution, so every surface
+    // that reports on the key sees the same drupal_ai exclusion the config
+    // path applies, instead of each re-deriving it (scolta-php#252).
     $this->assertStringContainsString(
-      "elseif ((\$values['ai_provider'] ?? '') !== 'drupal_ai')",
+      "amazeeEligible: \$provider !== 'drupal_ai',",
       $this->serviceContents,
-      "buildConfig() must use 'elseif ((\$values['ai_provider'] ?? '') !== 'drupal_ai')' to guard Amazee injection"
+      "resolveApiKey() must mark Amazee ineligible when the provider is 'drupal_ai'"
+    );
+    $this->assertStringContainsString(
+      'if ($resolved->isAmazee()) {',
+      $this->serviceContents,
+      'buildConfig() must inject Amazee settings only when the resolution says Amazee won'
     );
   }
 

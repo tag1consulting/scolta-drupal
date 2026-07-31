@@ -96,11 +96,22 @@ class ScoltaAiServiceValidationTest extends TestCase {
   }
 
   public function testBuildConfigInjectsApiKey(): void {
-    // The explicit-key guard reads via getApiKey() before checking Amazee creds.
+    // buildConfig() takes the key from the shared resolution, so the config it
+    // builds and the source every surface reports come from one derivation.
     $this->assertStringContainsString(
-      '$explicitKey = $this->getApiKey()',
+      '$resolved = $this->resolveApiKey();',
       $this->serviceContents,
-      'buildConfig must check getApiKey() as an explicit-key guard before falling back to Amazee'
+      'buildConfig must resolve the key through resolveApiKey()'
+    );
+    $this->assertStringContainsString(
+      "\$values['ai_api_key'] = \$resolved->key;",
+      $this->serviceContents,
+      'buildConfig must inject the resolved key'
+    );
+    $this->assertStringContainsString(
+      "\$values['ai_provider'] = \$resolved->provider;",
+      $this->serviceContents,
+      'buildConfig must take the effective provider from the same resolution'
     );
   }
 
@@ -125,12 +136,19 @@ class ScoltaAiServiceValidationTest extends TestCase {
   }
 
   public function testGetApiKeyFallsBackToSettings(): void {
-    // The fallback moved into settingsApiKey(), which both getApiKey() and
-    // getApiKeySource() call so they cannot disagree about the stored value.
+    // Both candidates are now listed once, in explicitKeyCandidates(), and the
+    // shared resolver applies the precedence — the earlier arrangement had
+    // getApiKey() and getApiKeySource() each ordering the same two candidates
+    // for themselves, which is precisely how they came to disagree.
     $this->assertStringContainsString(
-      'return $this->settingsApiKey();',
+      "'settings' => \$this->settingsApiKey(),",
       $this->serviceContents,
-      'getApiKey should fall back to the settings.php key via settingsApiKey()'
+      'The settings.php key must be a candidate in explicitKeyCandidates()'
+    );
+    $this->assertStringContainsString(
+      'return ApiKeyResolver::resolve($this->explicitKeyCandidates())->key;',
+      $this->serviceContents,
+      'getApiKey() must apply the canonical precedence rather than its own'
     );
     $this->assertStringContainsString(
       "\$key = Settings::get('scolta.api_key', '');",
@@ -155,9 +173,9 @@ class ScoltaAiServiceValidationTest extends TestCase {
       'settingsApiKey() must guard on is_string() before returning the stored value'
     );
     $this->assertStringContainsString(
-      '$settingsKey = $this->settingsApiKey();',
+      "'settings' => \$this->settingsApiKey(),",
       $this->serviceContents,
-      'getApiKeySource() must read the settings.php key through the same guard'
+      'The resolver must read the settings.php candidate through the same guard'
     );
   }
 
@@ -174,13 +192,21 @@ class ScoltaAiServiceValidationTest extends TestCase {
   }
 
   public function testGetApiKeySourceReturnsExpectedValues(): void {
-    // Should return one of: 'env', 'settings', 'none'.
-    $this->assertStringContainsString("return 'env'", $this->serviceContents,
-      'getApiKeySource should return "env" when env var is set');
-    $this->assertStringContainsString("return 'settings'", $this->serviceContents,
-      'getApiKeySource should return "settings" when settings.php key exists');
-    $this->assertStringContainsString("return 'none'", $this->serviceContents,
-      'getApiKeySource should return "none" when no key is configured');
+    // The source strings are no longer built here. They are the backing values
+    // of Tag1\Scolta\Config\ApiKeySource, produced by the one resolver, and
+    // this method hands back whichever one that resolution reached. Deciding
+    // them locally is exactly what let this method disagree with buildConfig()
+    // about precedence (scolta-php#252).
+    $this->assertStringContainsString(
+      'return $this->resolveApiKey()->source->value;',
+      $this->serviceContents,
+      'getApiKeySource() must report the resolved source rather than deriving one'
+    );
+    $this->assertStringContainsString(
+      'ApiKeyResolver::resolve(',
+      $this->serviceContents,
+      'resolveApiKey() must call the shared resolver'
+    );
   }
 
   // -------------------------------------------------------------------

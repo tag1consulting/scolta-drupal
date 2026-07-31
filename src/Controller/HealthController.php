@@ -107,6 +107,9 @@ class HealthController extends ControllerBase {
       pagefindBinaryPath: $config->get('pagefind.binary'),
       projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
       cache: $cacheDriver,
+      // The same resolution the client performs, so /health names the key's
+      // source instead of leaving a monitor to infer it (scolta-php#252).
+      resolvedKey: $this->aiService->resolveApiKey(),
     );
 
     $result = $checker->check();

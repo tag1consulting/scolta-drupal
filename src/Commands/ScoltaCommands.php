@@ -675,6 +675,10 @@ class ScoltaCommands extends DrushCommands {
       projectDir: defined('DRUPAL_ROOT')
         ? DRUPAL_ROOT : getcwd(),
       aiApiKey: $this->aiService->getApiKey(),
+      // The AI-key row names the source and reports an overridden Amazee.ai
+      // credential, from the same resolution the settings form and /health
+      // read (scolta-php#252).
+      resolvedKey: $this->aiService->resolveApiKey(),
     );
 
     foreach ($results as $r) {
@@ -822,8 +826,12 @@ class ScoltaCommands extends DrushCommands {
     else {
       $this->logger()->notice("  Provider: {$provider} (built-in)");
     }
-    $keySource = $this->aiService->getApiKeySource();
-    $this->logger()->notice("  API key:  {$keySource}");
+    // The source and the description come from the same resolution the client
+    // uses, so `status` cannot claim Amazee.ai while an explicit key serves
+    // every request (scolta-php#252).
+    $resolvedKey = $this->aiService->resolveApiKey();
+    $this->logger()->notice("  API key:  {$resolvedKey->source->value}");
+    $this->logger()->notice('  ' . $resolvedKey->describe());
 
     // Generation counter.
     $generation = $this->state->get('scolta.generation', 0);

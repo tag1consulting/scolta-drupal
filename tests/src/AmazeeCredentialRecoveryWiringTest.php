@@ -156,10 +156,11 @@ namespace Drupal\scolta\Tests {
 
             $this->assertStringContainsString('use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;', $src);
             $this->assertStringContainsString('$this->setKeyExpiryRecovery(', $src);
-            // The Amazee-path gate: an explicit key or the drupal_ai provider
-            // must short-circuit before recovery is wired.
-            $this->assertStringContainsString("\$this->getApiKey() !== ''", $src);
-            $this->assertStringContainsString("aiProvider === 'drupal_ai'", $src);
+            // The Amazee-path gate, now stated once rather than enumerated:
+            // recovery is wired only when the shared resolution says Amazee is
+            // the effective source, which is false for an explicit key and
+            // false for the drupal_ai provider (Amazee is ineligible there).
+            $this->assertStringContainsString('if (!$this->resolveApiKey()->isAmazee()) {', $src);
         }
 
         public function testServiceExposesReauthMarkerAccessors(): void {

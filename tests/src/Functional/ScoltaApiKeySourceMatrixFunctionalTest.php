@@ -1,0 +1,238 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\Tests\scolta\Functional;
+
+use Drupal\Tests\BrowserTestBase;
+use Tag1\Scolta\SetupCheck;
+
+/**
+ * Every key source, with and without stored Amazee.ai credentials, agrees.
+ *
+ * The defect: buildConfig() gave an explicit env/settings.php key priority
+ * over stored Amazee credentials while getApiKeySource() checked Amazee first,
+ * so a site running on a valid SCOLTA_API_KEY was told, in success green, that
+ * it was connected to Amazee.ai — and the settings form, /health and Drush all
+ * repeated it. On the Athenaeum demo that message was read as evidence the
+ * environment variable was missing while a valid key was in the container the
+ * whole time.
+ *
+ * Each cell asserts the three reporting surfaces against the same resolution:
+ * the settings form, the /health payload, and the CLI check-setup row. The
+ * CLI row is composed here exactly as ScoltaCommands::checkSetup() composes it
+ * — that the command takes its input from resolveApiKey() rather than deriving
+ * a source of its own is pinned structurally in
+ * \Drupal\scolta\Tests\ApiKeySourceSingleDerivationTest.
+ *
+ * These have to be functional tests: the unit suite never boots Drupal, so it
+ * cannot execute a resolution against a real Settings singleton and state.
+ *
+ * @group scolta
+ * @see https://github.com/tag1consulting/scolta-php/issues/252
+ */
+class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected static $modules = ['scolta', 'search_api'];
+
+  /**
+   * {@inheritdoc}
+   */
+  protected $defaultTheme = 'stark';
+
+  /**
+   * The SCOLTA_API_KEY value to restore after the test, or FALSE if unset.
+   *
+   * @var string|false
+   */
+  protected $originalEnvKey = FALSE;
+
+  /**
+   * Fake Amazee.ai credentials. Never used to make a call in these tests.
+   */
+  private const AMAZEE_CREDENTIALS = [
+    'litellm_token' => 'sk-amazee-stored-token',
+    'litellm_api_url' => 'https://gateway.example/v1',
+    'region' => 'eu',
+  ];
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->originalEnvKey = getenv('SCOLTA_API_KEY');
+    putenv('SCOLTA_API_KEY');
+    $this->container->get('state')->delete('scolta.amazee.credentials');
+
+    $this->drupalLogin($this->drupalCreateUser(['administer scolta']));
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function tearDown(): void {
+    if ($this->originalEnvKey !== FALSE) {
+      putenv('SCOLTA_API_KEY=' . $this->originalEnvKey);
+    }
+    parent::tearDown();
+  }
+
+  /**
+   * The four-by-two matrix.
+   *
+   * Written as one test because each cell reconfigures the site: writing
+   * settings.php and rebuilding is far too slow to repeat per data-provider
+   * row, and the point being proved is agreement across surfaces within a
+   * cell rather than independence between cells.
+   */
+  public function testEverySourceAgreesAcrossEverySurface(): void {
+    // [env key, settings.php key, amazee stored] => expected source.
+    $matrix = [
+      ['sk-env-key', '', FALSE, 'env'],
+      ['sk-env-key', '', TRUE, 'env'],
+      ['sk-env-key', 'sk-settings-key', FALSE, 'env'],
+      ['', 'sk-settings-key', FALSE, 'settings'],
+      ['', 'sk-settings-key', TRUE, 'settings'],
+      ['', '', TRUE, 'amazee:auto'],
+      ['', '', FALSE, 'none'],
+    ];
+
+    foreach ($matrix as [$envKey, $settingsKey, $amazeeStored, $expectedSource]) {
+      $this->applyCell($envKey, $settingsKey, $amazeeStored);
+      $label = sprintf(
+        'env=%s settings=%s amazee=%s',
+        $envKey === '' ? 'unset' : 'set',
+        $settingsKey === '' ? 'unset' : 'set',
+        $amazeeStored ? 'stored' : 'absent'
+      );
+
+      $service = $this->container->get('scolta.ai_service');
+      $resolved = $service->resolveApiKey();
+
+      // 1. The resolution itself.
+      $this->assertSame($expectedSource, $resolved->source->value, $label);
+      $this->assertSame($expectedSource, $service->getApiKeySource(), $label);
+      $this->assertSame(
+        $expectedSource === 'amazee:auto',
+        $service->isAmazeeActive(),
+        sprintf('%s: isAmazeeActive() must match the effective source', $label)
+      );
+
+      // The key that will actually be sent matches the reported source.
+      $expectedKey = match ($expectedSource) {
+        'env' => $envKey,
+        'settings' => $settingsKey,
+        'amazee:auto' => self::AMAZEE_CREDENTIALS['litellm_token'],
+        default => '',
+      };
+      $this->assertSame($expectedKey, $service->getConfig()->aiApiKey, $label);
+
+      $overridden = $amazeeStored && !str_starts_with($expectedSource, 'amazee');
+
+      // 2. The settings form.
+      $this->drupalGet('/admin/config/search/scolta');
+      $page = $this->getSession()->getPage()->getContent();
+
+      if ($expectedSource === 'amazee:auto') {
+        $this->assertStringContainsString('Connected to', $page, $label);
+        $this->assertStringContainsString('Amazee.ai', $page, $label);
+      }
+      elseif ($expectedSource === 'env') {
+        $this->assertStringContainsString('SCOLTA_API_KEY environment variable', $page, $label);
+      }
+      elseif ($expectedSource === 'settings') {
+        $this->assertStringContainsString('settings.php', $page, $label);
+      }
+      else {
+        $this->assertStringContainsString('No API key configured', $page, $label);
+      }
+
+      if ($overridden) {
+        // The whole point: stored credentials that lost are named, not hidden,
+        // and the state is never rendered in success green. Match the status
+        // span itself rather than the page, which carries other coloured spans.
+        $this->assertMatchesRegularExpression(
+          '#<span class="color--warning">[^<]*(<[^>]+>[^<]*)*stored but overridden#',
+          $page,
+          sprintf('%s: an overridden credential must be named, in the warning colour', $label)
+        );
+      }
+      else {
+        $this->assertStringNotContainsString('stored but overridden', $page, $label);
+      }
+
+      // 3. The health payload.
+      $this->drupalGet('/api/scolta/v1/health');
+      $health = json_decode($this->getSession()->getPage()->getContent(), TRUE);
+      $this->assertIsArray($health, $label);
+      $this->assertSame($expectedSource, $health['ai_key_source'] ?? NULL, $label);
+      $this->assertSame($overridden, $health['ai_amazee_overridden'] ?? NULL, $label);
+      $this->assertSame(
+        $expectedSource !== 'none',
+        $health['ai_configured'] ?? NULL,
+        sprintf('%s: /health must agree with the resolution about configuration', $label)
+      );
+
+      // 4. The CLI check-setup row, composed as ScoltaCommands does.
+      $rows = SetupCheck::run(
+        configuredBinaryPath: NULL,
+        projectDir: NULL,
+        aiApiKey: $service->getApiKey(),
+        browserWasmDir: NULL,
+        resolvedKey: $resolved,
+      );
+      $keyRow = NULL;
+      foreach ($rows as $row) {
+        if ($row['name'] === 'AI API key') {
+          $keyRow = $row;
+        }
+      }
+      $this->assertNotNull($keyRow, $label);
+      $this->assertSame($resolved->describe(), $keyRow['message'], $label);
+      $this->assertSame(
+        $overridden || $expectedSource === 'none' ? 'warn' : 'pass',
+        $keyRow['status'],
+        sprintf('%s: the CLI must not report an override as a pass', $label)
+      );
+      if ($overridden) {
+        $this->assertStringContainsString('stored but overridden by', $keyRow['message'], $label);
+      }
+    }
+  }
+
+  /**
+   * Configure one cell of the matrix.
+   */
+  private function applyCell(string $envKey, string $settingsKey, bool $amazeeStored): void {
+    if ($envKey === '') {
+      putenv('SCOLTA_API_KEY');
+    }
+    else {
+      putenv('SCOLTA_API_KEY=' . $envKey);
+    }
+
+    $this->writeSettings([
+      'settings' => [
+        'scolta.api_key' => (object) [
+          'value' => $settingsKey,
+          'required' => TRUE,
+        ],
+      ],
+    ]);
+
+    $state = $this->container->get('state');
+    if ($amazeeStored) {
+      $state->set('scolta.amazee.credentials', self::AMAZEE_CREDENTIALS);
+    }
+    else {
+      $state->delete('scolta.amazee.credentials');
+    }
+
+    $this->rebuildAll();
+  }
+
+}

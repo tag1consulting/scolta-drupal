@@ -20,6 +20,7 @@ use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
+use Tag1\Scolta\Config\ApiKeySource;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Config\ScoltaConfig;
 use Tag1\Scolta\Export\ContentExporter;
@@ -207,7 +208,10 @@ class ScoltaSettingsForm extends ConfigFormBase {
     }
     else {
       // Nothing saved yet: surface an active Amazee trial, else anthropic.
-      $defaultProvider = $this->aiService->isAmazeeActive() ? 'amazee' : 'anthropic';
+      // "Active" comes from the shared resolution, so the default matches the
+      // provider the client will actually use — stored credentials that lost
+      // to an explicit key must not preselect Amazee (scolta-php#252).
+      $defaultProvider = $this->aiService->resolveApiKey()->isAmazee() ? 'amazee' : 'anthropic';
     }
 
     $providerOptions = [
@@ -1042,35 +1046,67 @@ class ScoltaSettingsForm extends ConfigFormBase {
    * Build the API key status display element.
    */
   protected function buildApiKeyStatus(): array {
-    $source = $this->aiService->getApiKeySource();
+    // Derived from the one resolution the client performs, never from a
+    // second look at the credential store. This message claimed a site was
+    // connected to Amazee.ai whenever credentials were stored, including when
+    // an explicit SCOLTA_API_KEY was serving every request — and said so in
+    // success green, which is how it came to be read as proof that the
+    // environment variable was missing (scolta-php#252).
+    $resolved = $this->aiService->resolveApiKey();
 
-    switch ($source) {
-      case 'amazee':
+    switch ($resolved->source) {
+      case ApiKeySource::AmazeeAuto:
         $amazee_url = Url::fromRoute('scolta.settings.amazee')->toString();
         $message = $this->t('Connected to <a href="@url">Amazee.ai</a> (auto-provisioned free trial).', ['@url' => $amazee_url]);
-        $class = 'color--success';
         break;
 
-      case 'env':
+      case ApiKeySource::AmazeeOperator:
+        $amazee_url = Url::fromRoute('scolta.settings.amazee')->toString();
+        $message = $this->t('Connected to <a href="@url">Amazee.ai</a>.', ['@url' => $amazee_url]);
+        break;
+
+      case ApiKeySource::Env:
         $message = $this->t('API key configured via SCOLTA_API_KEY environment variable.');
-        $class = 'color--success';
         break;
 
-      case 'settings':
+      case ApiKeySource::Settings:
         $message = $this->t("API key configured via settings.php (\$settings['scolta.api_key']).");
-        $class = 'color--success';
         break;
 
       default:
         $message = $this->t("No API key configured. Set the SCOLTA_API_KEY environment variable or add \$settings['scolta.api_key'] to settings.php.");
-        $class = 'color--warning';
         break;
     }
+
+    // Each sentence is translated on its own and rendered before joining, so
+    // the markup inside one is not escaped by being a placeholder in another.
+    $sentences = [(string) $message];
+
+    // Say what happened to credentials the operator knows they created,
+    // rather than leaving the override invisible.
+    if ($resolved->amazeeOverridden()) {
+      $sentences[] = (string) $this->t(
+        '<a href="@url">Amazee.ai</a> credentials stored but overridden by @source.',
+        [
+          '@url' => Url::fromRoute('scolta.settings.amazee')->toString(),
+          '@source' => $resolved->source === ApiKeySource::Env
+            ? 'SCOLTA_API_KEY'
+            : "settings.php (\$settings['scolta.api_key'])",
+        ]
+      );
+    }
+
+    if ($resolved->awaitingAmazeeModelResolution) {
+      $sentences[] = (string) $this->t('Model resolution has not completed, so AI features stay degraded until it does.');
+    }
+
+    // severity() is what keeps an overridden credential out of success green.
+    $class = $resolved->severity() === 'ok' ? 'color--success' : 'color--warning';
 
     return [
       '#type' => 'item',
       '#title' => $this->t('API Key Status'),
-      '#markup' => '<span class="' . $class . '">' . $message . '</span>',
+      '#markup' => '<span class="' . $class . '">' . implode(' ', $sentences) . '</span>',
     ];
   }
 

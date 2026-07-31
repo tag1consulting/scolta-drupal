@@ -21,6 +21,9 @@ use Tag1\Scolta\AiProvider\Amazee\BudgetAwareProviderDecorator;
 use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 use Tag1\Scolta\Cache\CacheDriverInterface;
+use Tag1\Scolta\Config\AmazeeCredentials;
+use Tag1\Scolta\Config\ApiKeyResolver;
+use Tag1\Scolta\Config\ResolvedApiKey;
 use Tag1\Scolta\Config\ScoltaConfig;
 use Tag1\Scolta\Service\AiServiceAdapter;
 
@@ -178,7 +181,7 @@ class ScoltaAiService extends AiServiceAdapter {
     if ($this->cache === NULL || $this->amazeeConfigStorage === NULL) {
       return;
     }
-    if ($this->getApiKey() !== '' || $this->getConfig()->aiProvider === 'drupal_ai') {
+    if (!$this->resolveApiKey()->isAmazee()) {
       return;
     }
 
@@ -274,40 +277,38 @@ class ScoltaAiService extends AiServiceAdapter {
     // Remove pagefind config (not relevant to ScoltaConfig).
     unset($values['pagefind']);
 
-    // Explicit key (env / settings.php) takes priority over Amazee credentials
-    // so users who configured their own provider are never silently rerouted.
-    $explicitKey = $this->getApiKey();
-    if ($explicitKey !== '') {
-      $values['ai_api_key'] = $explicitKey;
+    // One resolution, shared with every surface that reports on it. The key,
+    // its source and the provider that goes with it arrive together, so the
+    // settings form, /health and Drush cannot describe this differently from
+    // the client that is about to send it (scolta-php#252). Explicit keys
+    // still win over Amazee credentials, which is what the resolver's
+    // canonical precedence encodes; what changed is that the reporting
+    // surfaces now read this answer instead of computing a second one.
+    $resolved = $this->resolveApiKey();
+    if ($resolved->isConfigured()) {
+      $values['ai_api_key'] = $resolved->key;
     }
-    elseif (($values['ai_provider'] ?? '') !== 'drupal_ai') {
-      // Only inject Amazee credentials for built-in providers. When
-      // 'drupal_ai' is selected the Drupal AI module manages its own
-      // provider, key, and model.
-      $amazeeCreds = $this->state->get('scolta.amazee.credentials');
-      if (is_array($amazeeCreds) && !empty($amazeeCreds['litellm_token'])) {
-        $values['ai_provider'] = 'openai';
-        $values['ai_api_key'] = $amazeeCreds['litellm_token'];
-        $values['ai_base_url'] = $amazeeCreds['litellm_api_url'] ?? '';
-        // Amazee is the effective provider for this request, so the model
-        // sent to the gateway comes from the gateway-scoped keys, never from
-        // the operator-facing ones. amazee_model holds a LiteLLM alias
-        // (e.g. 'claude-4-5-sonnet') that only the gateway understands, and
-        // ai_model holds a provider-native ID that only the direct provider
-        // API understands; keeping them apart is what lets a site move
-        // between the two without losing either (scolta-php#251).
-        //
-        // ai_model is left in place when nothing has been resolved yet, so
-        // the shipped dated default remains and createClient()'s degrade
-        // guard — which reads the same gateway-scoped key — catches it
-        // before the gateway can reject it with HTTP 400. The expansion
-        // model is replaced unconditionally: an operator-chosen native
-        // expansion ID must not leak to the gateway, and an empty value
-        // already means "use the main model".
-        $values['ai_expansion_model'] = $values['amazee_expansion_model'] ?? '';
-        if (($values['amazee_model'] ?? '') !== '') {
-          $values['ai_model'] = $values['amazee_model'];
-        }
+    if ($resolved->isAmazee()) {
+      $values['ai_provider'] = $resolved->provider;
+      $values['ai_base_url'] = $resolved->baseUrl;
+      // Amazee is the effective provider for this request, so the model
+      // sent to the gateway comes from the gateway-scoped keys, never from
+      // the operator-facing ones. amazee_model holds a LiteLLM alias
+      // (e.g. 'claude-4-5-sonnet') that only the gateway understands, and
+      // ai_model holds a provider-native ID that only the direct provider
+      // API understands; keeping them apart is what lets a site move
+      // between the two without losing either (scolta-php#251).
+      //
+      // ai_model is left in place when nothing has been resolved yet, so
+      // the shipped dated default remains and createClient()'s degrade
+      // guard — which reads the same gateway-scoped key — catches it
+      // before the gateway can reject it with HTTP 400. The expansion
+      // model is replaced unconditionally: an operator-chosen native
+      // expansion ID must not leak to the gateway, and an empty value
+      // already means "use the main model".
+      $values['ai_expansion_model'] = $values['amazee_expansion_model'] ?? '';
+      if (($values['amazee_model'] ?? '') !== '') {
+        $values['ai_model'] = $values['amazee_model'];
       }
     }
 
@@ -320,17 +321,30 @@ class ScoltaAiService extends AiServiceAdapter {
   }
 
   /**
-   * Get the API key from environment variable or Drupal settings.
+   * Get the explicitly configured API key, ignoring Amazee.ai credentials.
    *
-   * Priority: SCOLTA_API_KEY env var > settings.php scolta.api_key.
+   * Priority: SCOLTA_API_KEY env var > settings.php scolta.api_key — applied
+   * by the shared resolver over the same candidate list resolveApiKey() uses,
+   * so "which explicit key wins" is answered in one place. Passing no
+   * credentials is what makes this the explicit-only accessor.
    */
   public function getApiKey(): string {
-    $envKey = getenv('SCOLTA_API_KEY');
-    if ($envKey !== FALSE && $envKey !== '') {
-      return $envKey;
-    }
+    return ApiKeyResolver::resolve($this->explicitKeyCandidates())->key;
+  }
 
-    return $this->settingsApiKey();
+  /**
+   * The explicit key candidates, in this platform's precedence order.
+   *
+   * @return array<string, string>
+   *   Candidate keys keyed by ApiKeySource backing value.
+   */
+  private function explicitKeyCandidates(): array {
+    $envKey = getenv('SCOLTA_API_KEY');
+
+    return [
+      'env' => $envKey === FALSE ? '' : $envKey,
+      'settings' => $this->settingsApiKey(),
+    ];
   }
 
   /**
@@ -362,35 +376,61 @@ class ScoltaAiService extends AiServiceAdapter {
   }
 
   /**
+   * Resolve the effective API key, its source and its provider.
+   *
+   * The single derivation. Everything that reports on the API key — the
+   * settings form, the health payload, Drush, and buildConfig() itself —
+   * takes its answer from here rather than working it out again.
+   *
+   * That is the fix for scolta-php#252: buildConfig() gave an explicit
+   * env/settings.php key priority over stored Amazee.ai credentials while
+   * getApiKeySource() checked Amazee first, so a site running on a perfectly
+   * valid SCOLTA_API_KEY was told it was connected to Amazee.ai, in success
+   * green, with nothing revealing which key was really in use.
+   *
+   * @since 1.1.0
+   * @stability experimental
+   */
+  public function resolveApiKey(): ResolvedApiKey {
+    $config = $this->configFactory->get('scolta.settings');
+    $provider = $config->get('ai_provider') ?? 'anthropic';
+
+    return ApiKeyResolver::resolve(
+      $this->explicitKeyCandidates(),
+      AmazeeCredentials::fromArray(
+        $this->state->get('scolta.amazee.credentials'),
+        operatorChosen: $provider === 'amazee',
+      ),
+      is_string($provider) ? $provider : 'anthropic',
+      // The Drupal AI module manages its own provider, key and model, so
+      // Amazee credentials must not be injected when it is selected. They are
+      // still reported as stored rather than hidden.
+      amazeeEligible: $provider !== 'drupal_ai',
+    );
+  }
+
+  /**
    * Determine the source of the API key.
    *
    * @return string
-   *   One of 'amazee', 'env', 'settings', or 'none'.
+   *   The backing value of the resolved source: 'env', 'settings',
+   *   'amazee:operator', 'amazee:auto', or 'none'. The two Amazee cases
+   *   replace the former single 'amazee' — a provider the operator selected
+   *   and a free trial that provisioned itself mean different things to
+   *   somebody reading a status line.
    */
   public function getApiKeySource(): string {
-    $amazeeCreds = $this->state->get('scolta.amazee.credentials');
-    if (is_array($amazeeCreds) && !empty($amazeeCreds['litellm_token'])) {
-      return 'amazee';
-    }
-
-    $envKey = getenv('SCOLTA_API_KEY');
-    if ($envKey !== FALSE && $envKey !== '') {
-      return 'env';
-    }
-
-    $settingsKey = $this->settingsApiKey();
-    if ($settingsKey !== '') {
-      return 'settings';
-    }
-
-    return 'none';
+    return $this->resolveApiKey()->source->value;
   }
 
   /**
    * Whether Amazee.ai credentials are currently active.
+   *
+   * Derived from the shared resolution, never from the credential store:
+   * credentials that lost to an explicit key are stored, not active.
    */
   public function isAmazeeActive(): bool {
-    return $this->getApiKeySource() === 'amazee';
+    return $this->resolveApiKey()->isAmazee();
   }
 
   /**
@@ -552,7 +592,12 @@ class ScoltaAiService extends AiServiceAdapter {
    * built with the freshly stored credentials.
    */
   protected function createClient(): AiClient {
-    if ($this->getApiKeySource() === 'none' && $this->amazeeConfigStorage !== NULL) {
+    // Nothing configured and nothing stored. `amazeeCredentialsStored` rather
+    // than `source === none` keeps a site whose provider is 'drupal_ai' — for
+    // which Amazee is ineligible, so it resolves to none — from provisioning
+    // a trial on top of credentials it already has.
+    $resolved = $this->resolveApiKey();
+    if (!$resolved->isConfigured() && !$resolved->amazeeCredentialsStored && $this->amazeeConfigStorage !== NULL) {
       AutoProvisioner::ensureAiAvailable(
         $this->amazeeConfigStorage,
         hasExplicitApiKey: FALSE,
