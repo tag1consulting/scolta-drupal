@@ -230,13 +230,6 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
    * Configure one cell of the matrix.
    */
   private function applyCell(string $envKey, string $settingsKey, bool $amazeeStored, string $provider): void {
-    if ($envKey === '') {
-      putenv('SCOLTA_API_KEY');
-    }
-    else {
-      putenv('SCOLTA_API_KEY=' . $envKey);
-    }
-
     $this->writeSettings([
       'settings' => [
         'scolta.api_key' => (object) [
@@ -245,6 +238,9 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
         ],
       ],
     ]);
+
+    // After writeSettings(), which rewrites the same file.
+    $this->applyEnvKey($envKey);
 
     $state = $this->container->get('state');
     if ($amazeeStored) {
@@ -260,6 +256,44 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
       ->save();
 
     $this->rebuildAll();
+  }
+
+  /**
+   * Set SCOLTA_API_KEY for both processes this test observes.
+   *
+   * There are two, and only one of them sees a putenv() made here. The
+   * assertions on the resolution itself run in the PHPUnit process, but the
+   * settings page, /health and every other browser request are served by a
+   * separate web server — `php -S` in CI, started before PHPUnit runs — which
+   * inherits nothing this process does afterwards. An env-only cell therefore
+   * used to report `env` in process and `none` over HTTP, and the matrix,
+   * whose whole subject is that the surfaces agree, failed on its first row
+   * for a reason that had nothing to do with the code under test.
+   *
+   * Drupal includes the test site's settings.php on every request, so setting
+   * the variable there is what makes the server see it. The line is appended
+   * after writeSettings() has rewritten the file, and the last one written
+   * wins, so a later cell overrides an earlier one.
+   */
+  private function applyEnvKey(string $envKey): void {
+    if ($envKey === '') {
+      putenv('SCOLTA_API_KEY');
+    }
+    else {
+      putenv('SCOLTA_API_KEY=' . $envKey);
+    }
+
+    $settingsFile = $this->siteDirectory . '/settings.php';
+    // Drupal's own runtime requirements check removes write permission from
+    // settings.php whenever it runs; writeSettings() does the same chmod.
+    chmod($settingsFile, 0666);
+    file_put_contents(
+      $settingsFile,
+      $envKey === ''
+        ? "\nputenv('SCOLTA_API_KEY');\n"
+        : "\nputenv('SCOLTA_API_KEY=" . addslashes($envKey) . "');\n",
+      FILE_APPEND
+    );
   }
 
 }
