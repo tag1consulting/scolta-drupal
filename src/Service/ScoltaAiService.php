@@ -9,7 +9,6 @@ use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Site\Settings;
-use Drupal\Core\State\StateInterface;
 use Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler;
 use Drupal\scolta\Cache\DrupalCacheDriver;
 use GuzzleHttp\ClientInterface;
@@ -74,13 +73,6 @@ class ScoltaAiService extends AiServiceAdapter {
   private LoggerInterface $logger;
 
   /**
-   * The Drupal state service (reads Amazee.ai credentials at request time).
-   *
-   * @var \Drupal\Core\State\StateInterface
-   */
-  private StateInterface $state;
-
-  /**
    * Handles Amazee.ai budget-exceeded notices. Null when Amazee is not active.
    *
    * @var \Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler|null
@@ -129,11 +121,18 @@ class ScoltaAiService extends AiServiceAdapter {
    */
   private ?object $aiProviderManager;
 
+  /**
+   * Constructs the service.
+   *
+   * The Drupal state service is not a parameter: Amazee.ai credentials live in
+   * state but are read through $amazeeConfigStorage, which decrypts the token
+   * that DrupalConfigStorage::store() encrypted. Reading state here is what
+   * sent ciphertext to the gateway as a bearer token.
+   */
   public function __construct(
     ClientInterface $httpClient,
     ConfigFactoryInterface $configFactory,
     LoggerInterface $logger,
-    StateInterface $state,
     ?BudgetExceededHandler $budgetHandler = NULL,
     ?ConfigStorageInterface $amazeeConfigStorage = NULL,
     ?object $aiProviderManager = NULL,
@@ -142,8 +141,6 @@ class ScoltaAiService extends AiServiceAdapter {
     $this->httpClient = $httpClient;
     $this->configFactory = $configFactory;
     $this->logger = $logger;
-    // Assign state before parent::__construct so buildConfig() can read it.
-    $this->state = $state;
     $this->budgetHandler = $budgetHandler;
     $this->amazeeConfigStorage = $amazeeConfigStorage;
     $this->aiProviderManager = $aiProviderManager;
@@ -445,7 +442,16 @@ class ScoltaAiService extends AiServiceAdapter {
     return ApiKeyResolver::resolve(
       $this->explicitKeyCandidates(),
       AmazeeCredentials::fromArray(
-        $this->state->get('scolta.amazee.credentials'),
+        // Through the credential store, which decrypts. DrupalConfigStorage
+        // encrypts the LiteLLM token at rest, so the raw State array holds
+        // ciphertext; reading it directly here put that ciphertext in
+        // ai_api_key and every message, expand and summarize call went to the
+        // gateway with a bearer token it could not accept. Model resolution
+        // kept working because createClient()'s self-heal already went
+        // through load(), which is what made the failure look selective.
+        // Null store (the minimal construction path) reads as no stored
+        // credentials, the same as an absent State entry.
+        $this->amazeeConfigStorage?->load(),
         operatorChosen: $provider === 'amazee',
       ),
       is_string($provider) ? $provider : 'anthropic',

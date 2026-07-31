@@ -192,14 +192,18 @@ class AmazeeModelKeySeparationTest extends BrowserTestBase {
    *
    * Constructed rather than pulled from the container: buildConfig() runs once,
    * in the constructor, so a container instance created before these tests
-   * changed anything would answer from the state it booted with.
+   * changed anything would answer from the state it booted with. The credential
+   * store is passed because it is the only path to the stored credentials —
+   * it decrypts the token, and without it the service resolves as an
+   * unconnected site.
    */
   private function service(): ScoltaAiService {
     return new ScoltaAiService(
       \Drupal::httpClient(),
       \Drupal::configFactory(),
       \Drupal::logger('scolta'),
-      \Drupal::state(),
+      NULL,
+      \Drupal::service('scolta.amazee_config_storage'),
     );
   }
 
