@@ -34,12 +34,15 @@ use Tag1\Scolta\Service\AiServiceAdapter;
  * commands use this instead of constructing AiClient directly.
  *
  * Supports a three-path AI strategy:
- * 1. Amazee.ai (zero-config default): When Amazee credentials are stored in
- *    Drupal State and no explicit key or 'drupal_ai' provider is configured,
- *    buildConfig() injects the Amazee LiteLLM token, the gateway-scoped model
- *    alias from 'amazee_model', and routes through the built-in AiClient as an
+ * 1. Amazee.ai (opt-in): When the operator has selected 'amazee' as the AI
+ *    provider AND a connection is stored in Drupal State, buildConfig()
+ *    injects the Amazee LiteLLM token, the gateway-scoped model alias from
+ *    'amazee_model', and routes through the built-in AiClient as an
  *    OpenAI-compatible endpoint. The operator-facing 'ai_model' is left alone
  *    on this path so a later switch to a direct provider key still works.
+ *    Selecting any other provider leaves the managed gateway out of AI
+ *    traffic entirely, whatever is stored — and an explicit key still wins
+ *    over everything, as it always did.
  * 2. Drupal AI module (opt-in): When the admin explicitly selects 'drupal_ai'
  *    as the provider, tryFrameworkAi() routes through the Drupal AI module's
  *    plugin manager. Amazee credentials are NOT injected in this path —
@@ -227,13 +230,57 @@ class ScoltaAiService extends AiServiceAdapter {
    * Clear the re-authentication marker after a successful reconnect.
    *
    * Called once the operator has completed the Amazee.ai email-verification
-   * flow and fresh credentials are stored, so the admin notice goes away.
+   * flow and fresh credentials are stored, so the admin notice goes away, and
+   * when the operator switches the AI provider away from the managed gateway.
+   *
+   * Falls back to an unwired recovery so it also works off the managed-gateway
+   * path. Wiring happens at construction time and only while the gateway is
+   * the effective source; a marker left behind by a connection that is being
+   * abandoned has to be clearable exactly then, or it outlives the thing it
+   * describes.
    *
    * @since 1.0.5
    * @stability experimental
    */
   public function clearAmazeeReauthNeeded(): void {
-    $this->keyExpiryRecovery?->clearUpgradeNeeded();
+    $this->recoveryForClearing()?->clearUpgradeNeeded();
+  }
+
+  /**
+   * Clear the recorded auth-failure marker.
+   *
+   * The counterpart of the upgrade-needed marker: it is what makes /health
+   * report AI as degraded. It ages out on its own and clears on the next
+   * successful AI call, but neither happens for a site that has just removed
+   * the connection the failure belonged to — there is nothing left to make a
+   * successful call with, so the stale "AI is failing authentication" report
+   * would stand for its full retention window.
+   *
+   * @since 1.1.0
+   * @stability experimental
+   */
+  public function clearAmazeeAuthFailure(): void {
+    $this->recoveryForClearing()?->clearAuthFailure();
+  }
+
+  /**
+   * A recovery usable for clearing markers, wired or not.
+   *
+   * Returns the wired instance when the managed gateway is the effective
+   * source, and otherwise builds one over the same store and cache bin, so
+   * clearing works regardless of the path. NULL only when the service was
+   * constructed without a cache or credential store, where no marker can
+   * exist in the first place.
+   */
+  private function recoveryForClearing(): ?KeyExpiryRecovery {
+    if ($this->keyExpiryRecovery !== NULL) {
+      return $this->keyExpiryRecovery;
+    }
+    if ($this->cache === NULL || $this->amazeeConfigStorage === NULL) {
+      return NULL;
+    }
+
+    return $this->createKeyExpiryRecovery(new DrupalCacheDriver($this->cache));
   }
 
   /**
@@ -402,10 +449,16 @@ class ScoltaAiService extends AiServiceAdapter {
         operatorChosen: $provider === 'amazee',
       ),
       is_string($provider) ? $provider : 'anthropic',
-      // The Drupal AI module manages its own provider, key and model, so
-      // Amazee credentials must not be injected when it is selected. They are
-      // still reported as stored rather than hidden.
-      amazeeEligible: $provider !== 'drupal_ai',
+      // The managed gateway is eligible only when the operator selected it.
+      // It used to be eligible for every provider except 'drupal_ai', so a
+      // site that chose 'anthropic' and configured its own key was still
+      // handed the stored gateway connection, and every status surface called
+      // it connected to Amazee.ai. Selecting the provider is now the switch,
+      // mirroring the 'drupal_ai' guard this replaces: that provider manages
+      // its own provider, key and model and must never receive these
+      // credentials either. Credentials are still reported as stored rather
+      // than hidden, so an operator sees what exists.
+      amazeeEligible: $provider === 'amazee',
     );
   }
 
@@ -586,37 +639,50 @@ class ScoltaAiService extends AiServiceAdapter {
   /**
    * {@inheritdoc}
    *
-   * Attempts lazy auto-provisioning when no API key is configured. This
-   * covers cases where the install-hook provisioning attempt failed (e.g.
-   * no network at install time). If provisioning succeeds, the client is
-   * built with the freshly stored credentials.
+   * Re-resolves the gateway model names for a managed-gateway connection that
+   * is ALREADY stored and whose model resolution never completed. It is not an
+   * enable path: nothing here establishes a connection, and no outbound call is
+   * made unless the operator selected the managed gateway and a connection is
+   * stored.
    */
   protected function createClient(): AiClient {
-    // Nothing configured and nothing stored. `amazeeCredentialsStored` rather
-    // than `source === none` keeps a site whose provider is 'drupal_ai' — for
-    // which Amazee is ineligible, so it resolves to none — from provisioning
-    // a trial on top of credentials it already has.
     $resolved = $this->resolveApiKey();
-    if (!$resolved->isConfigured() && !$resolved->amazeeCredentialsStored && $this->amazeeConfigStorage !== NULL) {
+
+    // POLICY: the only automatic gateway call left is a self-heal against
+    // credentials that already exist. All three conditions are required —
+    // the operator selected the managed gateway (isAmazee() is true only for
+    // provider 'amazee'), a connection is stored, and the gateway-scoped model
+    // is still unresolved. Nothing enrolls a site that has no connection: the
+    // request path used to do exactly that whenever the key source was 'none',
+    // which is how an ordinary page load could configure a gateway the
+    // operator never chose.
+    $unresolvedModel = !self::modelIsResolved(
+      $this->configFactory->get('scolta.settings')->get('amazee_model'),
+    );
+    if ($resolved->isAmazee() && $resolved->amazeeCredentialsStored
+      && $unresolvedModel && $this->amazeeConfigStorage !== NULL) {
+      // What the heal produced, taken from the callback rather than by
+      // re-reading config afterwards: the answer is what was resolved this
+      // request, and reading it back would only ask the config factory to
+      // repeat what it was just handed.
+      $healedModel = '';
       AutoProvisioner::ensureAiAvailable(
         $this->amazeeConfigStorage,
         hasExplicitApiKey: FALSE,
-        onModelsResolved: $this->persistResolvedAmazeeModels(...),
-        // Tell AutoProvisioner whether a genuinely resolved model is already
-        // persisted. When credentials are stored but model resolution never
-        // succeeded (the provision's /model/info step failed), this returns
-        // FALSE and the provisioner re-resolves against the ALREADY-STORED key
-        // — self-healing the half-provisioned state — instead of no-opping
-        // forever on the stored credentials. It reads the gateway-scoped key,
-        // the one onModelsResolved writes: reading ai_model here would report
-        // TRUE for any site whose operator had picked a model, and the
-        // self-heal would never fire on exactly the sites that need it.
+        onModelsResolved: function (string $aiModel, string $aiExpansionModel) use (&$healedModel): void {
+          $this->persistResolvedAmazeeModels($aiModel, $aiExpansionModel);
+          $healedModel = $aiModel;
+        },
+        // The predicate the library uses to decide whether a re-resolution is
+        // warranted. It reads the gateway-scoped key, the one
+        // onModelsResolved writes: reading ai_model here would report TRUE for
+        // any site whose operator had picked a model, and the self-heal would
+        // never fire on exactly the sites that need it.
         hasResolvedModels: fn (): bool => self::modelIsResolved(
           $this->configFactory->get('scolta.settings')->get('amazee_model'),
         ),
       );
-      // Provisioning may have just stored Amazee credentials. If it did but
-      // model resolution still has not succeeded, amazee_model is empty and
+      // If model resolution still has not succeeded, amazee_model is empty and
       // buildConfig() leaves the shipped dated default in place — which the
       // Amazee LiteLLM gateway rejects with HTTP 400, breaking AI permanently
       // and silently. Degrade instead:
@@ -625,11 +691,10 @@ class ScoltaAiService extends AiServiceAdapter {
       // path as a wholly unconfigured site). The state self-heals on a later
       // request once /model/info recovers (hasResolvedModels reports FALSE →
       // re-resolve). Mirrors scolta-node's AmazeeAiService::buildClient().
-      if ($this->isAmazeeActive()
-        && !self::modelIsResolved($this->configFactory->get('scolta.settings')->get('amazee_model'))) {
+      if (!self::modelIsResolved($healedModel)) {
         return $this->createDegradedClient();
       }
-      // Re-read state in case provisioning just stored new credentials.
+      // Re-read config in case the self-heal just persisted a model.
       return new AiClient($this->buildConfig()->toAiClientConfig(), $this->httpClient);
     }
     return new AiClient($this->getConfig()->toAiClientConfig(), $this->httpClient);

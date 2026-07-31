@@ -19,6 +19,7 @@ use Drupal\scolta\Service\PagefindBuilder;
 use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Config\ApiKeySource;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
@@ -101,6 +102,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
   protected ScoltaContentGatherer $contentGatherer;
 
   /**
+   * The managed Amazee.ai gateway credential store.
+   *
+   * @var \Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface
+   */
+  protected ConfigStorageInterface $amazeeConfigStorage;
+
+  /**
    * Constructs a ScoltaSettingsForm object.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -123,6 +131,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
    *   The cache tags invalidator.
    * @param \Drupal\scolta\Service\ScoltaContentGatherer $contentGatherer
    *   The content gatherer service.
+   * @param \Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface $amazeeConfigStorage
+   *   The managed-gateway credential store, cleared when the operator selects
+   *   a different AI provider.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
@@ -135,6 +146,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     FileSystemInterface $fileSystem,
     CacheTagsInvalidatorInterface $cacheTagsInvalidator,
     ScoltaContentGatherer $contentGatherer,
+    ConfigStorageInterface $amazeeConfigStorage,
   ) {
     parent::__construct($configFactory, $typedConfigManager);
     $this->aiService = $aiService;
@@ -145,6 +157,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $this->fileSystem = $fileSystem;
     $this->cacheTagsInvalidator = $cacheTagsInvalidator;
     $this->contentGatherer = $contentGatherer;
+    $this->amazeeConfigStorage = $amazeeConfigStorage;
   }
 
   /**
@@ -162,6 +175,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $container->get('file_system'),
       $container->get('cache_tags.invalidator'),
       $container->get('scolta.content_gatherer'),
+      $container->get('scolta.amazee_config_storage'),
     );
   }
 
@@ -192,27 +206,17 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#open' => TRUE,
     ];
 
-    // The explicitly-saved provider always wins for the displayed default.
-    // Amazee auto-detection is only a fallback for the unset state — when no
-    // provider was ever saved. Previously only an explicit Drupal AI selection
-    // survived an active Amazee trial; every other saved provider was
-    // overridden to "amazee" for display (#125).
+    // The saved provider is the whole answer. It used to fall back to
+    // detecting stored Amazee.ai credentials when nothing had been saved,
+    // which is the auto-selection this opt-in rule removes: a connection
+    // existing is not the operator choosing it, and the field would have
+    // shown a provider that governs AI traffic without anyone selecting it.
+    // A saved 'drupal_ai' is nothing special any more, for the same reason
+    // (#125 kept it from being overridden; there is no longer an override).
     $storedProvider = $config->get('ai_provider');
-    if ($storedProvider === 'drupal_ai') {
-      // Explicit Drupal AI selection wins even when Amazee is active.
-      $defaultProvider = 'drupal_ai';
-    }
-    elseif ($storedProvider !== NULL && $storedProvider !== '') {
-      // Any other explicitly-saved provider also wins over auto-detection.
-      $defaultProvider = $storedProvider;
-    }
-    else {
-      // Nothing saved yet: surface an active Amazee trial, else anthropic.
-      // "Active" comes from the shared resolution, so the default matches the
-      // provider the client will actually use — stored credentials that lost
-      // to an explicit key must not preselect Amazee (scolta-php#252).
-      $defaultProvider = $this->aiService->resolveApiKey()->isAmazee() ? 'amazee' : 'anthropic';
-    }
+    $defaultProvider = ($storedProvider !== NULL && $storedProvider !== '')
+      ? $storedProvider
+      : 'anthropic';
 
     $providerOptions = [
       'anthropic' => $this->t('Anthropic (Claude)'),
@@ -233,13 +237,29 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $amazee_url = Url::fromRoute('scolta.settings.amazee')->toString();
     $form['ai']['ai_provider_amazee_info'] = [
       '#type' => 'item',
-      '#markup' => $this->t('Amazee.ai provides a managed AI gateway with a free trial. <a href="@url">Configure Amazee.ai settings</a>.', ['@url' => $amazee_url]),
+      '#markup' => $this->t('Enable Amazee.ai to add AI-powered search with a no-cost evaluation. If it works well for you, sign up with Amazee to keep it running when the evaluation ends. <a href="@url">Amazee.ai settings</a>.', ['@url' => $amazee_url]),
       '#states' => [
         'visible' => [
           ':input[name="ai_provider"]' => ['value' => 'amazee'],
         ],
       ],
     ];
+
+    // Selecting Amazee.ai does not by itself connect anything: the connection
+    // is established in the Amazee.ai settings flow, by a deliberate click.
+    // Say so, and link there, whenever the provider is selected with nothing
+    // stored — otherwise the setting looks applied while AI stays off.
+    if ($this->amazeeConfigStorage->load() === NULL) {
+      $form['ai']['ai_provider_amazee_connect'] = [
+        '#type' => 'item',
+        '#markup' => '<strong>' . $this->t('No Amazee.ai connection yet. <a href="@url">Set up Amazee.ai</a> to finish enabling it.', ['@url' => $amazee_url]) . '</strong>',
+        '#states' => [
+          'visible' => [
+            ':input[name="ai_provider"]' => ['value' => 'amazee'],
+          ],
+        ],
+      ];
+    }
 
     $form['ai']['ai_provider_drupal_ai_info'] = [
       '#type' => 'item',
@@ -1085,15 +1105,24 @@ class ScoltaSettingsForm extends ConfigFormBase {
     // Say what happened to credentials the operator knows they created,
     // rather than leaving the override invisible.
     if ($resolved->amazeeOverridden()) {
-      $sentences[] = (string) $this->t(
-        '<a href="@url">Amazee.ai</a> credentials stored but overridden by @source.',
-        [
-          '@url' => Url::fromRoute('scolta.settings.amazee')->toString(),
-          '@source' => $resolved->source === ApiKeySource::Env
-            ? 'SCOLTA_API_KEY'
-            : "settings.php (\$settings['scolta.api_key'])",
-        ]
-      );
+      // Two ways a stored connection can be idle, and they need different
+      // fixes: an explicit key outranks it, or Amazee.ai is simply not the
+      // selected provider. Naming the wrong one sends the operator hunting
+      // for an environment variable that was never set.
+      $sentences[] = $resolved->source === ApiKeySource::None
+        ? (string) $this->t(
+          '<a href="@url">Amazee.ai</a> credentials stored but not in use, because Amazee.ai is not the selected AI provider.',
+          ['@url' => Url::fromRoute('scolta.settings.amazee')->toString()]
+        )
+        : (string) $this->t(
+          '<a href="@url">Amazee.ai</a> credentials stored but overridden by @source.',
+          [
+            '@url' => Url::fromRoute('scolta.settings.amazee')->toString(),
+            '@source' => $resolved->source === ApiKeySource::Env
+              ? 'SCOLTA_API_KEY'
+              : "settings.php (\$settings['scolta.api_key'])",
+          ]
+        );
     }
 
     if ($resolved->awaitingAmazeeModelResolution) {
@@ -1365,6 +1394,10 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $presetName = 'none';
     }
 
+    // Read before the save below overwrites it: whether the operator is
+    // switching away from the managed gateway is only knowable here.
+    $previousProvider = $this->config('scolta.settings')->get('ai_provider');
+
     $configSave = $this->config('scolta.settings')
       ->set('preset', $presetName);
 
@@ -1490,7 +1523,35 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('prompt_follow_up', $this->normalizePromptValue($form_state->getValue('prompt_follow_up') ?? '', 'follow_up'))
       ->save();
 
+    if ($previousProvider === 'amazee' && $form_state->getValue('ai_provider') !== 'amazee') {
+      $this->clearManagedGatewayFootprint();
+      $this->messenger()->addStatus($this->t('The stored Amazee.ai connection has been removed, because Amazee.ai is no longer the selected AI provider. Select it again to reconnect.'));
+    }
+
     parent::submitForm($form, $form_state);
+  }
+
+  /**
+   * Remove the managed gateway's stored connection and its recovery markers.
+   *
+   * Called when the operator selects a different AI provider. Leaving the
+   * connection in place is what let a stored gateway shadow an operator's own
+   * key: every status surface reported the site as connected to Amazee.ai, and
+   * once the connection expired the operator was shown a reconnect prompt for a
+   * gateway they had already moved off and no way to clear it from the UI. The
+   * connection is re-established by selecting Amazee.ai again and completing
+   * the connect flow, which is the only thing that establishes one at all.
+   *
+   * The two recovery markers go with it. They describe the connection being
+   * removed, so on their own they would outlive it: the upgrade-needed marker
+   * never expires, and the auth-failure marker keeps /health reporting AI as
+   * degraded until a successful AI call clears it — which cannot happen once
+   * the credentials it refers to are gone.
+   */
+  private function clearManagedGatewayFootprint(): void {
+    $this->amazeeConfigStorage->clear();
+    $this->aiService->clearAmazeeReauthNeeded();
+    $this->aiService->clearAmazeeAuthFailure();
   }
 
   /**

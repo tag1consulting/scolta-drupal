@@ -9,15 +9,15 @@ use Drupal\user\Entity\Role;
 use Drupal\user\RoleInterface;
 
 /**
- * Executes the update hook that backfills the anonymous AI permission grant.
+ * Executes scolta_update_10001(), which backfills the AI permission grant.
  *
- * scolta_install() grants 'use scolta ai' to anonymous and authenticated, so
- * a fresh install serves AI overviews to visitors out of the box. A site that
- * was installed before that grant existed keeps Drupal's restrictive default
- * and answers 403 to every anonymous /api/scolta/v1/* request, no matter what
- * release it updates to, until scolta_update_10001() runs.
+ * A historical hook, kept executing exactly what it did when it shipped: an
+ * update hook that has run on a site is a record of a step that site took, not
+ * a place to restate current policy. What it granted the anonymous role is
+ * revoked again by scolta_update_10004(), covered separately; what it granted
+ * the authenticated role is still what a fresh install grants.
  *
- * Each test recreates that pre-fix state by revoking the permission from a
+ * Each test recreates the pre-hook state by revoking the permission from a
  * freshly installed site, which is the same config state an old site is in.
  *
  * @group scolta
@@ -44,18 +44,22 @@ class AiPermissionBackfillFunctionalTest extends BrowserTestBase {
   ];
 
   /**
-   * A fresh install grants the permission without any update hook.
+   * A fresh install grants the permission to authenticated users only.
    *
-   * The regression guard on the install path: the update hook backfills
-   * existing sites, it does not take over from scolta_install().
+   * The regression guard on the install path. scolta_update_10001() still
+   * grants both roles, because it is a record of a step sites already took
+   * when the install hook did the same; scolta_update_10004() is what undoes
+   * the anonymous half of it on those sites.
    */
-  public function testFreshInstallGrantsThePermission(): void {
-    foreach ([RoleInterface::ANONYMOUS_ID, RoleInterface::AUTHENTICATED_ID] as $role_id) {
-      $this->assertTrue(
-        $this->roleHasAiPermission($role_id),
-        "A fresh install must grant 'use scolta ai' to {$role_id}"
-      );
-    }
+  public function testFreshInstallGrantsTheAuthenticatedRoleOnly(): void {
+    $this->assertTrue(
+      $this->roleHasAiPermission(RoleInterface::AUTHENTICATED_ID),
+      "A fresh install must grant 'use scolta ai' to authenticated users"
+    );
+    $this->assertFalse(
+      $this->roleHasAiPermission(RoleInterface::ANONYMOUS_ID),
+      "A fresh install must not grant 'use scolta ai' to the anonymous role"
+    );
   }
 
   /**
@@ -117,17 +121,17 @@ class AiPermissionBackfillFunctionalTest extends BrowserTestBase {
    * Running the update where the permission is already held changes nothing.
    */
   public function testUpdateIsIdempotent(): void {
-    $before = $this->rolePermissions(RoleInterface::ANONYMOUS_ID);
+    // Authenticated already holds it from install, so the first run has
+    // nothing to do there; a second run must not double up on either role.
+    $before = $this->rolePermissions(RoleInterface::AUTHENTICATED_ID);
 
-    // The site already has the permission from install: a first run has
-    // nothing to do, and a second run must not double up on the first.
     $this->runBackfillUpdate();
     $this->runBackfillUpdate();
 
     $this->assertSame(
       $before,
-      $this->rolePermissions(RoleInterface::ANONYMOUS_ID),
-      'Running the update on a site that already has the permission must leave the role untouched'
+      $this->rolePermissions(RoleInterface::AUTHENTICATED_ID),
+      'Running the update on a role that already has the permission must leave it untouched'
     );
 
     foreach ([RoleInterface::ANONYMOUS_ID, RoleInterface::AUTHENTICATED_ID] as $role_id) {

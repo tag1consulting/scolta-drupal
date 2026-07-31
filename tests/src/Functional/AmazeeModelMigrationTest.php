@@ -163,11 +163,9 @@ class AmazeeModelMigrationTest extends BrowserTestBase {
   /**
    * Take the site off the Amazee.ai path.
    *
-   * Not a no-op on a fresh test site: scolta_install() calls
-   * AutoProvisioner::ensureAiAvailable(), which provisions and stores a real
-   * Amazee.ai trial whenever the test runner can reach the control plane. A
-   * test about the uncredentialed case must therefore establish that state
-   * rather than assume it, or it passes or fails on network conditions.
+   * A fresh install stores nothing, so this is normally a no-op; it stays
+   * because a test about the unconnected case should establish that state
+   * rather than inherit it from whatever ran before.
    */
   private function clearAmazeeCredentials(): void {
     \Drupal::service('scolta.amazee_config_storage')->clear();

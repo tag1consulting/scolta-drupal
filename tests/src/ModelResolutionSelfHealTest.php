@@ -218,12 +218,14 @@ class ModelResolutionSelfHealTest extends TestCase {
       $matches
     );
 
-    // Two callers: the hasResolvedModels predicate and the degrade guard.
-    $this->assertSame(2, $found, 'Both modelIsResolved() call sites must read a config key');
+    // Two callers read config: the gate that decides whether a heal is
+    // warranted at all, and the hasResolvedModels predicate. The degrade
+    // guard reads what the heal returned instead.
+    $this->assertSame(2, $found, 'Every modelIsResolved() call site that reads config must read the same key');
     $this->assertSame(
       ['amazee_model', 'amazee_model'],
       $matches[1],
-      'Both modelIsResolved() callers must read amazee_model, not the operator-facing ai_model'
+      'Every modelIsResolved() caller must read amazee_model, not the operator-facing ai_model'
     );
   }
 
@@ -238,10 +240,32 @@ class ModelResolutionSelfHealTest extends TestCase {
     $this->assertStringContainsString('createDegradedClient()', $src,
       'createClient() must degrade (key-less client) when the model is unresolved');
     $this->assertMatchesRegularExpression(
-      '/isAmazeeActive\(\)\s*\n?\s*&&\s*!self::modelIsResolved/',
+      '/\$resolved->isAmazee\(\) && \$resolved->amazeeCredentialsStored\s*\n?\s*&& \$unresolvedModel/',
       $src,
-      'The degrade must be gated on an active Amazee path with an unresolved model'
+      'The heal and its degrade must be gated on the selected provider, a stored connection, and an unresolved model'
     );
+  }
+
+  /**
+   * The model heal must never run where there is nothing stored to heal.
+   *
+   * The gate is the whole of the opt-in guarantee on the request path: the
+   * library makes no outbound call for a site with no stored connection, and
+   * this keeps the adapter from asking it to in the first place. Previously
+   * this call site fired whenever the key source was 'none', so an ordinary
+   * page load on an unconfigured site reached the gateway.
+   */
+  public function testCreateClientOnlyHealsAnExistingConnection(): void {
+    $src = $this->serviceSource();
+    $start = strpos($src, 'protected function createClient(): AiClient {');
+    $this->assertNotFalse($start, 'ScoltaAiService must override createClient()');
+    $end = strpos($src, "\n  }", $start);
+    $body = substr($src, $start, $end - $start);
+
+    $this->assertStringContainsString('$resolved->amazeeCredentialsStored', $body,
+      'The gateway call must require a connection that is already stored');
+    $this->assertStringNotContainsString('!$resolved->amazeeCredentialsStored', $body,
+      'createClient() must never call the gateway on the strength of nothing being stored');
   }
 
   // -------------------------------------------------------------------------

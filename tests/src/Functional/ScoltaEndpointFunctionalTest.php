@@ -67,14 +67,15 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Anonymous users must be able to reach AI endpoints out of the box.
+   * The AI endpoints are closed to anonymous traffic out of the box.
    *
-   * hook_install() grants 'use scolta ai' to anonymous and authenticated roles
-   * so that search visitors receive AI overviews without any admin action.
-   * A POST with an invalid body should return 400 (bad request), not 403
-   * (forbidden), confirming that the permission check passes for anonymous.
+   * hook_install() grants 'use scolta ai' to the authenticated role only.
+   * These endpoints make cost-bearing LLM calls, so serving them to
+   * unauthenticated visitors is a decision a site makes rather than a default
+   * it inherits: a site that wants it grants the permission to the anonymous
+   * role at Administration › People › Permissions.
    */
-  public function testAiEndpointsAllowAnonymousByDefault(): void {
+  public function testAiEndpointsDenyAnonymousByDefault(): void {
     $endpoints = [
       '/api/scolta/v1/expand-query',
       '/api/scolta/v1/summarize',
@@ -83,13 +84,37 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
 
     foreach ($endpoints as $endpoint) {
       $response = $this->makeJsonPost($endpoint, []);
+      $this->assertEquals(
+        403, $response['status'],
+        "Anonymous POST to {$endpoint} must be forbidden — 'use scolta ai' is not granted to anonymous at install"
+      );
+    }
+  }
+
+  /**
+   * Logged-in visitors reach the AI endpoints out of the box.
+   *
+   * The other half of the install-time grant: authenticated AI search is
+   * intended, so the permission check must pass without any admin action. A
+   * POST with an invalid body returns a 4xx of its own, so the assertion is
+   * specifically about it not being 403.
+   */
+  public function testAiEndpointsAllowAuthenticatedByDefault(): void {
+    $this->drupalLogin($this->drupalCreateUser([]));
+
+    foreach ([
+      '/api/scolta/v1/expand-query',
+      '/api/scolta/v1/summarize',
+      '/api/scolta/v1/followup',
+    ] as $endpoint) {
+      $response = $this->makeJsonPost($endpoint, []);
       $this->assertNotEquals(
         403, $response['status'],
-        "Anonymous POST to {$endpoint} should not be forbidden — 'use scolta ai' is granted at install"
+        "Authenticated POST to {$endpoint} should not be forbidden — 'use scolta ai' is granted at install"
       );
       $this->assertNotEquals(
         500, $response['status'],
-        "Anonymous POST to {$endpoint} must not crash"
+        "Authenticated POST to {$endpoint} must not crash"
       );
     }
   }

@@ -155,15 +155,17 @@ class ScoltaAiServiceDrupalAiOptInTest extends TestCase {
       "The 'drupal_ai' guard must appear before the Amazee credentials lookup in buildConfig()");
   }
 
-  public function testBuildConfigUsesElseifWithDrupalAiGuard(): void {
-    // The exclusion is now an input to the shared resolver rather than a
-    // branch here: eligibility travels with the resolution, so every surface
-    // that reports on the key sees the same drupal_ai exclusion the config
-    // path applies, instead of each re-deriving it (scolta-php#252).
+  public function testBuildConfigGuardsAmazeeOnTheSelectedProvider(): void {
+    // Eligibility is an input to the shared resolver rather than a branch
+    // here, so every surface that reports on the key sees the same rule the
+    // config path applies instead of each re-deriving it (scolta-php#252).
+    // The rule is now the selected provider: 'amazee' is the only value that
+    // lets the managed gateway into AI traffic, which excludes 'drupal_ai'
+    // along with every other provider an operator can choose.
     $this->assertStringContainsString(
-      "amazeeEligible: \$provider !== 'drupal_ai',",
+      "amazeeEligible: \$provider === 'amazee',",
       $this->serviceContents,
-      "resolveApiKey() must mark Amazee ineligible when the provider is 'drupal_ai'"
+      'resolveApiKey() must make the managed gateway eligible only for the provider that selects it'
     );
     $this->assertStringContainsString(
       'if ($resolved->isAmazee()) {',
