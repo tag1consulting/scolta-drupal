@@ -53,15 +53,23 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
   }
 
   public function testBuildConfigChecksAmazeeCreds(): void {
+    // The credential array still comes from state, but it is handed to the
+    // shared resolver rather than unpacked here — the litellm_token key is
+    // read inside AmazeeCredentials now, which is what keeps this service from
+    // deciding the source a second time.
     $contents = file_get_contents($this->serviceFile);
     $this->assertStringContainsString('scolta.amazee.credentials', $contents);
     $this->assertStringContainsString("'ai_provider'", $contents);
-    $this->assertStringContainsString('litellm_token', $contents);
+    $this->assertStringContainsString('AmazeeCredentials::fromArray(', $contents);
   }
 
-  public function testGetApiKeySourceReturnsAmazee(): void {
+  public function testGetApiKeySourceDelegatesToTheResolver(): void {
+    // It used to return 'amazee' from its own check of the credential store,
+    // before it had looked at the environment variable at all — the opposite
+    // precedence to the effective-config path (scolta-php#252).
     $contents = file_get_contents($this->serviceFile);
-    $this->assertStringContainsString("return 'amazee'", $contents);
+    $this->assertStringContainsString('return $this->resolveApiKey()->source->value;', $contents);
+    $this->assertStringNotContainsString("return 'amazee'", $contents);
   }
 
   public function testIsAmazeeActiveMethod(): void {
@@ -103,17 +111,27 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
   }
 
   public function testBuildConfigChecksExplicitKeyBeforeAmazee(): void {
-    // Regression: buildConfig() must check getApiKey() before Amazee creds
-    // so users who have an env/settings key are never silently rerouted.
+    // Regression: an env/settings key must never be silently rerouted through
+    // Amazee. The ordering is no longer expressed here at all — it is the
+    // resolver's canonical precedence, with the explicit candidates passed in
+    // ahead of the credentials — so what this pins is that buildConfig() asks
+    // the resolver rather than ordering the checks itself.
     $contents = file_get_contents($this->serviceFile);
-    $explicitKeyPos = strpos($contents, '$explicitKey = $this->getApiKey()');
-    $amazeeCredsPos = strpos($contents, 'scolta.amazee.credentials');
-    $this->assertNotFalse($explicitKeyPos, 'buildConfig() must check getApiKey() as explicit key guard');
-    $this->assertNotFalse($amazeeCredsPos, 'buildConfig() must still check scolta.amazee.credentials');
+    $this->assertStringContainsString('$resolved = $this->resolveApiKey();', $contents);
+    $this->assertStringContainsString("\$values['ai_api_key'] = \$resolved->key;", $contents);
+
+    preg_match('/public function resolveApiKey\(\): ResolvedApiKey \{(.*?)\n  \}/s', $contents, $match);
+    $body = $match[1] ?? '';
+    $this->assertNotSame('', $body, 'resolveApiKey() must exist');
+
+    $explicitPos = strpos($body, '$this->explicitKeyCandidates()');
+    $amazeePos = strpos($body, 'AmazeeCredentials::fromArray(');
+    $this->assertNotFalse($explicitPos, 'resolveApiKey() must pass the explicit candidates');
+    $this->assertNotFalse($amazeePos, 'resolveApiKey() must pass the stored credentials');
     $this->assertLessThan(
-      $amazeeCredsPos,
-      $explicitKeyPos,
-      'Explicit key check must appear before Amazee credentials check in buildConfig()'
+      $amazeePos,
+      $explicitPos,
+      'The explicit candidates must be handed to the resolver ahead of the Amazee credentials'
     );
   }
 

@@ -38,10 +38,19 @@ class ScoltaAiServiceAutoProvisionTest extends TestCase {
   }
 
   public function testCreateClientChecksApiKeySource(): void {
+    // The guard reads the shared resolution rather than a source string.
+    // `amazeeCredentialsStored` rather than `source === none` is deliberate: a
+    // site whose provider is drupal_ai resolves to none while holding stored
+    // credentials, and must not provision a trial on top of them.
     $this->assertStringContainsString(
-      "getApiKeySource() === 'none'",
+      '$resolved = $this->resolveApiKey();',
       $this->serviceSource,
-      'createClient() must guard on getApiKeySource() === \'none\''
+      'createClient() must take its answer from resolveApiKey()'
+    );
+    $this->assertStringContainsString(
+      '!$resolved->isConfigured() && !$resolved->amazeeCredentialsStored',
+      $this->serviceSource,
+      'createClient() must provision only when nothing is configured and nothing is stored'
     );
   }
 

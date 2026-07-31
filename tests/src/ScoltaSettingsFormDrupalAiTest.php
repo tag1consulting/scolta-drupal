@@ -75,12 +75,14 @@ class ScoltaSettingsFormDrupalAiTest extends TestCase {
 
   public function testDefaultProviderDrupalAiCheckPrecedesAmazeeCheck(): void {
     $drupalAiCheckPos = strpos($this->formContents, "'drupal_ai'");
-    $amazeeCheckPos = strpos($this->formContents, 'isAmazeeActive()');
+    // "Is Amazee active" is now answered by the shared resolution, so stored
+    // credentials that lost to an explicit key cannot preselect Amazee.
+    $amazeeCheckPos = strpos($this->formContents, 'resolveApiKey()->isAmazee()');
 
     $this->assertNotFalse($drupalAiCheckPos,
       "Form must reference 'drupal_ai' when setting the default provider");
     $this->assertNotFalse($amazeeCheckPos,
-      'Form must still call isAmazeeActive() for non-drupal_ai providers');
+      'Form must still ask whether Amazee is the effective source for non-drupal_ai providers');
     $this->assertLessThan($amazeeCheckPos, $drupalAiCheckPos,
       "The 'drupal_ai' check must appear before isAmazeeActive() in default provider logic");
   }
