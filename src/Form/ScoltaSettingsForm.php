@@ -36,8 +36,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
   /**
    * The default AI model shipped in config/install/scolta.settings.yml.
    *
-   * The Amazee trial auto-apply (AmazeeSettingsForm) only overwrites
-   * ai_model when it still equals this shipped default, so the literal
+   * Equal to AiClient::DEFAULT_MODEL, which ScoltaAiService::modelIsResolved()
+   * treats as "no gateway model resolved yet" and scolta_update_10003() resets
+   * ai_model to when it migrates a gateway alias out of it, so the literal
    * must stay in sync with the install config.
    */
   public const DEFAULT_AI_MODEL = 'claude-sonnet-4-5-20250929';

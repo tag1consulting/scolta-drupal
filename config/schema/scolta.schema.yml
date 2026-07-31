@@ -14,6 +14,12 @@ scolta.settings:
     ai_expansion_model:
       type: string
       label: 'AI expansion model'
+    amazee_model:
+      type: string
+      label: 'Amazee.ai gateway model'
+    amazee_expansion_model:
+      type: string
+      label: 'Amazee.ai gateway expansion model'
     ai_base_url:
       type: string
       label: 'AI base URL'

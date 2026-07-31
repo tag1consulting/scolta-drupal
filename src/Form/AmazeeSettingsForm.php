@@ -253,14 +253,20 @@ class AmazeeSettingsForm extends FormBase {
       $this->keyRecovery->clearUpgradeNeeded();
 
       if ($result->aiModel !== NULL || $result->aiExpansionModel !== NULL) {
+        // The provisioner resolves Amazee LiteLLM gateway aliases, which only
+        // the gateway accepts. They go to the gateway-scoped keys, never to
+        // the operator-facing ai_model / ai_expansion_model — those hold
+        // provider-native IDs and stay valid for a site that later switches to
+        // a direct provider key (scolta-php#251). No "still at the default"
+        // guard is needed any more: nothing an operator chose lives in these
+        // keys, so there is nothing here to protect.
         $config = $this->configFactory()->getEditable('scolta.settings');
-        $defaultModel = ScoltaSettingsForm::DEFAULT_AI_MODEL;
 
-        if ($result->aiModel !== NULL && $config->get('ai_model') === $defaultModel) {
-          $config->set('ai_model', $result->aiModel);
+        if ($result->aiModel !== NULL) {
+          $config->set('amazee_model', $result->aiModel);
         }
-        if ($result->aiExpansionModel !== NULL && ($config->get('ai_expansion_model') ?? '') === '') {
-          $config->set('ai_expansion_model', $result->aiExpansionModel);
+        if ($result->aiExpansionModel !== NULL) {
+          $config->set('amazee_expansion_model', $result->aiExpansionModel);
         }
         $config->save();
 

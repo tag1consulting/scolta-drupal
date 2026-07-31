@@ -86,14 +86,15 @@ class ModelResolutionSelfHealTest extends TestCase {
   // -------------------------------------------------------------------------
 
   public function testStoredCredsWithOnlyDatedDefaultSelfHeal(): void {
-    // The half-provisioned state: credentials stored, but config still carries
-    // the shipped dated default (model resolution never succeeded).
+    // The half-provisioned state: credentials stored, but the gateway-scoped
+    // key still carries the shipped dated default a migrated site can hold
+    // (model resolution never succeeded).
     $storage = new InMemorySelfHealStorage([
       'litellm_token' => 'sk-stored-token',
       'litellm_api_url' => 'https://llm.test.amazee.ai',
       'region' => 'test-region',
     ]);
-    $config = ['ai_model' => self::DATED_DEFAULT];
+    $config = ['amazee_model' => self::DATED_DEFAULT];
 
     // Only /model/info is queued — provisioning a NEW trial would throw (queue
     // has no generate-trial-access response), proving the heal re-resolves
@@ -107,18 +108,18 @@ class ModelResolutionSelfHealTest extends TestCase {
       hasExplicitApiKey: FALSE,
       onModelsResolved: function (string $aiModel, string $aiExpansionModel) use (&$config): void {
         if ($aiModel !== '') {
-          $config['ai_model'] = $aiModel;
+          $config['amazee_model'] = $aiModel;
         }
       },
       client: $client,
       // The EXACT predicate ScoltaAiService wires.
-      hasResolvedModels: fn (): bool => $this->invokePredicate($config['ai_model']),
+      hasResolvedModels: fn (): bool => $this->invokePredicate($config['amazee_model']),
     );
 
     $this->assertFalse($provisioned, 'A model-only heal is not a fresh-trial provision');
     $this->assertSame(
       'claude-sonnet-4-5',
-      $config['ai_model'],
+      $config['amazee_model'],
       'The stored dated default must be healed to a genuinely resolved model.'
     );
   }
@@ -132,7 +133,7 @@ class ModelResolutionSelfHealTest extends TestCase {
       'litellm_api_url' => 'https://llm.test.amazee.ai',
       'region' => 'test-region',
     ]);
-    $config = ['ai_model' => self::DATED_DEFAULT];
+    $config = ['amazee_model' => self::DATED_DEFAULT];
 
     // No responses queued: any Amazee call would throw. The naive predicate
     // returning TRUE must keep ensureAiAvailable a no-op, so nothing is called.
@@ -142,15 +143,15 @@ class ModelResolutionSelfHealTest extends TestCase {
       $storage,
       hasExplicitApiKey: FALSE,
       onModelsResolved: function (string $aiModel) use (&$config): void {
-        $config['ai_model'] = $aiModel;
+        $config['amazee_model'] = $aiModel;
       },
       client: $client,
-      hasResolvedModels: fn (): bool => !empty($config['ai_model']),
+      hasResolvedModels: fn (): bool => !empty($config['amazee_model']),
     );
 
     $this->assertSame(
       self::DATED_DEFAULT,
-      $config['ai_model'],
+      $config['amazee_model'],
       'A naive non-empty predicate leaves the dated default in place (the bug).'
     );
   }
@@ -198,6 +199,32 @@ class ModelResolutionSelfHealTest extends TestCase {
       'createClient() must pass the hasResolvedModels predicate to ensureAiAvailable()');
     $this->assertStringContainsString('self::modelIsResolved(', $src,
       'The predicate must delegate to modelIsResolved()');
+  }
+
+  /**
+   * Both readers must consult the gateway-scoped key the callback writes.
+   *
+   * scolta-drupal#187: they used to read ai_model, which after the fix holds
+   * the operator's provider-native choice. Left there, the predicate would
+   * report TRUE on any site whose administrator had named a model, and the
+   * self-heal would never fire on precisely the sites needing it.
+   */
+  public function testResolvedModelReadersUseTheGatewayScopedKey(): void {
+    $src = $this->serviceSource();
+
+    $found = preg_match_all(
+      "/self::modelIsResolved\(\s*\\\$this->configFactory->get\('scolta\.settings'\)->get\('([a-z_]+)'\)/",
+      $src,
+      $matches
+    );
+
+    // Two callers: the hasResolvedModels predicate and the degrade guard.
+    $this->assertSame(2, $found, 'Both modelIsResolved() call sites must read a config key');
+    $this->assertSame(
+      ['amazee_model', 'amazee_model'],
+      $matches[1],
+      'Both modelIsResolved() callers must read amazee_model, not the operator-facing ai_model'
+    );
   }
 
   public function testPredicateExcludesTheDatedDefault(): void {

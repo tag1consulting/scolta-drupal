@@ -122,6 +122,10 @@ On [Amazee.io](https://www.amazee.io/) hosting, Scolta auto-provisions a free Am
 
 If you later want more control over your AI provider, you can switch to one of the options below at any time. Amazee.ai is the default, not a lock.
 
+**Model configuration on this path is separate.** Amazee.ai serves models through a LiteLLM gateway under its own names (`claude-4-5-sonnet`), which no provider's own API accepts. Scolta therefore keeps them apart: the gateway's names are resolved automatically into `amazee_model` and `amazee_expansion_model` and are read only while Amazee.ai credentials are in use, while the **AI Model** and **Expansion Model** fields on the settings form hold provider-native IDs (`claude-sonnet-4-5-20250929`, `gpt-4o`) and are what a direct provider key uses. The two gateway settings have no form field, because there is nothing to choose — they are whatever the gateway offers. Switching away from Amazee.ai therefore leaves your own model choice intact, and switching back does not re-provision.
+
+Sites installed before this separation existed may have an Amazee.ai gateway name sitting in **AI Model**. `drush updatedb` moves it across and restores the shipped default, reporting what it moved; if you use a direct Anthropic or OpenAI key, check the **AI Model** field afterwards.
+
 ### Drupal AI module (recommended for production)
 
 For sites that want full control over their AI provider, Scolta integrates with the [Drupal AI module](https://www.drupal.org/project/ai) — the same provider abstraction used by CKEditor AI, AI Automators, and other AI Initiative modules.

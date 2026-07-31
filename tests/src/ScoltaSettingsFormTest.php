@@ -179,6 +179,13 @@ class ScoltaSettingsFormTest extends TestCase {
       'pagefind.binary',
       'pagefind.auto_rebuild',
       'pagefind.view_mode',
+      // Gateway-scoped model aliases, written only by Amazee model resolution
+      // and read only while Amazee credentials are effective. Deliberately not
+      // operator-settable: giving them a form field would recreate the
+      // scolta-drupal#187 confusion between a gateway alias and the
+      // provider-native ai_model an administrator chooses.
+      'amazee_model',
+      'amazee_expansion_model',
     ];
 
     foreach ($configKeys as $key) {

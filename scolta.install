@@ -8,6 +8,7 @@
 use Tag1\Scolta\Binary\PagefindBinary;
 use Composer\InstalledVersions;
 use Drupal\Core\Site\Settings;
+use Drupal\scolta\Form\ScoltaSettingsForm;
 use Tag1\Scolta\AiProvider\Amazee\AutoProvisioner;
 use Drupal\Core\File\FileExists;
 use Drupal\user\Entity\Role;
@@ -312,5 +313,91 @@ function scolta_update_10002() {
   return t('Search as you type is on by default. Added @count setting(s) to scolta.settings: @keys. Adjust them at Administration › Configuration › Search and metadata › Scolta, under "Search as you type". No index rebuild is needed.', [
     '@count' => count($added),
     '@keys' => implode(', ', $added),
+  ]);
+}
+
+/**
+ * Moves an Amazee.ai gateway model alias out of the operator-facing ai_model.
+ *
+ * Until this release, Amazee model resolution wrote the LiteLLM gateway's model
+ * alias (e.g. claude-4-5-sonnet) straight into scolta.settings ai_model — the
+ * same key an administrator uses to name a provider-native model. That alias is
+ * only valid against the Amazee gateway, so a site that later switched
+ * ai_provider to anthropic, or whose trial expired, kept sending a name the
+ * provider's API does not recognise and AI failed with a generic ai_error.
+ * Gateway aliases now live in amazee_model / amazee_expansion_model, read only
+ * while Amazee credentials are the effective key.
+ *
+ * The migration is scoped to sites that actually have stored Amazee
+ * credentials, because only there could the old callback have written. A site
+ * with no credentials is left completely alone: its ai_model may well be an
+ * explicit administrator choice, and there is no way after the fact to tell one
+ * from an orphaned alias, so guessing would recreate the very bug this fixes.
+ * Those sites are covered instead by the provider/model mismatch check in the
+ * AI client (tag1consulting/scolta-php#251).
+ *
+ * On a credentialed site the whole non-default value is treated as
+ * gateway-resolved rather than sniffed for alias shape: the old callback wrote
+ * unconditionally, so nothing an administrator chose could have survived there
+ * anyway, and no alias naming convention is stable enough to test — the names
+ * come from whatever the gateway's /model/info returns. Nothing is discarded:
+ * the value moves to amazee_model, which is exactly where the gateway path now
+ * reads it from, and both values are logged.
+ *
+ * Idempotent twice over: an update hook that has run does not run again, and
+ * the guard skips any site that already has amazee_model set.
+ */
+function scolta_update_10003() {
+  $config = \Drupal::configFactory()->getEditable('scolta.settings');
+
+  // Backfill the keys themselves for every site — config/install only ever
+  // applies to a fresh install, and the settings form must not save a key the
+  // schema declares but config has never held.
+  $backfilled = FALSE;
+  foreach (['amazee_model', 'amazee_expansion_model'] as $key) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, '');
+      $backfilled = TRUE;
+    }
+  }
+
+  $credentials = \Drupal::state()->get('scolta.amazee.credentials');
+  $hasCredentials = is_array($credentials) && !empty($credentials['litellm_token']);
+  $strandedModel = $config->get('ai_model') ?? '';
+  $needsMigration = $hasCredentials
+    && ($config->get('amazee_model') ?? '') === ''
+    && $strandedModel !== ''
+    && $strandedModel !== ScoltaSettingsForm::DEFAULT_AI_MODEL;
+
+  if (!$needsMigration) {
+    if ($backfilled) {
+      $config->save();
+      return t('Added the amazee_model and amazee_expansion_model settings. No Amazee.ai model alias needed moving out of ai_model.');
+    }
+    return t('No Amazee.ai model alias needed moving out of ai_model; no settings changed.');
+  }
+
+  $strandedExpansionModel = $config->get('ai_expansion_model') ?? '';
+
+  $config->set('amazee_model', $strandedModel);
+  $config->set('ai_model', ScoltaSettingsForm::DEFAULT_AI_MODEL);
+  if ($strandedExpansionModel !== '') {
+    $config->set('amazee_expansion_model', $strandedExpansionModel);
+    $config->set('ai_expansion_model', '');
+  }
+  $config->save();
+
+  \Drupal::logger('scolta')->notice(
+    'Moved the Amazee.ai gateway model @model out of ai_model into amazee_model (expansion model: @expansion). ai_model is reset to the shipped default @default; set your provider-native model at Administration › Configuration › Search and metadata › Scolta if you use a direct provider key.',
+    [
+      '@model' => $strandedModel,
+      '@expansion' => $strandedExpansionModel !== '' ? $strandedExpansionModel : '(none)',
+      '@default' => ScoltaSettingsForm::DEFAULT_AI_MODEL,
+    ]
+  );
+
+  return t('Moved the Amazee.ai gateway model @model out of ai_model into amazee_model, and reset ai_model to the shipped default @default. Amazee.ai keeps working unchanged. If you switch to a direct Anthropic or OpenAI key, set your own model at Administration › Configuration › Search and metadata › Scolta — @model is an Amazee.ai gateway name and no other provider accepts it.', [
+    '@model' => $strandedModel,
+    '@default' => ScoltaSettingsForm::DEFAULT_AI_MODEL,
   ]);
 }
