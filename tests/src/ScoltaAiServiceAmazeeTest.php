@@ -19,9 +19,30 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
     $this->serviceFile = dirname(__DIR__, 2) . '/src/Service/ScoltaAiService.php';
   }
 
-  public function testImportsStateInterface(): void {
+  public function testImportsTheAmazeeCredentialStoreInterface(): void {
     $contents = file_get_contents($this->serviceFile);
-    $this->assertStringContainsString('use Drupal\Core\State\StateInterface', $contents);
+    $this->assertStringContainsString(
+      'use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface',
+      $contents,
+      'Amazee credentials reach this service through the store that decrypts them'
+    );
+  }
+
+  public function testTheServiceNeverReadsTheCredentialStateItself(): void {
+    // The token is encrypted at rest by DrupalConfigStorage::store(), so a
+    // direct state read hands back ciphertext. That ciphertext became
+    // ai_api_key and the gateway rejected every AI call it authenticated.
+    $contents = file_get_contents($this->serviceFile);
+    $this->assertStringNotContainsString(
+      "state->get('scolta.amazee.credentials')",
+      $contents,
+      'Reading the credential state directly skips decryption'
+    );
+    $this->assertStringNotContainsString(
+      'use Drupal\Core\State\StateInterface',
+      $contents,
+      'Nothing in this service reads state now that the store is the only credential path'
+    );
   }
 
   public function testImportsBudgetExceededHandler(): void {
@@ -34,12 +55,12 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
     $this->assertStringContainsString('use Tag1\Scolta\AiProvider\Amazee\AmazeeBudgetExceededException', $contents);
   }
 
-  public function testConstructorAcceptsStateInterface(): void {
+  public function testConstructorAcceptsTheAmazeeCredentialStore(): void {
     $contents = file_get_contents($this->serviceFile);
     $this->assertMatchesRegularExpression(
-      '/function\s+__construct\s*\([^)]*StateInterface/s',
+      '/function\s+__construct\s*\([^)]*\?ConfigStorageInterface\s+\$\w+\s*=\s*NULL/s',
       $contents,
-      'Constructor must accept StateInterface parameter'
+      'Constructor must accept the Amazee credential store as an optional parameter'
     );
   }
 
@@ -53,12 +74,12 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
   }
 
   public function testBuildConfigChecksAmazeeCreds(): void {
-    // The credential array still comes from state, but it is handed to the
-    // shared resolver rather than unpacked here — the litellm_token key is
-    // read inside AmazeeCredentials now, which is what keeps this service from
-    // deciding the source a second time.
+    // The credential array comes from the store rather than from state, so the
+    // token is decrypted before it is handed to the shared resolver. It is
+    // still the resolver that unpacks litellm_token, which is what keeps this
+    // service from deciding the source a second time.
     $contents = file_get_contents($this->serviceFile);
-    $this->assertStringContainsString('scolta.amazee.credentials', $contents);
+    $this->assertStringContainsString('$this->amazeeConfigStorage?->load()', $contents);
     $this->assertStringContainsString("'ai_provider'", $contents);
     $this->assertStringContainsString('AmazeeCredentials::fromArray(', $contents);
   }

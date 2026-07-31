@@ -145,12 +145,14 @@ class ScoltaAiServiceDrupalAiOptInTest extends TestCase {
     // This ensures that selecting 'drupal_ai' prevents the Amazee token from
     // silently overwriting the provider back to 'openai'.
     $drupalAiGuardPos = strpos($this->serviceContents, "'drupal_ai'");
-    $amazeeCredsPos = strpos($this->serviceContents, 'scolta.amazee.credentials');
+    // The credential lookup is the store read, not a state read: the store is
+    // what decrypts the token that DrupalConfigStorage::store() encrypted.
+    $amazeeCredsPos = strpos($this->serviceContents, '$this->amazeeConfigStorage?->load()');
 
     $this->assertNotFalse($drupalAiGuardPos,
       "buildConfig() must reference 'drupal_ai' to guard Amazee injection");
     $this->assertNotFalse($amazeeCredsPos,
-      'buildConfig() must still check scolta.amazee.credentials for the built-in provider paths');
+      'buildConfig() must still look up stored Amazee credentials for the built-in provider paths');
     $this->assertLessThan($amazeeCredsPos, $drupalAiGuardPos,
       "The 'drupal_ai' guard must appear before the Amazee credentials lookup in buildConfig()");
   }

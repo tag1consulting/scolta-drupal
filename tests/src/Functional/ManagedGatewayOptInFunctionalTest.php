@@ -400,7 +400,6 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
       \Drupal::httpClient(),
       \Drupal::configFactory(),
       \Drupal::logger('scolta'),
-      \Drupal::state(),
       NULL,
       \Drupal::service('scolta.amazee_config_storage'),
       NULL,
