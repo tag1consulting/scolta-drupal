@@ -12,7 +12,7 @@
     "require": {
         "php": ">=8.1",
         "drupal/search_api": "^1.0",
-        "tag1/scolta-php": "^1.0.5"
+        "tag1/scolta-php": "^1.1.0"
     },
     "suggest": {
         "drupal/ai": "For enhanced multi-provider AI support via the Drupal AI Initiative module (48+ providers, Key module integration, rate limiting, token tracking)"
@@ -64,7 +64,7 @@
     "extra": {
         "installer-name": "scolta",
         "branch-alias": {
-            "dev-main": "1.0.x-dev"
+            "dev-main": "1.1.x-dev"
         }
     },
     "config": {
