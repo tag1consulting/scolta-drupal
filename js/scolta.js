@@ -370,6 +370,13 @@
   // "simplify" this into a config key.
   let globalResultRenderer = null;
 
+  // Platform-supplied suggestion renderer, registered through
+  // Scolta.setSuggestionRenderer(). Everything said above about
+  // globalResultRenderer applies here for the same reasons: module-scoped so
+  // registration works before any instance exists, overridable per instance,
+  // and deliberately a registration function rather than a config key.
+  let globalSuggestionRenderer = null;
+
   function createInstance(containerSelector, instanceConfig) {
 
   // --- Instance state (local to this closure) ---
@@ -451,6 +458,7 @@
   let rootEl = null;                    // mount point; lifecycle events bubble through it
   let scaffoldNodes = [];               // exactly the nodes init() inserted — destroy() removes these and nothing else
   let instanceResultRenderer = null;    // per-instance override of globalResultRenderer
+  let instanceSuggestionRenderer = null; // per-instance override of globalSuggestionRenderer
   // What is currently painted in #scolta-results, in DOM order:
   // [{ key, nodes: [Node, ...] }]. Drives the keyed reconcile in renderResults()
   // so a repaint that changes nothing moves no nodes.
@@ -1961,7 +1969,12 @@
       type: 'recent',
       title: value,
       url: '',
+      // Nothing to navigate to: acting on a recent search runs the search in
+      // place. The field is present, and empty, so every suggestion has one
+      // shape and a consumer never has to feature-test safeUrl or meta.
+      safeUrl: '',
       excerpt: '',
+      meta: {},
     }));
   }
 
@@ -2114,6 +2127,14 @@
   // A scored result becomes a suggestion. `url` stays raw for the safety gate
   // and `safeUrl` is the same attribute-escaped, scheme-neutralized value the
   // result card puts in its href — one sanitizer, one behaviour.
+  //
+  // `meta` is the fragment's whole metadata map, carried through unchanged so a
+  // suggestion renderer or a scolta:suggestions-rendered listener can reach a
+  // thumbnail, an entity id or any other indexed display key. It is the same
+  // surface the result seam exposes as `data.meta`, and the values are RAW
+  // index content: nothing here escapes them, because escaping at the source
+  // would corrupt a value a consumer wants for a request URL or a comparison.
+  // A consumer that puts a meta value into markup escapes it itself.
   function toTitleSuggestion(scored) {
     const data = scored.data || {};
     const rawUrl = data.meta?.url || resolveUrl(data.url || '') || data.url || '';
@@ -2123,6 +2144,7 @@
       url: rawUrl,
       safeUrl: sanitizeUrlAttr(rawUrl),
       excerpt: data.excerpt || '',
+      meta: data.meta || {},
     };
   }
 
@@ -2169,6 +2191,59 @@
     });
   }
 
+  // The built-in inner content of one suggestion row — the kind glyph, the
+  // title, and the excerpt when there is one. Unchanged from before the
+  // suggestion-renderer seam existed: it is what a consumer that registers
+  // nothing sees, and what the renderer path falls back to.
+  function buildDefaultSuggestionInner(parts, isRecent) {
+    return `<span class="scolta-sayt-kind" aria-hidden="true">${isRecent ? '&#8635;' : '&#8250;'}</span>`
+      + `<span class="scolta-sayt-title">${parts.titleHtml}</span>`
+      + (parts.excerptHtml ? `<span class="scolta-sayt-excerpt">${parts.excerptHtml}</span>` : '');
+  }
+
+  // Build the INNER markup of one suggestion row: the registered platform
+  // renderer if there is one, the built-in row otherwise. Inner and not the
+  // whole row on purpose — the option element itself carries role="option", the
+  // stable id the input's aria-activedescendant points at, aria-selected, the
+  // data-scolta-sayt-index the keyboard and click handlers dispatch on, and in
+  // navigate mode the sanitized href. Those are the combobox contract, so
+  // renderSuggestions keeps them and a renderer cannot break them by omission.
+  //
+  // A renderer that returns anything other than a string — null, undefined, a
+  // mistake — falls back to the built-in row for THAT suggestion only, matching
+  // the result seam, so a platform able to decorate some suggestion types and
+  // not others does not have to decorate any of them.
+  function buildSuggestionInnerHtml(s, index, query, isRecent, renderer) {
+    const parts = {
+      index: index,
+      // The prefix being suggested on, RAW and not html-escaped: it is here so
+      // a renderer can build a request or compare terms, not to be pasted into
+      // markup. Every value below whose name ends in Html, plus safeUrl, is
+      // already escaped exactly as the built-in row escapes it — the same
+      // division the result renderer's ctx draws.
+      query: query,
+      titleHtml: escapeHtml(s.title),
+      excerptHtml: (!isRecent && s.excerpt) ? truncateExcerpt(s.excerpt, 120) : '',
+      // The same attribute-escaped, scheme-neutralized value the option's href
+      // carries in navigate mode. A recent search has no destination — acting
+      // on one runs the search in place rather than navigating — so it gets ''
+      // rather than a URL invented here that nothing else in the bundle emits.
+      safeUrl: s.safeUrl || '',
+    };
+
+    if (renderer) {
+      let out = null;
+      try {
+        out = renderer(s, parts);
+      } catch (e) {
+        console.warn('[scolta] suggestion renderer threw; falling back to the built-in row', e);
+        out = null;
+      }
+      if (typeof out === 'string') return out;
+    }
+    return buildDefaultSuggestionInner(parts, isRecent);
+  }
+
   function renderSuggestions(list, query) {
     if (!els.sayt) return;
 
@@ -2186,6 +2261,7 @@
     emitBeforeSuggestions(query);
 
     const navigates = getSaytConfig().suggestionAction === 'navigate';
+    const renderer = activeSuggestionRenderer();
     let html = '';
     for (let i = 0; i < list.length; i++) {
       const s = list[i];
@@ -2199,12 +2275,9 @@
       const asLink = !isRecent && navigates && isSafeLinkUrl(s.url);
       const tag = asLink ? 'a' : 'div';
       const href = asLink ? ` href="${s.safeUrl}"` : '';
-      const excerpt = (!isRecent && s.excerpt) ? truncateExcerpt(s.excerpt, 120) : '';
       html += `<${tag} class="${cls}" role="option" id="${suggestOptionId(i)}"`
         + ` aria-selected="false" data-scolta-sayt-index="${i}"${href}>`
-        + `<span class="scolta-sayt-kind" aria-hidden="true">${isRecent ? '&#8635;' : '&#8250;'}</span>`
-        + `<span class="scolta-sayt-title">${escapeHtml(s.title)}</span>`
-        + (excerpt ? `<span class="scolta-sayt-excerpt">${excerpt}</span>` : '')
+        + buildSuggestionInnerHtml(s, i, query, isRecent, renderer)
         + `</${tag}>`;
     }
     els.sayt.innerHTML = html;
@@ -4255,6 +4328,25 @@
     return instanceResultRenderer || globalResultRenderer;
   }
 
+  // --- Suggestion renderer registration ---
+  //
+  // Register a function that returns the inner markup for one suggestion row,
+  // replacing the built-in row. See the documented contract on
+  // Scolta.setSuggestionRenderer() below; this is the per-instance form and
+  // takes precedence over the global one for this instance only. Pass null to
+  // go back to the built-in row.
+  function setSuggestionRenderer(fn) {
+    if (fn !== null && fn !== undefined && typeof fn !== 'function') {
+      throw new TypeError('[scolta] setSuggestionRenderer expects a function or null');
+    }
+    instanceSuggestionRenderer = fn || null;
+    return instanceSuggestionRenderer;
+  }
+
+  function activeSuggestionRenderer() {
+    return instanceSuggestionRenderer || globalSuggestionRenderer;
+  }
+
   // --- Render lifecycle events ---
   //
   // Scolta owns the search UI, so a platform that decorates result markup
@@ -5021,6 +5113,7 @@
     batchScoreResults,
     showMore,
     setResultRenderer,
+    setSuggestionRenderer,
     destroy: function() {
       if (abortController) abortController.abort();
       // Timers outlive the DOM they would write to; cancelSuggest() clears the
@@ -5109,6 +5202,72 @@
     globalResultRenderer = fn || null;
   };
 
+  /**
+   * Register the platform's suggestion renderer.
+   *
+   *   Scolta.setSuggestionRenderer(function (suggestion, ctx) { return html || null; });
+   *
+   * Called once per row of the search-as-you-type dropdown in place of the
+   * built-in row. `suggestion` is the same object the
+   * `scolta:suggestions-rendered` event carries:
+   *
+   *   type    — "title" for an index match, "recent" for a stored search
+   *   title   — the suggestion text, RAW
+   *   url     — the result's URL, RAW; "" on a recent search
+   *   safeUrl — attribute-escaped URL with non-http(s) schemes neutralized
+   *   excerpt — the fragment excerpt, RAW; "" on a recent search
+   *   meta    — the fragment's metadata map (thumbnail, entity id, anything the
+   *             index carries), RAW; {} on a recent search
+   *
+   * `ctx` carries:
+   *
+   *   index       — position of this suggestion in the dropdown
+   *   query       — the prefix being suggested on, RAW: it is here to build a
+   *                 request or compare terms, not to be pasted into markup
+   *   titleHtml   — the escaped title the built-in row would have shown
+   *   excerptHtml — the escaped, truncated excerpt, or "" on a recent search
+   *   safeUrl     — attribute-escaped URL with non-http(s) schemes neutralized,
+   *                 the same value the option's href carries in navigate mode;
+   *                 "" on a recent search, which has no destination
+   *
+   * The naming is the result renderer's: every ctx value whose name ends in
+   * Html, plus safeUrl, is pre-escaped, and everything else is raw. There is no
+   * highlightTerms here because the suggest path does not highlight — the terms
+   * on the instance belong to the committed search cycle, not to this one.
+   *
+   * Return an HTML string, or null to fall back to the built-in row for that
+   * one suggestion. A renderer that throws also falls back, with a console
+   * warning; one bad row never takes the dropdown down.
+   *
+   * What the returned string owns is the INSIDE of the option element. Scolta
+   * keeps the element itself — role="option", the stable id the input's
+   * aria-activedescendant points at, aria-selected, data-scolta-sayt-index, and
+   * in navigate mode the anchor and its sanitized href — because those are the
+   * ARIA combobox and keyboard contract, and a renderer that forgot one would
+   * break arrow-key navigation and screen-reader announcement silently.
+   *
+   * ESCAPING. The returned string is inserted as markup, so from that point the
+   * platform owns its own escaping. `ctx.titleHtml` and `ctx.excerptHtml` are
+   * already escaped exactly as the built-in row escapes them; `suggestion.title`,
+   * `suggestion.url`, `suggestion.excerpt`, every `suggestion.meta` value and
+   * `ctx.query` are raw index or visitor content, so escape them yourself.
+   *
+   * Pass null to restore the built-in row. Like setResultRenderer this is
+   * deliberately a registration function, not a config key: a function cannot
+   * travel through ScoltaConfig::toBrowserConfig() and the platform's settings
+   * JSON, and a browser config key PHP never emits would be dead weight the
+   * parity test has to be told to ignore.
+   *
+   * Applies to every instance that has not registered its own renderer via
+   * instance.setSuggestionRenderer(); safe to call before Scolta.init().
+   */
+  global.Scolta.setSuggestionRenderer = function(fn) {
+    if (fn !== null && fn !== undefined && typeof fn !== 'function') {
+      throw new TypeError('[scolta] Scolta.setSuggestionRenderer expects a function or null');
+    }
+    globalSuggestionRenderer = fn || null;
+  };
+
   // Backward-compatible init: creates a default instance from window.scolta.
   global.Scolta.init = function(containerSelector) {
     if (global.Scolta.defaultInstance) return; // already initialized
@@ -5117,9 +5276,10 @@
       global.scolta
     );
     // Expose instance methods on Scolta for backward compat. setResultRenderer
-    // is deliberately NOT among them: Scolta.setResultRenderer is the global
-    // registration, which must keep working when it is called before init() —
-    // the usual order, since a platform registers on script load.
+    // and setSuggestionRenderer are deliberately NOT among them: the Scolta.*
+    // forms are the global registrations, which must keep working when they are
+    // called before init() — the usual order, since a platform registers on
+    // script load.
     if (global.Scolta.defaultInstance) {
       var inst = global.Scolta.defaultInstance;
       global.Scolta.searchTerm = inst.searchTerm;
