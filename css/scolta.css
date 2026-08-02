@@ -33,6 +33,24 @@
   --scolta-sayt-max-height: 22rem;
   --scolta-sayt-active-bg: var(--scolta-badge-bg);
   --scolta-sayt-z-index: 50;
+
+  /* AI summary layout reservation (see docs/AI_SUMMARY_LAYOUT.md).
+     The slot holds this height from the frame the results paint in, and keeps
+     it through loading, resolution and error, so an arriving
+     summary never pushes the result list down.
+
+     Tune it with the line count. --scolta-summary-chrome is the allowance for
+     the label, the follow-up row and the panel's own padding; the text region
+     takes whatever is left, so the visible line count tracks the budget
+     closely rather than exactly.
+
+     Opt out with .scolta-ai-summary { --scolta-summary-collapsed-height: auto }
+     — the slot then sizes to its content as it did before, which reintroduces
+     layout shift. */
+  --scolta-summary-collapsed-lines: 6;
+  --scolta-summary-line-height: 1.7;
+  --scolta-summary-chrome: 6.5rem;
+  --scolta-summary-font-size: 0.95rem;
 }
 
 /* Search box */
@@ -274,11 +292,32 @@
   border-radius: 12px;
   padding: 1.25rem 1.5rem 1rem;
   margin-bottom: 1.25rem;
-  font-size: 0.95rem;
-  line-height: 1.7;
+  font-size: var(--scolta-summary-font-size);
+  line-height: var(--scolta-summary-line-height);
   color: var(--scolta-primary);
   position: relative;
   box-shadow: 0 1px 4px rgba(26, 58, 92, 0.06);
+  /* Column flex, in every state, so the reserved slot can hand the text
+     region whatever height the label, control, follow-up row and disclaimer
+     leave over. The panel is shown by clearing its inline display, never by
+     setting one: an inline display:block would outrank this and silently
+     un-reserve the slot. */
+  display: flex;
+  flex-direction: column;
+  /* Derived HERE, on the panel, not on :root. A custom property resolves its
+     var() references against the element it is declared on, so deriving this
+     at :root would bake in :root's line count and a theme overriding
+     --scolta-summary-collapsed-lines further down the tree would change
+     nothing. Declared here, it picks up an override from any ancestor.
+     The font size comes from the property rather than from 1em on purpose:
+     the error state restyles the panel to a smaller font, and an em-based
+     reservation would therefore reserve a DIFFERENT height for an error than
+     for a summary — which is a shift, and measured as one (0.006). */
+  --scolta-summary-collapsed-height: calc(
+      var(--scolta-summary-collapsed-lines)
+      * var(--scolta-summary-line-height)
+      * var(--scolta-summary-font-size)
+      + var(--scolta-summary-chrome));
 }
 .scolta-ai-summary-label {
   display: flex;
@@ -402,6 +441,51 @@
   align-self: center;
 }
 .scolta-ai-summary.loading .scolta-ai-summary-text { color: var(--scolta-text-light); }
+
+/* Reserved slot.
+   The height is fixed and the panel is a column, so the text region absorbs
+   whatever the chrome around it does or does not occupy: the loading skeleton
+   has no follow-up row, the error affordance has neither that nor a
+   disclaimer, and the panel is still exactly the same height in all of them.
+   That is what makes the shift zero by construction rather than by arithmetic
+   that has to be kept in sync with the markup. */
+.scolta-ai-summary--reserved {
+  height: var(--scolta-summary-collapsed-height);
+  overflow: hidden;
+}
+.scolta-ai-summary--reserved > * { flex: 0 0 auto; }
+.scolta-ai-summary--reserved .scolta-ai-summary-text {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+/* Only a summary that actually overflows gets the fade and the control. */
+.scolta-ai-summary--clamped .scolta-ai-summary-text {
+  -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 65%, transparent 100%);
+}
+.scolta-ai-summary-toggle {
+  align-self: flex-start;
+  margin-top: 0.4rem;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--scolta-accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.scolta-ai-summary-toggle:hover { color: var(--scolta-primary); }
+.scolta-ai-summary-toggle[hidden] { display: none; }
+
+/* One shimmer bar per text line, so a skeleton clipped by the reserved height
+   lands on a line boundary instead of halfway through a bar. */
+.scolta-ai-summary--reserved .scolta-ai-shimmer {
+  margin-bottom: calc(var(--scolta-summary-line-height) * 1em - 0.9em);
+}
 
 /* Shimmer animation for loading state */
 @keyframes scolta-shimmer {
