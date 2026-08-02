@@ -387,6 +387,10 @@
   let conversationMessages = [];
   let followUpCount = 0;
   let abortController = null;
+  // Watches the resolved summary's text region so the clamp decision follows
+  // the width instead of being frozen at the width it resolved in. Exactly one
+  // at a time; see observeSummaryClamp().
+  let summaryClampObserver = null;
   let queryFacetCounts = {};   // { dimension: { value: count } } — per typed query, folded once when expansion lands
   let currentQuery = "";
   let allHighlightTerms = [];
@@ -1240,6 +1244,8 @@
   function releaseSummarySlot() {
     const summaryEl = els && els.aiSummary;
     if (!summaryEl) return;
+    // The element it was watching is about to be emptied.
+    disconnectSummaryClamp();
     summaryEl.style.display = 'none';
     summaryEl.className = '';
     summaryEl.innerHTML = '';
@@ -1273,6 +1279,46 @@
   }
 
   /**
+   * Keep the clamp decision honest as the text region's width changes.
+   *
+   * updateSummaryClamp() measures, so its answer is only true for the width it
+   * measured at. It ran once on resolve and again on a toggle click, which
+   * froze the decision at resolve-time width: rotate a phone to portrait, or
+   * shrink a responsive column, and a summary that fitted reflows to more
+   * lines and overflows the reserved height. The text is still clipped —
+   * .scolta-ai-summary-text is overflow:hidden while reserved — but without
+   * the clamped class there is no fade and the control stays hidden, so a
+   * sighted reader sees text cut off at the box edge with no way to open it.
+   * (The full text is in the DOM throughout, so find-in-page and assistive
+   * tech were never affected; the visible affordance was.) Widening has the
+   * mirror problem: a pointless control on a summary that now fits.
+   *
+   * Recomputing costs no layout shift. It toggles a mask class and the
+   * control's hidden flag, and the control lives inside the fixed-height,
+   * overflow-hidden panel, so nothing outside the box can move.
+   */
+  function observeSummaryClamp() {
+    // Feature-detected: older engines and JSDOM have no ResizeObserver, and
+    // the resolved path must not throw for want of it. Without one the
+    // behaviour is exactly what it was before this existed.
+    if (typeof ResizeObserver === 'undefined') return;
+    const summaryEl = els && els.aiSummary;
+    if (!summaryEl) return;
+    if (!getInstanceConfig().AI_SUMMARIZE) return;
+    const textEl = summaryEl.querySelector('.scolta-ai-summary-text');
+    if (!textEl) return;
+    disconnectSummaryClamp();
+    summaryClampObserver = new ResizeObserver(() => updateSummaryClamp());
+    summaryClampObserver.observe(textEl);
+  }
+
+  function disconnectSummaryClamp() {
+    if (!summaryClampObserver) return;
+    summaryClampObserver.disconnect();
+    summaryClampObserver = null;
+  }
+
+  /**
    * Drop the reserved height so the whole summary (or a follow-up answer) is
    * visible. Always the result of a click or a keypress, so the resulting
    * shift carries hadRecentInput and costs nothing.
@@ -1280,6 +1326,11 @@
   function expandSummarySlot() {
     const summaryEl = els && els.aiSummary;
     if (!summaryEl) return;
+    // The user has opened the summary. Stop watching rather than re-clamping
+    // against that choice: updateSummaryClamp() would no-op on an unreserved
+    // panel anyway, but an observer left running on an expanded summary is
+    // just work nobody asked for.
+    disconnectSummaryClamp();
     summaryEl.classList.remove(SUMMARY_RESERVED_CLASS, SUMMARY_CLAMPED_CLASS);
     const toggle = summaryEl.querySelector('[data-scolta-summary-toggle]');
     if (toggle) {
@@ -1298,6 +1349,8 @@
       toggle.textContent = 'Show more';
     }
     updateSummaryClamp();
+    // Reserved again, so width changes matter again.
+    observeSummaryClamp();
   }
 
   function toggleSummaryExpanded() {
@@ -1444,6 +1497,8 @@
           </div>
           ${disclaimerHtml}`;
         updateSummaryClamp();
+        // The decision above is only true for the width it measured at.
+        observeSummaryClamp();
       } else {
         // Nothing to show. Collapse to exactly what a deployment with the
         // summary disabled looks like rather than leaving an empty box.
@@ -4414,12 +4469,28 @@
       const expandedLabel = expandedTerms
         ? expandedTerms.filter(t => t.toLowerCase() !== query.toLowerCase())
         : [];
-      summarizeResults(query, allScoredResults, expandedLabel, sortHint, filterHint, activeFilters);
+      // Deliberately not awaited — the summary is allowed to land after this
+      // chain settles — which is exactly why it needs its own catch. Nothing
+      // is chained onto the promise it returns, so a rejection from it does
+      // NOT reach the .catch below; it becomes an unhandled rejection and the
+      // reserved skeleton shimmers forever. summarizeResults() handles its own
+      // fetch failures, but the work before that fetch (candidate selection,
+      // context assembly) is outside them, and on a malformed result set a
+      // throw there used to strand the slot with no way back.
+      summarizeResults(query, allScoredResults, expandedLabel, sortHint, filterHint, activeFilters)
+        .catch(e => {
+          if (version !== searchVersion) return;
+          console.warn('[scolta:summarize] failed before the request:', e);
+          releaseSummarySlot();
+        });
     }).catch(e => {
-      // The slot is reserved from the result paint, so anything that throws
-      // between there and summarizeResults() now leaves a skeleton shimmering
-      // forever instead of failing silently. Collapse it and say why. Only
-      // this cycle's slot: a newer search owns the panel once it starts.
+      // The slot is reserved from the result paint, so anything that throws in
+      // the expansion phase — between that paint and the summarize call — now
+      // leaves a skeleton shimmering forever instead of failing silently.
+      // Collapse it and say why. This covers the awaited work above only; the
+      // un-awaited summarizeResults() call carries its own catch, for the
+      // reason given there. Only this cycle's slot: a newer search owns the
+      // panel once it starts.
       if (version !== searchVersion) return;
       console.warn('[scolta:search] expansion phase failed:', e);
       releaseSummarySlot();
