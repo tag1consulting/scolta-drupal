@@ -186,6 +186,13 @@ class ScoltaSettingsFormTest extends TestCase {
       // provider-native ai_model an administrator chooses.
       'amazee_model',
       'amazee_expansion_model',
+      // Incremental update routing. The path stays dormant until a
+      // tag1/scolta-php release carrying IncrementalIndexUpdater is installed,
+      // and a settings field for a feature that cannot run yet is a support
+      // question, not a control. These gain form fields in the change that
+      // bumps the scolta-php constraint and turns the path on.
+      'incremental.enabled',
+      'incremental.max_changed_items',
     ];
 
     foreach ($configKeys as $key) {

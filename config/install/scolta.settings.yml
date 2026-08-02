@@ -85,3 +85,6 @@ pagefind:
   binary: 'pagefind'
   auto_rebuild: true
   view_mode: 'search_index'
+incremental:
+  enabled: true
+  max_changed_items: 100

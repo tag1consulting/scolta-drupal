@@ -542,12 +542,14 @@ class ScoltaContentGathererTest extends TestCase {
     );
 
     // A missing key must fall through to the reload path, not merely be
-    // noted. The guard clears the freshness flag whose else branch queues
-    // the entity in $toLoad.
+    // noted. The freshness decision now lives in manifestEntryIsFresh(),
+    // shared by gather() and gatherByIds(), so the guard reports staleness by
+    // returning FALSE rather than by clearing a local flag; the caller's else
+    // branch still queues the entity in $toLoad.
     $this->assertMatchesRegularExpression(
-      "/if \(!array_key_exists\('metadata', \\\$itemData\)\) \{\s*\\\$fresh = FALSE;/",
+      "/if \(!array_key_exists\('metadata', \\\$itemData\)\) \{\s*return FALSE;/",
       $this->gathererContents,
-      'A manifest item without a metadata key must clear the freshness flag so the entity is reloaded'
+      'A manifest item without a metadata key must report the entry as stale so the entity is reloaded'
     );
     $this->assertStringContainsString(
       '$toLoad[] = $id;',

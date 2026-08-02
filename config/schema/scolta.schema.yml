@@ -299,6 +299,16 @@ scolta.settings:
         view_mode:
           type: string
           label: 'Entity view mode for indexing'
+    incremental:
+      type: mapping
+      label: 'Incremental index update configuration'
+      mapping:
+        enabled:
+          type: boolean
+          label: 'Update the index incrementally for small change sets'
+        max_changed_items:
+          type: integer
+          label: 'Largest change set applied incrementally before falling back to a full rebuild'
 
 search_api.backend.plugin.scolta_pagefind:
   type: mapping
