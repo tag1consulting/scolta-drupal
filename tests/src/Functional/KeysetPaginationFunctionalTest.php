@@ -1,0 +1,187 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\Tests\scolta\Functional;
+
+use Drupal\Tests\BrowserTestBase;
+use Drupal\node\Entity\Node;
+
+/**
+ * Coverage for the gatherer's keyset pagination.
+ *
+ * gather() walked the corpus with LIMIT n OFFSET m, which makes the database
+ * skip and discard m rows before returning any. With a batch of 10 the last
+ * batches of a six-figure corpus each discarded ~100k rows. The cursor is now
+ * expressed as "IDs greater than the last one seen", which is O(batch) at any
+ * depth.
+ *
+ * The risk a cursor rewrite carries is an off-by-one at a batch boundary: a
+ * row silently skipped or yielded twice. The existing end-to-end test runs a
+ * 3-page corpus, which cannot see a boundary at all, so these run a corpus
+ * many batches deep and check the walk exactly.
+ *
+ * @group scolta
+ */
+class KeysetPaginationFunctionalTest extends BrowserTestBase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected static $modules = ['scolta', 'node', 'filter', 'field'];
+
+  /**
+   * {@inheritdoc}
+   */
+  protected $defaultTheme = 'stark';
+
+  /**
+   * Published node IDs, ascending.
+   *
+   * @var int[]
+   */
+  protected array $publishedNids = [];
+
+  /**
+   * Unpublished node IDs.
+   *
+   * @var int[]
+   */
+  protected array $unpublishedNids = [];
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+
+    $this->drupalCreateContentType(['type' => 'article', 'name' => 'Article']);
+    $this->drupalCreateContentType(['type' => 'page', 'name' => 'Page']);
+
+    // 137 published articles: not a multiple of the batch size of 10, so the
+    // final partial batch is exercised too. Interleaved unpublished nodes and
+    // a second bundle make the ID sequence non-contiguous, which is what an
+    // off-by-one in the cursor would hide behind on a dense sequence.
+    for ($i = 1; $i <= 137; $i++) {
+      $node = Node::create([
+        'type' => 'article',
+        'title' => 'Article ' . $i,
+        'body' => ['value' => 'Body of article ' . $i, 'format' => 'plain_text'],
+        'status' => 1,
+      ]);
+      $node->save();
+      $this->publishedNids[] = (int) $node->id();
+
+      if ($i % 7 === 0) {
+        $hidden = Node::create([
+          'type' => 'article',
+          'title' => 'Hidden ' . $i,
+          'body' => ['value' => 'Body of hidden ' . $i, 'format' => 'plain_text'],
+          'status' => 0,
+        ]);
+        $hidden->save();
+        $this->unpublishedNids[] = (int) $hidden->id();
+      }
+
+      if ($i % 11 === 0) {
+        $other = Node::create([
+          'type' => 'page',
+          'title' => 'Page ' . $i,
+          'body' => ['value' => 'Body of page ' . $i, 'format' => 'plain_text'],
+          'status' => 1,
+        ]);
+        $other->save();
+      }
+    }
+
+    sort($this->publishedNids);
+  }
+
+  /**
+   * The walk yields every published row exactly once, in ascending ID order.
+   */
+  public function testWalkCoversEveryRowExactlyOnce(): void {
+    $ids = $this->gatheredItemIds('article');
+
+    $this->assertSame(
+      array_map('strval', $this->publishedNids),
+      $ids,
+      'Keyset pagination must yield every published node of the bundle exactly once, ascending, with no row skipped or repeated across a batch boundary'
+    );
+  }
+
+  /**
+   * No unpublished row leaks into the walk.
+   */
+  public function testWalkExcludesUnpublishedRows(): void {
+    $ids = $this->gatheredItemIds('article');
+
+    foreach ($this->unpublishedNids as $nid) {
+      $this->assertNotContains((string) $nid, $ids,
+        'An unpublished node must never be gathered');
+    }
+  }
+
+  /**
+   * The bundle filter still applies at every batch boundary.
+   */
+  public function testWalkRespectsTheBundleFilter(): void {
+    $articles = $this->gatheredItemIds('article');
+    $pages = $this->gatheredItemIds('page');
+
+    $this->assertNotEmpty($pages);
+    $this->assertSame([], array_intersect($articles, $pages),
+      'A bundle-filtered walk must not spill rows from another bundle');
+  }
+
+  /**
+   * An unfiltered walk covers every published node of every bundle.
+   */
+  public function testUnfilteredWalkCoversAllBundles(): void {
+    $expected = array_values(
+      $this->container->get('entity_type.manager')->getStorage('node')->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('status', 1)
+        ->sort('nid', 'ASC')
+        ->execute()
+    );
+
+    $this->assertSame(array_map('strval', $expected), $this->gatheredItemIds(''),
+      'An unfiltered walk must cover every published node, ascending');
+  }
+
+  /**
+   * The resume offset still lands on the right row.
+   *
+   * --resume hands back a row offset rather than an ID, so the cursor is
+   * seeded by resolving that offset once. An off-by-one here re-indexes or
+   * skips exactly one node on every resumed build.
+   */
+  public function testResumeOffsetSkipsExactlyTheProcessedRows(): void {
+    $all = $this->gatheredItemIds('article');
+
+    foreach ([1, 10, 11, 57, 136] as $skip) {
+      $this->assertSame(
+        array_slice($all, $skip),
+        $this->gatheredItemIds('article', $skip),
+        'Resuming at offset ' . $skip . ' must yield exactly the rows after the ones already processed'
+      );
+    }
+  }
+
+  /**
+   * Gather a bundle and return the content item IDs in yielded order.
+   *
+   * @return string[]
+   */
+  protected function gatheredItemIds(string $bundle, int $startPage = 0): array {
+    $ids = [];
+    $gatherer = $this->container->get('scolta.content_gatherer');
+    foreach ($gatherer->gather('node', $bundle, 'Keyset Site', $startPage) as $item) {
+      $ids[] = (string) $item->id;
+    }
+
+    return $ids;
+  }
+
+}

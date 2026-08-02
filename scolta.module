@@ -26,14 +26,26 @@ function scolta_help($route_name, RouteMatchInterface $route_match) {
  * Implements hook_entity_insert().
  */
 function scolta_entity_insert(EntityInterface $entity) {
-  _scolta_auto_rebuild_check($entity);
+  _scolta_auto_rebuild_check($entity, 'insert');
 }
 
 /**
  * Implements hook_entity_update().
  */
 function scolta_entity_update(EntityInterface $entity) {
-  _scolta_auto_rebuild_check($entity);
+  _scolta_auto_rebuild_check($entity, 'update');
+}
+
+/**
+ * Implements hook_entity_delete().
+ *
+ * Without this the index keeps serving a deleted node until some unrelated
+ * save triggers a rebuild, or an operator runs a full one by hand. The
+ * incremental update path tombstones a removed page, so a delete now has a
+ * trigger that costs the same as an edit.
+ */
+function scolta_entity_delete(EntityInterface $entity) {
+  _scolta_auto_rebuild_check($entity, 'delete');
 }
 
 /**
@@ -232,13 +244,22 @@ function scolta_form_search_api_index_fields_alter(array &$form, FormStateInterf
 /**
  * Check if auto-rebuild should be triggered for the given entity.
  *
- * Enqueues a rebuild request when a node is inserted or updated
- * and auto_rebuild is enabled in the Scolta pagefind configuration.
+ * Enqueues a rebuild request when a node is inserted, updated or deleted and
+ * auto_rebuild is enabled in the Scolta pagefind configuration.
+ *
+ * The queue item carries the identity of what changed: the entity ID and the
+ * per-translation content item IDs the gatherer would produce for it. Without
+ * them the worker only knows that "something" changed and has to walk the
+ * whole corpus to find out what, which on a six-figure site is the entire
+ * build. With them it gathers exactly the changed entities and drives the
+ * incremental index update path.
  *
  * @param \Drupal\Core\Entity\EntityInterface $entity
- *   The entity that was inserted or updated.
+ *   The entity that was inserted, updated or deleted.
+ * @param string $op
+ *   The operation: 'insert', 'update' or 'delete'.
  */
-function _scolta_auto_rebuild_check(EntityInterface $entity) {
+function _scolta_auto_rebuild_check(EntityInterface $entity, $op = 'update') {
   // @todo Support auto-rebuild for non-node entity types once the gatherer
   // configuration allows specifying which entity types to index.
   if ($entity->getEntityTypeId() !== 'node') {
@@ -250,6 +271,31 @@ function _scolta_auto_rebuild_check(EntityInterface $entity) {
     return;
   }
 
+  // The item IDs must be derived by the gatherer: it owns the rule that maps
+  // an entity plus a langcode onto an indexed page ID ('42', '42-es'), and
+  // that ID is the key the page-table ledger stores, so a second copy of the
+  // rule here would silently orphan pages the moment the two drifted.
+  $itemIds = [];
+  try {
+    $itemIds = \Drupal::service('scolta.content_gatherer')->itemIdsFor($entity);
+  }
+  catch (\Throwable $e) {
+    // A malformed entity must not block the save. An empty item ID list makes
+    // the worker treat this as an untargeted change and fall back to a full
+    // rebuild, which is correct but slow — never wrong.
+    \Drupal::logger('scolta')->warning('Could not derive Scolta item IDs for @type @id: @message', [
+      '@type' => $entity->getEntityTypeId(),
+      '@id' => $entity->id(),
+      '@message' => $e->getMessage(),
+    ]);
+  }
+
   \Drupal::state()->set('scolta.rebuild_requested_at', time());
-  \Drupal::queue('scolta_rebuild')->createItem(['type' => 'auto']);
+  \Drupal::queue('scolta_rebuild')->createItem([
+    'type' => 'auto',
+    'op' => $op,
+    'entity_type' => $entity->getEntityTypeId(),
+    'entity_id' => $entity->id(),
+    'item_ids' => $itemIds,
+  ]);
 }

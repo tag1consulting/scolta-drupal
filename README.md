@@ -262,6 +262,27 @@ The AI API endpoints (`/api/scolta/v1/expand-query`, `/api/scolta/v1/summarize`,
 
 When auto-rebuild is enabled, content saves enqueue an index rebuild that cron processes. The rebuild is debounced by the backend's **Rebuild delay** setting (Search API server > backend configuration, default 300 seconds): the queue waits until that many seconds have passed since the *last* content change, so a burst of edits produces one build instead of many.
 
+Inserts, updates and deletes all enqueue a request, and each one names the node and the content item IDs it touched.
+
+#### Incremental index updates
+
+A queued request that names what changed can be applied to the existing index instead of rebuilding it: the worker gathers only the changed nodes and updates, adds or tombstones just their pages. On a large site this is the difference between an edit costing seconds and an edit costing a full rebuild, because the content gather — not the merge — is where a build spends its time.
+
+Two `scolta.settings` keys control it. They have no form field yet, so set them with Drush:
+
+```bash
+# Turn the incremental path off entirely (every request becomes a full rebuild).
+drush config:set scolta.settings incremental.enabled false
+
+# Largest change set applied incrementally before falling back to a full
+# rebuild. Default 100. Set to 0 to remove the ceiling.
+drush config:set scolta.settings incremental.max_changed_items 250
+```
+
+The worker falls back to a full rebuild, and logs why at `warning`, whenever it cannot update exactly: a queued request that does not name what changed (the install hook and the Search API backend enqueue plain full-rebuild markers), a change set over the threshold, or an index with no page-table ledger yet. Incremental updates apply to an index; they do not create one, so the first build after installing is always a full build.
+
+**This path is dormant until a `tag1/scolta-php` release carrying `IncrementalIndexUpdater` is installed.** Until then the class is absent, the worker takes the full build path, and nothing changes.
+
 #### Drush config:set and config path precedence
 
 Scolta's config stores scoring and display values in nested namespaces (`scoring.*`, `display.*`). When using `drush config:set`, use the full nested path:

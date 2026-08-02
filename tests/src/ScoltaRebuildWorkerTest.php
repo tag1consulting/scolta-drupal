@@ -197,15 +197,15 @@ namespace Drupal\scolta\Tests {
                 'The worker must not carry its own body-extraction block — ScoltaContentGatherer owns content conversion');
         }
 
-        public function test_worker_drains_duplicate_queue_items_after_success(): void {
-            $contents = $this->workerSource();
-            $this->assertStringContainsString('function drainQueue()', $contents);
-            $this->assertMatchesRegularExpression(
-                '/if \(\$report->success\) \{.*?\$this->drainQueue\(\);/s',
-                $contents,
-                'A successful build must drain the remaining duplicate rebuild requests'
-            );
-        }
+        // The queue-cleanup assertion that used to live here matched the
+        // source text for drainQueue(), and it passed just as happily on the
+        // implementation that made it a data-loss bug: draining the whole
+        // queue after a build deletes the requests that arrived *during* the
+        // build, whose edits were never gathered. A string match cannot tell
+        // "delete what was covered" from "delete everything". The contract is
+        // covered behaviourally instead, against a real queue, by
+        // IncrementalQueueUpdateFunctionalTest::
+        // testQueueItemsArrivingAfterTheClaimSurvive().
 
         public function test_worker_reads_auto_rebuild_delay(): void {
             $contents = $this->workerSource();
