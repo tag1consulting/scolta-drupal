@@ -1161,24 +1161,164 @@
     return picked;
   }
 
+  // ---- AI summary layout reservation ---------------------------------------
+  //
+  // The summarize call is deliberately deferred until query expansion settles,
+  // so the model ranks what the user sees. That means the result list is
+  // already painted when the summary lands above it, and every pixel the list
+  // moves is cumulative layout shift.
+  //
+  // It moved twice, not once. The slot went from display:none to a loading
+  // skeleton when expansion settled (measured +177px, 0.120), then from
+  // skeleton to resolved summary (+342px, 0.317) — 0.437 total against a
+  // "good" threshold of 0.1. The first of those is invisible in any harness
+  // that stubs expansion faster than 500ms, because the browser then credits
+  // it to the search click and excludes it; a real expansion is an LLM round
+  // trip and is not that fast.
+  //
+  // So the slot takes a fixed height in the same frame the results paint, and
+  // holds it through loading, resolution and error alike. A summary taller
+  // than the box is clipped behind a "Show more" control; expanding is
+  // user-initiated, which the metric excludes by definition, so the full text
+  // stays reachable for free. A deployment with the summary off reserves
+  // nothing and is byte-identical to before.
+  const SUMMARY_RESERVED_CLASS = 'scolta-ai-summary--reserved';
+  const SUMMARY_CLAMPED_CLASS = 'scolta-ai-summary--clamped';
+  const SUMMARY_TEXT_ID = 'scolta-ai-summary-text';
+
+  // Generous: the bars are clipped by the reserved height, so a theme that
+  // raises the line budget still gets a full skeleton, and one that lowers it
+  // pays nothing but a few unrendered divs.
+  const SUMMARY_SHIMMER_LINES = 14;
+  const SUMMARY_SHIMMER_WIDTHS = [95, 88, 72, 92, 84, 68, 90, 79];
+
+  function summaryLabelHtml(withDots) {
+    return `<div class="scolta-ai-summary-label">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z"/></svg>
+        <span>AI Overview</span>${withDots ? '\n        <span class="scolta-ai-dots"><span>.</span><span>.</span><span>.</span></span>' : ''}
+      </div>`;
+  }
+
+  function summaryLoadingHtml() {
+    let bars = '';
+    for (let i = 0; i < SUMMARY_SHIMMER_LINES; i++) {
+      bars += `<div class="scolta-ai-shimmer" style="width:${SUMMARY_SHIMMER_WIDTHS[i % SUMMARY_SHIMMER_WIDTHS.length]}%"></div>`;
+    }
+    return `${summaryLabelHtml(true)}
+      <div class="scolta-ai-summary-text" id="${SUMMARY_TEXT_ID}">${bars}</div>`;
+  }
+
+  /**
+   * Paint the reserved, loading slot.
+   *
+   * Called from the frame that paints the result list — the box has to exist
+   * before anything can be pushed by it — and again by summarizeResults() so a
+   * direct call still works. Idempotent: a slot already reserved, already
+   * resolved, or already showing an error is left exactly as it is, which is
+   * what keeps a load-more or facet repaint from flashing the skeleton back
+   * over a summary the user is reading.
+   */
+  function reserveSummarySlot() {
+    const summaryEl = els && els.aiSummary;
+    if (!summaryEl) return;
+    if (!getInstanceConfig().AI_SUMMARIZE) return;
+    if (summaryEl.style.display !== 'none') return;
+    // Cleared, not set: the stylesheet makes .scolta-ai-summary a flex column,
+    // and an inline display would outrank it and break the reservation.
+    summaryEl.style.display = '';
+    summaryEl.className = `scolta-ai-summary loading ${SUMMARY_RESERVED_CLASS}`;
+    summaryEl.innerHTML = summaryLoadingHtml();
+  }
+
+  /**
+   * Collapse the slot: no reserved height, no skeleton, nothing.
+   *
+   * This is the state a deployment with the summary disabled is in for the
+   * whole life of the page, and the state the slot returns to when the model
+   * gives us nothing to show.
+   */
+  function releaseSummarySlot() {
+    const summaryEl = els && els.aiSummary;
+    if (!summaryEl) return;
+    summaryEl.style.display = 'none';
+    summaryEl.className = '';
+    summaryEl.innerHTML = '';
+  }
+
+  /**
+   * Decide whether the resolved summary needs the "Show more" control.
+   *
+   * Measured, not estimated: the text is proportional, the box is themeable by
+   * a custom property, and any guess at "how many characters fit" gets both of
+   * those wrong. A summary that fits shows no control at all.
+   */
+  function updateSummaryClamp() {
+    const summaryEl = els && els.aiSummary;
+    if (!summaryEl) return;
+    const textEl = summaryEl.querySelector('.scolta-ai-summary-text');
+    const toggle = summaryEl.querySelector('[data-scolta-summary-toggle]');
+    if (!textEl || !toggle) return;
+    if (!summaryEl.classList.contains(SUMMARY_RESERVED_CLASS)) {
+      summaryEl.classList.remove(SUMMARY_CLAMPED_CLASS);
+      return;
+    }
+    // +1 absorbs sub-pixel rounding on fractional line heights.
+    const overflows = textEl.scrollHeight > textEl.clientHeight + 1;
+    if (overflows) {
+      summaryEl.classList.add(SUMMARY_CLAMPED_CLASS);
+    } else {
+      summaryEl.classList.remove(SUMMARY_CLAMPED_CLASS);
+    }
+    toggle.hidden = !overflows;
+  }
+
+  /**
+   * Drop the reserved height so the whole summary (or a follow-up answer) is
+   * visible. Always the result of a click or a keypress, so the resulting
+   * shift carries hadRecentInput and costs nothing.
+   */
+  function expandSummarySlot() {
+    const summaryEl = els && els.aiSummary;
+    if (!summaryEl) return;
+    summaryEl.classList.remove(SUMMARY_RESERVED_CLASS, SUMMARY_CLAMPED_CLASS);
+    const toggle = summaryEl.querySelector('[data-scolta-summary-toggle]');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', 'true');
+      toggle.textContent = 'Show less';
+    }
+  }
+
+  function collapseSummarySlot() {
+    const summaryEl = els && els.aiSummary;
+    if (!summaryEl) return;
+    summaryEl.classList.add(SUMMARY_RESERVED_CLASS);
+    const toggle = summaryEl.querySelector('[data-scolta-summary-toggle]');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.textContent = 'Show more';
+    }
+    updateSummaryClamp();
+  }
+
+  function toggleSummaryExpanded() {
+    const summaryEl = els && els.aiSummary;
+    if (!summaryEl) return;
+    if (summaryEl.classList.contains(SUMMARY_RESERVED_CLASS)) {
+      expandSummarySlot();
+    } else {
+      collapseSummarySlot();
+    }
+  }
+
   async function summarizeResults(query, results, expandedTerms = [], sortHint = null, filterHint = null, userFilters = {}) {
     const CONFIG = getInstanceConfig();
     const endpoints = getInstanceEndpoints();
     if (!CONFIG.AI_SUMMARIZE || results.length === 0) return null;
     const summaryEl = els.aiSummary;
-    summaryEl.style.display = "block";
-    summaryEl.className = "scolta-ai-summary loading";
-    summaryEl.innerHTML = `
-      <div class="scolta-ai-summary-label">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z"/></svg>
-        <span>AI Overview</span>
-        <span class="scolta-ai-dots"><span>.</span><span>.</span><span>.</span></span>
-      </div>
-      <div class="scolta-ai-summary-text">
-        <div class="scolta-ai-shimmer" style="width:95%"></div>
-        <div class="scolta-ai-shimmer" style="width:88%"></div>
-        <div class="scolta-ai-shimmer" style="width:72%"></div>
-      </div>`;
+    // Normally a no-op: the slot was already reserved in the frame the results
+    // painted. It still matters for a direct call, and for the case where the
+    // result list arrived empty and expansion later filled it.
+    reserveSummarySlot();
 
     const topN = selectSummaryCandidates(results, query, CONFIG);
     let context;
@@ -1271,7 +1411,9 @@
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       if (data.summary) {
-        summaryEl.className = "scolta-ai-summary";
+        // Stays reserved: the resolved summary replaces the skeleton inside
+        // the same box, so this swap moves nothing.
+        summaryEl.className = `scolta-ai-summary ${SUMMARY_RESERVED_CLASS}`;
         const formatted = formatSummary(data.summary);
 
         const userContext = `Search query: ${fullQuery}\n\nSearch result excerpts:\n${context}`;
@@ -1285,12 +1427,14 @@
           ? `<div class="scolta-ai-summary-disclaimer">${escapeHtml(disclaimer)}</div>`
           : '';
 
+        // The full text is always in the DOM, clipped by the box rather than
+        // truncated, so find-in-page and assistive tech reach all of it in
+        // either state.
         summaryEl.innerHTML = `
-          <div class="scolta-ai-summary-label">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z"/></svg>
-            <span>AI Overview</span>
-          </div>
-          <div class="scolta-ai-summary-text">${formatted}</div>
+          ${summaryLabelHtml(false)}
+          <div class="scolta-ai-summary-text" id="${SUMMARY_TEXT_ID}">${formatted}</div>
+          <button type="button" class="scolta-ai-summary-toggle" data-scolta-summary-toggle
+                  aria-expanded="false" aria-controls="${SUMMARY_TEXT_ID}" hidden>Show more</button>
           <div id="scolta-followup-thread" class="scolta-ai-followup-thread" style="display:none;"></div>
           <div class="scolta-ai-followup-input" id="scolta-followup-input">
             <input type="text" id="scolta-followup-field" placeholder="Ask a follow-up question..."
@@ -1299,22 +1443,25 @@
             <span class="scolta-ai-followup-counter" id="scolta-followup-counter">${CONFIG.AI_MAX_FOLLOWUPS} remaining</span>
           </div>
           ${disclaimerHtml}`;
+        updateSummaryClamp();
       } else {
-        summaryEl.style.display = "none";
+        // Nothing to show. Collapse to exactly what a deployment with the
+        // summary disabled looks like rather than leaving an empty box.
+        releaseSummarySlot();
       }
     } catch (e) {
       if (e.name === 'AbortError') return;
       if (e instanceof TypeError) {
-        summaryEl.style.display = "none";
+        releaseSummarySlot();
         return;
       }
       console.warn("[scolta:summarize] failed:", e);
-      summaryEl.className = "scolta-ai-summary error";
-      summaryEl.innerHTML = `<div class="scolta-ai-summary-label">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z"/></svg>
-          <span>AI Overview</span>
-        </div>
-        <div class="scolta-ai-summary-text">Summary unavailable. Results shown below.</div>`;
+      // Sized within the reserved height rather than collapsed: collapsing is
+      // an upward shift, and it counts against the metric exactly as the
+      // downward one did.
+      summaryEl.className = `scolta-ai-summary error ${SUMMARY_RESERVED_CLASS}`;
+      summaryEl.innerHTML = `${summaryLabelHtml(false)}
+        <div class="scolta-ai-summary-text" id="${SUMMARY_TEXT_ID}">Summary unavailable. Results shown below.</div>`;
     }
   }
 
@@ -1567,6 +1714,12 @@
     input.disabled = true;
     btn.disabled = true;
     input.value = '';
+
+    // The thread grows inside the summary panel, and the panel is clipped to
+    // its reserved height until something releases it — an answer appended
+    // under a clamp would be invisible. Asking a follow-up is a click or an
+    // Enter key, so releasing it here costs no layout shift.
+    expandSummarySlot();
 
     // Capture the search version at the time the follow-up was initiated.
     // If a new search starts while this follow-up is in-flight, the response
@@ -4049,7 +4202,9 @@
       emitResultsRendered([], [], [], false);
       els.resultsHeader.innerHTML = "";
       els.noResults.style.display = "none";
-      els.aiSummary.style.display = "none";
+      // Full reset, not just display:none — the reserved class and the last
+      // summary's markup must not survive into the next cycle.
+      releaseSummarySlot();
       els.loadMore.style.display = "none";
       if (!preserveFilters) {
         els.expandedTerms.style.display = "none";
@@ -4260,6 +4415,14 @@
         ? expandedTerms.filter(t => t.toLowerCase() !== query.toLowerCase())
         : [];
       summarizeResults(query, allScoredResults, expandedLabel, sortHint, filterHint, activeFilters);
+    }).catch(e => {
+      // The slot is reserved from the result paint, so anything that throws
+      // between there and summarizeResults() now leaves a skeleton shimmering
+      // forever instead of failing silently. Collapse it and say why. Only
+      // this cycle's slot: a newer search owns the panel once it starts.
+      if (version !== searchVersion) return;
+      console.warn('[scolta:search] expansion phase failed:', e);
+      releaseSummarySlot();
     });
   }
 
@@ -4274,7 +4437,7 @@
     els.searchClear.style.display = "none";
     els.layout.style.display = "none";
     els.expandedTerms.style.display = "none";
-    els.aiSummary.style.display = "none";
+    releaseSummarySlot();
     els.noResults.style.display = "none";
     els.sortIndicator.style.display = "none";
     els.sortIndicator.innerHTML = '';
@@ -4655,6 +4818,13 @@
     }
 
     noResults.style.display = "none";
+
+    // Reserve the summary slot in the same frame this paint happens in.
+    // Waiting until the summarize call would put the box in later, on its own,
+    // and push this list down — which is the shift. It is a sibling of
+    // #scolta-results and touches nothing in the results write path below.
+    reserveSummarySlot();
+
     const startIndex = displayedCount;
     const appended = startIndex > 0;
     const showing = Math.min(startIndex + CONFIG.RESULTS_PER_PAGE, filtered.length);
@@ -5006,6 +5176,11 @@
       const filterOfferEl = e.target.closest("[data-scolta-filter-offer-dim]");
       if (filterOfferEl) {
         applyOfferedLlmFilter(filterOfferEl.dataset.scoltaFilterOfferDim, filterOfferEl.dataset.scoltaFilterOfferVal);
+        return;
+      }
+      // Summary "Show more" / "Show less"
+      if (e.target.closest("[data-scolta-summary-toggle]")) {
+        toggleSummaryExpanded();
         return;
       }
       // Follow-up submit button
