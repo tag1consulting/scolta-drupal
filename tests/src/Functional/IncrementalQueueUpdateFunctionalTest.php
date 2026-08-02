@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\scolta\Functional;
 
 use Drupal\Tests\BrowserTestBase;
+use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\node\Entity\Node;
 
 /**
@@ -30,7 +31,7 @@ class IncrementalQueueUpdateFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api', 'node', 'filter', 'field', 'dblog'];
+  protected static $modules = ['scolta', 'search_api', 'node', 'filter', 'field', 'dblog', 'language'];
 
   /**
    * {@inheritdoc}
@@ -164,6 +165,57 @@ class IncrementalQueueUpdateFunctionalTest extends BrowserTestBase {
       'An unpublished node must not remain searchable');
     $this->assertCount($before - 1, $this->livePages(),
       'Unpublishing one node must remove exactly one live page');
+  }
+
+  /**
+   * Removing a translation removes its page.
+   *
+   * The page ID for a removed translation is absent from the saved entity's
+   * translation list, so deriving the payload from the post-save entity alone
+   * never mentions it: it is not staged as an upsert, so it is never missing
+   * from the gather either, so nothing ever removes it and the orphaned
+   * translation page stays searchable until a full rebuild. The payload
+   * therefore unions the pre-save item IDs.
+   */
+  public function testRemovingATranslationRemovesItsPage(): void {
+    ConfigurableLanguage::createFromLangcode('es')->save();
+
+    $node = Node::create([
+      'type' => 'article',
+      'title' => 'Translated article',
+      'body' => [
+        'value' => 'English body copy that is comfortably long enough to clear the minimum content length filter.',
+        'format' => 'plain_text',
+      ],
+      'status' => 1,
+    ]);
+    $node->addTranslation('es', [
+      'title' => 'Articulo traducido',
+      'body' => [
+        'value' => 'Cuerpo en español que es lo bastante largo para superar el filtro de longitud minima y ser indexado.',
+        'format' => 'plain_text',
+      ],
+    ]);
+    $node->save();
+
+    $this->drainOneQueueItem();
+
+    $this->assertStringContainsStringInArray('Cuerpo en español', $this->fragmentContents(),
+      'The translation must be indexed as its own page before it can be removed');
+    $before = count($this->livePages());
+
+    $node = Node::load($node->id());
+    $node->removeTranslation('es');
+    $node->save();
+
+    $this->drainOneQueueItem();
+
+    $this->assertStringNotContainsStringInArray('Cuerpo en español', $this->fragmentContents(),
+      'A removed translation must not stay searchable');
+    $this->assertStringContainsStringInArray('English body copy', $this->fragmentContents(),
+      'Removing a translation must not disturb the remaining one');
+    $this->assertCount($before - 1, $this->livePages(),
+      'Removing one translation must remove exactly one live page');
   }
 
   /**

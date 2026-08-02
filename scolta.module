@@ -277,7 +277,22 @@ function _scolta_auto_rebuild_check(EntityInterface $entity, $op = 'update') {
   // rule here would silently orphan pages the moment the two drifted.
   $itemIds = [];
   try {
-    $itemIds = \Drupal::service('scolta.content_gatherer')->itemIdsFor($entity);
+    $gatherer = \Drupal::service('scolta.content_gatherer');
+    $itemIds = $gatherer->itemIdsFor($entity);
+
+    // An update that removed a translation leaves that translation's page with
+    // no trigger at all: it is gone from the entity's current translation list,
+    // so it never reaches the payload, and the worker only tombstones IDs it
+    // expected but did not gather. Union the pre-save IDs so a removed
+    // translation is expected, is not produced, and is therefore removed.
+    if ($op === 'update') {
+      $original = method_exists($entity, 'getOriginal')
+        ? $entity->getOriginal()
+        : ($entity->original ?? NULL);
+      if ($original instanceof EntityInterface) {
+        $itemIds = array_values(array_unique(array_merge($itemIds, $gatherer->itemIdsFor($original))));
+      }
+    }
   }
   catch (\Throwable $e) {
     // A malformed entity must not block the save. An empty item ID list makes
