@@ -1,1 +1,4 @@
-p02/summary-cls-reservation
+# Ref of an UNMERGED scolta-php branch to run this repo's suite against.
+# "main" (or an absent file) means there is nothing unmerged to preview and the
+# job skips: the required jobs already test against dev-main.
+main
