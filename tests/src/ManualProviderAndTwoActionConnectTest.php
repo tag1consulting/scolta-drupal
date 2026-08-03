@@ -217,7 +217,9 @@ class ManualProviderAndTwoActionConnectTest extends TestCase {
   public function testNoWordingClaimsAnAutomaticallyProvisionedTrial(): void {
     $offenders = [];
     foreach ($this->operatorFacingFiles() as $relative => $contents) {
-      foreach (['auto-provisioned', 'auto provisioned'] as $banned) {
+      // The prefix, so 'auto-provisioning' is caught as well as
+      // 'auto-provisioned' — the suffix-only list missed a live comment.
+      foreach (['auto-provision', 'auto provision'] as $banned) {
         if (stripos($contents, $banned) !== FALSE) {
           $offenders[] = "{$relative}: {$banned}";
         }

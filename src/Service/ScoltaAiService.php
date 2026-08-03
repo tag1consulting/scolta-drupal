@@ -81,7 +81,12 @@ class ScoltaAiService extends AiServiceAdapter {
   private ?BudgetExceededHandler $budgetHandler;
 
   /**
-   * Amazee credential storage used for lazy auto-provisioning.
+   * Amazee credential storage, read for the self-heal on the lazy-init path.
+   *
+   * Nothing establishes a connection here. The store is read so model names
+   * can be re-resolved against a key that is already on disk; the two paths
+   * that establish a connection are both explicit operator actions on the
+   * Amazee.ai settings form.
    *
    * Protected so createKeyExpiryRecovery() (and test subclasses that inject a
    * stubbed AmazeeClient) can reuse the same store the provisioner writes to.
