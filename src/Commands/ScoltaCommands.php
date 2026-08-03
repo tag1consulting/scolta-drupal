@@ -22,6 +22,7 @@ use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\BuildIntentFactory;
+use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 use Tag1\Scolta\SetupCheck;
@@ -35,6 +36,16 @@ use Tag1\Scolta\SetupCheck;
  * scolta:download-pagefind -- Download the Pagefind binary.
  */
 class ScoltaCommands extends DrushCommands {
+
+  /**
+   * How many fresh processes a single build may use to get through the corpus.
+   *
+   * A bound rather than a target: each segment must commit pages the previous
+   * one did not, so a build that is genuinely progressing finishes well inside
+   * this, and one that is not fails with a message naming the limit instead of
+   * spawning processes until someone notices.
+   */
+  private const MAX_RESUME_SEGMENTS = 50;
 
   /**
    * Constructs a ScoltaCommands object.
@@ -287,18 +298,14 @@ class ScoltaCommands extends DrushCommands {
     $reporter = new DrushProgressReporter($this->output());
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
 
-    // On resume, skip already-indexed pages so the generator picks up from the
-    // correct DB offset instead of restarting at entity 0. pages_processed from
-    // the manifest equals the DB cursor position for corpora without empty-body
-    // entities; for sites with sparse content the gap is bounded and harmless
-    // (filtered items are re-skipped, no duplicate index entries result).
+    // A resumed build re-reads the whole corpus and the orchestrator drops the
+    // pages it already committed, which it knows exactly because the page-table
+    // ledger records them. This used to pass pages_processed as a DB offset:
+    // that counter counts pages, the cursor counts entities, and on a corpus
+    // with translations the two disagree by the translation factor, so the
+    // resumed process skipped the wrong rows. The timestamp manifest keeps the
+    // re-read cheap by yielding unchanged entities without loading their body.
     $resumeOffset = 0;
-    if ($resume) {
-      $resumeOffset = $orchestrator->coordinator()->buildState()->getPagesProcessed();
-      if ($resumeOffset > 0) {
-        $this->logger()->notice('Resuming from entity offset {offset}.', ['offset' => $resumeOffset]);
-      }
-    }
 
     // Expose the timestamp manifest to the gatherer so it can skip full entity
     // loads for unchanged content — the manifest is null-safe, so passing it
@@ -312,44 +319,222 @@ class ScoltaCommands extends DrushCommands {
     $report = $orchestrator->build($intent, $items, $this->logger(), $reporter, force: $force);
 
     if ($report->success) {
-      $generation = $this->state->get('scolta.generation', 0);
-      $this->state->set('scolta.generation', $generation + 1);
-      $this->logger()->success('Index built: {pages} pages in {time}s ({mem} peak RAM).', [
-        'pages' => $report->pagesProcessed,
-        'time' => $report->durationSeconds,
-        'mem' => $report->peakMemoryMb(),
-      ]);
-      $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
+      $this->reportBuildSuccess($report, $resolvedOutputDir);
+      return;
     }
-    elseif ($report->error === 'index_only_complete') {
+
+    if ($report->error === 'index_only_complete') {
       // PHP heap fragmented after indexing — merge must run in a fresh process.
-      $this->logger()->notice('All {pages} pages indexed ({chunks} chunks on disk). Spawning finalize in a fresh process...', [
+      $this->logger()->notice('All {pages} pages indexed ({chunks} chunks on disk). Running finalize in a fresh process...', [
         'pages' => $report->pagesProcessed,
         'chunks' => $report->chunksWritten,
       ]);
       $this->spawnFinalize($resolvedStateDir, $resolvedOutputDir, $budget->totalBudgetBytes());
+      // spawnFinalize() throws unless the child exited 0, so reaching here
+      // means an index was published. Verify it before saying so.
+      $this->confirmChainComplete($resolvedOutputDir, 0);
+      return;
     }
-    elseif ($report->error === 'memory_abort') {
-      // MemoryTelemetry aborted before all pages were indexed. If at least
-      // one chunk was committed, spawn a fresh resume so the chain continues
-      // without manual intervention. The parent process exits first,
-      // releasing ~500 MB of fragmented RSS, so the child starts clean.
-      if ($report->chunksWritten > 0) {
-        $this->logger()->notice(
-          '{chunks} chunks committed ({pages} pages). Spawning resume in background...',
-          ['chunks' => $report->chunksWritten, 'pages' => $report->pagesProcessed],
-        );
-        $this->spawnResumeBackground($options, $budget->totalBudgetBytes());
+
+    if ($report->error === 'memory_abort') {
+      if ($report->chunksWritten === 0) {
+        throw new \RuntimeException(sprintf(
+          'Memory limit hit before any chunk was committed, so nothing was indexed. '
+          . 'Raise PHP memory_limit (currently %s) or lower --chunk-size, then re-run.',
+          ini_get('memory_limit') ?: 'unknown',
+        ));
       }
-      else {
-        $this->logger()->error(
-          'Memory limit hit before any chunks were committed. Reduce --chunk-size or increase memory_limit.'
-        );
+
+      // A process invoked with --resume is a segment of a chain the original
+      // process is driving; it reports its own outcome and lets that process
+      // decide what happens next. Nesting a chain inside every segment would
+      // keep one bootstrapped Drupal alive per segment.
+      if ($resume) {
+        throw new \RuntimeException(sprintf(
+          'Memory limit reached after %d pages. The build is incomplete and the index has not been '
+          . 'republished. Re-run `drush scolta:build --resume` to continue, or raise memory_limit.',
+          $report->pagesProcessed,
+        ));
+      }
+
+      $this->runResumeChain($options, $budget->totalBudgetBytes(), $report, $resolvedStateDir, $resolvedOutputDir);
+      return;
+    }
+
+    throw new \RuntimeException('PHP indexer failed: ' . ($report->error ?? 'unknown'));
+  }
+
+  /**
+   * Drive resume segments to completion, in the foreground.
+   *
+   * This used to be `exec('drush … --resume &')`: the command returned in
+   * seconds having indexed nothing, exited 0, and left a detached chain of
+   * about twenty processes to decide the real outcome with nobody reading the
+   * result. Whatever the chain produced — including an index missing hundreds
+   * of pages — the operator and any deploy pipeline had already been told the
+   * build succeeded. The process that was asked to build the index now owns
+   * whether it exists.
+   *
+   * @param array $options
+   *   The original command options.
+   * @param int $budgetBytes
+   *   Memory budget to pass to each segment.
+   * @param \Tag1\Scolta\Index\StatusReport $firstReport
+   *   The report from the segment that ran in this process.
+   * @param string $stateDir
+   *   Resolved build state directory.
+   * @param string $outputDir
+   *   Resolved index output directory.
+   *
+   * @throws \RuntimeException
+   *   When the chain stalls, exceeds its segment budget, or fails.
+   */
+  private function runResumeChain(array $options, int $budgetBytes, $firstReport, string $stateDir, string $outputDir): void {
+    $drushBin = $this->findDrushBin();
+    if ($drushBin === NULL) {
+      throw new \RuntimeException(sprintf(
+        'Memory limit reached after %d pages and drush could not be located to continue the build. '
+        . 'Run `drush scolta:build --resume` until it completes, or raise memory_limit.',
+        $firstReport->pagesProcessed,
+      ));
+    }
+
+    $cmd = escapeshellarg($drushBin) . ' scolta:build --indexer=php --resume';
+    $entityType = $options['entity-type'] ?? 'node';
+    if ($entityType !== 'node') {
+      $cmd .= ' --entity-type=' . escapeshellarg($entityType);
+    }
+    if (!empty($options['bundle'])) {
+      $cmd .= ' --bundle=' . escapeshellarg($options['bundle']);
+    }
+    if (isset($options['chunk-size']) && $options['chunk-size'] !== NULL) {
+      $cmd .= ' --chunk-size=' . escapeshellarg((string) $options['chunk-size']);
+    }
+    $cmd .= ' --memory-budget=' . escapeshellarg(round($budgetBytes / 1_048_576) . 'M');
+
+    $pagesBefore = $firstReport->pagesProcessed;
+    $segment = 0;
+
+    while ($segment < self::MAX_RESUME_SEGMENTS) {
+      $segment++;
+      $this->logger()->notice(
+        'Memory limit reached at {pages} pages. Continuing in a fresh process (segment {n})...',
+        ['pages' => $pagesBefore, 'n' => $segment],
+      );
+
+      $exitCode = $this->runForeground($cmd);
+      if ($exitCode === 0) {
+        $this->confirmChainComplete($outputDir, $segment);
+        return;
+      }
+
+      // A non-zero segment either failed outright or hit the limit again. The
+      // difference is whether it committed anything, and the manifest is the
+      // only witness both processes share.
+      $pagesNow = $this->pagesCommitted($stateDir);
+      if ($pagesNow <= $pagesBefore) {
+        throw new \RuntimeException(sprintf(
+          'The build stalled at %d pages: segment %d committed nothing before hitting the memory limit again. '
+          . 'The index has not been republished. Raise PHP memory_limit (currently %s) or lower --chunk-size, '
+          . 'then re-run with --restart.',
+          $pagesNow,
+          $segment,
+          ini_get('memory_limit') ?: 'unknown',
+        ));
+      }
+      $pagesBefore = $pagesNow;
+    }
+
+    throw new \RuntimeException(sprintf(
+      'The build did not complete within %d resume segments (%d pages committed). '
+      . 'The index has not been republished. Raise PHP memory_limit (currently %s) so fewer segments are needed, '
+      . 'then re-run with --restart.',
+      self::MAX_RESUME_SEGMENTS,
+      $pagesBefore,
+      ini_get('memory_limit') ?: 'unknown',
+    ));
+  }
+
+  /**
+   * Run a command in the foreground, streaming its output, and return its code.
+   */
+  private function runForeground(string $cmd): int {
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required to stream a child build's output while waiting for it.
+    $handle = proc_open($cmd . ' 2>&1', [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes);
+    if ($handle === FALSE) {
+      throw new \RuntimeException('Failed to start the resume segment: ' . $cmd);
+    }
+
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- feof/fgets/fclose/proc_close required for subprocess pipe operations.
+    while (!feof($pipes[1])) {
+      $line = fgets($pipes[1]);
+      if ($line !== FALSE && trim($line) !== '') {
+        $this->logger()->notice(rtrim($line));
       }
     }
-    else {
-      $this->logger()->error('PHP indexer failed: {error}', ['error' => $report->error ?? 'unknown']);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    return proc_close($handle);
+  }
+
+  /**
+   * Pages the shared build manifest records as committed so far.
+   */
+  private function pagesCommitted(string $stateDir): int {
+    try {
+      return (new BuildState($stateDir))->getPagesProcessed();
     }
+    catch (\Throwable) {
+      return 0;
+    }
+  }
+
+  /**
+   * Fail unless a usable index is actually on disk.
+   *
+   * @throws \RuntimeException
+   *   When no complete index was published.
+   */
+  private function assertIndexUsable(string $outputDir): void {
+    IndexBuildOrchestrator::verifyIndexComplete($outputDir);
+  }
+
+  /**
+   * Confirm an index built across several processes, counting what is on disk.
+   *
+   * The page count belongs to whichever process finished the work, and this
+   * one only ran a segment of it, so it reports the fragments actually
+   * published rather than repeating its own partial figure as if it were the
+   * total.
+   */
+  private function confirmChainComplete(string $outputDir, int $segments): void {
+    $this->assertIndexUsable($outputDir);
+
+    $fragments = glob($outputDir . '/pagefind/fragment/*.pf_fragment') ?: [];
+    $generation = $this->state->get('scolta.generation', 0);
+    $this->state->set('scolta.generation', $generation + 1);
+    $this->logger()->success('Index built: {pages} pages on disk{via}.', [
+      'pages' => count($fragments),
+      'via' => $segments > 0 ? " (completed across {$segments} resume segments)" : ' (finalized in a fresh process)',
+    ]);
+    $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
+  }
+
+  /**
+   * Announce a completed build and invalidate the search caches.
+   */
+  private function reportBuildSuccess($report, string $outputDir): void {
+    $this->assertIndexUsable($outputDir);
+
+    $generation = $this->state->get('scolta.generation', 0);
+    $this->state->set('scolta.generation', $generation + 1);
+    $this->logger()->success('Index built: {pages} pages in {time}s ({mem} peak RAM).', [
+      'pages' => $report->pagesProcessed,
+      'time' => $report->durationSeconds,
+      'mem' => $report->peakMemoryMb(),
+    ]);
+    $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
   }
 
   /**
@@ -395,45 +580,12 @@ class ScoltaCommands extends DrushCommands {
     $exitCode = proc_close($handle);
 
     if ($exitCode !== 0) {
-      $this->logger()->error('scolta:finalize exited with code {code}.', ['code' => $exitCode]);
+      throw new \RuntimeException(sprintf(
+        'scolta:finalize exited with code %d, so the merge did not complete and no index was published. '
+        . 'Re-run `drush scolta:finalize` once memory pressure has eased.',
+        $exitCode,
+      ));
     }
-  }
-
-  /**
-   * Spawn drush scolta:build --resume in the background.
-   *
-   * Used after a memory_abort to continue indexing in a fresh process. The
-   * background process inherits all relevant options (entity-type, bundle,
-   * memory-budget, chunk-size) and exits independently, freeing the parent's
-   * RSS before allocating its own heap. Output is appended to a temp log file.
-   */
-  private function spawnResumeBackground(array $options, int $budgetBytes): void {
-    $drushBin = $this->findDrushBin();
-    if ($drushBin === NULL) {
-      $this->logger()->warning('Cannot auto-resume: drush not found. Run: drush scolta:build --resume');
-      return;
-    }
-
-    $cmd = escapeshellarg($drushBin) . ' scolta:build --indexer=php --resume';
-
-    $entityType = $options['entity-type'] ?? 'node';
-    if ($entityType !== 'node') {
-      $cmd .= ' --entity-type=' . escapeshellarg($entityType);
-    }
-    if (!empty($options['bundle'])) {
-      $cmd .= ' --bundle=' . escapeshellarg($options['bundle']);
-    }
-    if (isset($options['chunk-size']) && $options['chunk-size'] !== NULL) {
-      $cmd .= ' --chunk-size=' . escapeshellarg((string) $options['chunk-size']);
-    }
-
-    $budgetMb = round($budgetBytes / 1_048_576) . 'M';
-    $cmd .= ' --memory-budget=' . escapeshellarg($budgetMb);
-
-    $logFile = sys_get_temp_dir() . '/scolta-resume.log';
-    exec($cmd . ' >> ' . escapeshellarg($logFile) . ' 2>&1 &');
-
-    $this->logger()->notice('Resume log: {log}', ['log' => $logFile]);
   }
 
   /**
