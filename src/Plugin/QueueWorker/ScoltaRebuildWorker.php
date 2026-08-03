@@ -200,7 +200,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       // skip the full load. No eager loadMultiple() of the whole corpus.
       $exporter = new ContentExporter($outputDir);
       $items = $exporter->filterItems(
-        $this->contentGatherer->gather('node', '', $siteName, 0, $orchestrator->getTimestampManifest(), FALSE)
+        $this->contentGatherer->gather('node', '', $siteName, NULL, $orchestrator->getTimestampManifest(), FALSE)
       );
 
       // The reporter renews the build lock at every chunk boundary, so the

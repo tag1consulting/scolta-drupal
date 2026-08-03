@@ -456,4 +456,122 @@ class ScoltaCommandsValidationTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // The build command owns its outcome.
+  //
+  // Structural checks, because this suite runs without a Drupal bootstrap
+  // and cannot execute the command. What they pin is the shape of the
+  // defect: a build that returned success while a detached process decided
+  // what the index would actually contain.
+  // -------------------------------------------------------------------
+
+  public function testNoBuildWorkIsDetachedIntoTheBackground(): void {
+    // The backgrounding form specifically: a trailing " &" inside the command
+    // string, as in exec($cmd . ' >> … 2>&1 &'). Bounded to one line so it
+    // cannot run past the call and match an unrelated exec() further down,
+    // and matched against code with comments stripped so that a docblock
+    // explaining the removal does not read as the thing it describes.
+    $this->assertDoesNotMatchRegularExpression(
+      '/exec\([^;\n]*&["\']\s*\)/',
+      $this->codeWithoutComments(),
+      "The build must not background a child with exec('… &'): the parent then exits 0 "
+      . 'having indexed nothing it can vouch for, and nothing reads what the child produced'
+    );
+    $this->assertStringNotContainsString(
+      'spawnResumeBackground',
+      $this->commandsContents,
+      'The detached resume spawner must stay removed'
+    );
+  }
+
+  /**
+   * The command file with comments and docblocks removed.
+   */
+  private function codeWithoutComments(): string {
+    $code = '';
+    foreach (token_get_all($this->commandsContents) as $token) {
+      if (is_array($token)) {
+        if ($token[0] === T_COMMENT || $token[0] === T_DOC_COMMENT) {
+          continue;
+        }
+        $code .= $token[1];
+        continue;
+      }
+      $code .= $token;
+    }
+
+    return $code;
+  }
+
+  public function testResumeSegmentsAreWaitedForAndChecked(): void {
+    $this->assertStringContainsString(
+      'function runResumeChain',
+      $this->commandsContents,
+      'Resume segments must be driven from the foreground'
+    );
+    $this->assertStringContainsString(
+      'MAX_RESUME_SEGMENTS',
+      $this->commandsContents,
+      'The resume chain must be bounded rather than spawning until someone notices'
+    );
+    $this->assertStringContainsString(
+      'proc_close',
+      $this->commandsContents,
+      'A resume segment must be waited on, so its exit status is the parent\'s answer'
+    );
+  }
+
+  public function testAFailedBuildThrowsSoDrushExitsNonZero(): void {
+    preg_match(
+      '/function buildWithPhpIndexer\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s',
+      $this->commandsContents,
+      $m
+    );
+    $body = $m[1] ?? '';
+    $this->assertNotEmpty($body, 'Could not locate buildWithPhpIndexer() method body');
+
+    $this->assertStringContainsString(
+      'throw new \RuntimeException',
+      $body,
+      'A failed build must throw: a logger()->error() call leaves the exit status at 0, '
+      . 'and a zero exit status is the only thing a deploy pipeline reads'
+    );
+    $this->assertStringNotContainsString(
+      "logger()->error('PHP indexer failed",
+      $body,
+      'The indexer failure path must throw rather than log and return'
+    );
+  }
+
+  public function testSuccessIsReportedOnlyAfterTheIndexIsVerified(): void {
+    $this->assertStringContainsString(
+      'verifyIndexComplete',
+      $this->commandsContents,
+      'The command must verify a usable index exists before announcing one'
+    );
+    $this->assertStringContainsString(
+      'function assertIndexUsable',
+      $this->commandsContents,
+      'Index verification must have one call site rather than being repeated per path'
+    );
+  }
+
+  public function testTheResumeCursorIsNotAPageCountUsedAsAnEntityOffset(): void {
+    preg_match(
+      '/function buildWithPhpIndexer\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s',
+      $this->commandsContents,
+      $m
+    );
+    $body = $m[1] ?? '';
+
+    // pages_processed counts pages; the gatherer's cursor walks entities, and
+    // one entity yields a page per translation. Passing the first as the
+    // second skipped the wrong rows on every translated corpus.
+    $this->assertStringNotContainsString(
+      '$resumeOffset = $orchestrator->coordinator()->buildState()->getPagesProcessed()',
+      $body,
+      'A page count must not be handed to the gatherer as an entity offset'
+    );
+  }
+
 }

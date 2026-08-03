@@ -53,13 +53,20 @@ final class MemoryBudgetSettingsFieldSet {
     $fieldset['memory_budget_profile'] = [
       '#type'          => 'select',
       '#title'         => t('Memory budget profile'),
+      // These numbers are Scolta's own allocation during a build, not the
+      // peak RSS of the process. Drupal's baseline (~130 MB) and I/O overhead
+      // sit on top, so "≤ 96 MB peak" was a guarantee the code never made and
+      // measured builds never met — real peaks were 137 MB on a 1.4k-page
+      // corpus. Naming what the number actually budgets costs nothing and
+      // stops the form promising a ceiling.
       '#options'       => [
-        'conservative' => t('Conservative — ≤ 96 MB peak (default)'),
-        'balanced'     => t('Balanced — ~384 MB'),
-        'aggressive'   => t('Aggressive — ~1 GB'),
+        'conservative' => t('Conservative — ~96 MB for indexing (default)'),
+        'balanced'     => t('Balanced — ~384 MB for indexing'),
+        'aggressive'   => t('Aggressive — ~1 GB for indexing'),
       ],
       '#default_value' => $config->profile(),
-      '#description'   => $limitDescription,
+      '#description'   => t('Memory Scolta budgets for its own work during a build. Total process memory is this plus the Drupal baseline (~130 MB) and I/O overhead, so allow noticeably more than the figure shown. A profile larger than the process @limit_flag is reduced to fit rather than allowed to fail mid-build.', ['@limit_flag' => 'memory_limit'])
+        . ' ' . $limitDescription,
     ];
 
     $fieldset['chunk_size'] = [

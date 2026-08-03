@@ -1075,12 +1075,12 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $resolved = $this->aiService->resolveApiKey();
 
     switch ($resolved->source) {
-      case ApiKeySource::AmazeeAuto:
-        $amazee_url = Url::fromRoute('scolta.settings.amazee')->toString();
-        $message = $this->t('Connected to <a href="@url">Amazee.ai</a> (auto-provisioned free trial).', ['@url' => $amazee_url]);
-        break;
-
-      case ApiKeySource::AmazeeOperator:
+      // One Amazee case, because nothing records which of the two produced a
+      // token: the trial provisioner and the account upgrader persist the same
+      // three fields. The "auto-provisioned free trial" wording was therefore
+      // never derived from anything — on WordPress it was shown for every
+      // deliberately connected account (scolta-php#273).
+      case ApiKeySource::Amazee:
         $amazee_url = Url::fromRoute('scolta.settings.amazee')->toString();
         $message = $this->t('Connected to <a href="@url">Amazee.ai</a>.', ['@url' => $amazee_url]);
         break;

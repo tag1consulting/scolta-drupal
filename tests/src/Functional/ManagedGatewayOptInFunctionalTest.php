@@ -191,7 +191,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
 
     $this->selectProvider('amazee');
     $this->assertSame(
-      'amazee:operator',
+      'amazee',
       $this->service()->getApiKeySource(),
       'Selected plus stored is what makes the managed gateway the source'
     );
