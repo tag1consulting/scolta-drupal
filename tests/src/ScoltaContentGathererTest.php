@@ -46,11 +46,15 @@ class ScoltaContentGathererTest extends TestCase {
   }
 
   public function testGatherMethodSignature(): void {
-    // Core positional parameters must be present.
+    // Core positional parameters must be present. The fourth is a resume
+    // boundary expressed as an entity ID, not a row offset: the build manifest
+    // counts pages while this walk counts entities, and an entity yields a
+    // page per translation, so a page count in this position skipped the wrong
+    // rows by the translation factor.
     $this->assertStringContainsString(
-      'public function gather(string $entityType, string $bundle, string $siteName, int $startPage = 0',
+      'public function gather(string $entityType, string $bundle, string $siteName, int|string|NULL $resumeFromId = NULL',
       $this->gathererContents,
-      'gather() must accept entityType, bundle, siteName, optional startPage'
+      'gather() must accept entityType, bundle, siteName, optional resumeFromId'
     );
     // Must return a Generator.
     $this->assertStringContainsString(

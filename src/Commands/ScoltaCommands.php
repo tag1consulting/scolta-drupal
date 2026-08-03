@@ -298,14 +298,14 @@ class ScoltaCommands extends DrushCommands {
     $reporter = new DrushProgressReporter($this->output());
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
 
-    // A resumed build re-reads the whole corpus and the orchestrator drops the
-    // pages it already committed, which it knows exactly because the page-table
-    // ledger records them. This used to pass pages_processed as a DB offset:
-    // that counter counts pages, the cursor counts entities, and on a corpus
-    // with translations the two disagree by the translation factor, so the
-    // resumed process skipped the wrong rows. The timestamp manifest keeps the
-    // re-read cheap by yielding unchanged entities without loading their body.
-    $resumeOffset = 0;
+    // Where a resumed build restarts its walk. The ledger knows exactly which
+    // pages this build has already committed, so the cursor is derived from
+    // real content ids rather than from pages_processed, which counts pages
+    // against a cursor that walks entities.
+    $resumeFromId = $resume ? $this->resumeCursor($orchestrator) : NULL;
+    if ($resumeFromId !== NULL) {
+      $this->logger()->notice('Resuming the content walk at entity {id}.', ['id' => $resumeFromId]);
+    }
 
     // Expose the timestamp manifest to the gatherer so it can skip full entity
     // loads for unchanged content — the manifest is null-safe, so passing it
@@ -314,7 +314,7 @@ class ScoltaCommands extends DrushCommands {
 
     // Stream content one entity at a time — no full pre-load into RAM.
     $exporter = new ContentExporter($resolvedOutputDir);
-    $items = $exporter->filterItems($this->contentGatherer->gather($entityType, $bundle, $siteName, $resumeOffset, $tsManifest, $force));
+    $items = $exporter->filterItems($this->contentGatherer->gather($entityType, $bundle, $siteName, $resumeFromId, $tsManifest, $force));
 
     $report = $orchestrator->build($intent, $items, $this->logger(), $reporter, force: $force);
 
@@ -362,6 +362,39 @@ class ScoltaCommands extends DrushCommands {
     }
 
     throw new \RuntimeException('PHP indexer failed: ' . ($report->error ?? 'unknown'));
+  }
+
+  /**
+   * The entity ID a resumed build should restart its content walk at.
+   *
+   * The ledger holds one row per *page* this build committed, keyed by the
+   * content item ID the gatherer produced ('42' for a single-language node,
+   * '42-es' for a translation). The walk is over *entities*, so the cursor is
+   * the highest entity those rows mention. It is used inclusively, because
+   * that entity may have had only some of its translations committed before
+   * the memory limit hit; the orchestrator drops the ones already indexed.
+   *
+   * Returns NULL when the ledger is empty or holds an ID this cannot read as
+   * an entity ID, in which case the build re-reads from the start — slower,
+   * and never wrong.
+   */
+  private function resumeCursor(IndexBuildOrchestrator $orchestrator): ?int {
+    $highest = NULL;
+
+    foreach ($orchestrator->pageTableLedger()->seenIdsThisBuild() as $itemId) {
+      // '42-es' is entity 42; anything that does not lead with digits is not
+      // an ID this walk can seek to.
+      $entityId = strtok($itemId, '-');
+      if ($entityId === FALSE || !ctype_digit($entityId)) {
+        return NULL;
+      }
+      $entityId = (int) $entityId;
+      if ($highest === NULL || $entityId > $highest) {
+        $highest = $entityId;
+      }
+    }
+
+    return $highest;
   }
 
   /**

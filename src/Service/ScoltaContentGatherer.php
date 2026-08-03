@@ -190,9 +190,16 @@ class ScoltaContentGatherer {
    *   The bundle to filter by, or empty string for all bundles.
    * @param string $siteName
    *   The site name used in the ContentItem metadata.
-   * @param int $startPage
-   *   Number of entities to skip before yielding. Used on --resume to restart
-   *   the DB cursor at the previously processed offset rather than page 0.
+   * @param int|string|null $resumeFromId
+   *   Restart the walk at this entity ID, inclusive, rather than at the first
+   *   row. Used by --resume. It is an ID and not a row offset because those
+   *   are different units: the build manifest counts pages, this cursor walks
+   *   entities, and an entity yields one page per translation — so passing a
+   *   page count here skipped the wrong rows by the translation factor, and
+   *   on a monolingual corpus (where the two happen to agree) skipped rows
+   *   whose pages were then renumbered. Inclusive because the entity at the
+   *   boundary may have had only some of its translations committed; the
+   *   caller drops the ones it already has.
    * @param \Tag1\Scolta\Index\TimestampManifest|null $manifest
    *   When provided, entities with matching timestamps are yielded as
    *   CachedContentReference objects instead of loading their full body.
@@ -205,7 +212,7 @@ class ScoltaContentGatherer {
    * @since 1.0.0-rc1
    * @stability experimental
    */
-  public function gather(string $entityType, string $bundle, string $siteName, int $startPage = 0, ?TimestampManifest $manifest = NULL, bool $force = FALSE): \Generator {
+  public function gather(string $entityType, string $bundle, string $siteName, int|string|NULL $resumeFromId = NULL, ?TimestampManifest $manifest = NULL, bool $force = FALSE): \Generator {
     $storage = $this->entityTypeManager->getStorage($entityType);
 
     $idKey = $this->entityTypeManager->getDefinition($entityType)->getKey('id');
@@ -221,9 +228,10 @@ class ScoltaContentGatherer {
     // scan the primary key, which measured 26.4 ms against 59.2 ms for the
     // equivalent offset query. The ascending-ID contract callers rely on is
     // unchanged; only the cursor's expression differs.
-    $lastId = $startPage > 0
-      ? $this->idAtOffset($storage, $idKey, $bundleKey, $bundle, $startPage)
-      : NULL;
+    $lastId = NULL;
+    // The resume boundary is inclusive, so it seeds the first query with `>=`
+    // and every later one advances with `>` as usual.
+    $resumeBoundary = $resumeFromId !== NULL && $resumeFromId !== '' ? $resumeFromId : NULL;
 
     while (TRUE) {
       $query = $storage->getQuery()
@@ -234,6 +242,9 @@ class ScoltaContentGatherer {
 
       if ($lastId !== NULL) {
         $query->condition($idKey, $lastId, '>');
+      }
+      elseif ($resumeBoundary !== NULL) {
+        $query->condition($idKey, $resumeBoundary, '>=');
       }
 
       if ($bundleKey) {
@@ -332,31 +343,6 @@ class ScoltaContentGatherer {
         $this->releaseBatch($storage, $ids, $loadedAnything);
       }
     }
-  }
-
-  /**
-   * Resolve the entity ID sitting at a row offset, to seed the keyset cursor.
-   *
-   * Only used by --resume, which hands back a row offset rather than an ID.
-   * One offset query at startup replaces the offset from every later batch.
-   *
-   * @return int|string|null
-   *   The ID of the last row to skip, or NULL when nothing is skipped.
-   */
-  private function idAtOffset($storage, string $idKey, ?string $bundleKey, string $bundle, int $offset) {
-    $query = $storage->getQuery()
-      ->accessCheck(FALSE)
-      ->condition('status', 1)
-      ->sort($idKey, 'ASC')
-      ->range($offset - 1, 1);
-
-    if ($bundleKey) {
-      $query->condition($bundleKey, $bundle);
-    }
-
-    $ids = $query->execute();
-
-    return $ids ? end($ids) : NULL;
   }
 
   /**
