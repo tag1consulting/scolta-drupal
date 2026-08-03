@@ -1001,8 +1001,13 @@ class ScoltaCommands extends DrushCommands {
     // admin explicitly selected 'drupal_ai' AND the module is installed —
     // mirror that here instead of reporting on module presence alone.
     $this->logger()->notice('--- AI Provider ---');
-    $provider = $config->get('ai_provider') ?? 'anthropic';
-    if ($provider === 'drupal_ai' && $this->aiService->hasDrupalAiModule()) {
+    // No coalescing to a provider nobody chose: an empty value means AI is off,
+    // and a status command has to report that rather than name Anthropic.
+    $provider = $config->get('ai_provider') ?? '';
+    if ($provider === '') {
+      $this->logger()->notice('  Provider: none selected — AI features are off (search is unaffected)');
+    }
+    elseif ($provider === 'drupal_ai' && $this->aiService->hasDrupalAiModule()) {
       $this->logger()->notice('  Provider: Drupal AI module');
     }
     elseif ($provider === 'drupal_ai') {

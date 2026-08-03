@@ -6,7 +6,8 @@ namespace Drupal\scolta\AiProvider\Amazee;
 
 use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
-use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
+use Tag1\Scolta\AiProvider\Amazee\AmazeeConnectionSource;
+use Tag1\Scolta\AiProvider\Amazee\ProvenanceAwareConfigStorageInterface;
 
 /**
  * Stores Amazee.ai credentials in Drupal State, encrypted at rest.
@@ -18,9 +19,10 @@ use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
  * @since 1.0.0-rc1
  * @stability experimental
  */
-final class DrupalConfigStorage implements ConfigStorageInterface {
+final class DrupalConfigStorage implements ProvenanceAwareConfigStorageInterface {
 
   private const STATE_KEY = 'scolta.amazee.credentials';
+  private const SOURCE_STATE_KEY = 'scolta.amazee.connection_source';
   private const CIPHER = 'AES-256-CBC';
   private const IV_LENGTH = 16;
 
@@ -59,6 +61,28 @@ final class DrupalConfigStorage implements ConfigStorageInterface {
    */
   public function clear(): void {
     $this->state->delete(self::STATE_KEY);
+    // The provenance goes with the credentials it describes. Left behind, it
+    // would be paired with whatever connection comes next, which is a guess
+    // wearing a recorded fact's clothes.
+    $this->state->delete(self::SOURCE_STATE_KEY);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function storeConnectionSource(AmazeeConnectionSource $source): void {
+    $this->state->set(self::SOURCE_STATE_KEY, $source->value);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function loadConnectionSource(): ?AmazeeConnectionSource {
+    $stored = $this->state->get(self::SOURCE_STATE_KEY);
+
+    // NULL is the right answer for a connection made before provenance was
+    // recorded. It must read as "not recorded", never as a default.
+    return is_string($stored) ? AmazeeConnectionSource::tryFrom($stored) : NULL;
   }
 
   /**

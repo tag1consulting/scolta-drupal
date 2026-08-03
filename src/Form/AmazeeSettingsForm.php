@@ -12,16 +12,26 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeAccountUpgrader;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeApiException;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeClient;
+use Tag1\Scolta\AiProvider\Amazee\AmazeeConnectionSource;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeModelResolver;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeTrialProvisioner;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
+use Tag1\Scolta\AiProvider\Amazee\ProvenanceAwareConfigStorageInterface;
 
 /**
  * Multi-step form for connecting Scolta to the Amazee.ai AI provider.
  *
- * Two connection paths:
- *  1. Trial — one step: email → provision trial → connected.
- *  2. Upgrade — three steps: email → OTP → region selection → connected.
+ * Two connection paths, both explicit, neither reached on its own. Selecting
+ * Amazee.ai as the provider connects nothing; an operator has to come here and
+ * choose one:
+ *  1. Try the demo — one click: no email, no account, no other input. The demo
+ *     is one-time per site and runs until its included credit is used up.
+ *  2. Enter your Amazee credentials — three steps: email → OTP → region. This
+ *     signs in to (or creates) a real amazee.ai account and stores the
+ *     credentials it returns. Email-only, mirroring amazee.ai's own
+ *     ai_provider_amazeeio module; there is no paste-your-API-key path. It is
+ *     also the recovery path once a demo's credit runs out, which
+ *     KeyExpiryRecovery flags with its upgrade-needed marker.
  *
  * Form state machine values for 'amazee_step':
  *  - 'start'          The initial view (disconnected or already connected).
@@ -93,11 +103,20 @@ class AmazeeSettingsForm extends FormBase {
 
     if ($creds !== NULL) {
       $form['status'] = [
-        '#markup' => '<p>' . $this->t(
-          'Connected to Amazee.ai (region: <strong>@region</strong>).',
-          ['@region' => $creds['region']],
-        ) . '</p>',
+        '#markup' => '<p>' . $this->connectedMessage($creds['region']) . '</p>',
       ];
+
+      // An expired or revoked connection is the one moment an operator needs
+      // the account path, so say so here instead of leaving them to work out
+      // that "Disconnect" is a prerequisite.
+      if ($this->keyRecovery->isUpgradeNeeded()) {
+        $form['upgrade_needed'] = [
+          '#markup' => '<p>' . $this->t(
+            'Your Amazee.ai connection is no longer accepted, so AI features are off. Enter your Amazee credentials below to keep AI running: sign in with your email address and we will set up your account.',
+          ) . '</p>',
+        ];
+        $form += $this->buildAccountSignIn();
+      }
 
       $form['actions']['disconnect'] = [
         '#type' => 'submit',
@@ -111,31 +130,112 @@ class AmazeeSettingsForm extends FormBase {
 
     $form['intro'] = [
       '#markup' => '<p>' . $this->t(
-        'Connect Scolta to <a href=":url" target="_blank">Amazee.ai</a> for privacy-respecting, budget-aware AI search. Start a free trial or sign in to an existing account.',
+        'Connect Scolta to <a href=":url" target="_blank">Amazee.ai</a> for privacy-respecting, budget-aware AI search. Nothing is connected until you choose one of the two actions below.',
         [':url' => 'https://amazee.ai'],
       ) . '</p>',
     ];
 
-    $form['email'] = [
+    // ACTION ONE: the demo. No email, no account, no other input — one click.
+    // The email field below belongs to the account path only, so this button
+    // limits validation to nothing and never sees it.
+    $form['demo'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Try the demo'),
+    ];
+    $form['demo']['description'] = [
+      '#markup' => '<p>' . $this->t(
+        'Turn on AI search right now with a free demo. No email address, no account, no card. The demo runs until its included credit is used up; after that you continue by signing in with your email below.',
+      ) . '</p>',
+    ];
+    $form['demo']['actions']['trial'] = [
+      '#type' => 'submit',
+      '#value' => $this->t('Try the demo'),
+      '#submit' => [[$this, 'submitStartTrial']],
+      '#limit_validation_errors' => [],
+    ];
+
+    // ACTION TWO: the operator's own amazee.ai account, by email. This is the
+    // only credential path there is: amazee.ai issues and manages the keys, so
+    // there is no form here to paste one into.
+    $form += $this->buildAccountSignIn();
+
+    return $form;
+  }
+
+  /**
+   * Builds the "enter your Amazee credentials" (email sign-in) section.
+   *
+   * Email-only by design, mirroring amazee.ai's own ai_provider_amazeeio
+   * module: signing in returns the account's credentials and Scolta stores
+   * them. An operator who already holds an amazee.ai account attaches it here
+   * with that account's email; the same flow creates the account when it does
+   * not exist yet. There is deliberately no paste-your-API-key field.
+   */
+  private function buildAccountSignIn(): array {
+    $form = [];
+
+    $form['account'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Enter your Amazee credentials'),
+    ];
+    $form['account']['description'] = [
+      '#markup' => '<p>' . $this->t(
+        'Sign in with the email address on your amazee.ai account. We will email you a verification code, you pick a region, and your account credentials are stored here. If you do not have an account yet, this creates one. You never generate or paste an API key.',
+      ) . '</p>',
+    ];
+    $form['account']['email'] = [
       '#type' => 'email',
       '#title' => $this->t('Email address'),
-      '#required' => TRUE,
-      '#description' => $this->t('Used to provision or sign in to your Amazee.ai account.'),
+      '#description' => $this->t('Where the verification code is sent.'),
     ];
-
-    $form['actions']['trial'] = [
+    $form['account']['actions']['signin'] = [
       '#type' => 'submit',
-      '#value' => $this->t('Start free trial'),
-      '#submit' => [[$this, 'submitStartTrial']],
-    ];
-
-    $form['actions']['signin'] = [
-      '#type' => 'submit',
-      '#value' => $this->t('Sign in to existing account'),
+      '#value' => $this->t('Send verification code'),
       '#submit' => [[$this, 'submitRequestCode']],
+      '#validate' => [[$this, 'validateAccountEmail']],
     ];
 
     return $form;
+  }
+
+  /**
+   * The connected status line, stating only what the store recorded.
+   *
+   * Provenance is written when a connection is established, so this names the
+   * demo or the operator's account from a fact rather than a guess. A
+   * connection made before provenance was recorded names neither.
+   */
+  private function connectedMessage(string $region): string {
+    $source = $this->storage instanceof ProvenanceAwareConfigStorageInterface
+      ? $this->storage->loadConnectionSource()
+      : NULL;
+
+    return match ($source) {
+      AmazeeConnectionSource::Demo => (string) $this->t(
+        'Connected to Amazee.ai using the free demo (region: <strong>@region</strong>).',
+        ['@region' => $region],
+      ),
+      AmazeeConnectionSource::Account => (string) $this->t(
+        'Connected to Amazee.ai with your account (region: <strong>@region</strong>).',
+        ['@region' => $region],
+      ),
+      default => (string) $this->t(
+        'Connected to Amazee.ai (region: <strong>@region</strong>).',
+        ['@region' => $region],
+      ),
+    };
+  }
+
+  /**
+   * Requires an email address for the account path, and only for that path.
+   *
+   * The demo button carries #limit_validation_errors => [] and never reaches
+   * this, which is what lets trying the demo cost no input at all.
+   */
+  public function validateAccountEmail(array &$form, FormStateInterface $form_state): void {
+    if (trim((string) $form_state->getValue('email')) === '') {
+      $form_state->setErrorByName('email', $this->t('Enter the email address on your amazee.ai account.'));
+    }
   }
 
   /**
@@ -241,13 +341,21 @@ class AmazeeSettingsForm extends FormBase {
   }
 
   /**
-   * Provision a free trial and immediately connect.
+   * Establish the free demo connection, on one click and no other input.
+   *
+   * Deliberately passes no email. The demo asks for nothing, which is the whole
+   * point of it: an operator evaluating Scolta's AI should not have to hand over
+   * an address first. The account path collects an email because amazee.ai needs
+   * one to issue a real account; the demo does not.
+   *
+   * Reachable at any time — on a fresh install, or after running on another
+   * provider — but the demo itself is one-time. When its credit is gone the
+   * control plane refuses, and the error handler below points at the account
+   * path instead of failing silently or quietly minting something else.
    */
   public function submitStartTrial(array &$form, FormStateInterface $form_state): void {
-    $email = $form_state->getValue('email');
-
     try {
-      $result = $this->trialProvisioner->provision($email);
+      $result = $this->trialProvisioner->provision();
       // Fresh credentials are stored — clear any pending re-authentication
       // prompt so the admin notice and /health recover.
       $this->keyRecovery->clearUpgradeNeeded();
@@ -273,18 +381,27 @@ class AmazeeSettingsForm extends FormBase {
 
         $modelInfo = $result->aiModel ?? $this->t('(default)');
         $this->messenger()->addStatus($this->t(
-          'Connected to Amazee.ai. Your free trial is active. AI model set to @model.',
+          'Connected to Amazee.ai. The demo is active. AI model set to @model.',
           ['@model' => $modelInfo],
         ));
       }
       else {
-        $this->messenger()->addStatus($this->t('Connected to Amazee.ai. Your free trial is active.'));
+        $this->messenger()->addStatus($this->t('Connected to Amazee.ai. The demo is active.'));
       }
 
       $form_state->setRebuild(TRUE);
     }
     catch (AmazeeApiException $e) {
-      $this->messenger()->addError($this->t('Trial provisioning failed: @error', ['@error' => $e->getMessage()]));
+      // The demo is one-time. A refusal here is most often "already used", and
+      // the useful next step is always the same, so name it rather than leaving
+      // an operator with an API error and no route forward.
+      $this->messenger()->addError($this->t(
+        'Could not start the demo: @error',
+        ['@error' => $e->getMessage()],
+      ));
+      $this->messenger()->addWarning($this->t(
+        'The free demo can only be used once per site. If this site has already used it, continue under "Enter your Amazee credentials" below: sign in with your email address and we will set up your account.',
+      ));
     }
   }
 
