@@ -104,7 +104,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
       ['sk-env-key', 'sk-settings-key', FALSE, 'anthropic', 'env'],
       ['', 'sk-settings-key', FALSE, 'anthropic', 'settings'],
       ['', 'sk-settings-key', TRUE, 'amazee', 'settings'],
-      ['', '', TRUE, 'amazee', 'amazee:operator'],
+      ['', '', TRUE, 'amazee', 'amazee'],
       // Stored but not selected: reported, never used.
       ['', '', TRUE, 'anthropic', 'none'],
       ['', '', TRUE, 'drupal_ai', 'none'],
@@ -128,7 +128,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
       $this->assertSame($expectedSource, $resolved->source->value, $label);
       $this->assertSame($expectedSource, $service->getApiKeySource(), $label);
       $this->assertSame(
-        $expectedSource === 'amazee:operator',
+        $expectedSource === 'amazee',
         $service->isAmazeeActive(),
         sprintf('%s: isAmazeeActive() must match the effective source', $label)
       );
@@ -137,7 +137,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
       $expectedKey = match ($expectedSource) {
         'env' => $envKey,
         'settings' => $settingsKey,
-        'amazee:operator' => self::AMAZEE_CREDENTIALS['litellm_token'],
+        'amazee' => self::AMAZEE_CREDENTIALS['litellm_token'],
         default => '',
       };
       $this->assertSame($expectedKey, $service->getConfig()->aiApiKey, $label);
@@ -148,7 +148,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
       $this->drupalGet('/admin/config/search/scolta');
       $page = $this->getSession()->getPage()->getContent();
 
-      if ($expectedSource === 'amazee:operator') {
+      if ($expectedSource === 'amazee') {
         $this->assertStringContainsString('Connected to', $page, $label);
         $this->assertStringContainsString('Amazee.ai', $page, $label);
       }

@@ -101,7 +101,7 @@ class AmazeeStoredTokenDecryptionTest extends BrowserTestBase {
     $resolved = $this->service()->resolveApiKey();
 
     $this->assertSame(self::TOKEN, $resolved->key, 'The resolver must hand back the decrypted token');
-    $this->assertSame('amazee:operator', $resolved->source->value);
+    $this->assertSame('amazee', $resolved->source->value);
     $this->assertSame(self::GATEWAY_URL, $resolved->baseUrl);
   }
 

@@ -477,10 +477,12 @@ class ScoltaAiService extends AiServiceAdapter {
    *
    * @return string
    *   The backing value of the resolved source: 'env', 'settings',
-   *   'amazee:operator', 'amazee:auto', or 'none'. The two Amazee cases
-   *   replace the former single 'amazee' — a provider the operator selected
-   *   and a free trial that provisioned itself mean different things to
-   *   somebody reading a status line.
+   *   'constant', 'database', 'amazee', or 'none'. One Amazee case, not the
+   *   'amazee:operator' / 'amazee:auto' pair it briefly had: a selected
+   *   provider and a self-provisioned trial would mean different things to
+   *   somebody reading a status line, but nothing records which one produced
+   *   a stored token, so the distinction was invented rather than reported
+   *   (scolta-php#273).
    */
   public function getApiKeySource(): string {
     return $this->resolveApiKey()->source->value;

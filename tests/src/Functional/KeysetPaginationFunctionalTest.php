@@ -151,33 +151,62 @@ class KeysetPaginationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * The resume offset still lands on the right row.
+   * The resume boundary is an entity ID, and it is inclusive.
    *
-   * --resume hands back a row offset rather than an ID, so the cursor is
-   * seeded by resolving that offset once. An off-by-one here re-indexes or
-   * skips exactly one node on every resumed build.
+   * It used to be a row offset fed from the build manifest's pages_processed,
+   * which counts pages while this walk counts entities — one page per
+   * translation, so the two disagree by the translation factor and the cursor
+   * landed on the wrong row. It is now the entity the page-table ledger
+   * records the build as having reached.
+   *
+   * Inclusive because that entity may have had only some of its translations
+   * committed before the memory limit hit; the orchestrator drops the ones it
+   * already holds. Yielding it again costs a re-index, whereas skipping it
+   * loses a page silently, so the boundary errs toward the recoverable side.
+   *
+   * The IDs here are deliberately non-contiguous — unpublished nodes and a
+   * second bundle are interleaved — so a cursor that quietly assumed a dense
+   * sequence would land off the boundary rather than on it.
    */
-  public function testResumeOffsetSkipsExactlyTheProcessedRows(): void {
+  public function testResumingFromAnEntityIdYieldsThatRowAndEveryRowAfterIt(): void {
     $all = $this->gatheredItemIds('article');
 
-    foreach ([1, 10, 11, 57, 136] as $skip) {
+    foreach ([1, 10, 11, 57, 136] as $position) {
+      $boundary = $all[$position];
+
       $this->assertSame(
-        array_slice($all, $skip),
-        $this->gatheredItemIds('article', $skip),
-        'Resuming at offset ' . $skip . ' must yield exactly the rows after the ones already processed'
+        array_slice($all, $position),
+        $this->gatheredItemIds('article', $boundary),
+        'Resuming from entity ' . $boundary . ' must yield that row and every row after it'
       );
     }
   }
 
   /**
+   * A resume boundary below every ID in the corpus changes nothing.
+   */
+  public function testAResumeBoundaryBelowTheCorpusYieldsEverything(): void {
+    $this->assertSame(
+      $this->gatheredItemIds('article'),
+      $this->gatheredItemIds('article', 1),
+      'Resuming from an ID at or below the first row must cover the whole corpus'
+    );
+  }
+
+  /**
    * Gather a bundle and return the content item IDs in yielded order.
+   *
+   * @param string $bundle
+   *   The bundle to walk.
+   * @param int|string|null $resumeFromId
+   *   Entity ID to restart the walk at, inclusive, or NULL for the whole walk.
    *
    * @return string[]
    */
-  protected function gatheredItemIds(string $bundle, int $startPage = 0): array {
+  protected function gatheredItemIds(string $bundle, int|string|NULL $resumeFromId = NULL): array {
     $ids = [];
     $gatherer = $this->container->get('scolta.content_gatherer');
-    foreach ($gatherer->gather('node', $bundle, 'Keyset Site', $startPage) as $item) {
+    foreach ($gatherer->gather('node', $bundle, 'Keyset Site', $resumeFromId) as $item) {
       $ids[] = (string) $item->id;
     }
 
