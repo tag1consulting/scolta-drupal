@@ -451,8 +451,12 @@ class ScoltaAiService extends AiServiceAdapter {
         // through load(), which is what made the failure look selective.
         // Null store (the minimal construction path) reads as no stored
         // credentials, the same as an absent State entry.
+        // No operatorChosen: the resolver reports one Amazee source now,
+        // because nothing on either side records whether a stored token came
+        // from a licensed connection or an auto-provisioned trial. This passed
+        // the same expression as amazeeEligible below, so the auto case was
+        // structurally unreachable here anyway (scolta-php#273).
         $this->amazeeConfigStorage?->load(),
-        operatorChosen: $provider === 'amazee',
       ),
       is_string($provider) ? $provider : 'anthropic',
       // The managed gateway is eligible only when the operator selected it.
