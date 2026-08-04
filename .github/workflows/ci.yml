@@ -38,6 +38,16 @@ jobs:
           extensions: intl
           coverage: none
 
+      # The path repo is swapped for the public VCS one, and the constraint in
+      # composer.json is deliberately left alone. It used to be overwritten with
+      # dev-main@dev here, which meant this job never once resolved the
+      # constraint this package ships: composer.json required tag1/scolta-php as
+      # ^1.1.0 while src/AiProvider/Amazee/DrupalConfigStorage.php declared
+      # `implements ProvenanceAwareConfigStorageInterface`, a class 1.1.0 does
+      # not have, and every job in this file quietly replaced the constraint
+      # before asking composer anything. A guard that edits the thing it is
+      # guarding is not a guard. The shipped ^1.2@dev reaches the development
+      # branch on its own, so there is nothing left to overwrite.
       - name: Replace path repo with GitHub VCS repo
         run: |
           php -r '
@@ -46,7 +56,6 @@ jobs:
               ["type" => "composer", "url" => "https://packages.drupal.org/8"],
               ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
             ];
-            $j["require"]["tag1/scolta-php"] = "dev-main@dev";
             // Provide drupal/core so drupal/search_api dependency resolves without
             // pulling in the full Drupal framework into the unit test environment.
             $j["provide"]["drupal/core"] = "11.2.0";
