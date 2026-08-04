@@ -33,20 +33,38 @@ class DrupalConfigStorageTest extends TestCase {
     $this->assertStringContainsString('declare(strict_types=1)', $contents);
   }
 
-  public function testImplementsConfigStorageInterface(): void {
+  public function testImplementsProvenanceAwareConfigStorageInterface(): void {
+    // The provenance-aware sub-interface extends ConfigStorageInterface, so
+    // this is still the credential store contract — with somewhere to record
+    // which operator action established the connection, so no surface has to
+    // guess between the demo and the operator's own account.
     $contents = file_get_contents($this->storageFile);
-    $this->assertStringContainsString('implements ConfigStorageInterface', $contents);
+    $this->assertStringContainsString('implements ProvenanceAwareConfigStorageInterface', $contents);
   }
 
-  public function testImportsConfigStorageInterface(): void {
+  public function testImportsProvenanceAwareConfigStorageInterface(): void {
     $contents = file_get_contents($this->storageFile);
     $this->assertStringContainsString(
-      'use Tag1\\Scolta\\AiProvider\\Amazee\\ConfigStorageInterface',
+      'use Tag1\\Scolta\\AiProvider\\Amazee\\ProvenanceAwareConfigStorageInterface',
       $contents,
     );
-    // The interface class must exist in the installed scolta-php vendor copy.
-    $interfaceFile = $this->moduleRoot . '/vendor/tag1/scolta-php/src/AiProvider/Amazee/ConfigStorageInterface.php';
-    $this->assertFileExists($interfaceFile, 'ConfigStorageInterface must exist in installed tag1/scolta-php');
+    // Both interfaces must exist in the installed scolta-php vendor copy.
+    $vendorAmazee = $this->moduleRoot . '/vendor/tag1/scolta-php/src/AiProvider/Amazee/';
+    $this->assertFileExists($vendorAmazee . 'ConfigStorageInterface.php', 'ConfigStorageInterface must exist in installed tag1/scolta-php');
+    $this->assertFileExists($vendorAmazee . 'ProvenanceAwareConfigStorageInterface.php', 'ProvenanceAwareConfigStorageInterface must exist in installed tag1/scolta-php');
+  }
+
+  public function testRecordsAndClearsTheConnectionSource(): void {
+    $contents = file_get_contents($this->storageFile);
+    $this->assertStringContainsString('public function storeConnectionSource(', $contents);
+    $this->assertStringContainsString('public function loadConnectionSource(', $contents);
+    // Clearing credentials must drop the provenance with them: a stale record
+    // would be paired with whatever connection comes next.
+    $this->assertMatchesRegularExpression(
+      '/function clear\(\).*SOURCE_STATE_KEY/s',
+      $contents,
+      'clear() must delete the recorded connection source',
+    );
   }
 
   public function testHasRequiredMethods(): void {

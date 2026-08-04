@@ -16,6 +16,7 @@ use Psr\Log\LoggerInterface;
 use Tag1\Scolta\AiClient;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeBudgetExceededException;
 use Tag1\Scolta\AiProvider\Amazee\AutoProvisioner;
+use Tag1\Scolta\AiProvider\Amazee\ProvenanceAwareConfigStorageInterface;
 use Tag1\Scolta\AiProvider\Amazee\BudgetAwareProviderDecorator;
 use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
@@ -80,7 +81,12 @@ class ScoltaAiService extends AiServiceAdapter {
   private ?BudgetExceededHandler $budgetHandler;
 
   /**
-   * Amazee credential storage used for lazy auto-provisioning.
+   * Amazee credential storage, read for the self-heal on the lazy-init path.
+   *
+   * Nothing establishes a connection here. The store is read so model names
+   * can be re-resolved against a key that is already on disk; the two paths
+   * that establish a connection are both explicit operator actions on the
+   * Amazee.ai settings form.
    *
    * Protected so createKeyExpiryRecovery() (and test subclasses that inject a
    * stubbed AmazeeClient) can reuse the same store the provisioner writes to.
@@ -437,7 +443,11 @@ class ScoltaAiService extends AiServiceAdapter {
    */
   public function resolveApiKey(): ResolvedApiKey {
     $config = $this->configFactory->get('scolta.settings');
-    $provider = $config->get('ai_provider') ?? 'anthropic';
+    // No coalescing. Scolta ships with no provider selected, and an empty value
+    // means AI is off — not that it is Anthropic. Substituting one here would
+    // put the assumption back one layer down, where every reporting surface
+    // reads it.
+    $provider = $config->get('ai_provider') ?? '';
 
     return ApiKeyResolver::resolve(
       $this->explicitKeyCandidates(),
@@ -451,14 +461,16 @@ class ScoltaAiService extends AiServiceAdapter {
         // through load(), which is what made the failure look selective.
         // Null store (the minimal construction path) reads as no stored
         // credentials, the same as an absent State entry.
-        // No operatorChosen: the resolver reports one Amazee source now,
-        // because nothing on either side records whether a stored token came
-        // from a licensed connection or an auto-provisioned trial. This passed
-        // the same expression as amazeeEligible below, so the auto case was
-        // structurally unreachable here anyway (scolta-php#273).
+        // No operatorChosen: which action established the connection is now a
+        // recorded fact, read from the store below rather than derived from a
+        // local expression that merely correlated with it (scolta-php#273 and
+        // its successor).
         $this->amazeeConfigStorage?->load(),
+        connectionSource: $this->amazeeConfigStorage instanceof ProvenanceAwareConfigStorageInterface
+          ? $this->amazeeConfigStorage->loadConnectionSource()
+          : NULL,
       ),
-      is_string($provider) ? $provider : 'anthropic',
+      is_string($provider) ? $provider : '',
       // The managed gateway is eligible only when the operator selected it.
       // It used to be eligible for every provider except 'drupal_ai', so a
       // site that chose 'anthropic' and configured its own key was still

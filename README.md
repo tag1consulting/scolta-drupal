@@ -116,14 +116,26 @@ drush scolta:finalize
 
 Scolta supports three AI provider paths. The right path depends on where you are in your deployment:
 
+### Selecting an AI provider is always manual
+
+Scolta ships with **no AI provider selected**. The **AI Provider** field opens on *- Select a provider -*, and while nothing is selected AI features are off: search works exactly as it does now, no provider is assumed, and Anthropic in particular is not silently assumed. There is no default anywhere.
+
+This is going-forward only. A site that already saved a provider keeps it and keeps working; nothing rewrites, clears or re-defaults an existing value, and there is no update hook that turns AI off on a working install. Only new installs start with nothing selected.
+
 ### Amazee.ai (managed gateway, opt-in)
 
 Amazee.ai is a managed AI gateway you can enable without holding an API key of your own, and it comes with a no-cost evaluation. Enabling it takes two deliberate steps and never happens on its own:
 
 1. Select **Amazee.ai (managed gateway)** as the **AI Provider** at *Administration > Configuration > Search and Metadata > Scolta AI Search > AI Configuration*, and save.
-2. Follow the **Set up Amazee.ai** link from that screen and complete the connect flow (enter your email, then start the evaluation or sign in to an existing Amazee account).
+2. Follow the **Set up Amazee.ai** link from that screen and choose one of two actions. Nothing is connected until you do:
+   - **Try the demo** — one click. No email, no account, no card. AI is on immediately and runs until the demo's included credit is used up. The demo is one-time per site; it stays available whether you are on a fresh install or coming from another provider, and once it has been used the page points you at the account path instead.
+   - **Enter your Amazee credentials** — sign in with the email address on your amazee.ai account. Amazee emails a verification code, you pick a region, and your account's credentials are stored for you. If you do not have an account yet, this creates one. You never generate or paste an API key: this mirrors amazee.ai's own `ai_provider_amazeeio` module, which manages the keys for you, so there is deliberately no bring-your-own-key form.
 
-Installing the module configures no AI provider and stores no credentials, and no page request will establish a connection for you. Selecting any other provider afterwards removes the stored connection, so the gateway can never serve traffic for a site that has moved to its own key. Selecting Amazee.ai again and repeating the connect flow re-establishes it.
+When a connection stops being accepted — a demo whose credit ran out, or revoked credentials — AI degrades cleanly, `/health` reports it, and the Amazee.ai settings page shows a prompt pointing straight at **Enter your Amazee credentials**. Completing that flow restores AI without disconnecting first. Nothing is provisioned automatically at any point in that recovery.
+
+The settings page states which of the two actions established the current connection, because that is recorded when it happens rather than inferred afterwards. A connection made before Scolta recorded it says only "Connected to Amazee.ai".
+
+Installing the module configures no AI provider and stores no credentials, and no page request, cron run or activation will establish a connection for you. Selecting any other provider afterwards removes the stored connection, so the gateway can never serve traffic for a site that has moved to its own key. Selecting Amazee.ai again and repeating the connect flow re-establishes it.
 
 **Model configuration on this path is separate.** Amazee.ai serves models through a LiteLLM gateway under its own names (`claude-4-5-sonnet`), which no provider's own API accepts. Scolta therefore keeps them apart: the gateway's names are resolved automatically into `amazee_model` and `amazee_expansion_model` and are read only while Amazee.ai credentials are in use, while the **AI Model** and **Expansion Model** fields on the settings form hold provider-native IDs (`claude-sonnet-4-5-20250929`, `gpt-4o`) and are what a direct provider key uses. The two gateway settings have no form field, because there is nothing to choose — they are whatever the gateway offers. Switching away from Amazee.ai therefore leaves your own model choice intact.
 

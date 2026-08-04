@@ -8,7 +8,9 @@
 #   - settings.php: $settings['scolta.api_key'] = 'sk-ant-...';
 
 # --- AI Provider ---
-ai_provider: anthropic              # 'anthropic' or 'openai'
+ai_provider: ''                     # '' (none, AI off), 'anthropic', 'openai', 'amazee' or 'drupal_ai'.
+                                    # No default: until a provider is selected, AI features are off
+                                    # and search works exactly as it does now.
 ai_model: 'claude-sonnet-4-5-20250929'  # Model for expansion/summarization
 ai_base_url: ''                     # Custom API endpoint (leave empty for defaults)
 ai_expand_query: true               # Enable AI query expansion

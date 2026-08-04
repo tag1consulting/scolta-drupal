@@ -71,7 +71,9 @@ class ScoltaAiServiceTest extends TestCase {
     $drupalConfig = $this->getInstallDefaults();
     $config = $this->simulateGetConfig($drupalConfig);
 
-    $this->assertEquals('anthropic', $config->aiProvider);
+    // The shipped install defaults select no provider. AI is off on a fresh
+    // install until an operator picks one, and in particular is not Anthropic.
+    $this->assertSame('', $config->aiProvider);
     $this->assertEquals('claude-sonnet-4-5-20250929', $config->aiModel);
     $this->assertEquals('test-key', $config->aiApiKey);
     $this->assertTrue($config->aiExpandQuery);
@@ -175,7 +177,9 @@ class ScoltaAiServiceTest extends TestCase {
 
     $clientConfig = $config->toAiClientConfig();
 
-    $this->assertEquals('anthropic', $clientConfig['provider']);
+    // Carried through as-is: the client config states what the site selected,
+    // and an unselected provider is reported rather than filled in.
+    $this->assertSame('', $clientConfig['provider']);
     $this->assertEquals('my-api-key', $clientConfig['api_key']);
     $this->assertEquals('claude-sonnet-4-5-20250929', $clientConfig['model']);
     // Empty base_url should not be included.

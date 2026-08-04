@@ -213,10 +213,15 @@ class ScoltaSettingsForm extends ConfigFormBase {
     // shown a provider that governs AI traffic without anyone selecting it.
     // A saved 'drupal_ai' is nothing special any more, for the same reason
     // (#125 kept it from being overridden; there is no longer an override).
+    // No preselection. Scolta ships with no provider chosen, and an untouched
+    // site must show the placeholder rather than a provider nobody picked: a
+    // preselected 'anthropic' is indistinguishable, to the operator reading
+    // the form, from a deliberate choice. A site that already saved a provider
+    // keeps showing it — removing the default is going-forward only.
     $storedProvider = $config->get('ai_provider');
     $defaultProvider = ($storedProvider !== NULL && $storedProvider !== '')
       ? $storedProvider
-      : 'anthropic';
+      : '';
 
     $providerOptions = [
       'anthropic' => $this->t('Anthropic (Claude)'),
@@ -231,13 +236,18 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'select',
       '#title' => $this->t('AI Provider'),
       '#options' => $providerOptions,
+      // The placeholder is a real state, not a prompt to ignore: leaving it
+      // selected keeps AI off, which is what an unconfigured site does.
+      '#empty_option' => $this->t('- Select a provider -'),
+      '#empty_value' => '',
       '#default_value' => $defaultProvider,
+      '#description' => $this->t('No provider is selected by default. While none is selected, AI features are off and search works exactly as it does now.'),
     ];
 
     $amazee_url = Url::fromRoute('scolta.settings.amazee')->toString();
     $form['ai']['ai_provider_amazee_info'] = [
       '#type' => 'item',
-      '#markup' => $this->t('Enable Amazee.ai to add AI-powered search with a no-cost evaluation. If it works well for you, sign up with Amazee to keep it running when the evaluation ends. <a href="@url">Amazee.ai settings</a>.', ['@url' => $amazee_url]),
+      '#markup' => $this->t('Selecting Amazee.ai does not connect anything on its own. Save, then go to <a href="@url">Amazee.ai settings</a> and either try the free demo (no email, no account) or sign in to your amazee.ai account. Until you take one of those actions, AI stays off.', ['@url' => $amazee_url]),
       '#states' => [
         'visible' => [
           ':input[name="ai_provider"]' => ['value' => 'amazee'],
@@ -1075,11 +1085,23 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $resolved = $this->aiService->resolveApiKey();
 
     switch ($resolved->source) {
-      // One Amazee case, because nothing records which of the two produced a
-      // token: the trial provisioner and the account upgrader persist the same
-      // three fields. The "auto-provisioned free trial" wording was therefore
-      // never derived from anything — on WordPress it was shown for every
-      // deliberately connected account (scolta-php#273).
+      // Three Amazee cases, each stating only what the credential store
+      // recorded when the connection was made. Provenance used to be
+      // underivable, which is why the free-trial claim was removed outright
+      // (scolta-php#273); it is now written at connect time, so the demo and an
+      // operator's own account are distinguishable from a stored fact. The
+      // origin-free case covers connections made before that and claims
+      // nothing.
+      case ApiKeySource::AmazeeDemo:
+        $amazee_url = Url::fromRoute('scolta.settings.amazee')->toString();
+        $message = $this->t('Connected to <a href="@url">Amazee.ai</a> using the free demo.', ['@url' => $amazee_url]);
+        break;
+
+      case ApiKeySource::AmazeeAccount:
+        $amazee_url = Url::fromRoute('scolta.settings.amazee')->toString();
+        $message = $this->t('Connected to <a href="@url">Amazee.ai</a> with your account.', ['@url' => $amazee_url]);
+        break;
+
       case ApiKeySource::Amazee:
         $amazee_url = Url::fromRoute('scolta.settings.amazee')->toString();
         $message = $this->t('Connected to <a href="@url">Amazee.ai</a>.', ['@url' => $amazee_url]);
@@ -1147,8 +1169,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $config = $this->config('scolta.settings');
 
     // AI provider status.
-    $activeProvider = $config->get('ai_provider') ?? 'anthropic';
-    if ($activeProvider === 'drupal_ai') {
+    // No coalescing to a provider nobody chose. An empty value means AI is off,
+    // and the status line has to say that rather than name Anthropic.
+    $activeProvider = $config->get('ai_provider') ?? '';
+    if ($activeProvider === '') {
+      $items[] = $this->t('AI provider: none selected — AI features are off. Search works without one; choose a provider above to turn AI on.');
+    }
+    elseif ($activeProvider === 'drupal_ai') {
       if ($this->aiService->hasDrupalAiModule()) {
         $items[] = $this->t('AI provider: Drupal AI module (routing through configured default provider).');
       }
