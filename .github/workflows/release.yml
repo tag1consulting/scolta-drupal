@@ -7,6 +7,11 @@ on:
       - '[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
+  # The stable-release rule lives here alone, and this is now the gate that
+  # enforces the coordination the CHANGELOG used to promise in prose: while main
+  # requires an unreleased scolta-php, the committed lock names a development
+  # branch and this job refuses the release. scolta-drupal 1.2.0 cannot ship
+  # before scolta-php 1.2.0 exists, and nobody has to remember that.
   lock-guard:
     name: Verify scolta-php lock source
     runs-on: ubuntu-latest
