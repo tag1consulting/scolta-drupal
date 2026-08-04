@@ -10,6 +10,7 @@ use Drupal\Tests\BrowserTestBase;
 use Drupal\user\Entity\Role;
 use Drupal\user\RoleInterface;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
+use Tag1\Scolta\Exception\ApiKeyMissingException;
 
 /**
  * The managed Amazee.ai gateway is used only when it is the selected provider.
@@ -89,9 +90,10 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
       'A fresh install must store no managed-gateway credentials'
     );
     $this->assertSame(
-      'anthropic',
+      '',
       $this->config('scolta.settings')->get('ai_provider'),
-      'A fresh install must leave the AI provider at the shipped default'
+      'A fresh install must select no AI provider at all: AI is off until an '
+      . 'operator chooses one, and in particular is not Anthropic'
     );
     $this->assertSame(
       'none',
@@ -124,13 +126,27 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
    *
    * The request path used to enable a connection whenever the key source was
    * 'none', so an ordinary page load could configure a gateway nobody chose.
-   * With nothing stored the client is built without any outbound call and
-   * degrades: no key, so AI endpoints answer HTTP 200 unexpanded and
-   * unsummarized, exactly as a wholly unconfigured site does.
+   * Nothing stored now means nothing established and no outbound call.
+   *
+   * Driven through getClient(), the single entry point every AI call uses,
+   * rather than the createClient() factory beneath it. With no provider
+   * selected the guard there refuses to build a client at all — picking a
+   * vendor on the site's behalf is what the no-default rule forbids — and
+   * raises the ApiKeyMissingException the endpoint handlers already degrade to
+   * an unexpanded, unsummarized HTTP 200. Reaching past that guard to the
+   * factory would test a path no request can take.
    */
   public function testBuildingAClientStoresNothingWhenNothingIsStored(): void {
     $service = $this->service();
-    $this->buildClient($service);
+
+    try {
+      $this->buildClient($service);
+      $this->fail('A client must not be built while no AI provider is selected');
+    }
+    catch (ApiKeyMissingException $e) {
+      // The degradation itself: AI is off, and the endpoints turn this into a
+      // plain unexpanded response rather than an error.
+    }
 
     $this->assertNull(
       \Drupal::state()->get(self::STATE_KEY),
@@ -139,7 +155,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
     $this->assertSame(
       '',
       $service->getConfig()->aiApiKey,
-      'With nothing configured the client is built key-less, so AI degrades rather than calling out'
+      'With nothing configured there is no key, so AI degrades rather than calling out'
     );
   }
 
@@ -411,8 +427,11 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
    * Invoke the protected createClient() and hand back the client.
    */
   private function buildClient(ScoltaAiService $service): object {
-    // ReflectionMethod ignores visibility since PHP 8.1 (the package floor).
-    $method = new \ReflectionMethod(ScoltaAiService::class, 'createClient');
+    // getClient(), not createClient(): the guard that refuses to build a client
+    // with no provider selected lives there, and it is what every real AI call
+    // goes through. ReflectionMethod ignores visibility since PHP 8.1 (the
+    // package floor).
+    $method = new \ReflectionMethod(ScoltaAiService::class, 'getClient');
 
     return $method->invoke($service);
   }

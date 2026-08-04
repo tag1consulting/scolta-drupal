@@ -466,8 +466,10 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->drupalGet('/admin/config/search/scolta');
 
     $field = $this->assertSession()->fieldExists('ai_provider');
-    $this->assertSame('anthropic', $field->getValue(),
-      'With no saved provider, the field must default to anthropic whatever is stored.');
+    $this->assertSame('', $field->getValue(),
+      'With no saved provider the field must sit on the placeholder: stored '
+      . 'credentials must not preselect Amazee, and nothing else is selected '
+      . 'either, because there is no default provider.');
   }
 
   /**

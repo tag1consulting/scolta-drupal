@@ -16,7 +16,6 @@ use Tag1\Scolta\AiProvider\Amazee\AmazeeConnectionSource;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeModelResolver;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeTrialProvisioner;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
-use Tag1\Scolta\AiProvider\Amazee\ProvenanceAwareConfigStorageInterface;
 
 /**
  * Multi-step form for connecting Scolta to the Amazee.ai AI provider.
@@ -206,9 +205,11 @@ class AmazeeSettingsForm extends FormBase {
    * connection made before provenance was recorded names neither.
    */
   private function connectedMessage(string $region): string {
-    $source = $this->storage instanceof ProvenanceAwareConfigStorageInterface
-      ? $this->storage->loadConnectionSource()
-      : NULL;
+    // No instanceof guard: $storage is typed to DrupalConfigStorage, which
+    // implements ProvenanceAwareConfigStorageInterface, so a check here is
+    // dead code (PHPStan: instanceof.alwaysTrue). Adapters whose store is
+    // typed to the base interface do need one; this one cannot.
+    $source = $this->storage->loadConnectionSource();
 
     return match ($source) {
       AmazeeConnectionSource::Demo => (string) $this->t(
@@ -343,10 +344,10 @@ class AmazeeSettingsForm extends FormBase {
   /**
    * Establish the free demo connection, on one click and no other input.
    *
-   * Deliberately passes no email. The demo asks for nothing, which is the whole
-   * point of it: an operator evaluating Scolta's AI should not have to hand over
-   * an address first. The account path collects an email because amazee.ai needs
-   * one to issue a real account; the demo does not.
+   * Deliberately passes no email. The demo asks for nothing, which is the
+   * whole point of it: an operator evaluating Scolta's AI should not have to
+   * hand over an address first. The account path collects an email because
+   * amazee.ai needs one to issue a real account; the demo does not.
    *
    * Reachable at any time — on a fresh install, or after running on another
    * provider — but the demo itself is one-time. When its credit is gone the

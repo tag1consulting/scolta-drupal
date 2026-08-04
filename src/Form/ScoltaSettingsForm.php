@@ -215,9 +215,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
     // (#125 kept it from being overridden; there is no longer an override).
     // No preselection. Scolta ships with no provider chosen, and an untouched
     // site must show the placeholder rather than a provider nobody picked: a
-    // preselected 'anthropic' is indistinguishable, to the operator reading the
-    // form, from a deliberate choice. A site that already saved a provider keeps
-    // showing it — removing the default is going-forward only.
+    // preselected 'anthropic' is indistinguishable, to the operator reading
+    // the form, from a deliberate choice. A site that already saved a provider
+    // keeps showing it — removing the default is going-forward only.
     $storedProvider = $config->get('ai_provider');
     $defaultProvider = ($storedProvider !== NULL && $storedProvider !== '')
       ? $storedProvider
