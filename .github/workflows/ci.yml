@@ -595,3 +595,32 @@ jobs:
 
           [ $FAIL -eq 0 ] && echo "PASS: No known bad patterns found."
           exit $FAIL
+
+  coherence:
+    name: Version coherence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # What this catches that the other version jobs do not.
+      #
+      # scolta-php#275 moved composer.json "version" to 1.2.0-dev and left
+      # extra.branch-alias.dev-main on 1.1.x-dev, so for one commit the file
+      # said two different things about which line it was. Nothing stopped it:
+      # the retired check-version-sync.php compared only MAJOR numbers, which
+      # were equal on both sides of that break, and it was wired into no
+      # workflow anywhere. version-sync here also compares majors. This
+      # compares the development LINE, which is where the break was.
+      #
+      # It cost four demos their installs: they pinned the alias line directly
+      # as 1.1.x-dev, and once the alias moved to 1.2 there was nothing left to
+      # resolve it.
+      #
+      # No setup-node step and no install: GitHub runners ship node, and
+      # scripts/check-coherence.mjs is a dependency-free bundle. It is
+      # generated from TypeScript in scolta-fleet and vendored here because
+      # that repository is private and this one is public, so checking it out
+      # would mean storing a personal access token as a secret here. Edit the
+      # source there and run `npm run vendor:coherence` to regenerate.
+      - name: This package must state one development line about itself
+        run: node scripts/check-coherence.mjs .
