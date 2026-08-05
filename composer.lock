@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "3fc0ad3df8a10c271997b06c84597731",
+    "content-hash": "dee4cb361ce2f52a890d0d898f55a822",
     "packages": [
         {
             "name": "asm89/stack-cors",
@@ -4613,16 +4613,16 @@
         },
         {
             "name": "tag1/scolta-php",
-            "version": "1.1.0",
+            "version": "dev-main",
             "source": {
                 "type": "git",
                 "url": "https://github.com/tag1consulting/scolta-php.git",
-                "reference": "8fac0c70d24c06b4e146cfc653af353f3527f9ad"
+                "reference": "57171e2a2256a72b32e340d9c892bb74a7b6c80b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/tag1consulting/scolta-php/zipball/8fac0c70d24c06b4e146cfc653af353f3527f9ad",
-                "reference": "8fac0c70d24c06b4e146cfc653af353f3527f9ad",
+                "url": "https://api.github.com/repos/tag1consulting/scolta-php/zipball/57171e2a2256a72b32e340d9c892bb74a7b6c80b",
+                "reference": "57171e2a2256a72b32e340d9c892bb74a7b6c80b",
                 "shasum": ""
             },
             "require": {
@@ -4640,10 +4640,11 @@
             "suggest": {
                 "ext-intl": "Improves Unicode diacritic normalization quality. Falls back to strtr() mapping without it."
             },
+            "default-branch": true,
             "type": "library",
             "extra": {
                 "branch-alias": {
-                    "dev-main": "1.1.x-dev"
+                    "dev-main": "1.2.x-dev"
                 }
             },
             "autoload": {
@@ -4674,7 +4675,7 @@
                 "issues": "https://github.com/tag1consulting/scolta-php/issues",
                 "source": "https://github.com/tag1consulting/scolta-php"
             },
-            "time": "2026-08-01T06:55:54+00:00"
+            "time": "2026-08-04T06:40:54+00:00"
         },
         {
             "name": "twig/twig",
@@ -7119,7 +7120,9 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "tag1/scolta-php": 20
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
