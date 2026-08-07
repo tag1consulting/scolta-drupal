@@ -3022,6 +3022,69 @@
     return out;
   }
 
+  // Zero any value the filtered search cannot reproduce.
+  //
+  // A count is a promise: click this value and results appear. After expansion
+  // the tally and the list are built by different searches under different caps,
+  // so the panel could offer a value no document in the list carries. Clicking
+  // it re-ran the search with the filter applied and landed the user on "No
+  // results found" while the expansion chips stayed on screen — 8 of 11 hashtag
+  // values on the 12,541-page corpus in #265, the worst symptom there.
+  //
+  // A value carried by at least one document in the ranked list is always
+  // reproducible: the click re-runs the same terms with that value added to the
+  // filters, a filter only ever narrows, so the document carrying it still
+  // matches its term and still comes back. Presence in the list is therefore a
+  // sound reachability test, and it costs nothing — those fragments are loaded.
+  //
+  // Zeroed rather than deleted, so hideEmptyFacets treats it exactly as it
+  // treats a genuine zero and a deployment that shows empty facets shows it at 0
+  // instead of a number with nothing behind it.
+  //
+  // Applied ONLY when the user has no facet selection. The list is searched
+  // under activeFilters while counts are deliberately computed under structural
+  // scope alone; with a selection active the list holds only matching documents,
+  // every other value would have no carrier, and gating on presence would hide
+  // precisely the values structuralFilterScope() exists to keep reachable. With
+  // no selection the two scopes coincide and the test is sound.
+  function suppressUnreachableValues(counts, results, baseFilters) {
+    const structural = structuralFilterScope(baseFilters);
+    if (Object.keys(structural).length !== Object.keys(baseFilters || {}).length) {
+      return counts;
+    }
+    const carried = {};
+    for (const r of (results || [])) {
+      const filters = r && r.data && r.data.filters;
+      if (!filters) continue;
+      for (const [dim, vals] of Object.entries(filters)) {
+        if (!carried[dim]) carried[dim] = new Set();
+        for (const v of (Array.isArray(vals) ? vals : [vals])) carried[dim].add(v);
+      }
+    }
+    const out = {};
+    let zeroed = 0;
+    for (const [dim, vals] of Object.entries(counts || {})) {
+      out[dim] = {};
+      for (const [value, n] of Object.entries(vals)) {
+        // If no document in the list carries this dimension AT ALL, the list
+        // says nothing about it, and silence is not evidence of unreachability.
+        // Stand down rather than blank the whole dimension: a deployment whose
+        // fragments carry no `filters` (counts coming from the filter index
+        // alone) would otherwise lose its entire panel the moment expansion ran.
+        if (n > 0 && carried[dim] && !carried[dim].has(value)) {
+          out[dim][value] = 0;
+          zeroed++;
+        } else {
+          out[dim][value] = n;
+        }
+      }
+    }
+    if (zeroed > 0) {
+      debugLog(`[scolta:facets] Zeroed ${zeroed} value(s) no result in the list carries`);
+    }
+    return out;
+  }
+
   // The typed query's facet counts AND the identity of the documents they were
   // counted over, so the expansion pass can fold its own contribution in
   // without counting any document twice. Returns
@@ -3203,17 +3266,49 @@
         fresh.push(r);
       }
     }
-    if (facetIndex) {
-      return { counts: facetCountsFor(facetIndex, fresh), ids: seenIds, urls: seenUrls };
-    }
+    // Collapse the delta exactly as the result list collapses it, BEFORE any
+    // value is counted. mergeExpandedSearchResults() puts every expansion
+    // document through mergeResults() (one row per normalized URL) and then
+    // deduplicateByTitle() (near-duplicate titles, Jaccard >= 0.6). A document
+    // the list folds away is not a row the user can ever reach, so counting it
+    // was a count with nothing behind it: on a corpus with formulaic titles the
+    // panel read one high per collapsed pair, which is the shape of the
+    // off-by-one divergences in #265.
+    //
+    // This costs the artifact path the fragment loads it used to avoid. There is
+    // no way around that: the collapse is defined on `url` and `meta.title`, and
+    // the artifact stores neither — it maps a fragment hash to a page ordinal and
+    // nothing else. The loads are Pagefind-cached by hash and the result path has
+    // already loaded most of these same fragments, so the marginal cost is the
+    // one the non-artifact path always paid. Counting still runs through
+    // facetCountsFor() when the artifact is present, so only the collapse is new.
     const fragments = await Promise.all(fresh.map(r => r.data()));
-    const counts = {};
-    for (const data of fragments) {
-      const url = normalizeResultUrl(resolveUrl((data && data.url) || ''));
+    const candidates = [];
+    for (let i = 0; i < fresh.length; i++) {
+      const data = fragments[i] || {};
+      const url = normalizeResultUrl(resolveUrl(data.url || ''));
       if (url) {
         if (seenUrls.has(url)) continue;   // one page, however many fragment ids
         seenUrls.add(url);
       }
+      candidates.push({ result: fresh[i], data: data });
+    }
+    // Title collapse within the delta. It cannot reach across the typed/expansion
+    // boundary in mode 1, where the typed pass counts natively and loads no
+    // fragment, so it has no titles to compare against — the same limit already
+    // documented there for the URL collapse. deduplicateByTitle() returns the
+    // kept objects themselves, so each survivor still carries its Pagefind result
+    // for the artifact path to count by page ordinal.
+    const kept = deduplicateByTitle(candidates);
+    if (facetIndex) {
+      return {
+        counts: facetCountsFor(facetIndex, kept.map(s => s.result)),
+        ids: seenIds,
+        urls: seenUrls,
+      };
+    }
+    const counts = {};
+    for (const { data } of kept) {
       const filters = data && data.filters;
       if (!filters) continue;
       for (const [dim, vals] of Object.entries(filters)) {
@@ -4166,7 +4261,12 @@
         debugLog('[scolta:expand] Discarding stale post-expansion facet counts (version', version, 'vs current', searchVersion, ')');
         return;
       }
-      if (counts) queryFacetCounts = counts;
+      // Gate on the list that was just painted: allScoredResults is post-merge
+      // and post-deduplicateByTitle here, so it is exactly the set of rows the
+      // user can reach.
+      if (counts) {
+        queryFacetCounts = suppressUnreachableValues(counts, allScoredResults, activeFilters);
+      }
     }
     renderFilters();
     debugLog(`[scolta:expand] ${sortOverride ? 'Native sort' : 'Merged'}: ${allScoredResults.length} results`);

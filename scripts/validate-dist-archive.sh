@@ -90,6 +90,7 @@ ALLOWED_TOP_LEVEL=(
   "CHANGELOG.md"
   "LICENSE"
   "README.md"
+  "UPGRADE.md"
   "composer.json"
   "composer.lock"
   "config"

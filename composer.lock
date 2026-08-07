@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "dee4cb361ce2f52a890d0d898f55a822",
+    "content-hash": "2d44a870e77db4d4d9ad026b58f427d2",
     "packages": [
         {
             "name": "asm89/stack-cors",
@@ -4613,16 +4613,16 @@
         },
         {
             "name": "tag1/scolta-php",
-            "version": "dev-main",
+            "version": "1.2.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/tag1consulting/scolta-php.git",
-                "reference": "57171e2a2256a72b32e340d9c892bb74a7b6c80b"
+                "reference": "9f221eebf2c3a38cfc3d4d9c4a130bc0dd0ffca1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/tag1consulting/scolta-php/zipball/57171e2a2256a72b32e340d9c892bb74a7b6c80b",
-                "reference": "57171e2a2256a72b32e340d9c892bb74a7b6c80b",
+                "url": "https://api.github.com/repos/tag1consulting/scolta-php/zipball/9f221eebf2c3a38cfc3d4d9c4a130bc0dd0ffca1",
+                "reference": "9f221eebf2c3a38cfc3d4d9c4a130bc0dd0ffca1",
                 "shasum": ""
             },
             "require": {
@@ -4640,7 +4640,6 @@
             "suggest": {
                 "ext-intl": "Improves Unicode diacritic normalization quality. Falls back to strtr() mapping without it."
             },
-            "default-branch": true,
             "type": "library",
             "extra": {
                 "branch-alias": {
@@ -4675,7 +4674,7 @@
                 "issues": "https://github.com/tag1consulting/scolta-php/issues",
                 "source": "https://github.com/tag1consulting/scolta-php"
             },
-            "time": "2026-08-04T06:40:54+00:00"
+            "time": "2026-08-07T09:47:23+00:00"
         },
         {
             "name": "twig/twig",
@@ -7120,9 +7119,7 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {
-        "tag1/scolta-php": 20
-    },
+    "stability-flags": {},
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
