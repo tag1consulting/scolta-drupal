@@ -21,6 +21,16 @@
  *                                            When set, search results are pre-filtered to this language.
  *                                            URL filter params (f_language=...) take precedence.
  *                                            Falls back to <html lang> detection when omitted.
+ *   facetMode: 'eager'                     — Optional (default 'eager'): when the facet index is loaded.
+ *                                            'eager'    load it at init — the panel is populated before
+ *                                                       the first search paints. Unchanged behaviour.
+ *                                            'deferred' skip the init load and take it on the first
+ *                                                       search carrying a facet selection. For a site
+ *                                                       that renders its own facets and does not want
+ *                                                       the artifact on the initial page load.
+ *                                            'disabled' never load it: no facet panel, no facet
+ *                                                       filtering, and no per-query count pass.
+ *                                            An unrecognized value falls back to 'eager'.
  *   hideEmptyFacets: true                  — Optional (default true): hide facet values whose count is
  *                                            zero for the current query (and their now-empty groups).
  *                                            Set false to render zero-count values as disabled (0) rows.
@@ -633,6 +643,76 @@
   // pagefind-entry.json, and whether a secondary language index was merged in.
   let facetIndexExpectedHash = null;
   let facetIndexMergedLanguages = false;
+  // The pagefind.js path initPagefind() resolved, kept so a deferred load can
+  // find the artifact later without re-deriving it from the config.
+  let facetIndexPagefindPath = null;
+  // The in-flight deferred load, so concurrent searches share one fetch rather
+  // than racing two downloads of the same artifact.
+  let facetIndexLoadPromise = null;
+
+  // When the facet taxonomy is loaded, from instanceConfig.facetMode:
+  //
+  //   'eager'    — load it during init. The default, and what Scolta has always
+  //                done: the panel is populated by the time the first search
+  //                paints, and every facet click is already answerable.
+  //   'deferred' — skip the init load and take it on the first search that
+  //                actually carries a facet selection.
+  //   'disabled' — never load it. No facet panel is rendered and no facet
+  //                filtering runs.
+  //
+  // The artifact is the value lists, the counts AND the posting lists a
+  // selection is applied against, so it is dead weight for a site that renders
+  // its own facets without up-front counts: such a site downloads it on page
+  // load, shows nothing from it, and most sessions never filter at all. That is
+  // what 'deferred' is for. 'disabled' is the stronger statement — this site has
+  // no facets — and it also skips the per-query count pass, which is a second
+  // full Pagefind search.
+  //
+  // 'deferred' does NOT mean "filter without the artifact". pagefindSearch()
+  // awaits the load before it reaches the branch that would hand filters to
+  // Pagefind, so a deferred first click still takes the artifact path. Leaving
+  // facetIndex null there would fetch a .pf_filter chunk and tax every later
+  // search, which is the cost the artifact exists to remove.
+  //
+  // One tri-state rather than two booleans, so "defer" and "disable" can never
+  // be set at once and leave the contradiction to be resolved at each read site.
+  // An unrecognized value resolves to 'eager': a typo must fall back to the
+  // fully-featured default, never silently turn a site's facets off.
+  function facetMode() {
+    const raw = instanceConfig && instanceConfig.facetMode;
+    return (raw === 'deferred' || raw === 'disabled') ? raw : 'eager';
+  }
+
+  function facetsDeferred() {
+    return facetMode() === 'deferred';
+  }
+
+  function facetsDisabled() {
+    return facetMode() === 'disabled';
+  }
+
+  // Load the taxonomy if it is not already in hand. Idempotent and safe to await
+  // from several callers at once. Never rejects: loadFacetTaxonomy() handles its
+  // own failures and leaves facetIndex null, which is the same state a search
+  // would have found under a failed eager load.
+  function ensureFacetTaxonomy() {
+    if (facetIndex || cachedPagefindFilters) return Promise.resolve();
+    if (!facetIndexLoadPromise) {
+      facetIndexLoadPromise = loadFacetTaxonomy(facetIndexPagefindPath);
+    }
+    return facetIndexLoadPromise;
+  }
+
+  // Whether a resolved filter object carries any actual selection. An empty
+  // object, or dimensions holding empty Sets, is not a selection and must not
+  // trigger the deferred load.
+  function hasFacetSelection(filters) {
+    if (!filters || typeof filters !== 'object') return false;
+    for (const vals of Object.values(filters)) {
+      if (vals instanceof Set && vals.size > 0) return true;
+    }
+    return false;
+  }
 
   // Resolve the directory the index files live in, from the pagefind.js path.
   function facetIndexBase(pagefindPath) {
@@ -895,7 +975,8 @@
       // Re-entry against an instance a previous init() already created (a second
       // container on the page, or a re-mount). The taxonomy is module state, so
       // it is only loaded when it is not already in hand.
-      if (!cachedPagefindFilters && !facetIndex) {
+      facetIndexPagefindPath = pagefindPath;
+      if (!cachedPagefindFilters && !facetIndex && facetMode() === 'eager') {
         await loadFacetTaxonomy(pagefindPath);
       }
       return;
@@ -959,7 +1040,17 @@
     // Warm the index: triggers WASM compilation + fragment download.
     await pagefind.search("");
 
-    await loadFacetTaxonomy(pagefindPath);
+    // 'deferred': pagefindSearch() takes this on the first search carrying a
+    // facet selection. The expected-hash read above still ran, so the staleness
+    // guard is armed whenever the load does happen. 'disabled': never.
+    facetIndexPagefindPath = pagefindPath;
+    if (facetMode() === 'eager') {
+      await loadFacetTaxonomy(pagefindPath);
+    } else if (facetsDeferred()) {
+      debugLog('[scolta] Facet index deferred to first facet selection');
+    } else {
+      debugLog('[scolta] Facets disabled; facet index will not be loaded');
+    }
 
     debugLog("[scolta] Pagefind index preloaded");
   }
@@ -2016,8 +2107,21 @@
   // under different facet selections is ONE Pagefind search, shared through the
   // memo, and only the cheap post-filter differs.
   async function pagefindSearch(query, filters, sortHint) {
+    // Deferred taxonomy: this is the first search that needs it. The await has
+    // to finish HERE, above the branch below, because that branch is what puts
+    // filters into searchOpts and makes Pagefind fetch a .pf_filter chunk. Load
+    // first and the artifact path runs instead, exactly as under an eager load.
+    // A search with no selection still loads nothing.
+    if (facetsDeferred() && !facetIndex && hasFacetSelection(filters)) {
+      await ensureFacetTaxonomy();
+    }
     const searchOpts = {};
-    if (!facetIndex && filters && typeof filters === 'object') {
+    // 'disabled' runs no facet filtering at all. Nothing upstream should put a
+    // selection in `filters` under that mode, but a host embedding Scolta can
+    // call the public toggleFilter()/doSearch() with one, and handing it to
+    // Pagefind here is precisely the .pf_filter chunk fetch this mode exists to
+    // avoid — one that taxes every later search for the life of the page.
+    if (!facetsDisabled() && !facetIndex && filters && typeof filters === 'object') {
       const pagefindFilters = {};
       for (const [dim, vals] of Object.entries(filters)) {
         if (vals instanceof Set && vals.size > 0) {
@@ -4252,7 +4356,7 @@
     // filter hint can narrow the list without narrowing the panel — a known and
     // deliberate gap, since making counts follow that selection would reintroduce
     // exactly the "every other value reads 0 and disappears" failure.
-    if (!preserveFilters && countTerms.length > 0) {
+    if (!preserveFilters && countTerms.length > 0 && !facetsDisabled()) {
       const counts = await computeExpandedFacetCounts(
         searchQuery, activeFilters, countContext, countTerms);
       // Several awaits deep: a newer doSearch() may own the panel by now, and
@@ -4329,7 +4433,13 @@
             effectiveFilters.language = new Set([defaultLangCode]);
           }
         }
-        activeFilters = effectiveFilters;
+        // 'disabled' starts every search unfiltered. A URL f_ param and the
+        // language auto-filter are both facet selections, and applying either
+        // would need the taxonomy this mode never loads — the fallback would
+        // reach for the .pf_filter chunks the mode exists to avoid. Dropped here,
+        // at the one place activeFilters is seeded, so the URL sync below writes
+        // no f_ params and the result header claims no filter either.
+        activeFilters = facetsDisabled() ? {} : effectiveFilters;
       }
 
       // Update URL with search query and active filter state.
@@ -4472,7 +4582,15 @@
     // numbers never move on click. They are folded over exactly once more, in
     // mergeExpandedSearchResults(), when AI expansion changes the list they
     // describe.
-    if (!preserveFilters) {
+    // 'disabled' skips the pass outright: its only consumer is the panel, and
+    // that mode renders none. Most of the pass is already free — it reuses this
+    // cycle's searches through the memo, and Pagefind computes a search's
+    // `filters` map inside search() whether or not anything reads it. What is
+    // not free is the union branch, taken when the AND search matched nothing
+    // and counts have to follow the OR fallback: that loads a fragment per fresh
+    // document to collapse the delta by URL and title. Those loads are what this
+    // gate actually saves.
+    if (!preserveFilters && !facetsDisabled()) {
       const counts = await computeQueryFacetCounts(searchQuery, activeFilters, meaningfulTerms, isForcedPhrase);
       // The count pass is async, so a newer doSearch() may have superseded this
       // cycle while it ran. Late counts from an abandoned query must neither
@@ -4484,7 +4602,8 @@
         renderFilters();
       }
     } else {
-      // Nothing to wait for: preserveFilters reuses the stored counts.
+      // Nothing to wait for: preserveFilters reuses the stored counts, and
+      // 'disabled' has none to reuse — renderFilters() takes its empty exit.
       renderFilters();
     }
 
@@ -4507,7 +4626,10 @@
         // offered (clickable, not applied) chips.
         llmAppliedFilters = {};
         offeredLlmFilters = {};
-        if (filterHint) {
+        // Under 'disabled' the hint is dropped rather than offered: the recall
+        // guard's probes are filtered searches, and there is no panel for the
+        // survivors to be applied to or offered in.
+        if (filterHint && !facetsDisabled()) {
           const canonicalHint = {};
           for (const [dim, val] of Object.entries(filterHint)) {
             if (typeof dim === 'string' && dim && typeof val === 'string' && val) {
@@ -4749,6 +4871,21 @@
 
   function renderFilters() {
     const container = els.filters;
+
+    // 'disabled': no taxonomy was ever loaded, so there is nothing to paint.
+    // Stated here rather than left to fall out of an empty cachedPagefindFilters
+    // so the mode's promise — no facet panel — holds even if something else puts
+    // a taxonomy in hand. Exits exactly the way the no-dimensions case below
+    // does, so a disabled site is indistinguishable from one whose index has no
+    // facets: same cleared container, same layout class, same lifecycle events.
+    if (facetsDisabled()) {
+      emitBeforeFilters();
+      container.innerHTML = "";
+      els.layout.classList.remove("has-filters");
+      emitFiltersRendered();
+      return;
+    }
+
     const taxonomy = cachedPagefindFilters || {};
 
     // Dimensions are driven by the index taxonomy, NOT the result set: show
@@ -4825,6 +4962,11 @@
   }
 
   async function toggleFilter(dimension, value) {
+    // Part of the public API, so a host can reach it even under a mode that
+    // renders no checkbox to click. Accepting the selection would put an f_ param
+    // in the URL for a filter that is never applied, and show "in topic: Fruit"
+    // over an unfiltered result list.
+    if (facetsDisabled()) return;
     if (!activeFilters[dimension]) {
       activeFilters[dimension] = new Set();
     }

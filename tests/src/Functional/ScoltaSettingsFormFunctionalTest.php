@@ -371,6 +371,78 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * A chosen facet mode must save and reach window.scolta.
+   *
+   * The two halves are asserted together for the same reason the
+   * hideEmptyFacets pair is: a setting that saves but never reaches the payload
+   * looks correct in the admin UI and does nothing on the site.
+   */
+  public function testFacetModeSelectionReachesTheBrowser(): void {
+    $this->drupalCreateContentType(['type' => 'page']);
+    $node = $this->drupalCreateNode([
+      'type' => 'page',
+      'title' => 'Search',
+      'status' => 1,
+    ]);
+    $this->drupalPlaceBlock('scolta_search', ['region' => 'content']);
+
+    $this->drupalLogin($this->adminUser);
+    $this->drupalGet('/admin/config/search/scolta');
+    $this->submitForm(['facet_mode' => 'deferred'], 'Save configuration');
+    $this->assertSession()->pageTextContains('The configuration options have been saved.');
+    $this->assertSame('deferred', $this->config('scolta.settings')->get('facet_mode'));
+
+    $this->drupalGet($node->toUrl());
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->responseContains('"facetMode":"deferred"');
+  }
+
+  /**
+   * 'disabled' must reach the browser too, not collapse into the default.
+   *
+   * Worth its own case: 'disabled' is the mode that suppresses the filter
+   * sidebar entirely, so a clamp bug here would be invisible in the admin UI
+   * and would leave the site rendering facets its owner turned off.
+   */
+  public function testFacetModeDisabledReachesTheBrowser(): void {
+    $this->drupalCreateContentType(['type' => 'page']);
+    $node = $this->drupalCreateNode([
+      'type' => 'page',
+      'title' => 'Search',
+      'status' => 1,
+    ]);
+    $this->drupalPlaceBlock('scolta_search', ['region' => 'content']);
+
+    $this->drupalLogin($this->adminUser);
+    $this->drupalGet('/admin/config/search/scolta');
+    $this->submitForm(['facet_mode' => 'disabled'], 'Save configuration');
+    $this->assertSame('disabled', $this->config('scolta.settings')->get('facet_mode'));
+
+    $this->drupalGet($node->toUrl());
+    $this->assertSession()->responseContains('"facetMode":"disabled"');
+  }
+
+  /**
+   * The default install state must emit facetMode as 'eager'.
+   *
+   * Pins the default direction. An absent key reads as 'eager' in the bundle
+   * too, so without this a bridge emitting nothing would look identical.
+   */
+  public function testFacetModeDefaultRendersEager(): void {
+    $this->drupalCreateContentType(['type' => 'page']);
+    $node = $this->drupalCreateNode([
+      'type' => 'page',
+      'title' => 'Search',
+      'status' => 1,
+    ]);
+    $this->drupalPlaceBlock('scolta_search', ['region' => 'content']);
+
+    $this->drupalGet($node->toUrl());
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->responseContains('"facetMode":"eager"');
+  }
+
+  /**
    * The default install state must emit hideEmptyFacets as TRUE.
    *
    * Pins the default direction so the key is always present in the payload.

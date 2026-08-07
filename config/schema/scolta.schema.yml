@@ -250,6 +250,9 @@ scolta.settings:
     hide_empty_facets:
       type: boolean
       label: 'Hide facet values with zero results for the current query'
+    facet_mode:
+      type: string
+      label: 'When the facet index loads: eager, deferred or disabled'
     sayt_enabled:
       type: boolean
       label: 'Enable search as you type'
