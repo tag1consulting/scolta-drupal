@@ -29,3 +29,14 @@ services:
 
   scolta.index_locator:
     class: Drupal\scolta\Service\IndexLocator
+
+  # Decorate this to narrow who reaches the AI features. Both the block that
+  # advertises them and the routes that serve them ask it.
+  scolta.ai_access:
+    class: Drupal\scolta\Access\AiAccess
+
+  scolta.ai_feature_access_check:
+    class: Drupal\scolta\Access\AiFeatureAccessCheck
+    arguments: ['@scolta.ai_access']
+    tags:
+      - { name: access_check, applies_to: _scolta_ai }

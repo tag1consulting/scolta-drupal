@@ -24,6 +24,10 @@ scolta.settings:
   requirements:
     _permission: 'administer scolta'
 
+# The permission is the role-level rule and is left as the plain requirement
+# it has always been. `_scolta_ai` adds the per-feature rule the block is
+# built from — the config flags, plus anything a site has decorated onto
+# scolta.ai_access — so the endpoint refuses whatever the markup withheld.
 scolta.expand:
   path: '/api/scolta/v1/expand-query'
   defaults:
@@ -31,6 +35,7 @@ scolta.expand:
   methods: [POST]
   requirements:
     _permission: 'use scolta ai'
+    _scolta_ai: 'expand'
 
 scolta.summarize:
   path: '/api/scolta/v1/summarize'
@@ -39,6 +44,7 @@ scolta.summarize:
   methods: [POST]
   requirements:
     _permission: 'use scolta ai'
+    _scolta_ai: 'summarize'
 
 scolta.followup:
   path: '/api/scolta/v1/followup'
@@ -47,6 +53,7 @@ scolta.followup:
   methods: [POST]
   requirements:
     _permission: 'use scolta ai'
+    _scolta_ai: 'follow_up'
 
 # Reachable anonymously so uptime monitors always work; the controller
 # returns status-only unless the caller has 'administer scolta'.
