@@ -861,6 +861,18 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('When enabled (default), a facet value with zero results for the current query is hidden, and a filter group whose values are all zero is dropped. An active (checked) value stays visible so it can be unchecked. Disable to show every value, rendering a zero-count one as a disabled "(0)" option.'),
     ];
 
+    $form['display']['facet_mode'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Facet index loading'),
+      '#options' => [
+        'eager' => $this->t('Eager — load with the search page (default)'),
+        'deferred' => $this->t('Deferred — load on the first facet interaction'),
+        'disabled' => $this->t('Disabled — never load, and show no filters'),
+      ],
+      '#default_value' => $config->get('facet_mode') ?? 'eager',
+      '#description' => $this->t('Controls when the browser downloads the facet index, which on a large site can reach a megabyte or more. <strong>Eager</strong> loads it with the search page, so the filter sidebar is populated before the first results paint. <strong>Deferred</strong> skips that download and takes it the first time a visitor actually uses a filter — useful when a theme renders its own facets, though the Scolta filter sidebar then stays empty until that first interaction, because it is built from the index. <strong>Disabled</strong> never downloads it: no filter sidebar, no facet filtering, and the per-query count pass is skipped as well. Filtering stays correct and fast under Deferred: the index finishes loading before the filter is applied, so it never falls back to the slower per-search filtering it exists to replace.'),
+    ];
+
     // ── Search As You Type Section ──
     $form['sayt'] = [
       '#type' => 'details',
@@ -1524,6 +1536,11 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('show_attribution', (bool) $form_state->getValue('show_attribution'))
       // Display: facet visibility.
       ->set('hide_empty_facets', (bool) $form_state->getValue('hide_empty_facets'))
+      // An unrecognized mode clamps to 'eager', as ScoltaConfig and the bundle
+      // both do: a bad value must cost a site nothing.
+      ->set('facet_mode', in_array($form_state->getValue('facet_mode'), ['eager', 'deferred', 'disabled'], TRUE)
+        ? $form_state->getValue('facet_mode')
+        : 'eager')
       // Search as you type. The bounds repeat the #min/#max on the fields:
       // those are enforced server-side and an out-of-range value never reaches
       // here, so this is a floor under a value arriving by any other route.

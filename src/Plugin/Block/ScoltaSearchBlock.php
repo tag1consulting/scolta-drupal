@@ -135,6 +135,15 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       'siteName' => $config->siteName ?: $this->configFactory->get('system.site')->get('name'),
       'filterFieldDescriptions' => $config->filterFieldDescriptions,
       'hideEmptyFacets' => $config->hideEmptyFacets,
+      // Taken from Drupal config rather than from ScoltaConfig, for the same
+      // reason the SAYT keys below are: the behaviour lives entirely in the
+      // js/scolta.js this module vendors and ships, so the setting must work
+      // against any scolta-php in the supported range, including one predating
+      // the property. An unrecognized value clamps to 'eager', as the bundle
+      // does.
+      'facetMode' => in_array($drupalConfig->get('facet_mode'), ['eager', 'deferred', 'disabled'], TRUE)
+        ? $drupalConfig->get('facet_mode')
+        : 'eager',
       'container' => '#scolta-search',
       'allowedLinkDomains' => [],
       'disclaimer' => '',

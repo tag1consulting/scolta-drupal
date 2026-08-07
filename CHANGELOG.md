@@ -6,6 +6,12 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Added
+- **"Facet index loading" setting, controlling when the browser downloads the facet index or whether it downloads it at all (`src/Form/ScoltaSettingsForm.php`, `src/Plugin/Block/ScoltaSearchBlock.php`, `config/install/scolta.settings.yml`, `config/schema/scolta.schema.yml`).** Three modes under Display, defaulting to `eager`, which is the behaviour every existing site already has. `eager` downloads the index with the search page, so the filter sidebar is populated before the first results paint. `deferred` skips that download and takes it the first time a visitor uses a filter: on a large site the index runs to a megabyte or more, and a theme that renders its own facets was paying for it on every search-page load to display nothing from it, in sessions that mostly never filter at all. Scolta's own filter sidebar stays empty until that first interaction under `deferred`, because it is built from the index. `disabled` never downloads it, renders no filter sidebar, runs no facet filtering, and skips the per-query facet count pass. Deferring does **not** degrade filtering: the bundle finishes the load before applying the selection, so it never falls back to Pagefind's own per-search filtering, which would cost every later search on the page. The value is read from Drupal config rather than from `ScoltaConfig`, matching how the SAYT keys are passed, so the setting works against any scolta-php in the supported range; an unrecognized value clamps to `eager` in the form, in the block and in the bundle.
+
+### Changed
+- **Re-vendored the browser bundle from scolta-php `1.2.1-dev` (`js/scolta.js`).** Carries the `facetMode` implementation the setting above drives. `css/scolta.css` and both WASM files are unchanged.
+
 ## [1.2.0] - 2026-08-07
 
 ### Added

@@ -791,6 +791,72 @@ class ScoltaSettingsFormTest extends TestCase {
     );
   }
 
+  // -------------------------------------------------------------------
+  // facet_mode — when the browser loads the facet index.
+  // -------------------------------------------------------------------
+
+  /**
+   * The install default must be 'eager' — the behavior every site already has.
+   */
+  public function testFacetModeInstallDefaultIsEager(): void {
+    $defaults = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
+
+    $this->assertArrayHasKey(
+      'facet_mode',
+      $defaults,
+      'facet_mode must be present in config/install/scolta.settings.yml'
+    );
+    $this->assertSame(
+      'eager',
+      $defaults['facet_mode'],
+      'facet_mode must default to eager so existing sites are unaffected'
+    );
+  }
+
+  /**
+   * The form must offer exactly the three modes the bundle understands.
+   *
+   * A fourth option, or a renamed one, would save a value that clamps back to
+   * 'eager' in the block and in the bundle, so the control would silently do
+   * nothing.
+   */
+  public function testSettingsFormOffersTheThreeFacetModes(): void {
+    $contents = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
+
+    $this->assertMatchesRegularExpression(
+      "/\\\$form\['display'\]\['facet_mode'\] = \[\s*'#type' => 'select'/",
+      $contents,
+      'facet_mode must be a select'
+    );
+
+    foreach (['eager', 'deferred', 'disabled'] as $mode) {
+      $this->assertMatchesRegularExpression(
+        "/'{$mode}' => \\\$this->t\(/",
+        $contents,
+        "facet_mode must offer the '{$mode}' option"
+      );
+    }
+  }
+
+  /**
+   * submitForm() must persist facet_mode, clamping anything unrecognized.
+   */
+  public function testSubmitFormPersistsFacetModeAndClamps(): void {
+    $contents = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
+
+    $this->assertStringContainsString(
+      "->set('facet_mode'",
+      $contents,
+      "submitForm() must call ->set('facet_mode', ...) to persist the setting"
+    );
+
+    $this->assertMatchesRegularExpression(
+      "/in_array\(\\\$form_state->getValue\('facet_mode'\), \['eager', 'deferred', 'disabled'\], TRUE\)/",
+      $contents,
+      'submitForm() must validate facet_mode against the three supported modes'
+    );
+  }
+
   /**
    * The settings form must contain a show_attribution checkbox field.
    */
