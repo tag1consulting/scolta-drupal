@@ -45,6 +45,7 @@ EXTRACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/scolta-drupal-dist.XXXXXX")"
 # If you add an export-ignore line, add it here too (and vice versa).
 EXCLUDED_PATHS=(
   ".github"
+  ".ddev"
   "tests"
   "phpstan.neon"
   "phpstan-baseline.neon"
