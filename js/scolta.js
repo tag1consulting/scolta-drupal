@@ -205,21 +205,40 @@
     'whatever', 'whichever', 'whoever', 'yes', 'ok', 'okay',
   ]);
 
+  // The stopword set actually in force: the built-ins plus the site's own.
+  // Honor CUSTOM_STOP_WORDS in JS just as the WASM scorer does — previously
+  // query tokenization used only the built-in STOPWORDS, so it disagreed with
+  // WASM scoring (issue #156 follow-up).
+  function effectiveStopwords() {
+    const customStops = (getConfig().CUSTOM_STOP_WORDS || []).map(w => String(w).toLowerCase());
+    return customStops.length ? new Set([...STOPWORDS, ...customStops]) : STOPWORDS;
+  }
+
+  // Whether a word may be wrapped in <mark>.
+  //
+  // `length > 2` was the cheap stopword proxy and it admits every function word
+  // of three letters or more — "and", "the", "for", "but", "with", "that". A
+  // query whose expansion produced "reading and writing" therefore highlighted
+  // "and" in every excerpt on the page. The stopword set is the real gate; the
+  // length guard stays because a one- or two-letter word matches too much text
+  // to be worth marking even when it is not a stopword.
+  //
+  // The word is normalized the way extractSearchTerms() normalizes it, so a
+  // trailing comma cannot smuggle a stopword past the set.
+  function isHighlightableWord(word, stops) {
+    const bare = String(word).toLowerCase().replace(/[^\w]/g, '');
+    return bare.length > 2 && !stops.has(bare);
+  }
+
   // Extract meaningful search terms from a query (filter stopwords).
   // "who is Loreen Babcock" → ["loreen", "babcock"]
   // If everything is filtered, fall back to words longer than 2 chars.
   function extractSearchTerms(query) {
-    // Honor CUSTOM_STOP_WORDS in JS just as the WASM scorer does — previously
-    // this used only the built-in STOPWORDS, so JS query tokenization disagreed
-    // with WASM scoring (issue #156 follow-up).
-    const customStops = (getConfig().CUSTOM_STOP_WORDS || []).map(w => String(w).toLowerCase());
-    const effectiveStopwords = customStops.length
-      ? new Set([...STOPWORDS, ...customStops])
-      : STOPWORDS;
+    const stops = effectiveStopwords();
     const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 0);
     const meaningful = words
       .map(w => w.replace(/[^\w]/g, ''))
-      .filter(w => !effectiveStopwords.has(w) && w.length > 1);
+      .filter(w => !stops.has(w) && w.length > 1);
     if (meaningful.length === 0) {
       return words.filter(w => w.length > 2);
     }
@@ -3585,6 +3604,24 @@
     return scoreResults(loaded, query, weight);
   }
 
+  // Load the capped head of a search and keep Pagefind's own order.
+  //
+  // The browse path has no relevance signal: with no query there are no terms,
+  // so every input the scorer ranks on is absent and scoring would rank the
+  // corpus on whatever fell out of that. The descending ramp exists only to
+  // carry the incoming order through the sort every search runs downstream —
+  // it is an ordering, not a relevance claim. The same MAX_PAGEFIND_RESULTS cap
+  // applies, so a 100k-page corpus loads exactly what a query would.
+  async function loadBrowseResults(search) {
+    const CONFIG = getInstanceConfig();
+    const toLoad = Math.min(search.results.length, CONFIG.MAX_PAGEFIND_RESULTS);
+    if (toLoad === 0) return [];
+    const loaded = await Promise.all(
+      search.results.slice(0, toLoad).map(r => r.data())
+    );
+    return loaded.map((data, i) => ({ data: data, score: toLoad - i }));
+  }
+
   async function searchAndLoadParallel(queries, filters, originalQuery, specificityOpts) {
     const CONFIG = getInstanceConfig();
     if (queries.length === 0) return [];
@@ -3980,9 +4017,13 @@
       return;
     }
 
+    // An expansion term is a phrase, and decomposing it into words is what
+    // puts a conjunction on the highlight list: "reading and writing" carries
+    // an "and" that the primary path already filtered out of the query.
+    const expansionStops = effectiveStopwords();
     for (const term of validTerms) {
       for (const word of term.toLowerCase().split(/\s+/)) {
-        if (word.length > 2 && !allHighlightTerms.includes(word)) {
+        if (isHighlightableWord(word, expansionStops) && !allHighlightTerms.includes(word)) {
           allHighlightTerms.push(word);
         }
       }
@@ -4382,14 +4423,28 @@
     preserveFilters = preserveFilters || false;
     const CONFIG = getInstanceConfig();
     const query = els.queryInput.value.trim();
-    if (!query || !pagefind) return;
+    if (!pagefind) return;
+
+    // No text is a browse, not a non-event. It used to return here, so a user
+    // who selected a facet with an empty box got nothing at all. The two cases
+    // are one code path that differs only in whether a filter is applied:
+    // Pagefind returns the whole corpus for a null term and applies any active
+    // filters, so the branches below are about what a browse cannot have — a
+    // relevance signal, an expansion, terms to highlight — not about rendering
+    // something else. There is no separate empty state.
+    //
+    // A page that loads with no ?q= never reaches here: the bootstrap only
+    // calls doSearch() when the parameter is present, so this is entered by an
+    // explicit submit, a facet toggle or a sort, never by arriving at a search
+    // page.
+    const isBrowse = query === '';
 
     // The user committed. Any pending or in-flight suggest work is now noise:
     // cancel it, take the dropdown down, and hold the suggest path off until
     // the primary paint lands.
     cancelSuggest();
     closeSuggestions();
-    recordRecentSearch(query);
+    if (!isBrowse) recordRecentSearch(query);
 
     const version = ++searchVersion;
 
@@ -4445,7 +4500,14 @@
       // Update URL with search query and active filter state.
       try {
         var url = new URL(window.location.href);
-        url.searchParams.set('q', query);
+        // A browse writes no q param rather than an empty one, so the link is
+        // the facet state alone and reloading it does not re-enter doSearch()
+        // through the bootstrap on a falsy query.
+        if (isBrowse) {
+          url.searchParams.delete('q');
+        } else {
+          url.searchParams.set('q', query);
+        }
         for (const key of [...url.searchParams.keys()]) {
           if (key.startsWith('f_')) url.searchParams.delete(key);
         }
@@ -4475,8 +4537,12 @@
         els.expandedTerms.style.display = "none";
       }
 
-      meaningfulTerms = extractSearchTerms(query);
-      searchQuery = meaningfulTerms.length > 0 ? meaningfulTerms.join(' ') : query;
+      meaningfulTerms = isBrowse ? [] : extractSearchTerms(query);
+      // null, not '': Pagefind returns the whole corpus for a null term and
+      // applies any active filters. An empty string is a term like any other.
+      searchQuery = isBrowse
+        ? null
+        : (meaningfulTerms.length > 0 ? meaningfulTerms.join(' ') : query);
       // Detect quoted phrase: user typed "hello world" with surrounding double-quotes.
       // Pagefind receives the unquoted terms; the Rust scorer receives the quoted form
       // so extract_query() can set forced_phrase = true and apply phrase multipliers.
@@ -4486,18 +4552,29 @@
       const scorerQuery = isForcedPhrase ? trimmedQuery : searchQuery;
       debugLog('[scolta:search] Filtered query:', JSON.stringify(sanitizeQueryForLogging(searchQuery)), '(original:', JSON.stringify(sanitizeQueryForLogging(query)), ')');
 
-      allHighlightTerms = meaningfulTerms.length > 0
-        ? meaningfulTerms.filter(t => t.length > 2)
-        : query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+      // Both branches go through the same gate. The fallback is the one that
+      // used to leak: it applied only a length guard to the raw query, so a
+      // query of nothing but stopwords marked every one of them.
+      const highlightStops = effectiveStopwords();
+      allHighlightTerms = (meaningfulTerms.length > 0
+        ? meaningfulTerms
+        : query.toLowerCase().split(/\s+/)
+      ).filter(t => isHighlightableWord(t, highlightStops));
 
       // Phase 1: Primary search — render results IMMEDIATELY
-      expandPromise = preserveFilters
-        ? Promise.resolve(lastExpandedTerms)
-        : expandQuery(query);
-      expansionInFlight = !preserveFilters && CONFIG.AI_EXPAND_QUERY;
+      // A browse has nothing to expand: there is no query to send, and holding
+      // the last one would expand a search the user has left. Resolving null is
+      // the shape the no-expansion path already takes when AI_EXPAND_QUERY is
+      // off, so the phase-2 handler below needs no browse case of its own.
+      expandPromise = isBrowse
+        ? Promise.resolve(null)
+        : (preserveFilters ? Promise.resolve(lastExpandedTerms) : expandQuery(query));
+      expansionInFlight = !isBrowse && !preserveFilters && CONFIG.AI_EXPAND_QUERY;
 
       const primarySearch = await pagefindSearch(searchQuery, activeFilters);
-      allScoredResults = await loadAndScoreSearch(primarySearch, scorerQuery, 1.0);
+      allScoredResults = isBrowse
+        ? await loadBrowseResults(primarySearch)
+        : await loadAndScoreSearch(primarySearch, scorerQuery, 1.0);
 
       // OR fallback: only activate when AND search returns ZERO results.
       // This prevents diluting precision when the user provides many terms
@@ -4529,7 +4606,9 @@
       allScoredResults.sort((a, b) => b.score - a.score);
       allScoredResults = deduplicateByTitle(allScoredResults);
 
-      const priorityPages = getInstancePriorityPages();
+      // Priority pages are matched against the query, so a browse has nothing
+      // to match them against.
+      const priorityPages = isBrowse ? [] : getInstancePriorityPages();
       if (priorityPages.length > 0 && scoltaWasm && scoltaWasm.match_priority_pages) {
         try {
           const priorityInput = JSON.stringify({ query: currentQuery, priority_pages: priorityPages });
@@ -5156,7 +5235,14 @@
       ? (hadSpecificMatch ? ' — showing best matches' : ' — no exact matches found, showing partial matches')
       : '';
     const resultNoun = filtered.length === 1 ? 'result' : 'results';
-    header.innerHTML = `<span>${filtered.length.toLocaleString()} ${resultNoun} for "${escapeHtml(displayQuery(currentQuery))}"${filterLabel}${expandLabel}${orFallbackLabel}</span>
+    // A browse has no query to name, and `results for ""` is worse than saying
+    // nothing. The count itself keeps the same meaning it has on every other
+    // path: how many results were loaded and can be paged through, not how many
+    // documents the corpus holds.
+    const forLabel = currentQuery
+      ? ` for "${escapeHtml(displayQuery(currentQuery))}"`
+      : '';
+    header.innerHTML = `<span>${filtered.length.toLocaleString()} ${resultNoun}${forLabel}${filterLabel}${expandLabel}${orFallbackLabel}</span>
                         <span>Showing ${showing}</span>`;
 
     const renderer = activeResultRenderer();
