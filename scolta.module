@@ -211,7 +211,7 @@ function scolta_form_search_api_index_fields_alter(array &$form, FormStateInterf
   $index = $form_object->getEntity();
 
   try {
-    $server = $index->getServer();
+    $server = $index->getServerInstance();
     if ($server === NULL || $server->getBackendId() !== 'scolta_pagefind') {
       return;
     }

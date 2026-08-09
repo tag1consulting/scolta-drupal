@@ -45,14 +45,28 @@ class SearchApiFieldsHelpTextTest extends TestCase {
     );
   }
 
-  public function testHookCallsGetServer(): void {
+  /**
+   * The hook must reach the server through an accessor IndexInterface has.
+   *
+   * It used to call getServer(), which search_api does not define — every visit
+   * to any index's "Manage fields" form raised an Error, and the hook's
+   * catch (\Exception) does not catch an Error. getServerInstance() is the real
+   * accessor: NULL when the index has no server, SearchApiException (which the
+   * catch does handle) when the server cannot be loaded.
+   */
+  public function testHookCallsGetServerInstance(): void {
     preg_match('/function scolta_form_search_api_index_fields_alter\b[^{]*\{(.*?)(?=\n\/\*\*|\nfunction |\Z)/s', $this->moduleSource, $m);
     $body = $m[1] ?? '';
     $this->assertNotEmpty($body, 'Could not locate scolta_form_search_api_index_fields_alter() body');
     $this->assertStringContainsString(
-      'getServer()',
+      'getServerInstance()',
       $body,
-      'The form alter hook must call getServer() to retrieve the server for backend ID check'
+      'The form alter hook must call getServerInstance() to retrieve the server for the backend ID check'
+    );
+    $this->assertTrue(
+      method_exists(\Drupal\search_api\IndexInterface::class, 'getServerInstance')
+      || !interface_exists(\Drupal\search_api\IndexInterface::class),
+      'getServerInstance() must exist on IndexInterface when search_api is loadable'
     );
   }
 

@@ -1,0 +1,7 @@
+# Mount the sibling scolta-php checkout so the `../scolta-php` path repository
+# in composer.json resolves inside the web container too. The project root is
+# /var/www/html, so `../scolta-php` is /var/www/scolta-php.
+services:
+  web:
+    volumes:
+      - "../../scolta-php:/var/www/scolta-php"

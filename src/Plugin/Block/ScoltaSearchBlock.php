@@ -33,18 +33,27 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  */
 class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInterface {
 
+  /**
+   * Neither private nor readonly, both deliberately.
+   *
+   * BlockBase brings in DependencySerializationTrait, and unserializing a
+   * plugin reassigns its service properties. That reassignment cannot reach a
+   * private property and cannot write a readonly one at all — a readonly
+   * property would raise "Cannot modify readonly property" the first time a
+   * serialized block is restored. See https://www.drupal.org/node/3110266.
+   */
   public function __construct(
     array $configuration,
     $plugin_id,
     $plugin_definition,
-    private readonly ScoltaAiService $aiService,
-    private readonly FileUrlGeneratorInterface $fileUrlGenerator,
-    private readonly ConfigFactoryInterface $configFactory,
-    private readonly LanguageManagerInterface $languageManager,
-    private readonly AccountInterface $currentUser,
-    private readonly StreamWrapperManagerInterface $streamWrapperManager,
-    private readonly ModuleExtensionList $moduleExtensionList,
-    private readonly IndexLocator $indexLocator,
+    protected ScoltaAiService $aiService,
+    protected FileUrlGeneratorInterface $fileUrlGenerator,
+    protected ConfigFactoryInterface $configFactory,
+    protected LanguageManagerInterface $languageManager,
+    protected AccountInterface $currentUser,
+    protected StreamWrapperManagerInterface $streamWrapperManager,
+    protected ModuleExtensionList $moduleExtensionList,
+    protected IndexLocator $indexLocator,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }

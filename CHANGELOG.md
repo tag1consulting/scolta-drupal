@@ -6,6 +6,11 @@ This project uses [Semantic Versioning](https://semver.org/). Major versions are
 
 ## [Unreleased]
 
+### Fixed
+- ** Add a .ddev directory for easy local development.** Uses the https://github.com/ddev/ddev-drupal-contrib/ add-on.
+- **Search API's "Manage fields" form no longer fatals (`scolta.module`, `tests/src/SearchApiFieldsHelpTextTest.php`).** `scolta_form_search_api_index_fields_alter()` called `$index->getServer()`, which `IndexInterface` does not define, so the form raised `Error: Call to undefined method` — for every index on the site, not only Scolta-backed ones, and the hook's `catch (\Exception)` does not catch an `Error`. It now calls `getServerInstance()`, whose contract the surrounding code already assumed: NULL when the index has no server, `SearchApiException` when the server cannot be loaded. The test that guarded this asserted the source contained `getServer()`, so it pinned the broken call rather than the working one; it now checks the accessor that exists. Found by `ddev phpstan`, where mglaman/phpstan-drupal can resolve search_api classes that the isolated CI run cannot.
+- **Injected services on `AmazeeSettingsForm` and `ScoltaSearchBlock` survive serialization (`src/Form/AmazeeSettingsForm.php`, `src/Plugin/Block/ScoltaSearchBlock.php`).** All twelve were promoted `private readonly`. `FormBase` and `BlockBase` both carry `DependencySerializationTrait`, which restores a cached form or plugin by reassigning its service properties — an assignment that cannot reach a private property and cannot write a readonly one at all, so restoring either object raised "Cannot modify readonly property". They are now `protected` and mutable, with a comment on each constructor saying why. See https://www.drupal.org/node/3110266.
+
 ## [1.2.0] - 2026-08-07
 
 ### Added

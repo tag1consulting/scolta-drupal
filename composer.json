@@ -18,7 +18,7 @@
         "drupal/ai": "For enhanced multi-provider AI support via the Drupal AI Initiative module (48+ providers, Key module integration, rate limiting, token tracking)"
     },
     "require-dev": {
-        "drupal/coder": "^9.0",
+        "drupal/coder": "^8.3.30 || ^9.0",
         "mglaman/phpstan-drupal": "^2.0",
         "phpstan/phpstan": "^2.1",
         "phpstan/phpstan-deprecation-rules": "^2.0",
@@ -63,6 +63,11 @@
         }
     },
     "extra": {
+        "phpstan/extension-installer": {
+            "ignore": [
+                "phpstan/phpstan-deprecation-rules"
+            ]
+        },
         "installer-name": "scolta",
         "branch-alias": {
             "dev-main": "1.2.x-dev"
