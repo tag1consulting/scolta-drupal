@@ -174,6 +174,13 @@ class ScoltaContentGatherer {
    * objects; the manifest is updated with their new timestamp and
    * pre-computed content hash.
    *
+   * $force suppresses the skip, not the record. Every entity this method loads
+   * is written back to the manifest whatever $force says, because put() is
+   * also what marks the entity seen, and pruneAndSave() deletes whatever was
+   * not seen. A build that loaded the whole corpus and recorded none of it
+   * therefore left the manifest empty and cost the NEXT build a second full
+   * gather.
+   *
    * After each batch that loaded an entity, resetCache(),
    * drupal_static_reset(), and gc_collect_cycles() are called to release
    * Drupal's accumulated per-request static caches. Peak RSS stays bounded
@@ -204,7 +211,10 @@ class ScoltaContentGatherer {
    *   When provided, entities with matching timestamps are yielded as
    *   CachedContentReference objects instead of loading their full body.
    * @param bool $force
-   *   When true, ignore the manifest and fully load every entity.
+   *   When true, load every entity rather than trusting any manifest entry.
+   *   Affects only what is READ: the manifest is still written, so a forced
+   *   build leaves it primed for the next incremental one instead of emptying
+   *   it at prune time.
    *
    * @return \Generator<\Tag1\Scolta\Export\ContentItem|\Tag1\Scolta\Index\CachedContentReference>
    *   Yields one ContentItem or CachedContentReference per published entity.
@@ -264,12 +274,23 @@ class ScoltaContentGatherer {
       // One timestamp lookup per ID page rather than per load batch: it is a
       // single direct SELECT over the data table and answers the skip question
       // for every row in the page at once.
-      $timestamps = ($manifest !== NULL && !$force)
+      //
+      // Runs under --force too, even though --force skips nothing. These are
+      // the values written into the manifest, and they have to come from the
+      // same source a later build compares against. Left out, $entityTs falls
+      // through to buildContentItems(), which reads the changed time off the
+      // first translation carrying a body — a different value from this query's
+      // on any multilingual entity, so the entry a --force build wrote would
+      // never match and the corpus would re-gather forever. One SELECT per ID
+      // page is nothing beside loading every entity, which is what --force is.
+      $timestamps = $manifest !== NULL
         ? $this->getEntityTimestamps($entityType, array_values($idPage))
         : [];
 
       foreach (array_chunk($idPage, self::LOAD_BATCH_SIZE, TRUE) as $ids) {
         $toLoad = [];
+        // Only the skip decision is gated on $force. Recording is not: see
+        // the put() below.
         if ($manifest !== NULL && !$force) {
           foreach ($ids as $id) {
             $entityKey = (string) $id;
@@ -314,7 +335,12 @@ class ScoltaContentGatherer {
             [$contentItems, $entityTs] = $this->buildContentItems($entity, $siteName, $entityTs);
 
             foreach ($contentItems as $contentItem) {
-              if ($manifest !== NULL && !$force) {
+              // Recorded on every build, --force included. put() also marks the
+              // entity seen, and seen is what pruneAndSave() spares: a build
+              // that loads the whole corpus and records none of it leaves every
+              // entry unseen, so the prune empties the manifest and the next
+              // build has nothing to be incremental against.
+              if ($manifest !== NULL) {
                 $hash = PhpIndexer::contentHash($contentItem);
                 $itemsForManifest[] = [
                   'hash'     => $hash,
@@ -332,7 +358,7 @@ class ScoltaContentGatherer {
               yield $contentItem;
             }
 
-            if ($manifest !== NULL && !$force && !empty($itemsForManifest)) {
+            if ($manifest !== NULL && !empty($itemsForManifest)) {
               $manifest->put($entityKey, $entityTs, $itemsForManifest);
             }
 
@@ -446,7 +472,10 @@ class ScoltaContentGatherer {
    *   loaded, exactly as in gather(). Optional and last so existing callers
    *   keep working unchanged.
    * @param bool $force
-   *   When true, ignore the manifest and fully load every entity.
+   *   When true, load every entity rather than trusting any manifest entry.
+   *   Affects only what is READ: the manifest is still written, so a forced
+   *   build leaves it primed for the next incremental one instead of emptying
+   *   it at prune time.
    *
    * @return \Generator<\Tag1\Scolta\Export\ContentItem|\Tag1\Scolta\Index\CachedContentReference>
    *   Yields one ContentItem or CachedContentReference per published
@@ -459,11 +488,17 @@ class ScoltaContentGatherer {
     $storage = $this->entityTypeManager->getStorage($entityType);
 
     foreach (array_chunk($ids, 10) as $chunk) {
-      $timestamps = [];
+      // Queried whenever there is a manifest to write, not only when the skip
+      // decision needs it — the stored timestamp has to come from the same
+      // source a later build reads it back with. See gather() for what a
+      // mismatch costs.
+      $timestamps = $manifest !== NULL
+        ? $this->getEntityTimestamps($entityType, array_values($chunk))
+        : [];
       $toLoad = $chunk;
 
+      // Only the skip decision is gated on $force.
       if ($manifest !== NULL && !$force) {
-        $timestamps = $this->getEntityTimestamps($entityType, array_values($chunk));
         $toLoad = [];
         foreach ($chunk as $id) {
           $entityKey = (string) $id;
@@ -495,7 +530,9 @@ class ScoltaContentGatherer {
 
         [$contentItems, $entityTs] = $this->buildContentItems($entity, $siteName, $entityTs);
         foreach ($contentItems as $contentItem) {
-          if ($manifest !== NULL && !$force) {
+          // Recorded on every build, --force included — put() is what marks the
+          // entity seen and spares it from pruneAndSave().
+          if ($manifest !== NULL) {
             $itemsForManifest[] = [
               'hash'     => PhpIndexer::contentHash($contentItem),
               'id'       => $contentItem->id,
@@ -512,7 +549,7 @@ class ScoltaContentGatherer {
           yield $contentItem;
         }
 
-        if ($manifest !== NULL && !$force && !empty($itemsForManifest)) {
+        if ($manifest !== NULL && !empty($itemsForManifest)) {
           $manifest->put($entityKey, $entityTs, $itemsForManifest);
         }
 
