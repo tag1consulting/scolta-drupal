@@ -21,6 +21,16 @@
  *                                            When set, search results are pre-filtered to this language.
  *                                            URL filter params (f_language=...) take precedence.
  *                                            Falls back to <html lang> detection when omitted.
+ *   facetMode: 'eager'                     — Optional (default 'eager'): when the facet index is loaded.
+ *                                            'eager'    load it at init — the panel is populated before
+ *                                                       the first search paints. Unchanged behaviour.
+ *                                            'deferred' skip the init load and take it on the first
+ *                                                       search carrying a facet selection. For a site
+ *                                                       that renders its own facets and does not want
+ *                                                       the artifact on the initial page load.
+ *                                            'disabled' never load it: no facet panel, no facet
+ *                                                       filtering, and no per-query count pass.
+ *                                            An unrecognized value falls back to 'eager'.
  *   hideEmptyFacets: true                  — Optional (default true): hide facet values whose count is
  *                                            zero for the current query (and their now-empty groups).
  *                                            Set false to render zero-count values as disabled (0) rows.
@@ -195,21 +205,40 @@
     'whatever', 'whichever', 'whoever', 'yes', 'ok', 'okay',
   ]);
 
+  // The stopword set actually in force: the built-ins plus the site's own.
+  // Honor CUSTOM_STOP_WORDS in JS just as the WASM scorer does — previously
+  // query tokenization used only the built-in STOPWORDS, so it disagreed with
+  // WASM scoring (issue #156 follow-up).
+  function effectiveStopwords() {
+    const customStops = (getConfig().CUSTOM_STOP_WORDS || []).map(w => String(w).toLowerCase());
+    return customStops.length ? new Set([...STOPWORDS, ...customStops]) : STOPWORDS;
+  }
+
+  // Whether a word may be wrapped in <mark>.
+  //
+  // `length > 2` was the cheap stopword proxy and it admits every function word
+  // of three letters or more — "and", "the", "for", "but", "with", "that". A
+  // query whose expansion produced "reading and writing" therefore highlighted
+  // "and" in every excerpt on the page. The stopword set is the real gate; the
+  // length guard stays because a one- or two-letter word matches too much text
+  // to be worth marking even when it is not a stopword.
+  //
+  // The word is normalized the way extractSearchTerms() normalizes it, so a
+  // trailing comma cannot smuggle a stopword past the set.
+  function isHighlightableWord(word, stops) {
+    const bare = String(word).toLowerCase().replace(/[^\w]/g, '');
+    return bare.length > 2 && !stops.has(bare);
+  }
+
   // Extract meaningful search terms from a query (filter stopwords).
   // "who is Loreen Babcock" → ["loreen", "babcock"]
   // If everything is filtered, fall back to words longer than 2 chars.
   function extractSearchTerms(query) {
-    // Honor CUSTOM_STOP_WORDS in JS just as the WASM scorer does — previously
-    // this used only the built-in STOPWORDS, so JS query tokenization disagreed
-    // with WASM scoring (issue #156 follow-up).
-    const customStops = (getConfig().CUSTOM_STOP_WORDS || []).map(w => String(w).toLowerCase());
-    const effectiveStopwords = customStops.length
-      ? new Set([...STOPWORDS, ...customStops])
-      : STOPWORDS;
+    const stops = effectiveStopwords();
     const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 0);
     const meaningful = words
       .map(w => w.replace(/[^\w]/g, ''))
-      .filter(w => !effectiveStopwords.has(w) && w.length > 1);
+      .filter(w => !stops.has(w) && w.length > 1);
     if (meaningful.length === 0) {
       return words.filter(w => w.length > 2);
     }
@@ -633,6 +662,76 @@
   // pagefind-entry.json, and whether a secondary language index was merged in.
   let facetIndexExpectedHash = null;
   let facetIndexMergedLanguages = false;
+  // The pagefind.js path initPagefind() resolved, kept so a deferred load can
+  // find the artifact later without re-deriving it from the config.
+  let facetIndexPagefindPath = null;
+  // The in-flight deferred load, so concurrent searches share one fetch rather
+  // than racing two downloads of the same artifact.
+  let facetIndexLoadPromise = null;
+
+  // When the facet taxonomy is loaded, from instanceConfig.facetMode:
+  //
+  //   'eager'    — load it during init. The default, and what Scolta has always
+  //                done: the panel is populated by the time the first search
+  //                paints, and every facet click is already answerable.
+  //   'deferred' — skip the init load and take it on the first search that
+  //                actually carries a facet selection.
+  //   'disabled' — never load it. No facet panel is rendered and no facet
+  //                filtering runs.
+  //
+  // The artifact is the value lists, the counts AND the posting lists a
+  // selection is applied against, so it is dead weight for a site that renders
+  // its own facets without up-front counts: such a site downloads it on page
+  // load, shows nothing from it, and most sessions never filter at all. That is
+  // what 'deferred' is for. 'disabled' is the stronger statement — this site has
+  // no facets — and it also skips the per-query count pass, which is a second
+  // full Pagefind search.
+  //
+  // 'deferred' does NOT mean "filter without the artifact". pagefindSearch()
+  // awaits the load before it reaches the branch that would hand filters to
+  // Pagefind, so a deferred first click still takes the artifact path. Leaving
+  // facetIndex null there would fetch a .pf_filter chunk and tax every later
+  // search, which is the cost the artifact exists to remove.
+  //
+  // One tri-state rather than two booleans, so "defer" and "disable" can never
+  // be set at once and leave the contradiction to be resolved at each read site.
+  // An unrecognized value resolves to 'eager': a typo must fall back to the
+  // fully-featured default, never silently turn a site's facets off.
+  function facetMode() {
+    const raw = instanceConfig && instanceConfig.facetMode;
+    return (raw === 'deferred' || raw === 'disabled') ? raw : 'eager';
+  }
+
+  function facetsDeferred() {
+    return facetMode() === 'deferred';
+  }
+
+  function facetsDisabled() {
+    return facetMode() === 'disabled';
+  }
+
+  // Load the taxonomy if it is not already in hand. Idempotent and safe to await
+  // from several callers at once. Never rejects: loadFacetTaxonomy() handles its
+  // own failures and leaves facetIndex null, which is the same state a search
+  // would have found under a failed eager load.
+  function ensureFacetTaxonomy() {
+    if (facetIndex || cachedPagefindFilters) return Promise.resolve();
+    if (!facetIndexLoadPromise) {
+      facetIndexLoadPromise = loadFacetTaxonomy(facetIndexPagefindPath);
+    }
+    return facetIndexLoadPromise;
+  }
+
+  // Whether a resolved filter object carries any actual selection. An empty
+  // object, or dimensions holding empty Sets, is not a selection and must not
+  // trigger the deferred load.
+  function hasFacetSelection(filters) {
+    if (!filters || typeof filters !== 'object') return false;
+    for (const vals of Object.values(filters)) {
+      if (vals instanceof Set && vals.size > 0) return true;
+    }
+    return false;
+  }
 
   // Resolve the directory the index files live in, from the pagefind.js path.
   function facetIndexBase(pagefindPath) {
@@ -895,7 +994,8 @@
       // Re-entry against an instance a previous init() already created (a second
       // container on the page, or a re-mount). The taxonomy is module state, so
       // it is only loaded when it is not already in hand.
-      if (!cachedPagefindFilters && !facetIndex) {
+      facetIndexPagefindPath = pagefindPath;
+      if (!cachedPagefindFilters && !facetIndex && facetMode() === 'eager') {
         await loadFacetTaxonomy(pagefindPath);
       }
       return;
@@ -959,7 +1059,17 @@
     // Warm the index: triggers WASM compilation + fragment download.
     await pagefind.search("");
 
-    await loadFacetTaxonomy(pagefindPath);
+    // 'deferred': pagefindSearch() takes this on the first search carrying a
+    // facet selection. The expected-hash read above still ran, so the staleness
+    // guard is armed whenever the load does happen. 'disabled': never.
+    facetIndexPagefindPath = pagefindPath;
+    if (facetMode() === 'eager') {
+      await loadFacetTaxonomy(pagefindPath);
+    } else if (facetsDeferred()) {
+      debugLog('[scolta] Facet index deferred to first facet selection');
+    } else {
+      debugLog('[scolta] Facets disabled; facet index will not be loaded');
+    }
 
     debugLog("[scolta] Pagefind index preloaded");
   }
@@ -2016,8 +2126,21 @@
   // under different facet selections is ONE Pagefind search, shared through the
   // memo, and only the cheap post-filter differs.
   async function pagefindSearch(query, filters, sortHint) {
+    // Deferred taxonomy: this is the first search that needs it. The await has
+    // to finish HERE, above the branch below, because that branch is what puts
+    // filters into searchOpts and makes Pagefind fetch a .pf_filter chunk. Load
+    // first and the artifact path runs instead, exactly as under an eager load.
+    // A search with no selection still loads nothing.
+    if (facetsDeferred() && !facetIndex && hasFacetSelection(filters)) {
+      await ensureFacetTaxonomy();
+    }
     const searchOpts = {};
-    if (!facetIndex && filters && typeof filters === 'object') {
+    // 'disabled' runs no facet filtering at all. Nothing upstream should put a
+    // selection in `filters` under that mode, but a host embedding Scolta can
+    // call the public toggleFilter()/doSearch() with one, and handing it to
+    // Pagefind here is precisely the .pf_filter chunk fetch this mode exists to
+    // avoid — one that taxes every later search for the life of the page.
+    if (!facetsDisabled() && !facetIndex && filters && typeof filters === 'object') {
       const pagefindFilters = {};
       for (const [dim, vals] of Object.entries(filters)) {
         if (vals instanceof Set && vals.size > 0) {
@@ -3481,6 +3604,24 @@
     return scoreResults(loaded, query, weight);
   }
 
+  // Load the capped head of a search and keep Pagefind's own order.
+  //
+  // The browse path has no relevance signal: with no query there are no terms,
+  // so every input the scorer ranks on is absent and scoring would rank the
+  // corpus on whatever fell out of that. The descending ramp exists only to
+  // carry the incoming order through the sort every search runs downstream —
+  // it is an ordering, not a relevance claim. The same MAX_PAGEFIND_RESULTS cap
+  // applies, so a 100k-page corpus loads exactly what a query would.
+  async function loadBrowseResults(search) {
+    const CONFIG = getInstanceConfig();
+    const toLoad = Math.min(search.results.length, CONFIG.MAX_PAGEFIND_RESULTS);
+    if (toLoad === 0) return [];
+    const loaded = await Promise.all(
+      search.results.slice(0, toLoad).map(r => r.data())
+    );
+    return loaded.map((data, i) => ({ data: data, score: toLoad - i }));
+  }
+
   async function searchAndLoadParallel(queries, filters, originalQuery, specificityOpts) {
     const CONFIG = getInstanceConfig();
     if (queries.length === 0) return [];
@@ -3876,9 +4017,13 @@
       return;
     }
 
+    // An expansion term is a phrase, and decomposing it into words is what
+    // puts a conjunction on the highlight list: "reading and writing" carries
+    // an "and" that the primary path already filtered out of the query.
+    const expansionStops = effectiveStopwords();
     for (const term of validTerms) {
       for (const word of term.toLowerCase().split(/\s+/)) {
-        if (word.length > 2 && !allHighlightTerms.includes(word)) {
+        if (isHighlightableWord(word, expansionStops) && !allHighlightTerms.includes(word)) {
           allHighlightTerms.push(word);
         }
       }
@@ -4252,7 +4397,7 @@
     // filter hint can narrow the list without narrowing the panel — a known and
     // deliberate gap, since making counts follow that selection would reintroduce
     // exactly the "every other value reads 0 and disappears" failure.
-    if (!preserveFilters && countTerms.length > 0) {
+    if (!preserveFilters && countTerms.length > 0 && !facetsDisabled()) {
       const counts = await computeExpandedFacetCounts(
         searchQuery, activeFilters, countContext, countTerms);
       // Several awaits deep: a newer doSearch() may own the panel by now, and
@@ -4278,14 +4423,28 @@
     preserveFilters = preserveFilters || false;
     const CONFIG = getInstanceConfig();
     const query = els.queryInput.value.trim();
-    if (!query || !pagefind) return;
+    if (!pagefind) return;
+
+    // No text is a browse, not a non-event. It used to return here, so a user
+    // who selected a facet with an empty box got nothing at all. The two cases
+    // are one code path that differs only in whether a filter is applied:
+    // Pagefind returns the whole corpus for a null term and applies any active
+    // filters, so the branches below are about what a browse cannot have — a
+    // relevance signal, an expansion, terms to highlight — not about rendering
+    // something else. There is no separate empty state.
+    //
+    // A page that loads with no ?q= never reaches here: the bootstrap only
+    // calls doSearch() when the parameter is present, so this is entered by an
+    // explicit submit, a facet toggle or a sort, never by arriving at a search
+    // page.
+    const isBrowse = query === '';
 
     // The user committed. Any pending or in-flight suggest work is now noise:
     // cancel it, take the dropdown down, and hold the suggest path off until
     // the primary paint lands.
     cancelSuggest();
     closeSuggestions();
-    recordRecentSearch(query);
+    if (!isBrowse) recordRecentSearch(query);
 
     const version = ++searchVersion;
 
@@ -4329,13 +4488,26 @@
             effectiveFilters.language = new Set([defaultLangCode]);
           }
         }
-        activeFilters = effectiveFilters;
+        // 'disabled' starts every search unfiltered. A URL f_ param and the
+        // language auto-filter are both facet selections, and applying either
+        // would need the taxonomy this mode never loads — the fallback would
+        // reach for the .pf_filter chunks the mode exists to avoid. Dropped here,
+        // at the one place activeFilters is seeded, so the URL sync below writes
+        // no f_ params and the result header claims no filter either.
+        activeFilters = facetsDisabled() ? {} : effectiveFilters;
       }
 
       // Update URL with search query and active filter state.
       try {
         var url = new URL(window.location.href);
-        url.searchParams.set('q', query);
+        // A browse writes no q param rather than an empty one, so the link is
+        // the facet state alone and reloading it does not re-enter doSearch()
+        // through the bootstrap on a falsy query.
+        if (isBrowse) {
+          url.searchParams.delete('q');
+        } else {
+          url.searchParams.set('q', query);
+        }
         for (const key of [...url.searchParams.keys()]) {
           if (key.startsWith('f_')) url.searchParams.delete(key);
         }
@@ -4365,8 +4537,12 @@
         els.expandedTerms.style.display = "none";
       }
 
-      meaningfulTerms = extractSearchTerms(query);
-      searchQuery = meaningfulTerms.length > 0 ? meaningfulTerms.join(' ') : query;
+      meaningfulTerms = isBrowse ? [] : extractSearchTerms(query);
+      // null, not '': Pagefind returns the whole corpus for a null term and
+      // applies any active filters. An empty string is a term like any other.
+      searchQuery = isBrowse
+        ? null
+        : (meaningfulTerms.length > 0 ? meaningfulTerms.join(' ') : query);
       // Detect quoted phrase: user typed "hello world" with surrounding double-quotes.
       // Pagefind receives the unquoted terms; the Rust scorer receives the quoted form
       // so extract_query() can set forced_phrase = true and apply phrase multipliers.
@@ -4376,18 +4552,29 @@
       const scorerQuery = isForcedPhrase ? trimmedQuery : searchQuery;
       debugLog('[scolta:search] Filtered query:', JSON.stringify(sanitizeQueryForLogging(searchQuery)), '(original:', JSON.stringify(sanitizeQueryForLogging(query)), ')');
 
-      allHighlightTerms = meaningfulTerms.length > 0
-        ? meaningfulTerms.filter(t => t.length > 2)
-        : query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+      // Both branches go through the same gate. The fallback is the one that
+      // used to leak: it applied only a length guard to the raw query, so a
+      // query of nothing but stopwords marked every one of them.
+      const highlightStops = effectiveStopwords();
+      allHighlightTerms = (meaningfulTerms.length > 0
+        ? meaningfulTerms
+        : query.toLowerCase().split(/\s+/)
+      ).filter(t => isHighlightableWord(t, highlightStops));
 
       // Phase 1: Primary search — render results IMMEDIATELY
-      expandPromise = preserveFilters
-        ? Promise.resolve(lastExpandedTerms)
-        : expandQuery(query);
-      expansionInFlight = !preserveFilters && CONFIG.AI_EXPAND_QUERY;
+      // A browse has nothing to expand: there is no query to send, and holding
+      // the last one would expand a search the user has left. Resolving null is
+      // the shape the no-expansion path already takes when AI_EXPAND_QUERY is
+      // off, so the phase-2 handler below needs no browse case of its own.
+      expandPromise = isBrowse
+        ? Promise.resolve(null)
+        : (preserveFilters ? Promise.resolve(lastExpandedTerms) : expandQuery(query));
+      expansionInFlight = !isBrowse && !preserveFilters && CONFIG.AI_EXPAND_QUERY;
 
       const primarySearch = await pagefindSearch(searchQuery, activeFilters);
-      allScoredResults = await loadAndScoreSearch(primarySearch, scorerQuery, 1.0);
+      allScoredResults = isBrowse
+        ? await loadBrowseResults(primarySearch)
+        : await loadAndScoreSearch(primarySearch, scorerQuery, 1.0);
 
       // OR fallback: only activate when AND search returns ZERO results.
       // This prevents diluting precision when the user provides many terms
@@ -4419,7 +4606,9 @@
       allScoredResults.sort((a, b) => b.score - a.score);
       allScoredResults = deduplicateByTitle(allScoredResults);
 
-      const priorityPages = getInstancePriorityPages();
+      // Priority pages are matched against the query, so a browse has nothing
+      // to match them against.
+      const priorityPages = isBrowse ? [] : getInstancePriorityPages();
       if (priorityPages.length > 0 && scoltaWasm && scoltaWasm.match_priority_pages) {
         try {
           const priorityInput = JSON.stringify({ query: currentQuery, priority_pages: priorityPages });
@@ -4472,7 +4661,15 @@
     // numbers never move on click. They are folded over exactly once more, in
     // mergeExpandedSearchResults(), when AI expansion changes the list they
     // describe.
-    if (!preserveFilters) {
+    // 'disabled' skips the pass outright: its only consumer is the panel, and
+    // that mode renders none. Most of the pass is already free — it reuses this
+    // cycle's searches through the memo, and Pagefind computes a search's
+    // `filters` map inside search() whether or not anything reads it. What is
+    // not free is the union branch, taken when the AND search matched nothing
+    // and counts have to follow the OR fallback: that loads a fragment per fresh
+    // document to collapse the delta by URL and title. Those loads are what this
+    // gate actually saves.
+    if (!preserveFilters && !facetsDisabled()) {
       const counts = await computeQueryFacetCounts(searchQuery, activeFilters, meaningfulTerms, isForcedPhrase);
       // The count pass is async, so a newer doSearch() may have superseded this
       // cycle while it ran. Late counts from an abandoned query must neither
@@ -4484,7 +4681,8 @@
         renderFilters();
       }
     } else {
-      // Nothing to wait for: preserveFilters reuses the stored counts.
+      // Nothing to wait for: preserveFilters reuses the stored counts, and
+      // 'disabled' has none to reuse — renderFilters() takes its empty exit.
       renderFilters();
     }
 
@@ -4507,7 +4705,10 @@
         // offered (clickable, not applied) chips.
         llmAppliedFilters = {};
         offeredLlmFilters = {};
-        if (filterHint) {
+        // Under 'disabled' the hint is dropped rather than offered: the recall
+        // guard's probes are filtered searches, and there is no panel for the
+        // survivors to be applied to or offered in.
+        if (filterHint && !facetsDisabled()) {
           const canonicalHint = {};
           for (const [dim, val] of Object.entries(filterHint)) {
             if (typeof dim === 'string' && dim && typeof val === 'string' && val) {
@@ -4749,6 +4950,21 @@
 
   function renderFilters() {
     const container = els.filters;
+
+    // 'disabled': no taxonomy was ever loaded, so there is nothing to paint.
+    // Stated here rather than left to fall out of an empty cachedPagefindFilters
+    // so the mode's promise — no facet panel — holds even if something else puts
+    // a taxonomy in hand. Exits exactly the way the no-dimensions case below
+    // does, so a disabled site is indistinguishable from one whose index has no
+    // facets: same cleared container, same layout class, same lifecycle events.
+    if (facetsDisabled()) {
+      emitBeforeFilters();
+      container.innerHTML = "";
+      els.layout.classList.remove("has-filters");
+      emitFiltersRendered();
+      return;
+    }
+
     const taxonomy = cachedPagefindFilters || {};
 
     // Dimensions are driven by the index taxonomy, NOT the result set: show
@@ -4825,6 +5041,11 @@
   }
 
   async function toggleFilter(dimension, value) {
+    // Part of the public API, so a host can reach it even under a mode that
+    // renders no checkbox to click. Accepting the selection would put an f_ param
+    // in the URL for a filter that is never applied, and show "in topic: Fruit"
+    // over an unfiltered result list.
+    if (facetsDisabled()) return;
     if (!activeFilters[dimension]) {
       activeFilters[dimension] = new Set();
     }
@@ -5014,7 +5235,14 @@
       ? (hadSpecificMatch ? ' — showing best matches' : ' — no exact matches found, showing partial matches')
       : '';
     const resultNoun = filtered.length === 1 ? 'result' : 'results';
-    header.innerHTML = `<span>${filtered.length.toLocaleString()} ${resultNoun} for "${escapeHtml(displayQuery(currentQuery))}"${filterLabel}${expandLabel}${orFallbackLabel}</span>
+    // A browse has no query to name, and `results for ""` is worse than saying
+    // nothing. The count itself keeps the same meaning it has on every other
+    // path: how many results were loaded and can be paged through, not how many
+    // documents the corpus holds.
+    const forLabel = currentQuery
+      ? ` for "${escapeHtml(displayQuery(currentQuery))}"`
+      : '';
+    header.innerHTML = `<span>${filtered.length.toLocaleString()} ${resultNoun}${forLabel}${filterLabel}${expandLabel}${orFallbackLabel}</span>
                         <span>Showing ${showing}</span>`;
 
     const renderer = activeResultRenderer();

@@ -198,9 +198,15 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       // translations, text-format rendering, field mappings, and the alter
       // hook all apply, and the timestamp manifest lets unchanged entities
       // skip the full load. No eager loadMultiple() of the whole corpus.
+      // One manifest instance for both: the gatherer reads it to skip
+      // unchanged entities and writes what it loads, and the exporter records
+      // the bodies it drops for being too short to index, which is the only
+      // place that decision is made against a body in memory.
+      $tsManifest = $orchestrator->getTimestampManifest();
       $exporter = new ContentExporter($outputDir);
       $items = $exporter->filterItems(
-        $this->contentGatherer->gather('node', '', $siteName, NULL, $orchestrator->getTimestampManifest(), FALSE)
+        $this->contentGatherer->gather('node', '', $siteName, NULL, $tsManifest, FALSE),
+        $tsManifest
       );
 
       // The reporter renews the build lock at every chunk boundary, so the

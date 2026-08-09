@@ -17,6 +17,7 @@ sortable_field_descriptions: {}
 filter_fields: []
 filter_field_descriptions: {}
 hide_empty_facets: true
+facet_mode: eager
 sayt_enabled: true
 sayt_min_chars: 2
 sayt_debounce_ms: 150

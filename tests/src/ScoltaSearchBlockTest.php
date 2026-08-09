@@ -242,6 +242,51 @@ class ScoltaSearchBlockTest extends TestCase {
     );
   }
 
+  /**
+   * The facet-loading mode must reach window.scolta.
+   *
+   * Without this key the bundle falls back to 'eager', which is the correct
+   * default but silently ignores an administrator who chose otherwise — the
+   * setting would appear to save and do nothing.
+   */
+  public function testSettingsIncludesFacetMode(): void {
+    $this->assertStringContainsString(
+      "'facetMode'",
+      $this->blockContents,
+      'drupalSettings should include facetMode so the setting reaches the bundle'
+    );
+  }
+
+  /**
+   * facetMode must be read from Drupal config, not from ScoltaConfig.
+   *
+   * The behavior lives entirely in the vendored js/scolta.js, so the setting has
+   * to work against any scolta-php in the supported range — including one
+   * predating the ScoltaConfig property. This is the same reasoning the SAYT
+   * keys are passed under.
+   */
+  public function testFacetModeIsReadFromDrupalConfig(): void {
+    $this->assertMatchesRegularExpression(
+      "/'facetMode'\s*=>.*\\\$drupalConfig->get\('facet_mode'\)/s",
+      $this->blockContents,
+      'facetMode must come from $drupalConfig->get(\'facet_mode\')'
+    );
+  }
+
+  /**
+   * An unrecognized stored mode must clamp to 'eager', never pass through.
+   *
+   * A typo reaching the bundle would clamp there anyway, but a value the block
+   * refuses to vouch for should not be put in the page payload at all.
+   */
+  public function testFacetModeClampsUnknownValuesToEager(): void {
+    $this->assertMatchesRegularExpression(
+      "/in_array\(\\\$drupalConfig->get\('facet_mode'\), \['eager', 'deferred', 'disabled'\], TRUE\)/",
+      $this->blockContents,
+      'facetMode must be validated against the three supported modes'
+    );
+  }
+
   public function testSettingsIncludesCurrentLanguage(): void {
     $this->assertStringContainsString(
       "'currentLanguage'",

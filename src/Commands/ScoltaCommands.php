@@ -310,11 +310,26 @@ class ScoltaCommands extends DrushCommands {
     // Expose the timestamp manifest to the gatherer so it can skip full entity
     // loads for unchanged content — the manifest is null-safe, so passing it
     // on resume/restart is harmless.
-    $tsManifest = $force ? NULL : $orchestrator->getTimestampManifest();
+    //
+    // Passed under --force too, which it was not before. --force is a rule
+    // about what this build READS: reload every entity, trust nothing cached.
+    // Withholding the manifest also stopped the build WRITING to it, and the
+    // orchestrator's own pruneAndSave() at the end then found nothing marked
+    // seen and emptied it — so a --force build deleted the very state that
+    // makes the next build incremental, and that next build was a second cold
+    // one. The gatherer gates the skip decision on $force and records
+    // regardless, so a --force build now leaves the manifest primed.
+    $tsManifest = $orchestrator->getTimestampManifest();
 
-    // Stream content one entity at a time — no full pre-load into RAM.
+    // Stream content one entity at a time — no full pre-load into RAM. The
+    // manifest goes to the exporter as well: it is the exporter that drops
+    // bodies too short to index, and it records those so the next build stops
+    // re-gathering them.
     $exporter = new ContentExporter($resolvedOutputDir);
-    $items = $exporter->filterItems($this->contentGatherer->gather($entityType, $bundle, $siteName, $resumeFromId, $tsManifest, $force));
+    $items = $exporter->filterItems(
+      $this->contentGatherer->gather($entityType, $bundle, $siteName, $resumeFromId, $tsManifest, $force),
+      $tsManifest
+    );
 
     $report = $orchestrator->build($intent, $items, $this->logger(), $reporter, force: $force);
 
