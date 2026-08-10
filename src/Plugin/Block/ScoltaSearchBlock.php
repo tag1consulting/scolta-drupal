@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\scolta\Plugin\Block;
 
 use Drupal\Core\Block\BlockBase;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\File\FileUrlGeneratorInterface;
@@ -14,6 +15,7 @@ use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
+use Drupal\scolta\Access\AiAccessInterface;
 use Drupal\scolta\Service\IndexLocator;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -54,6 +56,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     protected StreamWrapperManagerInterface $streamWrapperManager,
     protected ModuleExtensionList $moduleExtensionList,
     protected IndexLocator $indexLocator,
+    protected AiAccessInterface $aiAccess,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -74,6 +77,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       $container->get('stream_wrapper_manager'),
       $container->get('extension.list.module'),
       $container->get('scolta.index_locator'),
+      $container->get('scolta.ai_access'),
     );
   }
 
@@ -132,8 +136,23 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       ->getCurrentLanguage(LanguageInterface::TYPE_CONTENT)
       ->getId();
 
+    // Whether the browser is told the two AI features exist: the site offers
+    // the feature AND this visitor may use it. The config half is unchanged —
+    // it is what toJsScoringConfig() already emitted. The access half is new,
+    // and asking the same service the endpoints ask means a visitor is never
+    // handed a UI that fires a request the route will refuse: a visitor
+    // without 'use scolta ai' used to get the full AI search and a pair of
+    // 403s that scolta.js swallows into a console warning. Follow-ups are
+    // only offered inside the overview, so they need no flag of their own.
+    $expandAccess = $this->aiAccess->access($this->currentUser, AiAccessInterface::FEATURE_EXPAND);
+    $summarizeAccess = $this->aiAccess->access($this->currentUser, AiAccessInterface::FEATURE_SUMMARIZE);
+
+    $scoring = $config->toJsScoringConfig();
+    $scoring['AI_EXPAND_QUERY'] = $scoring['AI_EXPAND_QUERY'] && $expandAccess->isAllowed();
+    $scoring['AI_SUMMARIZE'] = $scoring['AI_SUMMARIZE'] && $summarizeAccess->isAllowed();
+
     $scoltaSettings = [
-      'scoring' => $config->toJsScoringConfig(),
+      'scoring' => $scoring,
       'endpoints' => [
         'expand' => Url::fromRoute('scolta.expand')->toString(),
         'summarize' => Url::fromRoute('scolta.summarize')->toString(),
@@ -182,7 +201,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       $markup .= '<p class="scolta-attribution">' . $this->t('Powered by Scolta') . '</p>';
     }
 
-    return [
+    $build = [
       '#markup' => $markup,
       '#attached' => [
         'library' => [
@@ -200,6 +219,17 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
         'contexts' => ['languages:language_content'],
       ],
     ];
+
+    // The two flags are an access answer now, so this block is cached on
+    // whatever that answer was read from. The shipped rule adds the
+    // user.permissions context; a decorator that varies per user adds its own,
+    // and without this the first visitor's answer would be served to the next.
+    $cacheability = CacheableMetadata::createFromRenderArray($build);
+    $cacheability->addCacheableDependency($expandAccess);
+    $cacheability->addCacheableDependency($summarizeAccess);
+    $cacheability->applyTo($build);
+
+    return $build;
   }
 
   /**

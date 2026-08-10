@@ -262,6 +262,82 @@ A site installed before this change may already hold the anonymous grant, which 
 
 The health endpoint (`GET /api/scolta/v1/health`) is reachable without any permission so uptime monitors always work, but callers without **Administer Scolta** (`administer scolta`) receive only `{"status": "ok"|"degraded"}`. The full diagnostic payload (AI provider, index integrity, fragment counts) requires `administer scolta`.
 
+#### Narrowing AI access beyond the permission
+
+A role-level permission cannot express every rule a site needs — a per-user preference, a quota, an entitlement that arrives with a subscription. The `scolta.ai_access` service is the one decision point for all three AI features, and both gates ask it: `ScoltaSearchBlock` before it tells the browser a feature exists, and the endpoint routes before they serve the request the browser then makes. Decorate it to narrow the rule, and the search UI stops offering what the endpoint would refuse.
+
+The service answers **who may use a feature**, not **what the site offers**. The `ai_expand_query` / `ai_summarize` switches and the `max_follow_ups` quota stay in configuration and stay enforced where they are, so a switched-off feature keeps answering `404` and an exhausted follow-up quota keeps answering `429` with the remaining `limit`. Don't restate them in a decorator: that turns those documented responses into a `403` from routing, and the quota can't be expressed as access at all — the real rule counts the messages in the request body, which no access check is given.
+
+```yaml
+# mymodule.services.yml
+services:
+  mymodule.ai_access:
+    class: Drupal\mymodule\Access\MyAiAccess
+    decorates: scolta.ai_access
+    arguments: ['@mymodule.ai_access.inner']
+
+  cache_context.user.my_ai_optout:
+    class: Drupal\mymodule\Cache\AiOptOutCacheContext
+    arguments: ['@current_user']
+    tags:
+      - { name: cache.context }
+```
+
+```php
+final class MyAiAccess implements AiAccessInterface {
+
+  public function __construct(private readonly AiAccessInterface $inner) {}
+
+  public function access(AccountInterface $account, string $feature): AccessResultInterface {
+    $result = $this->inner->access($account, $feature);
+    // Only ever narrow: hand back a refusal as it arrived.
+    if (!$result->isAllowed()) {
+      return $result;
+    }
+
+    $preference = $this->userWantsAi($account)
+      ? AccessResult::allowed()
+      : AccessResult::forbidden('The user has opted out of AI search.');
+    $preference->addCacheContexts(['user.my_ai_optout']);
+
+    return $result->andIf($preference);
+  }
+
+}
+```
+
+The cacheability on the returned result matters as much as the answer. The block's render array takes it on, so an implementation that varies by account must say so, or the first visitor's answer is served to the next. Declare that variation with a cache context keyed on the **value** your rule reads, not with `cachePerUser()`: a boolean preference gives everything downstream two shared cache variants, where per-user gives one per account — on a large membership that is millions of copies of the search page's cacheable pieces, each hit only when the same person returns. This is the same distinction core draws between `user.roles` and `user`.
+
+```php
+final class AiOptOutCacheContext implements CacheContextInterface {
+
+  public function __construct(private readonly AccountInterface $currentUser) {}
+
+  public static function getLabel(): string {
+    return (string) t('AI search opt-out');
+  }
+
+  public function getContext(): string {
+    return $this->userWantsAi($this->currentUser) ? '1' : '0';
+  }
+
+  public function getCacheableMetadata(): CacheableMetadata {
+    // Merged only where this context is optimized away under a coarser one
+    // such as `user`. That entry is keyed per account, so a preference
+    // change no longer moves its owner to a different variant — the entry
+    // itself must be invalidated when the account is saved. The shared
+    // two-variant entries never get this tag, which is the point: an entry
+    // serving millions must not be purged because one of them saved.
+    return (new CacheableMetadata())->addCacheTags(['user:' . $this->currentUser->id()]);
+  }
+
+}
+```
+
+A flip then takes effect on the member's next request with no invalidation at all — the context value is recomputed per request, so they simply land in the other variant.
+
+The three features are `AiAccessInterface::FEATURE_EXPAND`, `FEATURE_SUMMARIZE` and `FEATURE_FOLLOW_UP`. Follow-ups are only offered inside an overview, so refusing `FEATURE_SUMMARIZE` withdraws both.
+
 ### Configuration
 
 Visit *Administration > Configuration > Search and Metadata > Scolta AI Search* to configure the AI provider, API key, model, and indexing options.
