@@ -95,6 +95,23 @@
 #     branch heuristic below is gated on the PR coming from this repository;
 #     otherwise a fork could name a branch release/x and bill us for full mode.
 #
+# Two things that only show up on a real fork PR, neither of which the
+# upstream template mentions:
+#
+#   * actions/checkout refuses a fork checkout under pull_request_target unless
+#     allow-unsafe-pr-checkout is set.  See the note on that input below for
+#     why opting in is sound here.  Upstream never hit this because it dogfoods
+#     on branches of its own repository, where the gate does not apply.
+#   * A pull request opened before this change landed still has the OLD version
+#     of this file on its branch, and the pull_request trigger reads the file
+#     from the PR branch.  So such a PR fires BOTH a pull_request run (from
+#     their stale copy, secretless, fails) and a pull_request_target run (from
+#     main).  Separate workflow runs produce separate check runs and do not
+#     supersede one another, so the stale red sits beside the new green until
+#     the contributor's branch picks up this commit.  Nothing can be done from
+#     this side; the fix is a merge or rebase on their branch, after which only
+#     pull_request_target fires and there is one check again.
+#
 # Note for anyone copying the upstream template: its hardened variant also
 # restores container-action/ from the base SHA.  That step belongs to the
 # action's own repository, which vendors that directory.  Here the action is
@@ -141,6 +158,18 @@ jobs:
           # of the working tree. See the fork-PR notes at the top of this file.
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+          # actions/checkout refuses to place fork code in a pull_request_target
+          # workspace unless a repository opts in by name, because that is the
+          # "pwn request" shape: fork code executed with base-repo secrets in
+          # scope.  The opt-in is sound here for one reason and it is worth
+          # stating rather than assuming: nothing in this job executes what it
+          # checks out.  The only consumer of the working tree is the action,
+          # whose SECURITY.md commits to treating that tree as data and never as
+          # code, with a canary test enforcing it upstream on every one of its
+          # pull requests.  There is no build step, no install, no test runner,
+          # no script from the tree.  If a step is ever added to this job that
+          # runs anything out of the workspace, this line must come out with it.
+          allow-unsafe-pr-checkout: true
 
       - name: Run AI review
         uses: tag1consulting/ai-pr-review/container-action@main
