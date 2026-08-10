@@ -53,47 +53,77 @@
 #
 # issue_comment and pull_request_review_comment workflows run from the DEFAULT
 # BRANCH only.  Slash commands will not respond until this file is merged to
-# your default branch.  The automatic PR review (pull_request trigger) fires
-# immediately after the file is pushed to any branch, including a PR branch.
+# your default branch.  Since the automatic review below now uses
+# pull_request_target, the SAME IS TRUE OF IT: pull_request_target runs the
+# workflow definition from the base branch, so every job in this file is the
+# version on main and no edit to this file takes effect on a pull request
+# before it merges.  That is the point (a fork must not be able to rewrite the
+# job that holds our secrets) and it is also the gotcha: a change here is
+# tested by merging it and watching the next pull request, not by watching the
+# pull request that makes it.  The upstream template says the opposite because
+# it is written for the pull_request trigger.
 #
-# ── Fork PR support (pull_request_target) ────────────────────────────────────
+# ── Fork PR support (pull_request_target): ENABLED HERE ──────────────────────
 #
-# The pull_request trigger below does NOT run on fork PRs in repos where the
-# fork contributor cannot create secrets.  To enable reviews on fork PRs,
-# switch to pull_request_target — but ONLY after adding the security hardening
-# shown in the commented block below.  Running pull_request_target without
-# hardening exposes your secrets to PR authors.
+# This repository is public and takes outside contributions, so the review job
+# runs on pull_request_target rather than pull_request.  The reason is that a
+# fork PR gets neither half of what this job needs: GitHub withholds repository
+# secrets from it (no API key, so the action exits 1 with "ANTHROPIC_API_KEY is
+# required"), and it downgrades GITHUB_TOKEN to read-only (so even with a key
+# the review could not be posted).  Under pull_request the job could therefore
+# only ever be red on a fork PR, which punished contributors for contributing
+# and left their code as the only code in the repo nothing reviewed.
 #
-# To opt in:
-#   1. Replace the "on: pull_request:" block with "on: pull_request_target:".
-#   2. Replace the simple checkout step and container-action step in the review
-#      job with the hardened variant shown in the commented block below.
+# pull_request_target runs the workflow definition from the BASE branch with
+# base-repo secrets in scope, so the review runs on fork and internal PRs
+# alike.  What makes that safe here is an invariant the action states and
+# guards (SECURITY.md, "Security invariants"): it treats the checked-out tree
+# as data, never as code.  It runs no build, install, or test step against the
+# PR head, and the bundled analyzers read repository content rather than
+# executing it.  A regression guard (tests/python/test_security_canary.py)
+# enforces it upstream on every PR.
 #
-# --- HARDENED pull_request_target variant (replace steps in review job) -----
-# steps:
-#   - uses: actions/checkout@v4
-#     with:
-#       fetch-depth: 0
-#       ref: ${{ github.event.pull_request.head.sha }}
-#       persist-credentials: false
+# The hardening that belongs on THIS side of the contract:
 #
-#   # Restore trusted container-action from the base branch so a fork PR
-#   # cannot substitute a malicious action.yml.
-#   - name: Restore trusted container-action
-#     if: github.event_name == 'pull_request_target'
-#     env:
-#       BASE_SHA: ${{ github.event.pull_request.base.sha }}
-#     run: git checkout "$BASE_SHA" -- container-action/
+#   * Check out github.event.pull_request.head.sha, never head.ref.  A ref is
+#     resolved at checkout time, so a fork can push between the event and the
+#     checkout and have different code reviewed than the one the review is
+#     reported against.  A SHA cannot move.
+#   * persist-credentials: false, so the base-repo token is never written into
+#     .git/config next to fork-authored content.
+#   * Do not let fork-controlled strings pick the expensive path.  The release/
+#     branch heuristic below is gated on the PR coming from this repository;
+#     otherwise a fork could name a branch release/x and bill us for full mode.
 #
-#   - name: Run AI review
-#     uses: tag1consulting/ai-pr-review/container-action@main
-#     # ... (same with: block as below)
+# Two things that only show up on a real fork PR, neither of which the
+# upstream template mentions:
+#
+#   * actions/checkout refuses a fork checkout under pull_request_target unless
+#     allow-unsafe-pr-checkout is set.  See the note on that input below for
+#     why opting in is sound here.  Upstream never hit this because it dogfoods
+#     on branches of its own repository, where the gate does not apply.
+#   * A pull request opened before this change landed still has the OLD version
+#     of this file on its branch, and the pull_request trigger reads the file
+#     from the PR branch.  So such a PR fires BOTH a pull_request run (from
+#     their stale copy, secretless, fails) and a pull_request_target run (from
+#     main).  Separate workflow runs produce separate check runs and do not
+#     supersede one another, so the stale red sits beside the new green until
+#     the contributor's branch picks up this commit.  Nothing can be done from
+#     this side; the fix is a merge or rebase on their branch, after which only
+#     pull_request_target fires and there is one check again.
+#
+# Note for anyone copying the upstream template: its hardened variant also
+# restores container-action/ from the base SHA.  That step belongs to the
+# action's own repository, which vendors that directory.  Here the action is
+# referenced as tag1consulting/ai-pr-review/container-action@main, which Actions
+# resolves from the action repository and not from this checkout, so the step
+# has nothing to restore and would fail on the missing pathspec.
 # ----------------------------------------------------------------------------
 
 name: AI PR Review
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, ready_for_review]
   issue_comment:
     types: [created]
@@ -107,18 +137,39 @@ permissions:
 
 jobs:
   # ── Automatic PR review ────────────────────────────────────────────────────
-  # Fires only on pull_request events.  Skips drafts and PRs labeled
+  # Fires only on pull_request_target events.  Skips drafts and PRs labeled
   # 'skip-ai-review'.  The slash-commands job below is skipped on this event.
   review:
     if: >-
-      github.event_name == 'pull_request' &&
+      github.event_name == 'pull_request_target' &&
       !github.event.pull_request.draft &&
       !contains(github.event.pull_request.labels.*.name, 'skip-ai-review')
     runs-on: ubuntu-latest
+    # A fork PR can push as often as it likes and every push now spends API
+    # budget, so supersede an in-flight review instead of queueing beside it.
+    concurrency:
+      group: ai-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Pin to the SHA the event reported, and keep the base-repo token out
+          # of the working tree. See the fork-PR notes at the top of this file.
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          # actions/checkout refuses to place fork code in a pull_request_target
+          # workspace unless a repository opts in by name, because that is the
+          # "pwn request" shape: fork code executed with base-repo secrets in
+          # scope.  The opt-in is sound here for one reason and it is worth
+          # stating rather than assuming: nothing in this job executes what it
+          # checks out.  The only consumer of the working tree is the action,
+          # whose SECURITY.md commits to treating that tree as data and never as
+          # code, with a canary test enforcing it upstream on every one of its
+          # pull requests.  There is no build step, no install, no test runner,
+          # no script from the tree.  If a step is ever added to this job that
+          # runs anything out of the workspace, this line must come out with it.
+          allow-unsafe-pr-checkout: true
 
       - name: Run AI review
         uses: tag1consulting/ai-pr-review/container-action@main
@@ -146,10 +197,18 @@ jobs:
           model-premium: ${{ vars.AI_REVIEW_MODEL_PREMIUM || '' }}
           # Auto-select full mode for release PRs; customize the branch pattern
           # for your repo's convention. See README "Auto-detecting release PRs".
+          #
+          # The branch heuristic is gated on the PR originating in this
+          # repository. head.ref is a fork-authored string, and releases are cut
+          # from here, so a release/ branch on a fork is someone choosing the
+          # expensive review mode on our budget rather than a release.  The
+          # label arm stays open to forks: applying a label takes write access
+          # to this repository, which is a maintainer decision either way.
           review-mode: >-
             ${{
               contains(github.event.pull_request.labels.*.name, 'ai-review-full') && 'full' ||
-              startsWith(github.event.pull_request.head.ref, 'release/') && 'full' ||
+              (github.event.pull_request.head.repo.full_name == github.repository &&
+               startsWith(github.event.pull_request.head.ref, 'release/')) && 'full' ||
               'quick'
             }}
           # AI_REVIEW_MAX_DIFF_LINES: skip review when diff exceeds this many lines (default: 5000)
