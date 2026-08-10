@@ -6,3 +6,8 @@
 /tests/playwright/package-lock.json
 /tests/playwright/test-results/
 /tests/playwright/playwright-report/
+
+# DDEV
+.editorconfig
+.gitattributes
+/web/

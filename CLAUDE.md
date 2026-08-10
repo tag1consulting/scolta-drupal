@@ -22,6 +22,16 @@ Major versions are synchronized across all Scolta packages; minor and patch vers
 
 **NEVER add a `version` field to `composer.json`.** CI fails if one appears. A declared version overrides the version Composer derives from the branch or tag, which is what the `extra.branch-alias` beside it exists to describe. Packagist ignores it; the drupal.org Composer facade does not, so the package announced itself as a fixed `1.0.6-dev` regardless of branch. A site constrained to `drupal/scolta: dev-1.0.x` could then `composer update` but never `composer install` from the resulting lock (`Required package "drupal/scolta" is in the lock file as "1.0.6-dev" but that does not satisfy your constraint "dev-1.0.x"`), so it installed on a developer's machine and failed in CI on every clean checkout. drupal.org injects the release version into `scolta.info.yml` at packaging time.
 
+### Local Development ###
+
+We use DDEV and [a few custom commands](.ddev/commands/web) from the https://github.com/ddev/ddev-drupal-contrib/ add-on.
+
+  - `ddev phpunit`
+  - `ddev phpcs`
+  - `ddev phpstan`
+  - `ddev eslint`
+  - `ddev stylelint`
+
 ### Local cross-package development
 
 To test against un-released scolta-php locally, run `composer config minimum-stability dev && composer require tag1/scolta-php:@dev` (the path repo then supplies the dev build). **Do not commit a lock resolved from the path repo** — it describes one developer's machine, and the CI lock guard rejects `dist.type=path` on every branch.

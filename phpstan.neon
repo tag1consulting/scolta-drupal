@@ -1,5 +1,11 @@
 includes:
-  - vendor/phpstan/phpstan-deprecation-rules/rules.neon
+  # Reached through %rootDir% (phpstan's own install directory) rather than a
+  # plain "vendor/..." path, which resolves relative to this file. Under
+  # ddev-drupal-contrib PHPStan runs from web/modules/custom/<project>, a
+  # symlink farm that deliberately omits vendor/, so the relative path missed
+  # and the run died before analysing anything. %rootDir% points at the real
+  # vendor directory in both that layout and the isolated CI checkout.
+  - %rootDir%/../phpstan-deprecation-rules/rules.neon
   - phpstan-baseline.neon
   # mglaman/phpstan-drupal/extension.neon is intentionally excluded here.
   # It requires a full Drupal root (drupal/core installed as root project) to
@@ -9,11 +15,34 @@ includes:
 
 parameters:
   level: 4
+  # The baseline was recorded without mglaman/phpstan-drupal, so most of its
+  # entries are class.notFound for Drupal classes. Under ddev the extension is
+  # active and resolves those classes, leaving the entries unmatched — which is
+  # itself a non-ignorable error. One baseline cannot match both environments.
+  reportUnmatchedIgnoredErrors: false
   paths:
     - src
   excludePaths:
+    # `paths` above says src, but a path argument on the command line replaces
+    # it, and `ddev phpstan` always passes one (the module directory). These
+    # keep the analysed set the same either way. Wildcards, so PHPStan does not
+    # check the paths exist — web/ only exists under ddev.
+    - tests/*
+    - scripts/*
+    - web/*
+    - vendor/*
     # Drush commands require drush/drush which is not a dev dependency.
     - src/Commands/ScoltaCommands.php
     # ScoltaBackend extends BackendPluginBase which extends Drupal core plugin
     # classes unavailable in the unit-test environment (core is only "provided").
     - src/Plugin/search_api/backend/ScoltaBackend.php
+  ignoreErrors:
+    # method_exists() guards that only look redundant where the class can be
+    # resolved. Under ddev, phpstan-drupal loads search_api and Drupal core and
+    # calls them always-true; in the isolated CI run the same guards are what
+    # keep the code analysable at all. Unmatched there, which is why
+    # reportUnmatchedIgnoredErrors is off.
+    - identifier: function.alreadyNarrowedType
+      path: src/Plugin/QueueWorker/ScoltaRebuildWorker.php
+    - identifier: function.alreadyNarrowedType
+      path: scolta.module

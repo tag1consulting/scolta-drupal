@@ -30,7 +30,11 @@ class RenameIntegrityTest extends TestCase {
       \RecursiveIteratorIterator::LEAVES_ONLY
     );
 
-    $excludeDirs = ['vendor', '.git', 'node_modules', '.phpunit.cache', 'tests'];
+    // 'web' is the DDEV/ddev-drupal-contrib docroot: a full Drupal install
+    // plus web/modules/custom/<project>, which symlinks every top-level entry
+    // of this module back into the tree. Scanning it means scanning Drupal
+    // core, and re-scanning this module through the symlinks.
+    $excludeDirs = ['vendor', '.git', 'node_modules', '.phpunit.cache', 'tests', 'web'];
 
     foreach ($iterator as $file) {
       $path = $file->getPathname();
@@ -44,6 +48,12 @@ class RenameIntegrityTest extends TestCase {
         }
       }
       if ($skip) continue;
+
+      // A symlink whose target is gone still enumerates but cannot be read;
+      // ddev-drupal-contrib leaves such links behind for generated files.
+      if (!$file->isFile() || !$file->isReadable()) {
+        continue;
+      }
 
       $ext = $file->getExtension();
       if (in_array($ext, ['php', 'yml', 'yaml', 'json', 'js', 'css', 'md', 'txt'], true)) {

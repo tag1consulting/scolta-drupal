@@ -50,6 +50,13 @@ final class MemoryBudgetSettingsFieldSet {
       );
     }
 
+    // Built here rather than concatenated inside the array: coder 8 and coder 9
+    // disagree on how a continuation line inside an array is indented, and this
+    // repo is linted by both (CI pins coder 9; `ddev phpcs` gets coder 8, which
+    // is what drupal/core-dev allows).
+    $profileDescription = t('Memory Scolta budgets for its own work during a build. Total process memory is this plus the Drupal baseline (~130 MB) and I/O overhead, so allow noticeably more than the figure shown. A profile larger than the process @limit_flag is reduced to fit rather than allowed to fail mid-build.', ['@limit_flag' => 'memory_limit']);
+    $profileDescription = $profileDescription . ' ' . $limitDescription;
+
     $fieldset['memory_budget_profile'] = [
       '#type'          => 'select',
       '#title'         => t('Memory budget profile'),
@@ -65,8 +72,7 @@ final class MemoryBudgetSettingsFieldSet {
         'aggressive'   => t('Aggressive — ~1 GB for indexing'),
       ],
       '#default_value' => $config->profile(),
-      '#description'   => t('Memory Scolta budgets for its own work during a build. Total process memory is this plus the Drupal baseline (~130 MB) and I/O overhead, so allow noticeably more than the figure shown. A profile larger than the process @limit_flag is reduced to fit rather than allowed to fail mid-build.', ['@limit_flag' => 'memory_limit'])
-        . ' ' . $limitDescription,
+      '#description'   => $profileDescription,
     ];
 
     $fieldset['chunk_size'] = [

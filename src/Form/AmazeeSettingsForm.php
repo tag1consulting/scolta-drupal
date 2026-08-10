@@ -42,11 +42,20 @@ use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
  */
 class AmazeeSettingsForm extends FormBase {
 
+  /**
+   * Neither private nor readonly, both deliberately.
+   *
+   * FormBase brings in DependencySerializationTrait, and a cached form is
+   * unserialized by reassigning its service properties. That reassignment
+   * cannot reach a private property and cannot write a readonly one at all —
+   * a readonly property would raise "Cannot modify readonly property" on the
+   * first rebuild of a cached form. See https://www.drupal.org/node/3110266.
+   */
   public function __construct(
-    private readonly DrupalConfigStorage $storage,
-    private readonly AmazeeTrialProvisioner $trialProvisioner,
-    private readonly AmazeeAccountUpgrader $upgrader,
-    private readonly KeyExpiryRecovery $keyRecovery,
+    protected DrupalConfigStorage $storage,
+    protected AmazeeTrialProvisioner $trialProvisioner,
+    protected AmazeeAccountUpgrader $upgrader,
+    protected KeyExpiryRecovery $keyRecovery,
   ) {}
 
   /**

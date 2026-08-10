@@ -9,6 +9,14 @@
   <file>scolta.module</file>
   <file>scolta.install</file>
 
+  <!--
+    Tests are out of scope. The <file> list above already says so when phpcs is
+    invoked bare, but a path argument on the command line overrides it, and
+    `ddev phpcs` always passes one (web/modules/custom/<project>). Stating the
+    exclusion as a pattern makes it hold either way.
+  -->
+  <exclude-pattern>tests/</exclude-pattern>
+
   <rule ref="Drupal"/>
   <rule ref="DrupalPractice"/>
 
