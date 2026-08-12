@@ -170,11 +170,24 @@ class ForceBuildManifestPrimingTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testBothBuildPathsHandTheManifestToTheExporter(): void {
+    // scolta:build picks its gather source first (full walk or --entity-ids),
+    // so the shape is filterItems($source, $tsManifest) with both sources
+    // coming from the gatherer and both carrying the manifest.
     $this->assertMatchesRegularExpression(
-      '/filterItems\(\s*\$this->contentGatherer->gather\([^;]*?\),\s*\$tsManifest\s*\)/s',
+      '/filterItems\(\s*\$source,\s*\$tsManifest\s*\)/s',
       $this->commands,
       'scolta:build must pass the manifest to filterItems() — the exporter is where a '
       . 'body too short to index is dropped, and the only place that can record it.'
+    );
+    $this->assertMatchesRegularExpression(
+      '/\$source = \$this->contentGatherer->gather\([^;]*\$tsManifest,\s*\$force\)/s',
+      $this->commands,
+      'The full-walk source must come from the gatherer with the manifest.'
+    );
+    $this->assertMatchesRegularExpression(
+      '/\$source = \$this->contentGatherer->gatherByIds\([^;]*\$tsManifest,\s*\$force\)/s',
+      $this->commands,
+      'The --entity-ids source must come from the gatherer with the manifest.'
     );
     $this->assertMatchesRegularExpression(
       '/filterItems\(\s*\$this->contentGatherer->gather\([^;]*?\),\s*\$tsManifest\s*\)/s',

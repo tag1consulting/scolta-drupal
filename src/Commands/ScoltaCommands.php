@@ -141,6 +141,7 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Command(name: 'scolta:build', aliases: ['sb'])]
   #[CLI\Option(name: 'entity-type', description: 'Entity type to export')]
   #[CLI\Option(name: 'bundle', description: 'Bundle to export')]
+  #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build to exactly these entities — the published index contains only them, like --bundle scopes it to a bundle. IDs that cannot be loaded are logged and skipped. PHP indexer only; --bundle is ignored.')]
   #[CLI\Option(name: 'output-dir', description: 'Export directory')]
   #[CLI\Option(name: 'docroot', description: 'Docroot path')]
   #[CLI\Option(name: 'skip-pagefind', description: 'Export content only, skip Pagefind build')]
@@ -154,6 +155,7 @@ class ScoltaCommands extends DrushCommands {
     array $options = [
       'entity-type' => 'node',
       'bundle' => '',
+      'entity-ids' => '',
       'output-dir' => '/var/www/html/pagefind-site',
       'docroot' => 'docroot',
       'skip-pagefind' => FALSE,
@@ -178,6 +180,11 @@ class ScoltaCommands extends DrushCommands {
       $this->buildWithPhpIndexer($options, $config, (bool) $options['force']);
     }
     else {
+      // The binary pipeline walks the whole corpus through scolta:export and
+      // has no ID-scoped entry point.
+      if (!empty($options['entity-ids'])) {
+        throw new \RuntimeException('--entity-ids is only supported by the PHP indexer. Re-run with --indexer=php.');
+      }
       $this->buildWithBinary($options);
     }
 
@@ -283,7 +290,16 @@ class ScoltaCommands extends DrushCommands {
       return;
     }
 
-    $totalCount = $this->contentGatherer->gatherCount($entityType, $bundle);
+    // NULL means "no scoping" — the build walks the whole corpus. An explicit
+    // ID list, even one that resolved to nothing, must not fall through to a
+    // full walk.
+    $entityIds = ($options['entity-ids'] ?? '') !== ''
+      ? $this->resolveEntityIds($entityType, (string) $options['entity-ids'])
+      : NULL;
+
+    $totalCount = $entityIds !== NULL
+      ? count($entityIds)
+      : $this->contentGatherer->gatherCount($entityType, $bundle);
     if ($totalCount === 0) {
       $this->logger()->warning('No content found to index.');
       return;
@@ -326,10 +342,20 @@ class ScoltaCommands extends DrushCommands {
     // bodies too short to index, and it records those so the next build stops
     // re-gathering them.
     $exporter = new ContentExporter($resolvedOutputDir);
-    $items = $exporter->filterItems(
-      $this->contentGatherer->gather($entityType, $bundle, $siteName, $resumeFromId, $tsManifest, $force),
-      $tsManifest
-    );
+    if ($entityIds !== NULL) {
+      // Same inclusive resume boundary as the corpus walk: gatherByIds() has
+      // no cursor, so the ID list itself is trimmed to it. The boundary entity
+      // stays in because only some of its translations may have committed; the
+      // orchestrator drops the ones already indexed.
+      if ($resumeFromId !== NULL) {
+        $entityIds = array_values(array_filter($entityIds, fn($id) => (int) $id >= $resumeFromId));
+      }
+      $source = $this->contentGatherer->gatherByIds($entityType, $entityIds, $siteName, $tsManifest, $force);
+    }
+    else {
+      $source = $this->contentGatherer->gather($entityType, $bundle, $siteName, $resumeFromId, $tsManifest, $force);
+    }
+    $items = $exporter->filterItems($source, $tsManifest);
 
     $report = $orchestrator->build($intent, $items, $this->logger(), $reporter, force: $force);
 
@@ -377,6 +403,42 @@ class ScoltaCommands extends DrushCommands {
     }
 
     throw new \RuntimeException('PHP indexer failed: ' . ($report->error ?? 'unknown'));
+  }
+
+  /**
+   * Resolve a --entity-ids value to the IDs the build can actually index.
+   *
+   * Keeps the subset of the requested IDs that names a published entity, in
+   * ascending ID order — the same publishability rule gather() applies to the
+   * whole corpus. Everything else — a malformed token, an ID that does not
+   * exist, an unpublished entity — is reported in one notice rather than
+   * silently producing a smaller index than the operator asked for.
+   *
+   * @param string $entityType
+   *   The entity type the IDs belong to.
+   * @param string $raw
+   *   The comma-delimited option value.
+   *
+   * @return string[]
+   *   The published entity IDs, possibly empty.
+   */
+  private function resolveEntityIds(string $entityType, string $raw): array {
+    $requested = array_values(array_unique(array_filter(
+      array_map('trim', explode(',', $raw)),
+      static fn(string $id): bool => $id !== '',
+    )));
+
+    $numeric = array_filter($requested, 'ctype_digit');
+    $published = array_map('strval', $this->contentGatherer->publishedIds($entityType, array_values($numeric)));
+
+    $skipped = array_diff($requested, $published);
+    if (!empty($skipped)) {
+      $this->logger()->notice('Entity IDs that could not be loaded (missing or unpublished): {ids}.', [
+        'ids' => implode(', ', $skipped),
+      ]);
+    }
+
+    return $published;
   }
 
   /**
@@ -454,6 +516,9 @@ class ScoltaCommands extends DrushCommands {
     }
     if (!empty($options['bundle'])) {
       $cmd .= ' --bundle=' . escapeshellarg($options['bundle']);
+    }
+    if (!empty($options['entity-ids'])) {
+      $cmd .= ' --entity-ids=' . escapeshellarg((string) $options['entity-ids']);
     }
     if (isset($options['chunk-size']) && $options['chunk-size'] !== NULL) {
       $cmd .= ' --chunk-size=' . escapeshellarg((string) $options['chunk-size']);
