@@ -261,6 +261,50 @@ class ScoltaCommandsValidationTest extends TestCase {
     );
   }
 
+  public function testBuildCommandHasEntityIdsOption(): void {
+    $this->assertStringContainsString(
+      "'entity-ids'",
+      $this->commandsContents,
+      'Build command should have entity-ids option'
+    );
+  }
+
+  public function testEntityIdsAreFilteredToPublishedAndSkipsAreLogged(): void {
+    preg_match(
+      '/function resolveEntityIds\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s',
+      $this->commandsContents,
+      $m
+    );
+    $body = $m[1] ?? '';
+    $this->assertNotEmpty($body, 'Could not locate resolveEntityIds() method body');
+
+    $this->assertStringContainsString(
+      'publishedIds(',
+      $body,
+      'resolveEntityIds() must apply the same publishability rule as gather()'
+    );
+    $this->assertStringContainsString(
+      'could not be loaded',
+      $body,
+      'resolveEntityIds() must log a notice naming the IDs it skipped'
+    );
+  }
+
+  public function testEntityIdsBuildUsesTheSharedGatherByIdsPipeline(): void {
+    preg_match(
+      '/function buildWithPhpIndexer\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s',
+      $this->commandsContents,
+      $m
+    );
+    $body = $m[1] ?? '';
+
+    $this->assertStringContainsString(
+      'gatherByIds(',
+      $body,
+      'An --entity-ids build must stream through gatherByIds() so translations, field mappings, and the alter hook apply'
+    );
+  }
+
   public function testBuildCommandUsesFromOptions(): void {
     // Budget resolution is now delegated to MemoryBudgetConfig::fromCliAndConfig().
     $this->assertStringContainsString(

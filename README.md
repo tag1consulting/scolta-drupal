@@ -58,6 +58,7 @@ drush scolta:build
 | `drush scolta:build --indexer=php` | Use a specific indexer mode (`php`, `binary`, or `auto`) |
 | `drush scolta:build --memory-budget=256M` | Set memory budget (profile name or byte value) |
 | `drush scolta:build --chunk-size=N` | Process N pages per chunk (overrides config) |
+| `drush scolta:build --entity-ids=12,34` | Build an index of only these entities; IDs that cannot be loaded are logged and skipped. `--bundle` is ignored (PHP indexer only) |
 | `drush scolta:finalize` (`sf`) | Merge chunks into the final search index |
 | `drush scolta:rebuild-index` (`sri`) | Rebuild index from existing exported HTML files |
 | `drush scolta:clear-cache` (`scc`) | Clear expansion and summary caches |
