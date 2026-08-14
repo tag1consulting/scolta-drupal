@@ -56,6 +56,7 @@ EXCLUDED_PATHS=(
   ".gitignore"
   ".editorconfig"
   "CLAUDE.md"
+  "MAINTAINING.md"
   "scripts"
 )
 
