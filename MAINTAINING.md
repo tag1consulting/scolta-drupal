@@ -1,4 +1,4 @@
-# MAINTAINING — scolta-drupal
+# Maintaining scolta-drupal
 
 The Drupal module over scolta-php. Publishes to drupal.org.
 
@@ -11,8 +11,8 @@ copied and checked is in
 **What it is.** A Drupal module, glue only. It depends on `scolta-php` and never on `scolta-core`
 directly.
 
-**Where the version lives.** `scolta.info.yml`, and nowhere else. **Never add a `version` key to
-`composer.json`**: the `version-consistency` job hard-fails if one appears, because the drupal.org
+**Where the version lives.** `scolta.info.yml`, and nowhere else. Never add a `version` key to
+`composer.json`: the `version-consistency` job hard-fails if one appears, because the drupal.org
 Composer facade honours a declared version and a site tracking a dev branch could then `composer update`
 but never `composer install` from the resulting lock. drupal.org injects the release version into
 `scolta.info.yml` at packaging time.
@@ -28,8 +28,8 @@ an advisory `scripts/validate-release.php`), `version-sync`, `lock-guard`, `dist
 `antipatterns`, and `Version coherence`. `upstream-preview` is informational and deliberately not a merge
 gate. The scolta-php floor is covered by `tests/src/ScoltaPhpFloorTest.php`.
 
-**On release day** — *still open, waiting on the `scripts/validate-release.php` decision (shared guide,
-Still open #1).* The known steps: bump `scolta.info.yml`. Push two tags: `vX.Y.Z` on GitHub, and `X.Y.Z`
+**On release day.** This section is incomplete: it waits on the `scripts/validate-release.php` decision
+(shared guide, Still open #1). The known steps: bump `scolta.info.yml`. Push two tags: `vX.Y.Z` on GitHub, and `X.Y.Z`
 without the `v` for drupal.org, which ignores `v`-prefixed tags. `git fetch origin`, then
 `git push drupal origin/main:X.Y.Z`. Fast-forward the devel branch with `git push drupal origin/main:1.0.x`
 (skip it and the branch sits stale a whole cycle). Create the release node by hand on drupal.org; the
@@ -43,7 +43,7 @@ drupal.org is automated: the GitHub tag only cuts a GitHub release.
   the PR wasn't merged.
 - This package carries the bundle at `js/`, `css/` and `js/wasm/`. Re-vendor with `composer copy-assets`
   and commit the result. When `assets-in-sync` is red because the matching scolta-php PR hasn't merged,
-  do **not** run `composer copy-assets` to green it: that overwrites the new bundle with the old one,
+  do not run `composer copy-assets` to green it: that overwrites the new bundle with the old one,
   which is the exact failure the check exists to catch.
 - `phpstan` needs a raised memory limit. CI passes `--memory-limit=512M` explicitly, and the
   `composer analyse` script does not, so running it locally the composer way can OOM on unmodified
