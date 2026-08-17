@@ -29,18 +29,22 @@ an advisory `scripts/validate-release.php`), `version-sync`, `lock-guard`, `dist
 gate. The scolta-php floor is covered by `tests/src/ScoltaPhpFloorTest.php`.
 
 **On release day.** This section is incomplete: it waits on the `scripts/validate-release.php` decision
-(shared guide, Still open #1). The known steps: bump `scolta.info.yml`. Push two tags: `vX.Y.Z` on GitHub, and `X.Y.Z`
-without the `v` for drupal.org, which ignores `v`-prefixed tags. `git fetch origin`, then
-`git push drupal origin/main:X.Y.Z`. Fast-forward the devel branch with `git push drupal origin/main:1.0.x`
-(skip it and the branch sits stale a whole cycle). Create the release node by hand on drupal.org; the
-notes must be HTML, not markdown, so draft them for review rather than pasting markdown. Nothing about
-drupal.org is automated: the GitHub tag only cuts a GitHub release.
+(shared guide, Still open #1). The known steps: bump `scolta.info.yml`. Push both tags to GitHub, and
+only to GitHub: `vX.Y.Z`, and `X.Y.Z` without the `v` for drupal.org, which ignores `v`-prefixed tags.
+Advance the devel branch on GitHub too: `git fetch origin`, then `git push origin origin/main:X.Y.x`, a
+placeholder because drupal.org names the devel branch after the minor line (skip it and the branch sits
+stale a whole cycle). The pull mirror carries both to git.drupalcode.org; verify with `git ls-remote`
+against drupalcode rather than assuming. Then create the release node by hand on drupal.org; the notes
+must be HTML, not markdown, so draft them for review rather than pasting markdown. Tags and branches
+reach drupalcode automatically through the mirror; the release node is the manual part. Full procedure,
+including what to do when the mirror hasn't moved, is in the shared
+[RELEASING.md](https://github.com/tag1consulting/scolta-core/blob/main/RELEASING.md).
 
 **Watch out for.**
 
-- Don't push the `v`-tag to drupal (that was the old 1.0.0 way). Push `origin/main`, not your local
-  `main`. Confirm the mirror moved with `git ls-remote --heads`: "Everything up-to-date" usually means
-  the PR wasn't merged.
+- Never push to git.drupalcode.org, on any branch or tag: it breaks the pull mirror. Push `origin/main`
+  after `git fetch origin`, not your local `main`, and read "Everything up-to-date" as a sign the pull
+  request wasn't merged.
 - This package carries the bundle at `js/`, `css/` and `js/wasm/`. Re-vendor with `composer copy-assets`
   and commit the result. When `assets-in-sync` is red because the matching scolta-php PR hasn't merged,
   do not run `composer copy-assets` to green it: that overwrites the new bundle with the old one,
