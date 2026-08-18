@@ -2,7 +2,7 @@
 
 ## Versioning (CRITICAL — read scolta-core/VERSIONING.md)
 
-Major versions are synchronized across all Scolta packages; minor and patch versions are released independently per package. Adapters pin scolta-php via `composer.lock` within their `^1.x` constraint. This is a platform adapter — it depends on scolta-php, never on scolta-core directly.
+Each Scolta package versions independently, from its own git tags. Compatibility with scolta-php is expressed by the caret constraint in `composer.json`, not by matching version numbers with it. Adapters pin scolta-php via `composer.lock` within that constraint. This is a platform adapter — it depends on scolta-php, never on scolta-core directly.
 
 ### Rules
 
