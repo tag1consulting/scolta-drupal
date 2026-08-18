@@ -27,9 +27,9 @@ shows the version, with `version` and `version_normalized` agreeing.
 **CI checks.** phpunit (`test`, `functional`, `playwright`, `coverage`), `phpstan`, `assets-in-sync`
 (the model bundle check: `cmp` each committed asset against `tag1/scolta-php` resolved from `dev-main`),
 `docs-check` (CHANGELOG when code changes), `version-consistency` (no `composer.json` version key, plus
-an advisory `scripts/validate-release.php`), `version-sync`, `lock-guard`, `dist-archive`,
-`antipatterns`, and `Version coherence`. `upstream-preview` is informational and deliberately not a merge
-gate. The scolta-php floor is covered by `tests/src/ScoltaPhpFloorTest.php`.
+an advisory `scripts/validate-release.php`), `lock-guard`, `dist-archive`, `antipatterns`, and
+`Version coherence`. `upstream-preview` is informational and deliberately not a merge gate. The
+scolta-php floor is covered by `tests/src/ScoltaPhpFloorTest.php`.
 
 **On release day.** This section is incomplete: it waits on the `scripts/validate-release.php` decision
 (shared guide, Still open #1). The known steps: bump `scolta.info.yml`. Push both tags to GitHub, and
