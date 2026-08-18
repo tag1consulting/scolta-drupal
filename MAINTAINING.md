@@ -11,11 +11,14 @@ copied and checked is in
 **What it is.** A Drupal module, glue only. It depends on `scolta-php` and never on `scolta-core`
 directly.
 
-**Where the version lives.** `scolta.info.yml`, and nowhere else. Never add a `version` key to
-`composer.json`: the `version-consistency` job hard-fails if one appears, because the drupal.org
-Composer facade honours a declared version and a site tracking a dev branch could then `composer update`
-but never `composer install` from the resulting lock. drupal.org injects the release version into
-`scolta.info.yml` at packaging time.
+**Where the version comes from.** A release takes its version from the git tag. On drupal.org the
+packager derives the released version from that tag and injects it into `scolta.info.yml` at packaging
+time, so the tag rather than the file is the source of truth for a release. The `version:` committed in
+`scolta.info.yml` is what a git or dev checkout reports before packaging: keep it roughly current and
+treat it as a fallback rather than the record. Never add a `version` key to `composer.json`: the
+`version-consistency` job hard-fails if one appears, because the drupal.org Composer facade honours a
+declared version and a site tracking a dev branch could then `composer update` but never
+`composer install` from the resulting lock.
 
 **Where it publishes.** drupal.org, through packages.drupal.org, as `drupal/scolta`. Not Packagist: a
 `tag1/scolta-drupal` there would collide with the module name. To confirm: the packages.drupal.org page
