@@ -37,7 +37,7 @@ ARCHIVE="${1:-/tmp/scolta-drupal-dist.tar}"
 EXTRACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/scolta-drupal-dist.XXXXXX")"
 
 # ---------------------------------------------------------------------------
-# Configuration — keep in sync with .gitattributes and the runtime tree.
+# Configuration: keep in sync with .gitattributes and the runtime tree.
 # ---------------------------------------------------------------------------
 
 # Paths that MUST NOT appear in the archive. Mirror of the `export-ignore`
@@ -56,10 +56,11 @@ EXCLUDED_PATHS=(
   ".gitignore"
   ".editorconfig"
   "CLAUDE.md"
+  "MAINTAINING.md"
   "scripts"
 )
 
-# Committed runtime assets that MUST be present in the archive — a broken or
+# Committed runtime assets that MUST be present in the archive. A broken or
 # over-broad export-ignore line that drops one of these ships a dead module.
 REQUIRED_PATHS=(
   "composer.json"

@@ -11,3 +11,4 @@
 /.editorconfig         export-ignore
 /CLAUDE.md             export-ignore
 /scripts/              export-ignore
+/MAINTAINING.md        export-ignore
