@@ -434,6 +434,10 @@ Scolta connects to external services under specific conditions. No data is sent 
 
 No AI API calls are made unless a provider is configured and AI features are enabled in Scolta settings.
 
+## Code Repository Mirroring
+
+This project is maintained on Github. The code is git.drupalcode.org/prject/scolta is configured with a pull mirror of the Github repo so that Drupal sites may get the package via the usual drupal.org Composer facade.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for a full list of changes.
