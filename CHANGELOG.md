@@ -4,6 +4,8 @@ All notable changes to scolta-drupal will be documented in this file.
 
 This project uses [Semantic Versioning](https://semver.org/). Each Scolta package versions independently; compatibility with scolta-php is expressed by the caret constraint in `composer.json` rather than by matching version numbers.
 
+## [Unreleased]
+
 ## [1.3.0] - 2026-08-19
 
 ### Fixed
@@ -619,7 +621,8 @@ Coordinated release. Ports the streaming gather and CLI wiring pattern from scol
 - Symlinked shared assets from scolta-php (`scolta.js`, `scolta.css`)
 - Drupal behavior bridge (`scolta-drupal-bridge.js`) for Drupal.behaviors integration
 
-[Unreleased]: https://github.com/tag1consulting/scolta-drupal/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/tag1consulting/scolta-drupal/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/tag1consulting/scolta-drupal/compare/v1.2.0...v1.3.0
 [1.1.0]: https://github.com/tag1consulting/scolta-drupal/compare/v1.0.5...v1.1.0
 [1.0.1]: https://github.com/tag1consulting/scolta-drupal/compare/1.0.0...1.0.1
 [1.0.0-rc4]: https://github.com/tag1consulting/scolta-drupal/compare/1.0.0-rc3...1.0.0-rc4
