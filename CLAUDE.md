@@ -45,29 +45,17 @@ The lock does not have to name a stable scolta-php on a branch, and while the fl
 - Config schema (`config/schema/`) MUST match install defaults (`config/install/`).
 - Route controllers MUST exist and have the referenced methods.
 
-## Vendored browser assets — DO NOT EDIT DIRECTLY
+## Browser assets — deployed from vendor, never committed
 
-Four files are copies of canonical sources in `scolta-php/assets/`:
+The browser bundle (`js/scolta.js`, `css/scolta.css`, `wasm/scolta_core.js`, `wasm/scolta_core_bg.wasm`) is canonical in `scolta-php/assets/` and is **not committed to this repository**. `Drupal\scolta\Service\AssetDeployer` copies it from the installed `tag1/scolta-php` into `public://scolta-assets` at module install and on every cache rebuild (`hook_rebuild()`), copying only files that differ from the vendored canonical. `scolta.libraries.yml` and `ScoltaSearchBlock` reference the deployed copies.
 
-| committed here | canonical in scolta-php |
-|---|---|
-| `js/scolta.js` | `assets/js/scolta.js` |
-| `css/scolta.css` | `assets/css/scolta.css` |
-| `js/wasm/scolta_core.js` | `assets/wasm/scolta_core.js` |
-| `js/wasm/scolta_core_bg.wasm` | `assets/wasm/scolta_core_bg.wasm` |
+Why this design, in one paragraph of history: the bundle used to be committed here (drupal.org ships the git tarball, and Composer does not run a dependency's scripts, so nothing else placed a web-accessible copy). That required a re-vendor commit (`composer copy-assets`, since removed) for every scolta-php bundle change and an `assets-in-sync` CI job to catch stale copies — and on coordinated changes the job sat red until upstream merged. Deploying from vendor at cache-rebuild time removes the whole class: `composer update` + `drush cr` is sufficient, staleness is impossible by construction, and the public files directory is writable even on immutable-code hosts (Pantheon, Acquia prod) where the module directory is not. Vendor itself cannot be referenced directly because it sits above the docroot.
 
-**Never edit them in this repo.** All changes go to scolta-php first, then the copies are re-vendored here. The duplication is a requirement, not a smell: a site installing `drupal/scolta` gets the drupal.org tarball built from git, and Composer does not run a dependency's scripts, so nothing copies anything at install time. **The committed file is the shipped file.**
+Rules that follow:
 
-### Re-vendoring after a scolta-php change
-
-**Assets are NOT refreshed as a side effect of `composer install` or `composer update`.** They used to be, via `post-install-cmd` / `post-update-cmd`, and that is precisely what made the CI parity check vacuous: the hook rewrote the tracked file from `vendor/` moments before the check compared the two, so the check could never fail on a stale committed copy. A fixer and a checker in the same pipeline is the bug class, and the fixer always wins. Re-vendoring a bundle is a deliberate act that lands in the CHANGELOG, so it is a command a human runs and CI notices when someone forgot.
-
-1. Bump `tag1/scolta-php` in `composer.json` / `composer.lock` as needed.
-2. Run `composer copy-assets`. It overwrites all four committed files from `vendor/tag1/scolta-php/assets/` and fails loudly if a source is missing.
-3. Commit the result, with a CHANGELOG entry describing what changed in the bundle.
-4. The `assets-in-sync` CI job byte-compares each committed file against the vendored canonical and fails if any differs.
-
-On a coordinated change, `assets-in-sync` goes red until the matching scolta-php pull request merges, because it resolves scolta-php from `dev-main`. That is correct signal, not a problem to work around: an adapter must not merge ahead of its upstream. **Do not run `composer copy-assets` to make it green** — that overwrites the new bundle with the old one.
+- **Never commit a copy of the bundle here** (`StructuralIntegrityTest::testNoBrowserBundleFilesAreCommitted` enforces this). All bundle changes go to scolta-php; this repo picks them up through `composer.lock`.
+- **Never remove `hook_rebuild()` or the install-time deploy** — `hook_install()` runs once per site ever, so the rebuild hook is the only thing keeping updating sites current.
+- `AssetDeploymentFunctionalTest` is the behavioral guard: install deploys byte-identical copies, a cache rebuild repairs a stale one, uninstall removes the directory.
 
 ## Testing
 

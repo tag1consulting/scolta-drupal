@@ -226,15 +226,19 @@ class SaytSettingsTest extends TestCase {
   }
 
   public function testBundleReadsEveryKeyTheBlockEmits(): void {
-    $bundle = file_get_contents($this->moduleRoot . '/js/scolta.js');
-    $this->assertNotFalse($bundle, 'Unable to read the vendored js/scolta.js');
+    // The bundle is not committed here: AssetDeployer serves the installed
+    // scolta-php's copy at runtime, so that is the copy this contract must
+    // hold against.
+    $path = \Composer\InstalledVersions::getInstallPath('tag1/scolta-php') . '/assets/js/scolta.js';
+    $bundle = file_get_contents($path);
+    $this->assertNotFalse($bundle, "Unable to read the scolta-php bundle at {$path}");
 
     foreach (self::BROWSER_KEYS as $browserKey) {
       $this->assertStringContainsString(
         "instanceConfig.{$browserKey}",
         $bundle,
-        "The vendored bundle does not read {$browserKey} — either the re-vendor is stale or the "
-        . 'key was renamed upstream'
+        "The scolta-php bundle does not read {$browserKey} — either the installed scolta-php "
+        . 'predates the key or it was renamed upstream'
       );
     }
   }

@@ -30,6 +30,13 @@ services:
   scolta.index_locator:
     class: Drupal\scolta\Service\IndexLocator
 
+  # Copies the scolta-php browser bundle from vendor/ into
+  # public://scolta-assets. Runs at install and on every cache rebuild;
+  # copies only files that differ from the vendored canonical.
+  scolta.asset_deployer:
+    class: Drupal\scolta\Service\AssetDeployer
+    arguments: ['@file_system', '@logger.channel.scolta']
+
   # Decorate this to narrow who reaches the AI features. Both the block that
   # advertises them and the routes that serve them ask it.
   scolta.ai_access:

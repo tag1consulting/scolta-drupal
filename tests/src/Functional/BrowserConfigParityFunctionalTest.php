@@ -9,7 +9,9 @@ use Drupal\Tests\BrowserTestBase;
 /**
  * Stay-in-sync guard between what the browser reads and what this module emits.
  *
- * js/scolta.js is a byte-identical copy of the canonical bundle in scolta-php.
+ * The browser bundle is the installed scolta-php's assets/js/scolta.js,
+ * deployed to the public files directory by AssetDeployer and read here from
+ * vendor — the same bytes a site serves.
  * Every config value it consumes is read off the instance config object that
  * ScoltaSearchBlock::build() puts into drupalSettings, so the two are a
  * contract: a key the bundle reads but no config layer emits is a feature that
@@ -211,12 +213,12 @@ class BrowserConfigParityFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * The committed browser bundle as text.
+   * The installed scolta-php browser bundle as text.
    */
   private function bundleSource(): string {
-    $path = dirname(__DIR__, 3) . '/js/scolta.js';
+    $path = \Composer\InstalledVersions::getInstallPath('tag1/scolta-php') . '/assets/js/scolta.js';
     $source = file_get_contents($path);
-    $this->assertNotFalse($source, 'Unable to read js/scolta.js');
+    $this->assertNotFalse($source, "Unable to read the scolta-php bundle at {$path}");
 
     return $source;
   }

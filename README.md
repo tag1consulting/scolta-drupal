@@ -31,6 +31,12 @@ composer require tag1/scolta-drupal
 drush en scolta
 ```
 
+The browser assets (search JS/CSS and the WASM scorer) are not part of the
+module's codebase: at install time — and again on every cache rebuild — they
+are copied from the installed `tag1/scolta-php` package into
+`public://scolta-assets`. Updating scolta-php therefore needs nothing beyond
+the usual `composer update` followed by `drush cr`.
+
 ### Search API setup
 
 Scolta uses Drupal's Search API as its indexing framework. After enabling the module:

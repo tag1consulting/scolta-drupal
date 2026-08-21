@@ -23,13 +23,11 @@ const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
 
-// css/scolta.css is committed to this repository, because the committed copy
-// is the one a site installing drupal/scolta receives. Composer no longer
-// refreshes it on install: `copy-assets` is a manual re-vendor command, and
-// the assets-in-sync CI job is what proves the committed copy matches
-// scolta-php. So these specs deliberately read the committed file — the CSS
-// this branch would actually ship.
-const CSS_PATH = path.resolve(__dirname, '../../css/scolta.css');
+// The CSS is not committed to this repository: AssetDeployer copies the
+// installed scolta-php's bundle into the public files directory at install
+// time and on cache rebuild. These specs read the vendored canonical — the
+// same bytes a site serves — so `composer install` must have run first.
+const CSS_PATH = path.resolve(__dirname, '../../vendor/tag1/scolta-php/assets/css/scolta.css');
 
 let scoltaCss = '';
 if (fs.existsSync(CSS_PATH)) {

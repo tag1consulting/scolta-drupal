@@ -72,114 +72,10 @@ jobs:
       - name: Run tests
         run: composer test
 
-  # The committed browser assets are duplicated from scolta-php on purpose: a
-  # site installing drupal/scolta gets the drupal.org tarball built from git,
-  # and Composer does not run a dependency's scripts, so nothing copies
-  # anything at install time. The committed file IS the shipped file, and this
-  # job is the only thing standing between a stale copy and a release.
-  #
-  # It lives in one job deliberately. It used to be a step inside `test`, after
-  # a `composer update` that fired post-update-cmd -> copy-assets, so it
-  # compared a file Composer had just written against the source it wrote it
-  # from and could not fail on a stale committed copy. The hook is gone (see
-  # CHANGELOG); this is the check that replaces it.
-  assets-in-sync:
-    name: assets-in-sync
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          extensions: intl
-          coverage: none
-
-      - name: Replace path repo with GitHub VCS repo
-        run: |
-          php -r '
-            $j = json_decode(file_get_contents("composer.json"), true);
-            $j["repositories"] = [
-              ["type" => "composer", "url" => "https://packages.drupal.org/8"],
-              ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
-            ];
-            $j["require"]["tag1/scolta-php"] = "dev-main@dev";
-            $j["provide"]["drupal/core"] = "11.2.0";
-            file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-          '
-
-      - name: Install dependencies
-        run: composer update --no-interaction --prefer-dist --ignore-platform-req=php
-
-      - name: Compare committed assets against the vendored canonical
-        run: |
-          set -euo pipefail
-          CANONICAL=vendor/tag1/scolta-php/assets
-          fail=0
-
-          # Byte comparison, not checksums: it needs no manifest, it cannot be
-          # subtly wrong, and it works against every scolta-php version. The
-          # only mapping kept is where the two layouts genuinely differ
-          # (scolta-php assets/wasm/ -> this module's js/wasm/).
-          compare() {
-            src="$CANONICAL/$1"
-            dest="$2"
-            if [ ! -f "$src" ]; then
-              echo "ERROR: canonical source $src is missing from the vendored scolta-php."
-              fail=1
-              return
-            fi
-            if [ ! -f "$dest" ]; then
-              echo "ERROR: committed asset $dest is missing."
-              fail=1
-              return
-            fi
-            if cmp -s "$src" "$dest"; then
-              echo "OK:       $dest is byte-identical to scolta-php assets/$1"
-            else
-              echo "MISMATCH: $dest differs from scolta-php assets/$1"
-              fail=1
-            fi
-          }
-
-          compare js/scolta.js             js/scolta.js
-          compare css/scolta.css           css/scolta.css
-          compare wasm/scolta_core.js      js/wasm/scolta_core.js
-          compare wasm/scolta_core_bg.wasm js/wasm/scolta_core_bg.wasm
-
-          if [ "$fail" -ne 0 ]; then
-            cat >&2 <<'MSG'
-
-          ------------------------------------------------------------------
-          The committed browser assets do not match scolta-php.
-
-          This job resolves tag1/scolta-php from dev-main, so it compares what
-          this branch would ship against the current tip of scolta-php main.
-          Two things cause a mismatch, and the second is the common one:
-
-            1. A STALE COMMITTED COPY. A re-vendor was forgotten or partial.
-               Fix it here: run `composer copy-assets`, then commit the result.
-
-            2. A COORDINATED CHANGE WHOSE UPSTREAM HAS NOT MERGED YET. The
-               bundle on this branch is newer than scolta-php main, because
-               the matching scolta-php pull request is still open. Nothing is
-               wrong with this branch. Merge scolta-php first; this job goes
-               green once main carries the same bundle.
-
-               Do NOT run `composer copy-assets` to silence this case. That
-               overwrites the new bundle with the old one and is exactly the
-               failure this check exists to catch.
-          ------------------------------------------------------------------
-          MSG
-            exit 1
-          fi
-          echo "All committed assets are byte-identical to the vendored scolta-php."
-
-  # Informational coverage, never a merge gate. `assets-in-sync` and the test
-  # suites pin scolta-php to dev-main, which is correct — an adapter must not
-  # merge ahead of its upstream — but it also means this repo's own suite never
-  # exercises an unmerged upstream change before merge.
+  # Informational coverage, never a merge gate. The test suites pin scolta-php
+  # to dev-main, which is correct — an adapter must not merge ahead of its
+  # upstream — but it also means this repo's own suite never exercises an
+  # unmerged upstream change before merge.
   #
   # Commit a git ref into .github/upstream-preview to run the suite against it.
   # A committed file rather than a branch-name convention: it is visible in the
@@ -460,8 +356,9 @@ jobs:
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
-      # css/scolta.css is committed, so the layout specs read the copy this
-      # branch would ship. Composer no longer overwrites it on install.
+      # The layout specs read css/scolta.css from the vendored scolta-php —
+      # the canonical bundle AssetDeployer serves at runtime — so composer
+      # must have installed it before Playwright runs.
       - name: Install Composer dependencies
         run: composer update --no-interaction --prefer-dist --ignore-platform-req=php
 

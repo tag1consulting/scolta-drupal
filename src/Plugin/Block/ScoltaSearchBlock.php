@@ -7,7 +7,6 @@ namespace Drupal\scolta\Plugin\Block;
 use Drupal\Core\Block\BlockBase;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
@@ -16,6 +15,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
 use Drupal\scolta\Access\AiAccessInterface;
+use Drupal\scolta\Service\AssetDeployer;
 use Drupal\scolta\Service\IndexLocator;
 use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -54,7 +54,6 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     protected LanguageManagerInterface $languageManager,
     protected AccountInterface $currentUser,
     protected StreamWrapperManagerInterface $streamWrapperManager,
-    protected ModuleExtensionList $moduleExtensionList,
     protected IndexLocator $indexLocator,
     protected AiAccessInterface $aiAccess,
   ) {
@@ -75,7 +74,6 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       $container->get('language_manager'),
       $container->get('current_user'),
       $container->get('stream_wrapper_manager'),
-      $container->get('extension.list.module'),
       $container->get('scolta.index_locator'),
       $container->get('scolta.ai_access'),
     );
@@ -128,9 +126,9 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     $pagefindPath = $this->resolvePagefindUrl($outputDir);
 
     // Build the window.scolta configuration for the JS frontend.
-    // Resolve the WASM glue JS path for client-side scoring.
-    $modulePath = $this->moduleExtensionList->getPath('scolta');
-    $wasmPath = base_path() . $modulePath . '/js/wasm/scolta_core.js';
+    // Resolve the WASM glue JS for client-side scoring. AssetDeployer copies
+    // it (with the .wasm binary beside it) into the public files directory.
+    $wasmPath = $this->fileUrlGenerator->generateString(AssetDeployer::DIRECTORY . '/wasm/scolta_core.js');
 
     $currentLanguage = $this->languageManager
       ->getCurrentLanguage(LanguageInterface::TYPE_CONTENT)
@@ -165,10 +163,9 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       'hideEmptyFacets' => $config->hideEmptyFacets,
       // Taken from Drupal config rather than from ScoltaConfig, for the same
       // reason the SAYT keys below are: the behaviour lives entirely in the
-      // js/scolta.js this module vendors and ships, so the setting must work
-      // against any scolta-php in the supported range, including one predating
-      // the property. An unrecognized value clamps to 'eager', as the bundle
-      // does.
+      // deployed js/scolta.js, so the setting must work against any scolta-php
+      // in the supported range, including one predating the property. An
+      // unrecognized value clamps to 'eager', as the bundle does.
       'facetMode' => in_array($drupalConfig->get('facet_mode'), ['eager', 'deferred', 'disabled'], TRUE)
         ? $drupalConfig->get('facet_mode')
         : 'eager',
@@ -176,11 +173,11 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       'allowedLinkDomains' => [],
       'disclaimer' => '',
       'currentLanguage' => $currentLanguage,
-      // Search as you type. Ten top-level keys the committed bundle reads off
+      // Search as you type. Ten top-level keys the deployed bundle reads off
       // the instance config, taken from Drupal config rather than from
-      // ScoltaConfig so the shipped bundle's suggestions work against any
+      // ScoltaConfig so the deployed bundle's suggestions work against any
       // scolta-php in the supported ^1.0 range: the SAYT implementation lives
-      // entirely in js/scolta.js, which this module vendors and ships itself.
+      // entirely in js/scolta.js, deployed from the installed scolta-php.
       // Defaults repeat the install defaults so a site that never ran the
       // update hook still gets the documented behavior.
       'saytEnabled' => (bool) ($drupalConfig->get('sayt_enabled') ?? TRUE),

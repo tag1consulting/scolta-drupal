@@ -271,7 +271,6 @@ class QuickWinsRegressionTest extends TestCase {
       'ScoltaSearchBlock must use injected services');
     $this->assertStringContainsString("\$container->get('current_user')", $contents);
     $this->assertStringContainsString("\$container->get('stream_wrapper_manager')", $contents);
-    $this->assertStringContainsString("\$container->get('extension.list.module')", $contents);
   }
 
   public function testSearchBlockTranslatesUserFacingStrings(): void {

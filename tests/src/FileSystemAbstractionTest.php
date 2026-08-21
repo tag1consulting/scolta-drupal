@@ -175,42 +175,49 @@ class FileSystemAbstractionTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // scolta.install: FileSystemInterface used procedurally.
+  // AssetDeployer: FileSystemInterface injected and used.
   // -------------------------------------------------------------------
 
-  public function testInstallHookUsesFileSystemForMkdir(): void {
-    $file = $this->moduleRoot . '/scolta.install';
+  public function testAssetDeployerHasFileSystemInConstructor(): void {
+    $file = $this->moduleRoot . '/src/Service/AssetDeployer.php';
     $contents = file_get_contents($file);
-    $this->assertStringContainsString('$fileSystem->mkdir(', $contents,
-      '_scolta_deploy_assets() must use $fileSystem->mkdir() not raw mkdir()');
+    $this->assertStringContainsString('FileSystemInterface', $contents,
+      'AssetDeployer must type-hint FileSystemInterface in its constructor');
   }
 
-  public function testInstallHookUsesFileSystemForCopy(): void {
-    $file = $this->moduleRoot . '/scolta.install';
+  public function testAssetDeployerCopiesViaFileSystem(): void {
+    $file = $this->moduleRoot . '/src/Service/AssetDeployer.php';
     $contents = file_get_contents($file);
-    $this->assertStringContainsString('$fileSystem->copy(', $contents,
-      '_scolta_deploy_assets() must use $fileSystem->copy() not raw copy()');
+    $this->assertStringContainsString('$this->fileSystem->copy(', $contents,
+      'AssetDeployer::deploy() must use $this->fileSystem->copy() not raw copy()');
   }
 
-  public function testInstallHookImportsFileExists(): void {
-    $file = $this->moduleRoot . '/scolta.install';
+  public function testAssetDeployerPreparesDirectoryViaFileSystem(): void {
+    $file = $this->moduleRoot . '/src/Service/AssetDeployer.php';
+    $contents = file_get_contents($file);
+    $this->assertStringContainsString('$this->fileSystem->prepareDirectory(', $contents,
+      'AssetDeployer::deploy() must create the destination via $this->fileSystem->prepareDirectory() not raw mkdir()');
+  }
+
+  public function testAssetDeployerImportsFileExists(): void {
+    $file = $this->moduleRoot . '/src/Service/AssetDeployer.php';
     $contents = file_get_contents($file);
     $this->assertStringContainsString('use Drupal\Core\File\FileExists;', $contents,
-      'scolta.install must import Drupal\Core\File\FileExists for the copy() FileExists::Replace argument');
+      'AssetDeployer must import Drupal\Core\File\FileExists for the copy() FileExists::Replace argument');
   }
 
-  public function testUninstallHookUsesFileSystemForDelete(): void {
-    $file = $this->moduleRoot . '/scolta.install';
+  public function testAssetDeployerRemovesViaDeleteRecursive(): void {
+    $file = $this->moduleRoot . '/src/Service/AssetDeployer.php';
     $contents = file_get_contents($file);
-    $this->assertStringContainsString('$fileSystem->delete(', $contents,
-      'scolta_uninstall() must use $fileSystem->delete() not raw unlink()');
+    $this->assertStringContainsString('$this->fileSystem->deleteRecursive(', $contents,
+      'AssetDeployer::remove() must use $this->fileSystem->deleteRecursive() not raw unlink()/rmdir()');
   }
 
-  public function testUninstallHookUsesFileSystemForRmdir(): void {
+  public function testUninstallHookRemovesDeployedAssets(): void {
     $file = $this->moduleRoot . '/scolta.install';
     $contents = file_get_contents($file);
-    $this->assertStringContainsString('$fileSystem->rmdir(', $contents,
-      'scolta_uninstall() must use $fileSystem->rmdir() not raw rmdir()');
+    $this->assertStringContainsString("service('scolta.asset_deployer')->remove()", $contents,
+      'scolta_uninstall() must remove the deployed bundle via the asset deployer');
   }
 
 }
