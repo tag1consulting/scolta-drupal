@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ## [Unreleased]
 
+### Fixed
+- **Re-vendored the browser bundle (`js/scolta.js`, `js/wasm/scolta_core.js`, `js/wasm/scolta_core_bg.wasm`) so a quoted phrase query no longer returns documents that merely contain the words scattered apart.** `"Boston massacre"` matched a Tulsa Race Massacre guide because its author is Carole **Boston** Weatherford — Pagefind has no phrase operator and the forced-phrase mode only boosted adjacency. The updated WASM scorer (scolta-core `retain_forced_phrase_matches()`) now excludes primary results without an adjacent occurrence of the phrase terms, and `scolta.js` skips AI query expansion for quoted queries so expansion cannot re-seed non-phrase documents. See the scolta-php and scolta-core CHANGELOGs for the full mechanics. Coordinated change: `assets-in-sync` stays red until the matching scolta-php pull request merges.
+
 ## [1.3.0] - 2026-08-19
 
 ### Fixed

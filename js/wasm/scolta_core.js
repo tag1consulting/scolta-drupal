@@ -628,7 +628,7 @@ function __wbg_get_imports() {
             const ret = Date.now();
             return ret;
         },
-        __wbg_warn_606cb10e9d02eca5: function(arg0, arg1) {
+        __wbg_warn_87ccba9dd5b18538: function(arg0, arg1) {
             console.warn(getStringFromWasm0(arg0, arg1));
         },
     };
