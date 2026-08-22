@@ -35,7 +35,9 @@ The browser assets (search JS/CSS and the WASM scorer) are not part of the
 module's codebase: at install time — and again on every cache rebuild — they
 are copied from the installed `tag1/scolta-php` package into
 `public://scolta-assets`. Updating scolta-php therefore needs nothing beyond
-the usual `composer update` followed by `drush cr`.
+the usual `composer update` followed by `drush cr`. That directory is runtime
+state, not code: if it is ever missing or stale — say, after restoring a
+database backup without the files directory — `drush cr` recreates it.
 
 ### Search API setup
 

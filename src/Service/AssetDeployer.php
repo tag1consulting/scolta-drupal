@@ -86,7 +86,29 @@ class AssetDeployer {
         $this->logger->error('Could not prepare @dir for the Scolta browser bundle.', ['@dir' => $destDir]);
         continue;
       }
-      $this->fileSystem->copy($srcPath, $destUri, FileExists::Replace);
+      // Copy to a temp name and rename into place. The rename is atomic on
+      // the same filesystem, so a client fetching mid-deploy — or a rebuild
+      // killed mid-copy — never sees a truncated file at the served path.
+      // The temp name is unique per process so two concurrent rebuilds
+      // cannot interleave writes into one file; last rename wins, and both
+      // rename the same bytes. A temp file orphaned by a kill is inert junk:
+      // nothing serves it, the next deploy ignores it, and uninstall removes
+      // the directory.
+      $tmpUri = $destUri . '.tmp-' . uniqid('', TRUE);
+      try {
+        $this->fileSystem->copy($srcPath, $tmpUri, FileExists::Replace);
+        $this->fileSystem->move($tmpUri, $destUri, FileExists::Replace);
+      }
+      catch (\Exception $e) {
+        $this->logger->error('Could not deploy Scolta asset @dest: @message', [
+          '@dest' => $destUri,
+          '@message' => $e->getMessage(),
+        ]);
+        if (file_exists($tmpUri)) {
+          $this->fileSystem->delete($tmpUri);
+        }
+        continue;
+      }
       $this->logger->info('Deployed Scolta asset @dest from @src.', ['@dest' => $destUri, '@src' => $srcPath]);
     }
   }
