@@ -523,6 +523,15 @@ class ScoltaCommands extends DrushCommands {
     if (isset($options['chunk-size']) && $options['chunk-size'] !== NULL) {
       $cmd .= ' --chunk-size=' . escapeshellarg((string) $options['chunk-size']);
     }
+    // --force must survive segmentation: an unforced segment serves any
+    // entity whose changed timestamp matches the manifest from cached
+    // references, and the manifest still holds the previous build's entries
+    // for the whole corpus because pruneAndSave() only runs at end-of-build,
+    // which the aborting parent never reached. Without this, a forced build
+    // big enough to segment silently degrades to incremental for its tail.
+    if (!empty($options['force'])) {
+      $cmd .= ' --force';
+    }
     $cmd .= ' --memory-budget=' . escapeshellarg(round($budgetBytes / 1_048_576) . 'M');
 
     $pagesBefore = $firstReport->pagesProcessed;

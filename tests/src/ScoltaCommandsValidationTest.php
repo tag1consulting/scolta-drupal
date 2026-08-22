@@ -565,6 +565,32 @@ class ScoltaCommandsValidationTest extends TestCase {
     );
   }
 
+  public function testResumeSegmentsForwardTheOptionsThatChangeWhatABuildReads(): void {
+    // Matched against code with comments stripped, so a comment explaining an
+    // option does not read as the code that forwards it.
+    preg_match(
+      '/function runResumeChain\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s',
+      $this->codeWithoutComments(),
+      $m
+    );
+    $body = $m[1] ?? '';
+    $this->assertNotEmpty($body, 'Could not locate runResumeChain() method body');
+
+    // Every option that changes what a segment builds or reads must be
+    // forwarded, or a segmented build silently behaves differently from an
+    // unsegmented one. --force is the one that was missing: unforced segments
+    // served the tail of the corpus from cached references against a manifest
+    // the aborted parent never pruned, so a forced build big enough to
+    // segment degraded to incremental and reported success.
+    foreach (['--entity-type=', '--bundle=', '--entity-ids=', '--chunk-size=', '--force', '--memory-budget='] as $option) {
+      $this->assertStringContainsString(
+        $option,
+        $body,
+        "runResumeChain() must forward {$option} to the segments it spawns"
+      );
+    }
+  }
+
   public function testAFailedBuildThrowsSoDrushExitsNonZero(): void {
     preg_match(
       '/function buildWithPhpIndexer\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s',
