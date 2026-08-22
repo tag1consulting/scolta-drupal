@@ -4,7 +4,25 @@ Breaking changes and the action each one requires, newest first. A release that
 needs nothing from you is not listed here; see `CHANGELOG.md` for the full
 record.
 
-## 1.2.0
+## Unreleased
+
+### The browser bundle moved from the module directory to public files
+
+**Who is affected:** every site, but the standard deploy routine already does
+everything required. Sites with custom tooling that referenced the old asset
+paths need to update them.
+
+**What changed:** `js/scolta.js`, `css/scolta.css` and the WASM pair are no
+longer shipped inside the module. They are copied from the installed
+`tag1/scolta-php` into `public://scolta-assets` at module install, by update
+hook, and on every cache rebuild.
+
+**What to do:** run `drush updb` and `drush cr` after `composer update`, as
+usual — either one performs the first deployment. Until one of them runs, the
+search page's JS/CSS references point at files that no longer exist, which is
+the ordinary "rebuild caches after a code update" requirement, not a new one.
+Anything that hardcoded `modules/.../scolta/js/scolta.js` (CSP rules, asset
+pipelines, aggregation exclusions) should now reference the public files path.
 
 ### `ScoltaContentGatherer::gather()` changed its fourth parameter
 

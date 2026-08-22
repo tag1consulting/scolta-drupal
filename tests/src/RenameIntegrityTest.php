@@ -245,12 +245,15 @@ class RenameIntegrityTest extends TestCase {
   }
 
   /**
-   * Verify scolta.js is present and accessible.
+   * Verify the scolta.js bundle is present in the installed scolta-php.
+   *
+   * The bundle is not committed to this module: AssetDeployer copies it from
+   * vendor into the public files directory at install and cache rebuild.
    */
   public function testScoltaJsExists(): void {
-    $jsFile = $this->moduleRoot . '/js/scolta.js';
+    $jsFile = \Composer\InstalledVersions::getInstallPath('tag1/scolta-php') . '/assets/js/scolta.js';
     $this->assertFileExists($jsFile,
-      'scolta.js must exist at js/scolta.js (symlink or copy from scolta-php)');
+      'scolta.js must exist in the installed scolta-php assets');
     $contents = file_get_contents($jsFile);
     $this->assertNotEmpty($contents, 'scolta.js must not be empty');
     $this->assertStringContainsString('Scolta', $contents,
@@ -258,12 +261,12 @@ class RenameIntegrityTest extends TestCase {
   }
 
   /**
-   * Verify scolta.css is present and accessible.
+   * Verify the scolta.css bundle is present in the installed scolta-php.
    */
   public function testScoltaCssExists(): void {
-    $cssFile = $this->moduleRoot . '/css/scolta.css';
+    $cssFile = \Composer\InstalledVersions::getInstallPath('tag1/scolta-php') . '/assets/css/scolta.css';
     $this->assertFileExists($cssFile,
-      'scolta.css must exist at css/scolta.css (symlink or copy from scolta-php)');
+      'scolta.css must exist in the installed scolta-php assets');
     $contents = file_get_contents($cssFile);
     $this->assertNotEmpty($contents);
     $this->assertStringContainsString('scolta-', $contents);

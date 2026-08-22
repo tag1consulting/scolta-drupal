@@ -6,10 +6,8 @@
  */
 
 use Tag1\Scolta\Binary\PagefindBinary;
-use Composer\InstalledVersions;
 use Drupal\Core\Site\Settings;
 use Drupal\scolta\Form\ScoltaSettingsForm;
-use Drupal\Core\File\FileExists;
 use Drupal\user\Entity\Role;
 use Drupal\user\RoleInterface;
 
@@ -17,7 +15,7 @@ use Drupal\user\RoleInterface;
  * Implements hook_install().
  */
 function scolta_install() {
-  _scolta_deploy_assets();
+  \Drupal::service('scolta.asset_deployer')->deploy();
 
   // POLICY: installing the module configures no AI provider. The managed
   // Amazee.ai gateway is enabled by an explicit operator action — selecting it
@@ -56,62 +54,6 @@ function _scolta_has_explicit_api_key(): bool {
   // Drupal config-stored key (e.g. set via config import or admin UI path).
   $configKey = \Drupal::config('scolta.settings')->get('ai_api_key') ?? '';
   return $configKey !== '';
-}
-
-/**
- * Deploy compiled JS/CSS/WASM assets from scolta-php into the module directory.
- *
- * Composer only runs post-install-cmd scripts for the root package, so assets
- * are never copied during `composer require`. This hook does the copy at
- * Drupal module install time instead.
- */
-function _scolta_deploy_assets(): void {
-  // Locate scolta-php via Composer's installed package registry.
-  $scoltaPhpPath = NULL;
-  if (class_exists(InstalledVersions::class)) {
-    try {
-      $scoltaPhpPath = InstalledVersions::getInstallPath('tag1/scolta-php');
-    }
-    catch (\OutOfBoundsException $e) {
-      // Package not registered; fall through to fallback.
-    }
-  }
-  if (!$scoltaPhpPath) {
-    // Fallback: standard Composer vendor location relative to Drupal root.
-    $scoltaPhpPath = \Drupal::root() . '/../vendor/tag1/scolta-php';
-  }
-
-  $assetsDir = rtrim((string) $scoltaPhpPath, '/') . '/assets';
-  if (!is_dir($assetsDir)) {
-    \Drupal::logger('scolta')->warning('scolta-php assets not found at @path — JS/CSS/WASM unavailable.', ['@path' => $assetsDir]);
-    return;
-  }
-
-  $modulePath = \Drupal::root() . '/' . \Drupal::service('extension.list.module')->getPath('scolta');
-
-  // Map: source path (relative to assets/) => dest path (relative to module).
-  $assets = [
-    'js/scolta.js' => 'js/scolta.js',
-    'css/scolta.css' => 'css/scolta.css',
-    'wasm/scolta_core.js' => 'js/wasm/scolta_core.js',
-    'wasm/scolta_core_bg.wasm' => 'js/wasm/scolta_core_bg.wasm',
-  ];
-
-  $fileSystem = \Drupal::service('file_system');
-
-  foreach ($assets as $src => $dest) {
-    $srcPath = $assetsDir . '/' . $src;
-    $destPath = $modulePath . '/' . $dest;
-    if (!file_exists($srcPath)) {
-      \Drupal::logger('scolta')->warning('Missing scolta-php asset: @path', ['@path' => $srcPath]);
-      continue;
-    }
-    $destDir = dirname($destPath);
-    if (!is_dir($destDir)) {
-      $fileSystem->mkdir($destDir, 0755, TRUE);
-    }
-    $fileSystem->copy($srcPath, $destPath, FileExists::Replace);
-  }
 }
 
 /**
@@ -166,26 +108,8 @@ function scolta_requirements(string $phase): array {
  * Implements hook_uninstall().
  */
 function scolta_uninstall() {
-  // Remove deployed assets from the module directory.
-  $modulePath = \Drupal::root() . '/' . \Drupal::service('extension.list.module')->getPath('scolta');
-  $fileSystem = \Drupal::service('file_system');
-  $deployed = [
-    'js/scolta.js',
-    'css/scolta.css',
-    'js/wasm/scolta_core.js',
-    'js/wasm/scolta_core_bg.wasm',
-  ];
-  foreach ($deployed as $asset) {
-    $path = $modulePath . '/' . $asset;
-    if (file_exists($path)) {
-      $fileSystem->delete($path);
-    }
-  }
-  $wasmDir = $modulePath . '/js/wasm';
-  // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- scandir() used for a simple emptiness check; scanDirectory() returns objects and is heavier for this purpose.
-  if (is_dir($wasmDir) && count(array_diff(scandir($wasmDir), ['.', '..'])) === 0) {
-    $fileSystem->rmdir($wasmDir);
-  }
+  // Remove the deployed browser bundle from the public files directory.
+  \Drupal::service('scolta.asset_deployer')->remove();
 
   // Clean up the rebuild queue.
   \Drupal::queue('scolta_rebuild')->deleteQueue();
@@ -448,4 +372,30 @@ function scolta_update_10004() {
   }
 
   return implode(' ', array_map('strval', $messages));
+}
+
+/**
+ * Deploys the browser bundle to the public files directory.
+ *
+ * The bundle (js/scolta.js, css/scolta.css, and the WASM pair) used to be
+ * committed to this module and served from the module directory, with the
+ * install hook overwriting the committed copies from vendor/. That design
+ * needed a re-vendor commit in this repository for every scolta-php bundle
+ * change, because hook_install() runs once per site ever: an updating site
+ * only ever served whatever was committed. The bundle now deploys from the
+ * installed tag1/scolta-php into public://scolta-assets — writable on every
+ * host, including immutable-code deploys where the module directory is not —
+ * at install time and on every cache rebuild, so `drush cr` after
+ * `composer update` picks up a new bundle with no module release.
+ *
+ * This hook performs the first deployment for an updating site, so the new
+ * library paths in scolta.libraries.yml resolve as soon as `drush updb`
+ * runs. The old module-directory copies need no cleanup here: Composer
+ * replaces the module directory wholesale on update, and this release no
+ * longer ships them.
+ */
+function scolta_update_10005() {
+  \Drupal::service('scolta.asset_deployer')->deploy();
+
+  return t('Deployed the Scolta browser bundle (JS, CSS, WASM) from the installed tag1/scolta-php to public://scolta-assets. It is refreshed automatically on every cache rebuild whenever the installed scolta-php changes.');
 }

@@ -16,13 +16,17 @@ use PHPUnit\Framework\TestCase;
  * the two-column layout as the permanent default, making the 220px
  * filter sidebar always occupy space — even when empty — and squeezing
  * all search results into the narrow right column.
+ *
+ * The CSS is no longer committed here: AssetDeployer serves the installed
+ * scolta-php's copy at runtime, so these guards read that copy — the one a
+ * site actually gets.
  */
 class LayoutCssRegressionTest extends TestCase {
 
   private string $css;
 
   protected function setUp(): void {
-    $this->css = file_get_contents(dirname(__DIR__, 2) . '/css/scolta.css');
+    $this->css = file_get_contents(\Composer\InstalledVersions::getInstallPath('tag1/scolta-php') . '/assets/css/scolta.css');
   }
 
   /**

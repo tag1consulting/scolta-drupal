@@ -350,33 +350,26 @@ class ScoltaSearchBlockTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // WASM path — subdirectory install support.
+  // WASM path — resolved from the deployed public files copy.
   // -------------------------------------------------------------------
 
-  public function testWasmPathUsesBasePath(): void {
+  public function testWasmPathResolvesDeployedAsset(): void {
+    // The WASM glue is deployed by AssetDeployer, so the block must resolve
+    // its URL from AssetDeployer::DIRECTORY through the file URL generator —
+    // which handles subdirectory installs and non-default public file paths,
+    // where a hand-built module-relative path would not.
     $this->assertStringContainsString(
-      'base_path()',
+      'generateString(AssetDeployer::DIRECTORY',
       $this->blockContents,
-      'wasmPath must use base_path() so subdirectory Drupal installs resolve the WASM URL correctly'
+      'wasmPath must be generated from the deployed AssetDeployer::DIRECTORY copy via the file URL generator'
     );
   }
 
-  public function testWasmPathDoesNotHardcodeLeadingSlash(): void {
+  public function testWasmPathDoesNotHardcodeModulePath(): void {
     $this->assertStringNotContainsString(
-      "= '/' . \$modulePath",
+      'js/wasm/scolta_core.js',
       $this->blockContents,
-      'wasmPath must not use a hardcoded leading slash; use base_path() instead'
-    );
-  }
-
-  public function testWasmPathConcatenatesModulePath(): void {
-    // base_path() . $modulePath produces the correct path for both root
-    // (base_path() = '/') and subdirectory (base_path() = '/drupal/web/')
-    // installs. Verify the concatenation pattern is present.
-    $this->assertStringContainsString(
-      'base_path() . $modulePath',
-      $this->blockContents,
-      'wasmPath must concatenate base_path() with $modulePath'
+      'wasmPath must not point into the module directory: the bundle is not shipped there'
     );
   }
 

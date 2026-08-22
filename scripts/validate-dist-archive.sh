@@ -74,11 +74,7 @@ REQUIRED_PATHS=(
   "scolta.links.menu.yml"
   "scolta.api.php"
   "drush.services.yml"
-  "js/scolta.js"
   "js/scolta-drupal-bridge.js"
-  "js/wasm/scolta_core.js"
-  "js/wasm/scolta_core_bg.wasm"
-  "css/scolta.css"
   "config/install/scolta.settings.yml"
   "config/schema/scolta.schema.yml"
   "config/scolta.settings.example.yml"
@@ -96,7 +92,6 @@ ALLOWED_TOP_LEVEL=(
   "composer.json"
   "composer.lock"
   "config"
-  "css"
   "drush.services.yml"
   "js"
   "scolta.api.php"
@@ -111,11 +106,13 @@ ALLOWED_TOP_LEVEL=(
   "src"
 )
 
-# Size cap. Measured clean archive (git archive HEAD, 2026-06-14) = 2,099,200
-# bytes (~2.0 MB). Cap set at roughly 2x to catch accidental bloat (e.g. a
-# vendored binary, a stray index, a build artifact) while tolerating normal
-# growth. Bump deliberately with a fresh measurement if the module grows.
-MAX_BYTES=4200000
+# Size cap. The browser bundle (JS/CSS/WASM, ~1.5 MB) no longer ships in the
+# tarball — it deploys from the installed tag1/scolta-php at runtime — leaving
+# a clean archive of 983,040 bytes (git archive, 2026-08-21). Cap set at
+# roughly 2x to catch accidental bloat (e.g. a vendored binary, a stray index,
+# a re-committed bundle) while tolerating normal growth. Bump deliberately
+# with a fresh measurement if the module grows.
+MAX_BYTES=2000000
 
 cleanup() { rm -rf "$EXTRACT_DIR"; }
 trap cleanup EXIT

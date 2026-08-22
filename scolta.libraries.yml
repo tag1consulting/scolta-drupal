@@ -1,12 +1,17 @@
+# The search JS/CSS (and the WASM pair the block wires up via drupalSettings)
+# are NOT part of this module's codebase. They are canonical in
+# tag1/scolta-php's assets/ directory, which lives under vendor/ and is not
+# web-accessible, so AssetDeployer copies them to public://scolta-assets at
+# install time and on every cache rebuild. Stream-wrapper URIs are first-class
+# in library definitions; the css/js cache-busting query string is refreshed
+# by the same cache rebuild that refreshes the files.
 search:
   version: VERSION
   js:
-    # Shared JS from scolta-php. For development, symlink:
-    #   ln -sf ../../scolta-php/assets/js/scolta.js js/scolta.js
-    js/scolta.js: { minified: false }
+    public://scolta-assets/js/scolta.js: { minified: false }
   css:
     theme:
-      css/scolta.css: {}
+      public://scolta-assets/css/scolta.css: {}
 
 drupal_bridge:
   version: VERSION

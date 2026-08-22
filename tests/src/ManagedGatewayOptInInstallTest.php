@@ -97,9 +97,9 @@ class ManagedGatewayOptInInstallTest extends TestCase {
       'scolta.install must define scolta_update_10004() so existing sites are carried over'
     );
     $this->assertSame(
-      10004,
+      10005,
       max($numbers),
-      'The new update hook must be the highest-numbered one, or sites that already ran a higher number skip it'
+      'The newest update hook must be the highest-numbered one, or sites that already ran a higher number skip it'
     );
     $this->assertSame(
       array_unique($numbers),

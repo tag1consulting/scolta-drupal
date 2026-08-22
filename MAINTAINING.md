@@ -24,8 +24,7 @@ declared version and a site tracking a dev branch could then `composer update` b
 `tag1/scolta-drupal` there would collide with the module name. To confirm: the packages.drupal.org page
 shows the version, with `version` and `version_normalized` agreeing.
 
-**CI checks.** phpunit (`test`, `functional`, `playwright`, `coverage`), `phpstan`, `assets-in-sync`
-(the model bundle check: `cmp` each committed asset against `tag1/scolta-php` resolved from `dev-main`),
+**CI checks.** phpunit (`test`, `functional`, `playwright`, `coverage`), `phpstan`,
 `docs-check` (CHANGELOG when code changes), `version-consistency` (no `composer.json` version key, plus
 an advisory `scripts/validate-release.php`), `lock-guard`, `dist-archive`, `antipatterns`, and
 `Version coherence`. `upstream-preview` is informational and deliberately not a merge gate. The
@@ -48,10 +47,10 @@ including what to do when the mirror hasn't moved, is in the shared
 - Never push to git.drupalcode.org, on any branch or tag: it breaks the pull mirror. Push `origin/main`
   after `git fetch origin`, not your local `main`, and read "Everything up-to-date" as a sign the pull
   request wasn't merged.
-- This package carries the bundle at `js/`, `css/` and `js/wasm/`. Re-vendor with `composer copy-assets`
-  and commit the result. When `assets-in-sync` is red because the matching scolta-php PR hasn't merged,
-  do not run `composer copy-assets` to green it: that overwrites the new bundle with the old one,
-  which is the exact failure the check exists to catch.
+- The browser bundle (JS/CSS/WASM) is not committed here and never should be. It deploys from the
+  installed `tag1/scolta-php` into `public://scolta-assets` at install time and on every cache
+  rebuild, so a bundle change ships by bumping `composer.lock` — no re-vendor commit, no parity CI
+  job. See "Browser assets" in CLAUDE.md.
 - `phpstan` needs a raised memory limit. CI passes `--memory-limit=512M` explicitly, and the
   `composer analyse` script does not, so running it locally the composer way can OOM on unmodified
   `main`. That OOM is not a signal about your branch; raise the limit and re-run before you read it as
