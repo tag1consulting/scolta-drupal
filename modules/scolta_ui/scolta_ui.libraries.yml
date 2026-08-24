@@ -5,7 +5,7 @@
 # install time and on every cache rebuild.
 #
 # The stream-wrapper URIs below are declarations of where the bundle lives,
-# not the paths handed to the asset system: scolta_library_info_alter()
+# not the paths handed to the asset system: scolta_ui_library_info_alter()
 # resolves each one to a DRUPAL_ROOT-relative path before the library is
 # built. They must not be left unresolved. A colon in a JS path is fatal on
 # a site with the locale module enabled — _locale_parse_js_file() throws on
@@ -28,4 +28,4 @@ drupal_bridge:
   dependencies:
     - core/drupal
     - core/drupalSettings
-    - scolta/search
+    - scolta_ui/search

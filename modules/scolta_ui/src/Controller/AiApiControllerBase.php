@@ -135,7 +135,7 @@ abstract class AiApiControllerBase extends ControllerBase {
    *   TRUE when the request is within both thresholds.
    */
   protected function floodAllows(Request $request): bool {
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $ipLimit = (int) ($config->get('flood.ai_ip_limit') ?? 60);
     $ipWindow = (int) ($config->get('flood.ai_ip_window') ?? 60);
     $globalLimit = (int) ($config->get('flood.ai_global_limit') ?? 1000);

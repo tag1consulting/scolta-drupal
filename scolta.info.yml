@@ -5,6 +5,6 @@ core_version_requirement: ^10.3 || ^11
 package: Search
 dependencies:
   - search_api:search_api
-configure: scolta.settings
+configure: scolta.index_settings
 version: '1.4.0'
 lifecycle: stable

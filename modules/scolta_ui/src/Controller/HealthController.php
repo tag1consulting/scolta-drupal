@@ -6,7 +6,6 @@ namespace Drupal\scolta_ui\Controller;
 
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Controller\ControllerBase;
-use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta_ui\Cache\DrupalCacheDriver;
 use Drupal\scolta_ui\Service\IndexOrigin;
 use Drupal\scolta_ui\Service\ScoltaAiService;
@@ -32,13 +31,6 @@ class HealthController extends ControllerBase {
    * @var \Drupal\scolta_ui\Service\ScoltaAiService
    */
   protected ScoltaAiService $aiService;
-
-  /**
-   * The stream wrapper manager.
-   *
-   * @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface
-   */
-  protected StreamWrapperManagerInterface $streamWrapperManager;
 
   /**
    * The index locator.
@@ -67,9 +59,8 @@ class HealthController extends ControllerBase {
   /**
    * {@inheritdoc}
    */
-  public function __construct(ScoltaAiService $aiService, StreamWrapperManagerInterface $streamWrapperManager, IndexOrigin $indexOrigin, ClientInterface $httpClient, ?CacheBackendInterface $cache = NULL) {
+  public function __construct(ScoltaAiService $aiService, IndexOrigin $indexOrigin, ClientInterface $httpClient, ?CacheBackendInterface $cache = NULL) {
     $this->aiService = $aiService;
-    $this->streamWrapperManager = $streamWrapperManager;
     $this->indexOrigin = $indexOrigin;
     $this->httpClient = $httpClient;
     $this->cache = $cache;
@@ -81,7 +72,6 @@ class HealthController extends ControllerBase {
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('scolta.ai_service'),
-      $container->get('stream_wrapper_manager'),
       $container->get('scolta_ui.index_origin'),
       $container->get('http_client'),
       $container->get('cache.default'),
@@ -92,20 +82,13 @@ class HealthController extends ControllerBase {
    * Handle the health check request.
    */
   public function handle(): JsonResponse {
-    $config = $this->config('scolta.settings');
     $scoltaConfig = $this->aiService->getConfig();
 
-    // Resolve the index output directory (handle Drupal stream wrappers).
-    $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
-    if (str_contains($outputDir, '://')) {
-      try {
-        $outputDir = $this->streamWrapperManager
-          ->getViaUri($outputDir)->realpath() ?: $outputDir;
-      }
-      catch (\Exception $e) {
-        // Fall through with original path.
-      }
-    }
+    // The local build output, resolved through its stream wrapper. Asked of
+    // the origin service rather than read here: it owns the fact that the
+    // directory is scolta's to configure, and answers a sane default on a
+    // site where scolta is not installed to configure it.
+    $outputDir = $this->indexOrigin->resolvedOutputDir();
 
     // Hand HealthChecker the same cache ScoltaAiService records recovery
     // markers in, so `ai_usable` reflects whether the key still authenticates.
@@ -114,7 +97,10 @@ class HealthController extends ControllerBase {
     $checker = new HealthChecker(
       config: $scoltaConfig,
       indexOutputDir: $outputDir,
-      pagefindBinaryPath: $config->get('pagefind.binary'),
+      // A build-time key, so scolta owns it. Read by config name rather than
+      // through that module: Drupal config is global, and a frontend-only
+      // site simply has no binary to report on.
+      pagefindBinaryPath: $this->config('scolta.settings')->get('pagefind.binary'),
       projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
       cache: $cacheDriver,
       // The same resolution the client performs, so /health names the key's

@@ -7,20 +7,18 @@ namespace Drupal\scolta_ui\Form;
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
+use Drupal\scolta_ui\Service\IndexOrigin;
 use Drupal\scolta_ui\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
-use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Config\ApiKeySource;
 use Tag1\Scolta\Config\ScoltaConfig;
-use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 
 /**
@@ -55,13 +53,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
    * @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface
    */
   protected StreamWrapperManagerInterface $streamWrapperManager;
-
-  /**
-   * The entity type manager.
-   *
-   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
-   */
-  protected EntityTypeManagerInterface $entityTypeManager;
 
   /**
    * The state service.
@@ -103,8 +94,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
    *   The Scolta AI service.
    * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $streamWrapperManager
    *   The stream wrapper manager.
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
-   *   The entity type manager.
    * @param \Drupal\Core\State\StateInterface $state
    *   The state service.
    * @param \Drupal\Core\File\FileSystemInterface $fileSystem
@@ -120,7 +109,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
     TypedConfigManagerInterface $typedConfigManager,
     ScoltaAiService $aiService,
     StreamWrapperManagerInterface $streamWrapperManager,
-    EntityTypeManagerInterface $entityTypeManager,
     StateInterface $state,
     FileSystemInterface $fileSystem,
     CacheTagsInvalidatorInterface $cacheTagsInvalidator,
@@ -129,7 +117,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
     parent::__construct($configFactory, $typedConfigManager);
     $this->aiService = $aiService;
     $this->streamWrapperManager = $streamWrapperManager;
-    $this->entityTypeManager = $entityTypeManager;
     $this->state = $state;
     $this->fileSystem = $fileSystem;
     $this->cacheTagsInvalidator = $cacheTagsInvalidator;
@@ -145,7 +132,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $container->get('config.typed'),
       $container->get('scolta.ai_service'),
       $container->get('stream_wrapper_manager'),
-      $container->get('entity_type.manager'),
       $container->get('state'),
       $container->get('file_system'),
       $container->get('cache_tags.invalidator'),
@@ -157,7 +143,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   protected function getEditableConfigNames() {
-    return ['scolta.settings'];
+    return ['scolta_ui.settings'];
   }
 
   /**
@@ -171,7 +157,32 @@ class ScoltaSettingsForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
+
+    // ── Origins ──
+    // Where search comes from. Both default to this site, so a site running
+    // both modules never has to open this section; it exists for the site
+    // that searches an index it does not build.
+    $form['origins'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Index and AI origin'),
+      '#description' => $this->t('Where this site gets its search index, and where its AI requests are answered. Leave both at %local unless another site owns them.', ['%local' => IndexOrigin::LOCAL]),
+      '#open' => FALSE,
+    ];
+
+    $form['origins']['index_origin'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Index origin'),
+      '#default_value' => $config->get('index_origin') ?: IndexOrigin::LOCAL,
+      '#description' => $this->t('%local searches the index this site builds with the Scolta module. To search an index another site serves, enter the base URL its Pagefind directory sits under, for example <code>https://search.example.com</code>. That host must send CORS headers for this site and serve <code>.wasm</code> as <code>application/wasm</code>; <code>/api/scolta/v1/health</code> reports whether it does.', ['%local' => IndexOrigin::LOCAL]),
+    ];
+
+    $form['origins']['ai_origin'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('AI origin'),
+      '#default_value' => $config->get('ai_origin') ?: IndexOrigin::LOCAL,
+      '#description' => $this->t('%local answers query expansion, summaries and follow-ups from this site, using the AI configuration below. To route them to another site instead, enter its base URL — the three endpoints under <code>/api/scolta/v1/</code> are then requested from there, and the AI configuration below stops applying.', ['%local' => IndexOrigin::LOCAL]),
+    ];
 
     // ── AI Section ──
     $form['ai'] = [
@@ -353,7 +364,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Brief description used in AI prompts (e.g., "corporate website", "health system websites").'),
     ];
 
-
     $sortableDescRaw = $config->get('sortable_field_descriptions') ?? [];
     $sortableDescDisplay = '';
     foreach ($sortableDescRaw as $field => $desc) {
@@ -366,7 +376,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#rows' => 4,
       '#description' => $this->t('One <code>field_name|Description</code> per line. Descriptions help the AI map natural language to field names. Example: <code>word_count|Article length in words — higher means more comprehensive coverage</code>.'),
     ];
-
 
     $filterDescRaw = $config->get('filter_field_descriptions') ?? [];
     $filterDescDisplay = '';
@@ -392,8 +401,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
     foreach ($filterMappingRaw as $field => $dimension) {
       $filterMappingDisplay .= "{$field}|{$dimension}\n";
     }
-
-
 
     // ── Site Type Section ──
     $presets = ScoltaConfig::getPresets();
@@ -1003,7 +1010,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
     // Drupal handles all validation server-side.
     $form['#attributes']['novalidate'] = 'novalidate';
 
-
     return $form;
   }
 
@@ -1101,7 +1107,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
    */
   protected function buildStatusInfo(): array {
     $items = [];
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
 
     // AI provider status.
     // No coalescing to a provider nobody chose. An empty value means AI is off,
@@ -1122,46 +1128,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $items[] = $this->t('AI provider: Built-in AiClient (@provider). <a href="@url">Install the Drupal AI module</a> for 48+ provider support with Key module integration.', [
         '@provider' => $activeProvider,
         '@url' => Url::fromUserInput('/admin/config/ai/providers')->toString(),
-      ]);
-    }
-
-
-    // Search API index.
-    try {
-      $indexes = $this->entityTypeManager
-        ->getStorage('search_api_index')
-        ->loadByProperties(['server' => 'scolta_pagefind']);
-      if (!empty($indexes)) {
-        $index = reset($indexes);
-        $items[] = $this->t('Search API index: @label (@status)', [
-          '@label' => $index->label(),
-          '@status' => $index->status() ? 'enabled' : 'disabled',
-        ]);
-      }
-      else {
-        // Try loading any index with scolta backend.
-        $allIndexes = $this->entityTypeManager
-          ->getStorage('search_api_index')
-          ->loadMultiple();
-        $found = FALSE;
-        foreach ($allIndexes as $index) {
-          if ($index->getServerId() && str_contains($index->getServerId(), 'scolta')) {
-            $items[] = $this->t('Search API index: @label (@status)', [
-              '@label' => $index->label(),
-              '@status' => $index->status() ? 'enabled' : 'disabled',
-            ]);
-            $found = TRUE;
-            break;
-          }
-        }
-        if (!$found) {
-          $items[] = $this->t('Search API index: No Scolta index configured. Create a Search API server with the Scolta (Pagefind) backend.');
-        }
-      }
-    }
-    catch (\Exception $e) {
-      $items[] = $this->t('Search API index: Unable to query (@msg)', [
-        '@msg' => $e->getMessage(),
       ]);
     }
 
@@ -1237,10 +1203,55 @@ class ScoltaSettingsForm extends ConfigFormBase {
   }
 
   /**
+   * Normalize an origin field to the sentinel or a bare base URL.
+   *
+   * An empty field means "this site", which is what the sentinel says, so it
+   * is stored as the sentinel rather than as an empty string nothing else has
+   * to interpret. A URL loses its trailing slash so the paths appended to it
+   * do not double up.
+   *
+   * @param string|null $value
+   *   The submitted value.
+   *
+   * @return string
+   *   The sentinel, or a base URL without a trailing slash.
+   */
+  protected function normalizeOrigin(?string $value): string {
+    $value = trim((string) $value);
+    return ($value === '' || $value === IndexOrigin::LOCAL)
+      ? IndexOrigin::LOCAL
+      : rtrim($value, '/');
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function validateForm(array &$form, FormStateInterface $form_state): void {
     parent::validateForm($form, $form_state);
+
+    // Both origins are either the local sentinel or an absolute http(s) URL.
+    // An empty value means the same thing as <local> and is normalized to it
+    // on save, so it is accepted here rather than rejected as malformed.
+    $origins = [
+      'index_origin' => $this->t('Index origin'),
+      'ai_origin' => $this->t('AI origin'),
+    ];
+    foreach ($origins as $fieldName => $label) {
+      $origin = trim($form_state->getValue($fieldName) ?? '');
+      if ($origin === '' || $origin === IndexOrigin::LOCAL) {
+        continue;
+      }
+      $scheme = parse_url($origin, PHP_URL_SCHEME) ?: '';
+      if (!filter_var($origin, FILTER_VALIDATE_URL) || !in_array($scheme, ['http', 'https'], TRUE)) {
+        $form_state->setErrorByName(
+          $fieldName,
+          $this->t('@label must be @local or a URL beginning with http:// or https://.', [
+            '@label' => $label,
+            '@local' => IndexOrigin::LOCAL,
+          ])
+        );
+      }
+    }
 
     $baseUrl = trim($form_state->getValue('ai_base_url') ?? '');
     if ($baseUrl !== '') {
@@ -1304,9 +1315,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     // Read before the save below overwrites it: whether the operator is
     // switching away from the managed gateway is only knowable here.
-    $previousProvider = $this->config('scolta.settings')->get('ai_provider');
+    $previousProvider = $this->config('scolta_ui.settings')->get('ai_provider');
 
-    $configSave = $this->config('scolta.settings')
+    $configSave = $this->config('scolta_ui.settings')
       ->set('preset', $presetName);
 
     // Apply preset values first; explicit form values override below.
@@ -1330,6 +1341,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('ai_provider', $form_state->getValue('ai_provider'))
       ->set('ai_model', $form_state->getValue('ai_model'))
       ->set('ai_expansion_model', $form_state->getValue('ai_expansion_model') ?? '')
+      ->set('index_origin', $this->normalizeOrigin($form_state->getValue('index_origin')))
+      ->set('ai_origin', $this->normalizeOrigin($form_state->getValue('ai_origin')))
       ->set('ai_base_url', $form_state->getValue('ai_base_url'))
       ->set('ai_expand_query', (bool) $form_state->getValue('ai_expand_query'))
       ->set('ai_summarize', (bool) $form_state->getValue('ai_summarize'))
@@ -1452,12 +1465,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $this->aiService->clearAmazeeReauthNeeded();
     $this->aiService->clearAmazeeAuthFailure();
   }
-
-
-
-
-
-
 
   /**
    * Parse a multi-line "key|value" textarea into an associative array.

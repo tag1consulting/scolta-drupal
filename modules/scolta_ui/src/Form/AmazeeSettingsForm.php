@@ -379,7 +379,7 @@ class AmazeeSettingsForm extends FormBase {
         // a direct provider key (scolta-php#251). No "still at the default"
         // guard is needed any more: nothing an operator chose lives in these
         // keys, so there is nothing here to protect.
-        $config = $this->configFactory()->getEditable('scolta.settings');
+        $config = $this->configFactory()->getEditable('scolta_ui.settings');
 
         if ($result->aiModel !== NULL) {
           $config->set('amazee_model', $result->aiModel);
@@ -485,7 +485,7 @@ class AmazeeSettingsForm extends FormBase {
    * operator started by entering their email and pressing a button here.
    */
   private function selectAmazeeProvider(): void {
-    $config = $this->configFactory()->getEditable('scolta.settings');
+    $config = $this->configFactory()->getEditable('scolta_ui.settings');
     if ($config->get('ai_provider') !== 'amazee') {
       $config->set('ai_provider', 'amazee')->save();
     }

@@ -1,0 +1,83 @@
+# Query-time settings: everything the visitor's browser experiences.
+#
+# The build-time half of what used to be one scolta.settings object lives in
+# scolta.settings, owned by the scolta module. The split is by lifecycle: a
+# key belongs here if changing it changes a search, and there belongs if
+# changing it means the index has to be rebuilt.
+#
+# Both origins default to <local>, so a site with both modules installed
+# behaves exactly as the single module did and needs no configuration.
+index_origin: '<local>'
+ai_origin: '<local>'
+preset: none
+ai_provider: ''
+ai_model: 'claude-sonnet-4-5-20250929'
+ai_expansion_model: ''
+amazee_model: ''
+amazee_expansion_model: ''
+ai_base_url: ''
+ai_expand_query: true
+ai_summarize: true
+ai_languages:
+  - en
+max_follow_ups: 3
+site_name: ''
+site_description: 'website'
+sortable_field_descriptions: {}
+filter_field_descriptions: {}
+hide_empty_facets: true
+facet_mode: eager
+sayt_enabled: true
+sayt_min_chars: 2
+sayt_debounce_ms: 150
+sayt_max_suggestions: 6
+sayt_recent_searches: true
+sayt_max_recent: 3
+sayt_expand: true
+sayt_expand_per_minute: 6
+sayt_expansion_delay_ms: 500
+sayt_suggestion_action: navigate
+scoring:
+  title_match_boost: 2.0
+  title_all_terms_multiplier: 1.5
+  content_match_boost: 0.4
+  recency_boost_max: 0.25
+  recency_half_life_days: 365
+  recency_penalty_after_days: 1825
+  recency_max_penalty: 0.3
+  expand_primary_weight: 0.5
+  cross_list_bonus: 0.05
+  expand_subword_max_frequency: 0.05
+  specificity_weighting: true
+  specificity_floor: 0.15
+  specificity_strong_match: 0.55
+  specificity_cooccurrence: 0.9
+  specificity_agreement_gate: 0.45
+  specificity_agreement_decay: 1.0
+  expansion_combine_mode: relevance_union
+  exact_title_match_boost: 5.0
+  phrase_adjacent_multiplier: 2.5
+  phrase_near_multiplier: 1.5
+  phrase_near_window: 5
+  phrase_window: 15
+  language: 'en'
+  custom_stop_words: []
+  expand_subword_deny_list: []
+  recency_strategy: 'exponential'
+  recency_curve: []
+display:
+  excerpt_length: 300
+  results_per_page: 10
+  max_pagefind_results: 50
+  ai_summary_top_n: 10
+  ai_summary_max_chars: 4000
+cache_ttl: 2592000
+flood:
+  ai_ip_limit: 60
+  ai_ip_window: 60
+  ai_global_limit: 1000
+  ai_global_window: 60
+prompt_expand_query: ''
+prompt_summarize: ''
+prompt_follow_up: ''
+show_attribution: false

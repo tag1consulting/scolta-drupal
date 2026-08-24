@@ -15,6 +15,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
 use Drupal\scolta_ui\Access\AiAccessInterface;
+use Drupal\scolta_ui\Service\AiOrigin;
 use Drupal\scolta_ui\Service\AssetDeployer;
 use Drupal\scolta_ui\Service\IndexOrigin;
 use Drupal\scolta_ui\Service\ScoltaAiService;
@@ -23,7 +24,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Provides the Scolta AI-powered search block.
  *
- * Renders a search container, attaches the scolta/search library, and
+ * Renders a search container, attaches the scolta_ui/search library, and
  * injects window.scolta configuration via drupalSettings. Drop this
  * block on any page via Block Layout to get a fully working search UI.
  *
@@ -55,6 +56,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     protected AccountInterface $currentUser,
     protected StreamWrapperManagerInterface $streamWrapperManager,
     protected IndexOrigin $indexOrigin,
+    protected AiOrigin $aiOrigin,
     protected AiAccessInterface $aiAccess,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
@@ -75,6 +77,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       $container->get('current_user'),
       $container->get('stream_wrapper_manager'),
       $container->get('scolta_ui.index_origin'),
+      $container->get('scolta_ui.ai_origin'),
       $container->get('scolta.ai_access'),
     );
   }
@@ -90,13 +93,15 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     $indexExists = $this->indexOrigin->exists();
 
     if (!$indexExists) {
-      // Output differs by the 'administer scolta' permission, so the render
-      // cache must vary on permissions.
+      // Output differs by the 'administer scolta ui' permission, so the render
+      // cache must vary on permissions. The permission is this module's own:
+      // the notice offers to repoint the index origin, which is a frontend
+      // setting, and a frontend-only install has no 'administer scolta'.
       $cache = [
         'tags' => ['scolta_search_index'],
         'contexts' => ['user.permissions'],
       ];
-      if ($this->currentUser->hasPermission('administer scolta')) {
+      if ($this->currentUser->hasPermission('administer scolta ui')) {
         $notice = $this->t(
           '<p><strong>Scolta:</strong> No search index found.</p><p>Build one on this site with <code>drush scolta:build</code>, or <a href=":url">point this site at an index another site serves</a>.</p>',
           [':url' => Url::fromRoute('scolta.settings')->toString()]
@@ -111,6 +116,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     }
 
     $config = $this->aiService->getConfig();
+    $drupalConfig = $this->configFactory->get('scolta_ui.settings');
 
     $pagefindPath = $this->indexOrigin->isRemote()
       ? $this->indexOrigin->remoteBase()
@@ -142,11 +148,10 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
 
     $scoltaSettings = [
       'scoring' => $scoring,
-      'endpoints' => [
-        'expand' => Url::fromRoute('scolta.expand')->toString(),
-        'summarize' => Url::fromRoute('scolta.summarize')->toString(),
-        'followup' => Url::fromRoute('scolta.followup')->toString(),
-      ],
+      // This site's three endpoints, or another site's if the AI origin
+      // points there. The browser posts to whatever it is handed, so
+      // repointing the AI tier needs nothing from scolta.js.
+      'endpoints' => $this->aiOrigin->endpoints(),
       'pagefindPath' => $pagefindPath . '/pagefind/pagefind.js',
       'wasmPath' => $wasmPath,
       'siteName' => $config->siteName ?: $this->configFactory->get('system.site')->get('name'),
@@ -193,8 +198,8 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       '#markup' => $markup,
       '#attached' => [
         'library' => [
-          'scolta/search',
-          'scolta/drupal_bridge',
+          'scolta_ui/search',
+          'scolta_ui/drupal_bridge',
         ],
         'drupalSettings' => [
           'scolta' => $scoltaSettings,
@@ -203,7 +208,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       '#cache' => [
         // config:system.site covers the site-name fallback in drupalSettings;
         // the language context covers currentLanguage.
-        'tags' => ['config:scolta.settings', 'config:system.site', 'scolta_search_index'],
+        'tags' => ['config:scolta_ui.settings', 'config:system.site', 'scolta_search_index'],
         'contexts' => ['languages:language_content'],
       ],
     ];

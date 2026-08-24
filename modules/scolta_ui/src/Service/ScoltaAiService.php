@@ -294,8 +294,8 @@ class ScoltaAiService extends AiServiceAdapter {
    * by the AI client), and injects the API key and site name.
    */
   protected function buildConfig(): ScoltaConfig {
-    $drupalConfig = $this->configFactory->get('scolta.settings');
-    // Read via get() so settings.php $config['scolta.settings'] overrides
+    $drupalConfig = $this->configFactory->get('scolta_ui.settings');
+    // Read via get() so settings.php $config['scolta_ui.settings'] overrides
     // apply to AI traffic like any other config consumer.
     $values = $drupalConfig->get() ?? [];
 
@@ -442,7 +442,7 @@ class ScoltaAiService extends AiServiceAdapter {
    * @stability experimental
    */
   public function resolveApiKey(): ResolvedApiKey {
-    $config = $this->configFactory->get('scolta.settings');
+    $config = $this->configFactory->get('scolta_ui.settings');
     // No coalescing. Scolta ships with no provider selected, and an empty value
     // means AI is off — not that it is Anthropic. Substituting one here would
     // put the assumption back one layer down, where every reporting surface
@@ -681,7 +681,7 @@ class ScoltaAiService extends AiServiceAdapter {
     // which is how an ordinary page load could configure a gateway the
     // operator never chose.
     $unresolvedModel = !self::modelIsResolved(
-      $this->configFactory->get('scolta.settings')->get('amazee_model'),
+      $this->configFactory->get('scolta_ui.settings')->get('amazee_model'),
     );
     if ($resolved->isAmazee() && $resolved->amazeeCredentialsStored
       && $unresolvedModel && $this->amazeeConfigStorage !== NULL) {
@@ -703,7 +703,7 @@ class ScoltaAiService extends AiServiceAdapter {
         // any site whose operator had picked a model, and the self-heal would
         // never fire on exactly the sites that need it.
         hasResolvedModels: fn (): bool => self::modelIsResolved(
-          $this->configFactory->get('scolta.settings')->get('amazee_model'),
+          $this->configFactory->get('scolta_ui.settings')->get('amazee_model'),
         ),
       );
       // If model resolution still has not succeeded, amazee_model is empty and
@@ -748,7 +748,7 @@ class ScoltaAiService extends AiServiceAdapter {
    * @stability experimental
    */
   protected function persistResolvedAmazeeModels(string $aiModel, string $aiExpansionModel): void {
-    $config = $this->configFactory->getEditable('scolta.settings');
+    $config = $this->configFactory->getEditable('scolta_ui.settings');
     if ($aiModel !== '') {
       $config->set('amazee_model', $aiModel);
     }
@@ -761,7 +761,7 @@ class ScoltaAiService extends AiServiceAdapter {
   /**
    * Whether a genuinely resolved Amazee gateway model name is persisted.
    *
-   * Always called on `scolta.settings:amazee_model`, the gateway-scoped key
+   * Always called on `scolta_ui.settings:amazee_model`, the gateway-scoped key
    * `onModelsResolved` writes — never on the operator-facing `ai_model`.
    *
    * Reports FALSE for the unresolved state: a NULL/empty model, or the shipped

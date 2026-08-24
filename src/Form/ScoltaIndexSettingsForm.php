@@ -19,6 +19,7 @@ use Drupal\scolta\Service\ScoltaContentGatherer;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
+use Tag1\Scolta\Export\ContentExporter;
 
 /**
  * Index build settings: what goes into the index, and how it is built.
@@ -104,6 +105,11 @@ class ScoltaIndexSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Comma-separated list of filter dimension names (e.g., "topic, era, region"). Must match the filter names used in data-pagefind-filter attributes.'),
     ];
 
+    $sortableMappingRaw = $config->get('field_mappings.sortable') ?? [];
+    $sortableMappingDisplay = '';
+    foreach ($sortableMappingRaw as $field => $dimension) {
+      $sortableMappingDisplay .= "{$field}|{$dimension}\n";
+    }
     $form['content']['field_mapping_sortable'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Sortable field mappings'),
@@ -112,6 +118,11 @@ class ScoltaIndexSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Auto-map entity fields to sortable dimensions during indexing. One <code>entity_field_name|dimension_name</code> per line. Example: <code>field_word_count|word_count</code>. Supports entity reference fields (resolves to label), numeric fields, and text fields. The hook <code>hook_scolta_content_item_alter()</code> can still override these values.'),
     ];
 
+    $filterMappingRaw = $config->get('field_mappings.filters') ?? [];
+    $filterMappingDisplay = '';
+    foreach ($filterMappingRaw as $field => $dimension) {
+      $filterMappingDisplay .= "{$field}|{$dimension}\n";
+    }
     $form['content']['field_mapping_filters'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Filter field mappings'),
@@ -497,7 +508,7 @@ class ScoltaIndexSettingsForm extends ConfigFormBase {
    * @param \Drupal\Core\Config\ImmutableConfig $config
    *   The scolta.settings config.
    *
-   * @return string[]
+   * @return \Drupal\Core\StringTranslation\TranslatableMarkup[]
    *   Status lines, ready for an item list.
    */
   protected function buildStatusItems($config): array {
@@ -556,6 +567,45 @@ class ScoltaIndexSettingsForm extends ConfigFormBase {
     }
     else {
       $items[] = $this->t('Pagefind index: Not built yet. Run Search API indexing or drush scolta:build.');
+    }
+
+    // Search API index.
+    try {
+      $indexes = $this->entityTypeManager
+        ->getStorage('search_api_index')
+        ->loadByProperties(['server' => 'scolta_pagefind']);
+      if (!empty($indexes)) {
+        $index = reset($indexes);
+        $items[] = $this->t('Search API index: @label (@status)', [
+          '@label' => $index->label(),
+          '@status' => $index->status() ? 'enabled' : 'disabled',
+        ]);
+      }
+      else {
+        // Try loading any index with scolta backend.
+        $allIndexes = $this->entityTypeManager
+          ->getStorage('search_api_index')
+          ->loadMultiple();
+        $found = FALSE;
+        foreach ($allIndexes as $index) {
+          if ($index->getServerId() && str_contains($index->getServerId(), 'scolta')) {
+            $items[] = $this->t('Search API index: @label (@status)', [
+              '@label' => $index->label(),
+              '@status' => $index->status() ? 'enabled' : 'disabled',
+            ]);
+            $found = TRUE;
+            break;
+          }
+        }
+        if (!$found) {
+          $items[] = $this->t('Search API index: No Scolta index configured. Create a Search API server with the Scolta (Pagefind) backend.');
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $items[] = $this->t('Search API index: Unable to query (@msg)', [
+        '@msg' => $e->getMessage(),
+      ]);
     }
 
     return $items;

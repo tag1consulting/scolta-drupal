@@ -30,7 +30,7 @@ function scolta_ui_help($route_name, RouteMatchInterface $route_match) {
  * Keeps the deployed browser bundle current with the installed scolta-php.
  * The bundle lives canonically in vendor/tag1/scolta-php/assets/, which is
  * not web-accessible, so AssetDeployer copies it to public://scolta-assets —
- * where scolta.libraries.yml and the search block reference it. Running on
+ * where scolta_ui.libraries.yml and the search block reference it. Running on
  * every cache rebuild is what makes `composer update` + `drush cr` (the
  * standard deploy routine) sufficient to pick up a new bundle: the deployer
  * compares each file against the vendored canonical and copies only when one
@@ -68,7 +68,7 @@ function scolta_ui_rebuild(): void {
  * @see \Drupal\scolta_ui\Service\AssetDeployer::webPath()
  */
 function scolta_ui_library_info_alter(array &$libraries, $extension): void {
-  if ($extension !== 'scolta') {
+  if ($extension !== 'scolta_ui') {
     return;
   }
 

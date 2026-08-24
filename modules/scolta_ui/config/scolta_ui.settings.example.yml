@@ -1,0 +1,98 @@
+# Scolta search and AI configuration (scolta_ui.settings)
+# These are the default values installed with the scolta_ui module.
+# Override via the admin UI at /admin/config/search/scolta
+# or by importing config overrides.
+#
+# Build-time settings — what goes into the index and how it is built — are
+# scolta.settings, owned by the scolta module. See
+# config/scolta.settings.example.yml in the same package.
+#
+# API key is NOT stored in config — set it via:
+#   - Environment variable: SCOLTA_API_KEY=sk-ant-...
+#   - settings.php: $settings['scolta.api_key'] = 'sk-ant-...';
+
+# --- Where search comes from ---
+# Both default to <local>, which means "this site". A site that enables both
+# modules needs neither key: it builds its own index and answers its own AI.
+# Point index_origin at another site's index base URL to search an index this
+# site does not build — that host must send CORS headers for this origin and
+# serve .wasm as application/wasm. Point ai_origin at another site to have it
+# answer the AI calls instead.
+index_origin: '<local>'
+ai_origin: '<local>'
+
+# --- AI Provider ---
+ai_provider: ''                     # '' (none, AI off), 'anthropic', 'openai', 'amazee' or 'drupal_ai'.
+                                    # No default: until a provider is selected, AI features are off
+                                    # and search works exactly as it does now.
+ai_model: 'claude-sonnet-4-5-20250929'  # Model for expansion/summarization
+ai_base_url: ''                     # Custom API endpoint (leave empty for defaults)
+ai_expand_query: true               # Enable AI query expansion
+ai_summarize: true                  # Enable AI result summarization
+max_follow_ups: 3                   # Max follow-up questions per session (0 to disable)
+
+# --- Site Identity (used in AI prompts) ---
+site_name: ''                       # Leave empty to use Drupal site name
+site_description: 'website'         # Brief description for AI context
+
+# --- Scoring ---
+scoring:
+  title_match_boost: 2.0            # Boost for title matches
+  title_all_terms_multiplier: 1.5   # Extra boost when ALL terms match title
+  content_match_boost: 0.4          # Boost for content body matches
+  recency_boost_max: 0.25           # Max boost for recent content
+  recency_half_life_days: 365       # Days for recency boost to halve
+  recency_penalty_after_days: 1825  # Content older than this gets penalized
+  recency_max_penalty: 0.3          # Max penalty for old content
+  expand_primary_weight: 0.7        # Weight for original vs expanded terms (0-1)
+  cross_list_bonus: 0.05            # Bonus when a result matches both primary + expanded sets
+  expand_subword_max_frequency: 0.05 # Max corpus frequency for an expansion sub-word to be searched (0 disables)
+  specificity_weighting: true        # Weight partial matches by how rare the term is (false restores flat weighting)
+  specificity_floor: 0.15           # Floor for a ubiquitous term's specificity weight (0-1, lower damps harder)
+  specificity_strong_match: 0.55    # Specificity at which a match counts as strong and on-intent (0-1)
+  specificity_cooccurrence: 0.9     # Bonus multiplier for agreeing with several terms at once (0 disables)
+  specificity_agreement_gate: 0.45  # Specificity a term must clear to count toward the agreement bonus (0-1)
+  specificity_agreement_decay: 1.0  # Geometric factor per successive agreeing term (below 1 saturates the bonus)
+  expansion_combine_mode: relevance_union # How expansion sub-query results feed the AI summary: 'relevance_union' or 'round_robin' (preset-defaulted; round_robin on content_catalog/blog/ecommerce)
+  language: 'en'                    # ISO 639-1 language code for stop word filtering
+  custom_stop_words: []             # Extra stop words: ['drupal', 'cms']
+  expand_subword_deny_list: []      # Words never auto-exempted from the sub-word guard: ['hot'] (stay scorable)
+  recency_strategy: 'exponential'   # 'exponential', 'linear', 'step', 'none', 'custom'
+  recency_curve: []                 # Custom control points: [[0, 1.0], [365, 0.0]]
+
+# --- Display ---
+display:
+  excerpt_length: 300               # Max characters in result excerpts
+  results_per_page: 10              # Results shown per page
+  max_pagefind_results: 50          # Max results fetched from Pagefind
+  ai_summary_top_n: 5               # Top N results sent to AI for summary
+  ai_summary_max_chars: 2000        # Max context chars sent to AI
+
+# --- Search As You Type ---
+# Typing opens a suggestions dropdown under the search box. Typing alone never
+# runs a search: the full pipeline still waits for Enter, the search button, or
+# a selected suggestion. No index rebuild is needed either way.
+sayt_enabled: true                  # Master switch; false restores the pre-1.1.0 widget exactly
+sayt_min_chars: 2                   # Characters (graphemes) typed before suggestions are fetched; CJK sites usually want 1
+sayt_debounce_ms: 150               # Trailing debounce before a suggest cycle fires
+sayt_max_suggestions: 6             # Rows shown, and the cap on fragment loads per pass
+sayt_recent_searches: true          # Offer the visitor their own recent searches (false = no localStorage access)
+sayt_max_recent: 3                  # Recent searches shown
+sayt_expand: true                   # Enrich the dropdown with AI query-expansion matches
+sayt_expand_per_minute: 6           # Cap on those AI calls per minute; they share the AI flood budget with committed searches
+sayt_expansion_delay_ms: 500        # Idle time before the AI enrichment call fires
+sayt_suggestion_action: navigate    # 'navigate' opens the result, 'search' runs the full search for it
+
+# --- Cache ---
+cache_ttl: 2592000                  # AI response cache in seconds (30 days)
+flood:                              # Rate limiting for the anonymous AI endpoints
+  ai_ip_limit: 60                   # Max AI API requests per IP per window (0 disables)
+  ai_ip_window: 60                  # Per-IP window in seconds
+  ai_global_limit: 1000             # Max AI API requests site-wide per window (0 disables)
+  ai_global_window: 60              # Site-wide window in seconds
+
+# --- Custom Prompts (leave empty for built-in defaults) ---
+prompt_expand_query: ''
+prompt_summarize: ''
+prompt_follow_up: ''
+

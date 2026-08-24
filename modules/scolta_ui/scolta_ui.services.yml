@@ -26,13 +26,18 @@ services:
     class: Drupal\scolta_ui\Service\AssetDeployer
     arguments: ['@file_system', '@logger.channel.scolta_ui', '@stream_wrapper_manager']
 
-  # Decorate this to narrow who reaches the AI features. Both the block that
-  # advertises them and the routes that serve them ask it.
   # Resolves where the index is: this site's build output, or another site.
   scolta_ui.index_origin:
     class: Drupal\scolta_ui\Service\IndexOrigin
     arguments: ['@config.factory', '@stream_wrapper_manager']
 
+  # Resolves where AI requests go: this site's endpoints, or another site's.
+  scolta_ui.ai_origin:
+    class: Drupal\scolta_ui\Service\AiOrigin
+    arguments: ['@config.factory']
+
+  # Decorate this to narrow who reaches the AI features. Both the block that
+  # advertises them and the routes that serve them ask it.
   scolta.ai_access:
     class: Drupal\scolta_ui\Access\AiAccess
 

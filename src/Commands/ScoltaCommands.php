@@ -23,8 +23,6 @@ use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
-use Tag1\Scolta\Prompt\DefaultPrompts;
-use Tag1\Scolta\SetupCheck;
 
 /**
  * Drush commands for Scolta.
@@ -884,9 +882,6 @@ class ScoltaCommands extends DrushCommands {
     $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
     $this->logger()->success('Index built successfully.');
   }
-
-
-
 
   /**
    * Show Scolta status: tracker, index, binary, AI provider.

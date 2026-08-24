@@ -3,4 +3,4 @@ type: module
 description: 'Renders Scolta search in the browser and serves the AI tier. Can search an index this site builds, or one another site owns.'
 package: Search
 core_version_requirement: ^10.3 || ^11
-configure: scolta_ui.settings
+configure: scolta.settings
