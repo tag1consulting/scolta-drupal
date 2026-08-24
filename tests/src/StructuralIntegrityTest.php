@@ -414,15 +414,21 @@ class StructuralIntegrityTest extends TestCase {
   /**
    * The search library must serve the deployed bundle, and keep it fresh.
    *
-   * Three parts, each load-bearing. The library must reference
+   * Four parts, each load-bearing. The library must reference
    * public://scolta-assets, because vendor/ is not web-accessible and the
-   * module directory is read-only on immutable-code hosts. scolta.module
-   * must implement hook_rebuild(), because that is what makes
-   * `composer update` + `drush cr` sufficient to pick up a new bundle —
-   * hook_install() runs once per site ever, so without the rebuild hook an
-   * updating site would serve the old bundle indefinitely, which is the
-   * same staleness the committed copies had. And the install hook must
-   * deploy too, so a fresh install serves assets before its first rebuild.
+   * module directory is read-only on immutable-code hosts. Those URIs must
+   * then be resolved by scolta_library_info_alter() before the library is
+   * built, because a colon in a JS path is fatal once locale is enabled —
+   * declaring them unresolved returned HTTP 500 on every rendered page of a
+   * multilingual site. scolta.module must implement hook_rebuild(), because
+   * that is what makes `composer update` + `drush cr` sufficient to pick up
+   * a new bundle — hook_install() runs once per site ever, so without the
+   * rebuild hook an updating site would serve the old bundle indefinitely,
+   * which is the same staleness the committed copies had. And the install
+   * hook must deploy too, so a fresh install serves assets before its first
+   * rebuild.
+   *
+   * @see \Drupal\Tests\scolta\Functional\LocaleAssetPathFunctionalTest
    */
   public function testSearchLibraryServesDeployedAssets(): void {
     $libraries = Yaml::parseFile($this->moduleRoot . '/scolta.libraries.yml');
@@ -436,6 +442,8 @@ class StructuralIntegrityTest extends TestCase {
     $module = file_get_contents($this->moduleRoot . '/scolta.module');
     $this->assertStringContainsString('function scolta_rebuild()', $module,
       'scolta.module must implement hook_rebuild() to redeploy the bundle on cache rebuild.');
+    $this->assertStringContainsString('function scolta_library_info_alter(', $module,
+      'scolta.module must implement hook_library_info_alter(): the public:// URIs above are fatal on a site with locale enabled until it resolves them to a local path.');
 
     $install = file_get_contents($this->moduleRoot . '/scolta.install');
     $this->assertStringContainsString("service('scolta.asset_deployer')->deploy()", $install,
