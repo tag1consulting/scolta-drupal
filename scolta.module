@@ -9,6 +9,7 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\StreamWrapper\LocalStream;
 use Drupal\Core\Url;
 
 /**
@@ -36,6 +37,68 @@ function scolta_help($route_name, RouteMatchInterface $route_match) {
  */
 function scolta_rebuild(): void {
   \Drupal::service('scolta.asset_deployer')->deploy();
+}
+
+/**
+ * Implements hook_library_info_alter().
+ *
+ * Rewrites the deployed bundle's JS source from its stream-wrapper URI to the
+ * root-relative form, because locale's hook_js_alter() feeds every
+ * `type: file` asset to _locale_parse_js_file(), which rejects any path
+ * containing a colon:
+ *
+ *   Only local files should be passed to _locale_parse_js_file().
+ *
+ * With the `locale` module installed and the search block placed, that is an
+ * uncaught exception on every page. A monolingual site never parses JS, so
+ * `public://` was fine on every test site until the block met a multilingual
+ * one.
+ *
+ * Only JS is rewritten. Locale parses nothing else, and the CSS optimizer
+ * handles stream URIs natively, so touching `css` would add the nested
+ * per-category walk for no defect it prevents.
+ *
+ * This cannot be a static path in scolta.libraries.yml: the public files
+ * directory is Settings::get('file_public_path', $site_path . '/files'), so it
+ * moves with `$settings['file_public_path']` (which several hosting platforms
+ * set) and with the multisite directory. A hardcoded 'sites/default/files'
+ * would 404 silently on those sites rather than fail loudly.
+ *
+ * The alter runs at the end of LibraryDiscoveryParser::parseLibraryInfo(),
+ * before sources are resolved, so assets are still keyed by source path and it
+ * is the key that has to change. The leading slash matters: the parser reads a
+ * `/`-prefixed source as relative to the Drupal root and strips it, yielding
+ * the path both the file URL generator and locale's file_get_contents() can
+ * resolve.
+ */
+function scolta_library_info_alter(array &$libraries, string $extension): void {
+  if ($extension !== 'scolta') {
+    return;
+  }
+
+  $stream_wrapper_manager = \Drupal::service('stream_wrapper_manager');
+
+  foreach ($libraries as &$library) {
+    if (!isset($library['js'])) {
+      continue;
+    }
+
+    $rewritten = [];
+    foreach ($library['js'] as $source => $options) {
+      if (($options['type'] ?? 'file') === 'file' && $stream_wrapper_manager->isValidUri($source)) {
+        $wrapper = $stream_wrapper_manager->getViaUri($source);
+        // getDirectoryPath() is declared on LocalStream, not on the interface:
+        // only a filesystem-backed wrapper has a root-relative path to offer,
+        // and a remote one has nothing local for locale to read either way.
+        if ($wrapper instanceof LocalStream) {
+          $source = '/' . $wrapper->getDirectoryPath() . '/'
+            . $stream_wrapper_manager::getTarget($source);
+        }
+      }
+      $rewritten[$source] = $options;
+    }
+    $library['js'] = $rewritten;
+  }
 }
 
 /**

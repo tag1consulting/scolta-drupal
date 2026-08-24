@@ -31,6 +31,10 @@ We use DDEV and [a few custom commands](.ddev/commands/web) from the https://git
   - `ddev phpstan`
   - `ddev eslint`
   - `ddev stylelint`
+  - `dddev poser`
+  - `ddev symlink-project`
+
+  `ddev poser` should be run instead of `composer install`. `ddev symlink-project` should always follow `ddev poser`.
 
 ### Local cross-package development
 

@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - scolta
+  theme:
+    - umami
+id: umami_scolta_search
+theme: umami
+region: highlighted
+weight: 0
+provider: null
+plugin: scolta_search
+settings:
+  id: scolta_search
+  label: 'Search'
+  label_display: '0'
+  provider: scolta
+visibility: {}

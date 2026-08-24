@@ -28,6 +28,10 @@ sayt_expand: true
 sayt_expand_per_minute: 6
 sayt_expansion_delay_ms: 500
 sayt_suggestion_action: navigate
+body_fields:
+  - body
+  - field_body
+  - field_content
 field_mappings:
   sortable: {}
   filters: {}
