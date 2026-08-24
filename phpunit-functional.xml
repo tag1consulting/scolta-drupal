@@ -2,21 +2,28 @@
 <!--
   PHPUnit configuration for Drupal functional (BrowserTestBase) tests.
 
-  These tests require a full running Drupal installation and web server.
-  They are NOT run by `composer test` (the fast unit suite); they are run
-  by the `functional` GitHub Actions job which:
-    1. Creates a Drupal 11 project via composer create-project
-    2. Installs scolta-drupal into it via path repo
-    3. Installs Drupal with SQLite
-    4. Starts the PHP built-in web server
-    5. Runs: ./vendor/bin/phpunit --configuration web/modules/contrib/scolta/phpunit-functional.xml
+  These tests need a full Drupal installation and a running web server, so
+  `composer test` (the fast unit suite) does not run them.
 
-  To run locally from within a DDEV Drupal environment:
-    ddev exec vendor/bin/phpunit --configuration web/modules/contrib/scolta/phpunit-functional.xml
-  with SIMPLETEST_DB and SIMPLETEST_BASE_URL set in your DDEV environment.
+  This file is for running them locally. The `functional` GitHub Actions job
+  does not read it: that job builds a throwaway Drupal project, exports
+  SIMPLETEST_DB, SIMPLETEST_BASE_URL, BROWSERTEST_OUTPUT_DIRECTORY and
+  SYMFONY_DEPRECATIONS_HELPER into the environment, and points phpunit
+  straight at modules/contrib/scolta/tests/src/Functional/ with core's
+  bootstrap. Read .github/workflows/ci.yml for what CI actually runs; the
+  settings below reproduce the same environment for a local run.
 
-  Bootstrap path is relative to this file's location in the installed Drupal
-  project (web/modules/contrib/scolta/), three levels above web/core/.
+  From inside a DDEV Drupal environment, with the module installed at
+  web/modules/contrib/scolta and SIMPLETEST_DB and SIMPLETEST_BASE_URL set:
+
+    ddev exec vendor/bin/phpunit -c web/modules/contrib/scolta/phpunit-functional.xml
+
+  (`-c` is phpunit's short form for the configuration option. The long form
+  cannot appear in this comment: XML forbids a double hyphen inside one, and
+  writing it here is what made this file unparseable until 2026-08-24.)
+
+  The bootstrap path is relative to this file's own location in the installed
+  Drupal project (web/modules/contrib/scolta/), three levels above web/core/.
 -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.5/phpunit.xsd"
@@ -31,7 +38,7 @@
   <php>
     <ini name="error_reporting" value="32767"/>
     <ini name="memory_limit" value="512M"/>
-    <!-- Override via env in CI: SIMPLETEST_DB and SIMPLETEST_BASE_URL -->
+    <!-- SIMPLETEST_DB and SIMPLETEST_BASE_URL come from the environment. -->
     <env name="SYMFONY_DEPRECATIONS_HELPER" value="disabled"/>
     <env name="BROWSERTEST_OUTPUT_DIRECTORY" value="/tmp/browsertest_output"/>
   </php>
