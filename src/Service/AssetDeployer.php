@@ -63,7 +63,7 @@ class AssetDeployer {
    * problem must never take down a cache rebuild, and the warning names the
    * exact path an operator needs.
    *
-   * @since 1.3.1
+   * @since 1.4.0
    * @stability stable
    */
   public function deploy(): void {
@@ -149,7 +149,7 @@ class AssetDeployer {
    *   URI's wrapper is not a local filesystem one (an S3-backed public://,
    *   say) and so has no such path.
    *
-   * @since 1.3.1
+   * @since 1.4.0
    * @stability internal
    */
   public function webPath(string $uri): ?string {
@@ -168,7 +168,7 @@ class AssetDeployer {
   /**
    * Remove the deployed bundle. Called from hook_uninstall().
    *
-   * @since 1.3.1
+   * @since 1.4.0
    * @stability stable
    */
   public function remove(): void {
@@ -181,7 +181,7 @@ class AssetDeployer {
    * @return string|null
    *   The absolute path, or NULL when the package or its assets are absent.
    *
-   * @since 1.3.1
+   * @since 1.4.0
    * @stability internal
    */
   public function sourceDir(): ?string {
