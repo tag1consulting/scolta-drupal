@@ -35,7 +35,7 @@ services:
   # copies only files that differ from the vendored canonical.
   scolta.asset_deployer:
     class: Drupal\scolta\Service\AssetDeployer
-    arguments: ['@file_system', '@logger.channel.scolta']
+    arguments: ['@file_system', '@logger.channel.scolta', '@stream_wrapper_manager']
 
   # Decorate this to narrow who reaches the AI features. Both the block that
   # advertises them and the routes that serve them ask it.

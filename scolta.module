@@ -10,6 +10,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
+use Drupal\scolta\Service\AssetDeployer;
 
 /**
  * Implements hook_help().
@@ -36,6 +37,95 @@ function scolta_help($route_name, RouteMatchInterface $route_match) {
  */
 function scolta_rebuild(): void {
   \Drupal::service('scolta.asset_deployer')->deploy();
+}
+
+/**
+ * Implements hook_library_info_alter().
+ *
+ * Points the search library at the deployed bundle by a path the asset
+ * system reads as local, instead of the public:// URI the YAML declares.
+ *
+ * The YAML keeps the stream-wrapper URI because that is where the bundle
+ * canonically lives, and only this hook knows where that resolves to on a
+ * given site. It has to resolve, because a colon in a JS path is fatal
+ * once locale is enabled: locale's hook_js_alter() collects every file
+ * asset on the page and hands it to _locale_parse_js_file(), which throws
+ * "Only local files should be passed" on any path containing one. That
+ * took down every rendered page of a multilingual site — the front page
+ * included — while the /api/scolta/v1 routes, which never run the JS
+ * translation scan, went on answering 200 and hid the breakage.
+ *
+ * Rewriting the key here rather than in the YAML is what keeps the
+ * AssetDeployer design intact: the bundle still deploys to
+ * public://scolta-assets, still the only location writable on an
+ * immutable-code host, and the path is derived from the wrapper on every
+ * library rebuild, so a site that moves its public files directory is
+ * followed rather than broken. Replacing a library file key with a
+ * DRUPAL_ROOT-relative path is the documented idiom for exactly this.
+ *
+ * @see hook_library_info_alter()
+ * @see \Drupal\scolta\Service\AssetDeployer::webPath()
+ */
+function scolta_library_info_alter(array &$libraries, $extension): void {
+  if ($extension !== 'scolta') {
+    return;
+  }
+
+  foreach ($libraries as &$library) {
+    if (!empty($library['js'])) {
+      _scolta_resolve_deployed_assets($library['js']);
+    }
+    if (!empty($library['css'])) {
+      foreach ($library['css'] as &$group) {
+        if (is_array($group)) {
+          _scolta_resolve_deployed_assets($group);
+        }
+      }
+      unset($group);
+    }
+  }
+  unset($library);
+}
+
+/**
+ * Rewrites deployed-bundle keys in one library asset map, in place.
+ *
+ * Keys are replaced rather than added so the file is declared once, and the
+ * map is rebuilt in order because a library's asset order is significant.
+ * Assets outside the deployed directory (this module's own JS) are copied
+ * through untouched.
+ *
+ * @param array $assets
+ *   A library's js map, or one group of its css map: source => options.
+ */
+function _scolta_resolve_deployed_assets(array &$assets): void {
+  /** @var \Drupal\scolta\Service\AssetDeployer $deployer */
+  $deployer = \Drupal::service('scolta.asset_deployer');
+  $prefix = AssetDeployer::DIRECTORY . '/';
+  $resolved = [];
+  $changed = FALSE;
+
+  foreach ($assets as $source => $options) {
+    if (is_string($source) && str_starts_with($source, $prefix)) {
+      $path = $deployer->webPath($source);
+      if ($path !== NULL) {
+        $resolved[$path] = $options;
+        $changed = TRUE;
+        continue;
+      }
+      // A public:// backed by a non-local wrapper (S3 and the like) has no
+      // DRUPAL_ROOT-relative path, and locale cannot read such a file at
+      // all. Leave the URI — the asset still loads — and name the
+      // incompatibility, rather than substituting a path that does not
+      // exist on disk.
+      \Drupal::logger('scolta')->warning('Could not resolve @uri to a local path; public:// is not a local stream wrapper on this site. The Scolta browser bundle will load, but a site with the locale module enabled will fail to render pages.', ['@uri' => $source]);
+    }
+    $resolved[$source] = $options;
+  }
+
+  if ($changed) {
+    $assets = $resolved;
+  }
 }
 
 /**
