@@ -47,7 +47,8 @@
     ],
     "autoload": {
         "psr-4": {
-            "Drupal\\scolta\\": "src/"
+            "Drupal\\scolta\\": "src/",
+            "Drupal\\scolta_ui\\": "modules/scolta_ui/src/"
         }
     },
     "autoload-dev": {
