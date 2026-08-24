@@ -7,6 +7,9 @@ namespace Drupal\scolta\Service;
 use Composer\InstalledVersions;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\StreamWrapper\LocalStream;
+use Drupal\Core\StreamWrapper\StreamWrapperManager;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -49,6 +52,7 @@ class AssetDeployer {
   public function __construct(
     protected FileSystemInterface $fileSystem,
     protected LoggerInterface $logger,
+    protected StreamWrapperManagerInterface $streamWrapperManager,
   ) {
   }
 
@@ -59,7 +63,7 @@ class AssetDeployer {
    * problem must never take down a cache rebuild, and the warning names the
    * exact path an operator needs.
    *
-   * @since 1.3.1
+   * @since 1.4.0
    * @stability stable
    */
   public function deploy(): void {
@@ -114,9 +118,57 @@ class AssetDeployer {
   }
 
   /**
+   * Resolve a deployed asset URI to a path the asset system reads as local.
+   *
+   * Library definitions accept stream-wrapper URIs natively, but a colon in
+   * a JS path is fatal on a multilingual site: locale's hook_js_alter()
+   * hands every file asset to _locale_parse_js_file(), which throws on any
+   * path containing one. Declaring the bundle as public://scolta-assets/...
+   * therefore returned HTTP 500 on every rendered page of a site with the
+   * locale module enabled, while the API routes — which never run the JS
+   * translation scan — kept answering 200.
+   *
+   * What locale accepts is the shape core uses for its own library files: a
+   * path relative to DRUPAL_ROOT. This returns that path with a leading
+   * slash, which is what makes LibraryDiscoveryParser treat it as
+   * root-relative rather than relative to this module's directory; the
+   * parser strips the slash, and base_path() is applied later at render
+   * time. That is also why the file URL generator is the wrong tool here:
+   * generateString() has base_path() baked in already, so on a
+   * subdirectory install its prefix would be applied twice.
+   *
+   * Resolution goes through the wrapper rather than a hardcoded
+   * sites/default/files, so a site that relocates its public files
+   * directory via $settings['file_public_path'] is followed automatically.
+   *
+   * @param string $uri
+   *   A stream-wrapper URI, normally one under DIRECTORY.
+   *
+   * @return string|null
+   *   A DRUPAL_ROOT-relative path with a leading slash, or NULL when the
+   *   URI's wrapper is not a local filesystem one (an S3-backed public://,
+   *   say) and so has no such path.
+   *
+   * @since 1.4.0
+   * @stability internal
+   */
+  public function webPath(string $uri): ?string {
+    $wrapper = $this->streamWrapperManager->getViaUri($uri);
+    if (!$wrapper instanceof LocalStream) {
+      return NULL;
+    }
+    $directory = trim($wrapper->getDirectoryPath(), '/');
+    $target = StreamWrapperManager::getTarget($uri);
+    if ($directory === '' || $target === FALSE || $target === '') {
+      return NULL;
+    }
+    return '/' . $directory . '/' . $target;
+  }
+
+  /**
    * Remove the deployed bundle. Called from hook_uninstall().
    *
-   * @since 1.3.1
+   * @since 1.4.0
    * @stability stable
    */
   public function remove(): void {
@@ -129,7 +181,7 @@ class AssetDeployer {
    * @return string|null
    *   The absolute path, or NULL when the package or its assets are absent.
    *
-   * @since 1.3.1
+   * @since 1.4.0
    * @stability internal
    */
   public function sourceDir(): ?string {
