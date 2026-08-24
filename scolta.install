@@ -22,23 +22,63 @@ use Drupal\user\RoleInterface;
 const _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL = 'claude-sonnet-4-5-20250929';
 
 /**
+ * The query-time keys scolta_update_10006() moves into scolta_ui.settings.
+ *
+ * Pinned rather than derived from the shipped schema, for the reason the hook
+ * explains: it is a historical record of one migration, and a frontend key
+ * added in a later release must not change what this hook moved. index_origin
+ * and ai_origin are deliberately absent — they are new in this release, so
+ * there is nothing on an upgrading site to move into them.
+ *
+ * @see scolta_update_10006()
+ * @see \Drupal\scolta\Tests\ScoltaConfigPartitionTest
+ */
+const _SCOLTA_UPDATE_10006_FRONTEND_KEYS = [
+  'preset',
+  'ai_provider',
+  'ai_model',
+  'ai_expansion_model',
+  'amazee_model',
+  'amazee_expansion_model',
+  'ai_base_url',
+  'ai_expand_query',
+  'ai_summarize',
+  'ai_languages',
+  'max_follow_ups',
+  'site_name',
+  'site_description',
+  'sortable_field_descriptions',
+  'filter_field_descriptions',
+  'scoring',
+  'display',
+  'cache_ttl',
+  'flood',
+  'prompt_expand_query',
+  'prompt_summarize',
+  'prompt_follow_up',
+  'show_attribution',
+  'hide_empty_facets',
+  'facet_mode',
+  'sayt_enabled',
+  'sayt_min_chars',
+  'sayt_debounce_ms',
+  'sayt_max_suggestions',
+  'sayt_recent_searches',
+  'sayt_max_recent',
+  'sayt_expand',
+  'sayt_expand_per_minute',
+  'sayt_expansion_delay_ms',
+  'sayt_suggestion_action',
+];
+
+/**
  * Implements hook_install().
  */
 function scolta_install() {
-  \Drupal::service('scolta.asset_deployer')->deploy();
-
-  // POLICY: installing the module configures no AI provider. The managed
-  // Amazee.ai gateway is enabled by an explicit operator action — selecting it
-  // on the AI settings screen and completing the connect flow — so nothing
-  // here reaches out to a gateway or writes credentials.
-  //
-  // Grant 'use scolta ai' to authenticated users only. Logged-in AI search is
-  // the intended out-of-the-box behavior; the anonymous role is deliberately
-  // left without it, so the cost-bearing AI endpoints are not open to
-  // unauthenticated traffic until a site admin decides otherwise at
-  // Administration › People › Permissions.
-  user_role_grant_permissions(RoleInterface::AUTHENTICATED_ID, ['use scolta ai']);
-
+  // The browser bundle and the 'use scolta ai' grant belong to scolta_ui and
+  // are applied by scolta_ui_install(). A site that installs only this module
+  // builds and serves an index and renders no search of its own, so it has
+  // neither a bundle to deploy nor an AI endpoint to open.
   \Drupal::queue('scolta_rebuild')->createItem(['type' => 'install']);
   \Drupal::messenger()->addStatus(t('Scolta installed. Your search index will be built on the next cron run. To build immediately: <code>drush scolta:build</code>'));
 }
@@ -118,9 +158,6 @@ function scolta_requirements(string $phase): array {
  * Implements hook_uninstall().
  */
 function scolta_uninstall() {
-  // Remove the deployed browser bundle from the public files directory.
-  \Drupal::service('scolta.asset_deployer')->remove();
-
   // Clean up the rebuild queue.
   \Drupal::queue('scolta_rebuild')->deleteQueue();
 
@@ -133,8 +170,6 @@ function scolta_uninstall() {
   \Drupal::state()->delete('scolta.rebuild_requested_at');
   \Drupal::state()->delete('scolta.generation');
   \Drupal::state()->delete('scolta.rebuild_notice');
-  \Drupal::state()->delete('scolta.amazee.credentials');
-  \Drupal::state()->delete('scolta.amazee.budget_notice_time');
 
   // Clean up per-user data (e.g. dismissed rebuild notices).
   \Drupal::service('user.data')->delete('scolta');
@@ -405,7 +440,120 @@ function scolta_update_10004() {
  * longer ships them.
  */
 function scolta_update_10005() {
+  // The deployer moved to scolta_ui with the bundle it deploys, and this hook
+  // runs before scolta_update_10006() enables that module, so on a site
+  // updating across the split the service is not there yet. Skipping is
+  // correct rather than merely safe: scolta_ui_install() deploys the bundle a
+  // moment later, from 10006.
+  if (!\Drupal::hasService('scolta.asset_deployer')) {
+    return t('The Scolta browser bundle is deployed by scolta_ui, which is enabled by the next update in this run.');
+  }
+
   \Drupal::service('scolta.asset_deployer')->deploy();
 
   return t('Deployed the Scolta browser bundle (JS, CSS, WASM) from the installed tag1/scolta-php to public://scolta-assets. It is refreshed automatically on every cache rebuild whenever the installed scolta-php changes.');
+}
+
+/**
+ * Splits the frontend out into scolta_ui and moves its settings with it.
+ *
+ * A site updating into this release had one module and one scolta.settings
+ * object. It ends the update with two modules and the same settings in two
+ * objects, and sees no functional difference: both origin pointers default to
+ * <local>, so it goes on building its own index and answering its own AI.
+ *
+ * Three things happen, in this order, because each depends on the last.
+ *
+ * 1. scolta_ui is enabled. Without it the site loses search outright — the
+ *    block, the libraries, the AI endpoints and the settings form all moved
+ *    there — so this is not an opt-in. Enabling it first also writes its
+ *    install defaults, which is what step 2 then overwrites with the site's
+ *    real values, and what leaves a key the site never had at its documented
+ *    default rather than absent.
+ *
+ * 2. Each query-time key moves from scolta.settings to scolta_ui.settings and
+ *    is removed from the source, so every key ends in exactly one object. The
+ *    key list is pinned in _SCOLTA_UPDATE_10006_FRONTEND_KEYS rather than read
+ *    from the shipped schema: an update hook is a historical record of one
+ *    migration and has to keep meaning what it meant when it was written, and
+ *    a later release that adds a frontend key must not retroactively change
+ *    what this hook moved. ScoltaConfigPartitionTest asserts the pinned list
+ *    against the two schemas, so a key added on either side without a home
+ *    fails the suite rather than going missing on an upgrading site.
+ *
+ * 3. Every role that could administer Scolta still can. The settings form
+ *    moved behind 'administer scolta ui', a permission that did not exist
+ *    before this release, so a site that had granted 'administer scolta' to a
+ *    non-admin role would otherwise find that role locked out of the screen it
+ *    has always used.
+ *
+ * Idempotent throughout. Re-running enables nothing (the module is installed),
+ * moves nothing (the source keys are gone), and grants nothing (the roles hold
+ * the permission), so a second run produces config identical to the first.
+ */
+function scolta_update_10006() {
+  $messages = [];
+
+  // 1. Enable the frontend.
+  if (!\Drupal::moduleHandler()->moduleExists('scolta_ui')) {
+    \Drupal::service('module_installer')->install(['scolta_ui']);
+    $messages[] = t('Enabled the Scolta AI Search UI (scolta_ui) module, which now renders search and serves the AI endpoints. Its index and AI origins both default to this site, so nothing about how this site searches has changed.');
+  }
+
+  // 2. Move the query-time settings. getEditable() is re-fetched here rather
+  // than held from before the install: enabling a module rebuilds the
+  // container, and a config object read from the old one writes into a
+  // factory nothing else is reading.
+  $source = \Drupal::configFactory()->getEditable('scolta.settings');
+  $target = \Drupal::configFactory()->getEditable('scolta_ui.settings');
+
+  $moved = [];
+  foreach (_SCOLTA_UPDATE_10006_FRONTEND_KEYS as $key) {
+    // An absent key is left to the install default rather than written as
+    // NULL. This is also what makes a second run a no-op: after the first,
+    // every one of these is absent from the source.
+    if ($source->get($key) === NULL) {
+      continue;
+    }
+    $target->set($key, $source->get($key));
+    $source->clear($key);
+    $moved[] = $key;
+  }
+
+  if ($moved) {
+    $target->save();
+    $source->save();
+    $messages[] = t('Moved @count query-time setting(s) from scolta.settings to scolta_ui.settings, values unchanged: @keys. Build-time settings (the indexer, the memory budget, the Pagefind paths, and the sort and filter dimension names) stay in scolta.settings.', [
+      '@count' => count($moved),
+      '@keys' => implode(', ', $moved),
+    ]);
+  }
+
+  // 3. Carry the admin permission across.
+  $granted = [];
+  foreach (Role::loadMultiple() as $role) {
+    // An admin role holds every permission implicitly and must not have one
+    // written onto it; hasPermission() answers TRUE for it either way.
+    if ($role->isAdmin() || !$role->hasPermission('administer scolta')) {
+      continue;
+    }
+    if ($role->hasPermission('administer scolta ui')) {
+      continue;
+    }
+    $role->grantPermission('administer scolta ui');
+    $role->save();
+    $granted[] = $role->id();
+  }
+
+  if ($granted) {
+    $messages[] = t('Granted the new "administer scolta ui" permission to every role that could already administer Scolta: @roles. It covers the search, scoring, display and AI settings; "administer scolta" now covers the index build alone.', [
+      '@roles' => implode(', ', $granted),
+    ]);
+  }
+
+  if (!$messages) {
+    return t('The frontend split was already applied; nothing changed.');
+  }
+
+  return implode(' ', array_map('strval', $messages));
 }
