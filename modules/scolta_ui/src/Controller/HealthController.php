@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\Controller;
+namespace Drupal\scolta_ui\Controller;
 
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
-use Drupal\scolta\Cache\DrupalCacheDriver;
+use Drupal\scolta_ui\Cache\DrupalCacheDriver;
 use Drupal\scolta\Service\IndexLocator;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Tag1\Scolta\Health\HealthChecker;
@@ -28,7 +28,7 @@ class HealthController extends ControllerBase {
   /**
    * The AI service.
    *
-   * @var \Drupal\scolta\Service\ScoltaAiService
+   * @var \Drupal\scolta_ui\Service\ScoltaAiService
    */
   protected ScoltaAiService $aiService;
 

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Functional;
 
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use Drupal\Tests\BrowserTestBase;
 
 /**

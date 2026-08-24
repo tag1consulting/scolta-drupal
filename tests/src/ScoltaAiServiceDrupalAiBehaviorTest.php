@@ -39,7 +39,7 @@ namespace Drupal\ai\OperationType\Chat {
 
 namespace Drupal\scolta\Tests {
 
-  use Drupal\scolta\Service\ScoltaAiService;
+  use Drupal\scolta_ui\Service\ScoltaAiService;
   use PHPUnit\Framework\TestCase;
 
   /**

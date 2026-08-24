@@ -150,10 +150,10 @@ class StructuralIntegrityTest extends TestCase {
     $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml');
 
     $classesToCheck = [
-      'scolta.ai_service' => 'Drupal\scolta\Service\ScoltaAiService',
+      'scolta.ai_service' => 'Drupal\scolta_ui\Service\ScoltaAiService',
       'scolta.pagefind_exporter' => 'Drupal\scolta\Service\PagefindExporter',
       'scolta.pagefind_builder' => 'Drupal\scolta\Service\PagefindBuilder',
-      'scolta.asset_deployer' => 'Drupal\scolta\Service\AssetDeployer',
+      'scolta.asset_deployer' => 'Drupal\scolta_ui\Service\AssetDeployer',
     ];
 
     foreach ($classesToCheck as $serviceId => $className) {

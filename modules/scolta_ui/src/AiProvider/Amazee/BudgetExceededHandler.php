@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\AiProvider\Amazee;
+namespace Drupal\scolta_ui\AiProvider\Amazee;
 
 use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\Core\State\StateInterface;

@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\Service;
+namespace Drupal\scolta_ui\Service;
 
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Site\Settings;
-use Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler;
-use Drupal\scolta\Cache\DrupalCacheDriver;
+use Drupal\scolta_ui\AiProvider\Amazee\BudgetExceededHandler;
+use Drupal\scolta_ui\Cache\DrupalCacheDriver;
 use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
 use Tag1\Scolta\AiClient;
@@ -76,7 +76,7 @@ class ScoltaAiService extends AiServiceAdapter {
   /**
    * Handles Amazee.ai budget-exceeded notices. Null when Amazee is not active.
    *
-   * @var \Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler|null
+   * @var \Drupal\scolta_ui\AiProvider\Amazee\BudgetExceededHandler|null
    */
   private ?BudgetExceededHandler $budgetHandler;
 

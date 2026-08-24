@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Functional;
 
-use Drupal\scolta\Form\ScoltaSettingsForm;
+use Drupal\scolta_ui\Form\ScoltaSettingsForm;
 use Drupal\Tests\BrowserTestBase;
 
 /**

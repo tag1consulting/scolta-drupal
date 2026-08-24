@@ -7,9 +7,19 @@
 
 use Tag1\Scolta\Binary\PagefindBinary;
 use Drupal\Core\Site\Settings;
-use Drupal\scolta\Form\ScoltaSettingsForm;
 use Drupal\user\Entity\Role;
 use Drupal\user\RoleInterface;
+
+/**
+ * The default AI model as of scolta_update_10003.
+ *
+ * Pinned here rather than read from the settings form. An update hook is a
+ * historical record of one migration: it has to keep meaning what it meant
+ * when it was written, and the live default can move under it. Since the
+ * backend/frontend split it would also be reaching across into scolta_ui,
+ * which the backend must not do.
+ */
+const _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL = 'claude-sonnet-4-5-20250929';
 
 /**
  * Implements hook_install().
@@ -275,7 +285,7 @@ function scolta_update_10003() {
   $needsMigration = $hasCredentials
     && ($config->get('amazee_model') ?? '') === ''
     && $strandedModel !== ''
-    && $strandedModel !== ScoltaSettingsForm::DEFAULT_AI_MODEL;
+    && $strandedModel !== _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL;
 
   if (!$needsMigration) {
     if ($backfilled) {
@@ -288,7 +298,7 @@ function scolta_update_10003() {
   $strandedExpansionModel = $config->get('ai_expansion_model') ?? '';
 
   $config->set('amazee_model', $strandedModel);
-  $config->set('ai_model', ScoltaSettingsForm::DEFAULT_AI_MODEL);
+  $config->set('ai_model', _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL);
   if ($strandedExpansionModel !== '') {
     $config->set('amazee_expansion_model', $strandedExpansionModel);
     $config->set('ai_expansion_model', '');
@@ -300,13 +310,13 @@ function scolta_update_10003() {
     [
       '@model' => $strandedModel,
       '@expansion' => $strandedExpansionModel !== '' ? $strandedExpansionModel : '(none)',
-      '@default' => ScoltaSettingsForm::DEFAULT_AI_MODEL,
+      '@default' => _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL,
     ]
   );
 
   return t('Moved the Amazee.ai gateway model @model out of ai_model into amazee_model, and reset ai_model to the shipped default @default. Amazee.ai keeps working unchanged. If you switch to a direct Anthropic or OpenAI key, set your own model at Administration › Configuration › Search and metadata › Scolta — @model is an Amazee.ai gateway name and no other provider accepts it.', [
     '@model' => $strandedModel,
-    '@default' => ScoltaSettingsForm::DEFAULT_AI_MODEL,
+    '@default' => _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL,
   ]);
 }
 

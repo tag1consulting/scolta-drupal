@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\Controller;
+namespace Drupal\scolta_ui\Controller;
 
 use Tag1\Scolta\Http\AiEndpointHandler;
 

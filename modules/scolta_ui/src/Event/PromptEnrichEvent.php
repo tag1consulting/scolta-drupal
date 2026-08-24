@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\Event;
+namespace Drupal\scolta_ui\Event;
 
 use Symfony\Contracts\EventDispatcher\Event;
 

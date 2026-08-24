@@ -1,0 +1,38 @@
+# Service IDs keep the `scolta.` prefix although they are defined here.
+# scolta.ai_access is a documented decoration target, so renaming it would
+# break every site that has narrowed AI access — the owning module changed,
+# the contract did not.
+services:
+  logger.channel.scolta_ui:
+    parent: logger.channel_base
+    arguments: ['scolta_ui']
+
+  scolta.amazee_config_storage:
+    class: Drupal\scolta_ui\AiProvider\Amazee\DrupalConfigStorage
+    arguments: ['@state']
+
+  scolta.amazee_budget_handler:
+    class: Drupal\scolta_ui\AiProvider\Amazee\BudgetExceededHandler
+    arguments: ['@messenger', '@state']
+
+  scolta.ai_service:
+    class: Drupal\scolta_ui\Service\ScoltaAiService
+    arguments: ['@http_client', '@config.factory', '@logger.channel.scolta_ui', '@scolta.amazee_budget_handler', '@scolta.amazee_config_storage', '@?ai.provider', '@cache.default']
+
+  # Copies the scolta-php browser bundle from vendor/ into
+  # public://scolta-assets. Runs at install and on every cache rebuild;
+  # copies only files that differ from the vendored canonical.
+  scolta.asset_deployer:
+    class: Drupal\scolta_ui\Service\AssetDeployer
+    arguments: ['@file_system', '@logger.channel.scolta_ui', '@stream_wrapper_manager']
+
+  # Decorate this to narrow who reaches the AI features. Both the block that
+  # advertises them and the routes that serve them ask it.
+  scolta.ai_access:
+    class: Drupal\scolta_ui\Access\AiAccess
+
+  scolta.ai_feature_access_check:
+    class: Drupal\scolta_ui\Access\AiFeatureAccessCheck
+    arguments: ['@scolta.ai_access']
+    tags:
+      - { name: access_check, applies_to: _scolta_ai }

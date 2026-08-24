@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\Plugin\Block;
+namespace Drupal\scolta_ui\Plugin\Block;
 
 use Drupal\Core\Block\BlockBase;
 use Drupal\Core\Cache\CacheableMetadata;
@@ -14,10 +14,10 @@ use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
-use Drupal\scolta\Access\AiAccessInterface;
-use Drupal\scolta\Service\AssetDeployer;
+use Drupal\scolta_ui\Access\AiAccessInterface;
+use Drupal\scolta_ui\Service\AssetDeployer;
 use Drupal\scolta\Service\IndexLocator;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**

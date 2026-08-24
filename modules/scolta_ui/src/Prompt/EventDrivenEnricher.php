@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\Prompt;
+namespace Drupal\scolta_ui\Prompt;
 
-use Drupal\scolta\Event\PromptEnrichEvent;
+use Drupal\scolta_ui\Event\PromptEnrichEvent;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Tag1\Scolta\Prompt\PromptEnricherInterface;
 

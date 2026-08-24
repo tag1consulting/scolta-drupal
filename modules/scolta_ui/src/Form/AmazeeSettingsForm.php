@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\Form;
+namespace Drupal\scolta_ui\Form;
 
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage;
-use Drupal\scolta\Cache\DrupalCacheDriver;
+use Drupal\scolta_ui\AiProvider\Amazee\DrupalConfigStorage;
+use Drupal\scolta_ui\Cache\DrupalCacheDriver;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeAccountUpgrader;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeApiException;

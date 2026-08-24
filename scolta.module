@@ -10,7 +10,6 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
-use Drupal\scolta\Service\AssetDeployer;
 
 /**
  * Implements hook_help().
@@ -23,110 +22,6 @@ function scolta_help($route_name, RouteMatchInterface $route_match) {
   }
 }
 
-/**
- * Implements hook_rebuild().
- *
- * Keeps the deployed browser bundle current with the installed scolta-php.
- * The bundle lives canonically in vendor/tag1/scolta-php/assets/, which is
- * not web-accessible, so AssetDeployer copies it to public://scolta-assets —
- * where scolta.libraries.yml and the search block reference it. Running on
- * every cache rebuild is what makes `composer update` + `drush cr` (the
- * standard deploy routine) sufficient to pick up a new bundle: the deployer
- * compares each file against the vendored canonical and copies only when one
- * differs, so the no-change case costs a few stat calls.
- */
-function scolta_rebuild(): void {
-  \Drupal::service('scolta.asset_deployer')->deploy();
-}
-
-/**
- * Implements hook_library_info_alter().
- *
- * Points the search library at the deployed bundle by a path the asset
- * system reads as local, instead of the public:// URI the YAML declares.
- *
- * The YAML keeps the stream-wrapper URI because that is where the bundle
- * canonically lives, and only this hook knows where that resolves to on a
- * given site. It has to resolve, because a colon in a JS path is fatal
- * once locale is enabled: locale's hook_js_alter() collects every file
- * asset on the page and hands it to _locale_parse_js_file(), which throws
- * "Only local files should be passed" on any path containing one. That
- * took down every rendered page of a multilingual site — the front page
- * included — while the /api/scolta/v1 routes, which never run the JS
- * translation scan, went on answering 200 and hid the breakage.
- *
- * Rewriting the key here rather than in the YAML is what keeps the
- * AssetDeployer design intact: the bundle still deploys to
- * public://scolta-assets, still the only location writable on an
- * immutable-code host, and the path is derived from the wrapper on every
- * library rebuild, so a site that moves its public files directory is
- * followed rather than broken. Replacing a library file key with a
- * DRUPAL_ROOT-relative path is the documented idiom for exactly this.
- *
- * @see hook_library_info_alter()
- * @see \Drupal\scolta\Service\AssetDeployer::webPath()
- */
-function scolta_library_info_alter(array &$libraries, $extension): void {
-  if ($extension !== 'scolta') {
-    return;
-  }
-
-  foreach ($libraries as &$library) {
-    if (!empty($library['js'])) {
-      _scolta_resolve_deployed_assets($library['js']);
-    }
-    if (!empty($library['css'])) {
-      foreach ($library['css'] as &$group) {
-        if (is_array($group)) {
-          _scolta_resolve_deployed_assets($group);
-        }
-      }
-      unset($group);
-    }
-  }
-  unset($library);
-}
-
-/**
- * Rewrites deployed-bundle keys in one library asset map, in place.
- *
- * Keys are replaced rather than added so the file is declared once, and the
- * map is rebuilt in order because a library's asset order is significant.
- * Assets outside the deployed directory (this module's own JS) are copied
- * through untouched.
- *
- * @param array $assets
- *   A library's js map, or one group of its css map: source => options.
- */
-function _scolta_resolve_deployed_assets(array &$assets): void {
-  /** @var \Drupal\scolta\Service\AssetDeployer $deployer */
-  $deployer = \Drupal::service('scolta.asset_deployer');
-  $prefix = AssetDeployer::DIRECTORY . '/';
-  $resolved = [];
-  $changed = FALSE;
-
-  foreach ($assets as $source => $options) {
-    if (is_string($source) && str_starts_with($source, $prefix)) {
-      $path = $deployer->webPath($source);
-      if ($path !== NULL) {
-        $resolved[$path] = $options;
-        $changed = TRUE;
-        continue;
-      }
-      // A public:// backed by a non-local wrapper (S3 and the like) has no
-      // DRUPAL_ROOT-relative path, and locale cannot read such a file at
-      // all. Leave the URI — the asset still loads — and name the
-      // incompatibility, rather than substituting a path that does not
-      // exist on disk.
-      \Drupal::logger('scolta')->warning('Could not resolve @uri to a local path; public:// is not a local stream wrapper on this site. The Scolta browser bundle will load, but a site with the locale module enabled will fail to render pages.', ['@uri' => $source]);
-    }
-    $resolved[$source] = $options;
-  }
-
-  if ($changed) {
-    $assets = $resolved;
-  }
-}
 
 /**
  * Implements hook_entity_insert().
@@ -158,9 +53,10 @@ function scolta_entity_delete(EntityInterface $entity) {
  * Implements hook_page_top().
  *
  * Renders Scolta's persistent admin notices on every admin page load:
- *  - the Amazee.ai re-authentication prompt, when the stored credentials are no
- *    longer accepted and the operator must reconnect/upgrade;
  *  - the index rebuild notice, with per-user dismissal.
+ *
+ * The Amazee.ai re-authentication prompt is the frontend's, and lives in
+ * scolta_ui: the credentials it is about belong to the AI tier.
  */
 function scolta_page_top(array &$page_top) {
   // Only show to users with admin access on admin routes.
@@ -175,61 +71,9 @@ function scolta_page_top(array &$page_top) {
     return;
   }
 
-  _scolta_amazee_reauth_notice($page_top);
   _scolta_rebuild_notice($page_top, $current_user);
 }
 
-/**
- * Render the Amazee.ai re-authentication notice when credentials need it.
- *
- * When the stored Amazee.ai credentials are no longer accepted, AI search
- * degrades and the operator must reconnect/upgrade. ScoltaAiService exposes the
- * persistent marker (set by scolta-php on an auth-class failure); this surfaces
- * it as a warning with a clear call to action that routes to the Amazee.ai
- * settings flow. The error is never swallowed: while the marker is set the
- * operator sees this prompt and a path forward on every admin screen.
- *
- * Gated on Amazee.ai being the selected provider as well as on the marker. A
- * site that has moved to its own API key is not waiting on a reconnect it has
- * no use for, and telling it AI is down because of a gateway it no longer uses
- * points the operator at the wrong thing on every admin screen.
- *
- * @param array $page_top
- *   The page_top render array, modified by reference.
- */
-function _scolta_amazee_reauth_notice(array &$page_top): void {
-  /** @var \Drupal\scolta\Service\ScoltaAiService $ai_service */
-  $ai_service = \Drupal::service('scolta.ai_service');
-  if (!$ai_service->isAmazeeActive() || !$ai_service->isAmazeeReauthNeeded()) {
-    return;
-  }
-
-  $page_top['scolta_amazee_reauth_notice'] = [
-    '#type' => 'container',
-    '#attributes' => [
-      'role' => 'contentinfo',
-      'class' => ['messages', 'messages--warning'],
-    ],
-    // Above the rebuild notice (-100): AI being down is the more urgent fix.
-    '#weight' => -101,
-    // Reflects the request-time credential-state marker — never cache it.
-    '#cache' => ['max-age' => 0],
-    'content' => [
-      '#type' => 'container',
-      '#attributes' => ['class' => ['messages__content']],
-      'text' => [
-        '#markup' => t('Your Amazee.ai connection needs to be re-authenticated before AI search features can work again.'),
-        '#suffix' => ' ',
-      ],
-      'cta' => [
-        '#type' => 'link',
-        '#title' => t('Continue with Amazee.ai'),
-        '#url' => Url::fromRoute('scolta.settings.amazee'),
-        '#attributes' => ['class' => ['button', 'button--primary', 'button--small']],
-      ],
-    ],
-  ];
-}
 
 /**
  * Render the persistent index rebuild notice with per-user dismissal.

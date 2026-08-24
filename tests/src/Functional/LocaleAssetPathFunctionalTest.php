@@ -7,7 +7,7 @@ namespace Drupal\Tests\scolta\Functional;
 use Drupal\Core\Logger\RfcLogLevel;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\language\Entity\ConfigurableLanguage;
-use Drupal\scolta\Service\AssetDeployer;
+use Drupal\scolta_ui\Service\AssetDeployer;
 
 /**
  * Proves a multilingual site can render pages with the search library on.
@@ -142,7 +142,7 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
     // followed. Comparing against the deployer's own resolution of the same
     // URI is the assertion that a hardcoded sites/default/files would fail
     // on a relocated site.
-    /** @var \Drupal\scolta\Service\AssetDeployer $deployer */
+    /** @var \Drupal\scolta_ui\Service\AssetDeployer $deployer */
     $deployer = \Drupal::service('scolta.asset_deployer');
     $expected = ltrim((string) $deployer->webPath(AssetDeployer::DIRECTORY . '/js/scolta.js'), '/');
     $this->assertSame($expected, $library['js'][0]['data'],

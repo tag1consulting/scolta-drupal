@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\Cache;
+namespace Drupal\scolta_ui\Cache;
 
 use Drupal\Core\Cache\CacheBackendInterface;
 use Tag1\Scolta\Cache\CacheDriverInterface;

@@ -1,0 +1,11 @@
+# Owned here rather than by scolta, so that a frontend-only install has a
+# working admin permission and no route in either module references a
+# permission the other defines.
+administer scolta ui:
+  title: 'Administer Scolta search and AI'
+  description: 'Configure the search UI, scoring, display and AI tier'
+  restrict access: true
+
+use scolta ai:
+  title: 'Use Scolta AI features'
+  description: 'Access AI-powered query expansion and summarization'

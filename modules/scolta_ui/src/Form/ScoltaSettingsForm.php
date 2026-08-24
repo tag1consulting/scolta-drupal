@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\Form;
+namespace Drupal\scolta_ui\Form;
 
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -16,7 +16,7 @@ use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
 use Drupal\scolta\Batch\ScoltaBatchOperations;
 use Drupal\scolta\Service\PagefindBuilder;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
@@ -48,7 +48,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
   /**
    * The Scolta AI service.
    *
-   * @var \Drupal\scolta\Service\ScoltaAiService
+   * @var \Drupal\scolta_ui\Service\ScoltaAiService
    */
   protected ScoltaAiService $aiService;
 
@@ -115,7 +115,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
    *   The config factory.
    * @param \Drupal\Core\Config\TypedConfigManagerInterface $typedConfigManager
    *   The typed config manager.
-   * @param \Drupal\scolta\Service\ScoltaAiService $aiService
+   * @param \Drupal\scolta_ui\Service\ScoltaAiService $aiService
    *   The Scolta AI service.
    * @param \Drupal\scolta\Service\PagefindBuilder $pagefindBuilder
    *   The Pagefind builder service.

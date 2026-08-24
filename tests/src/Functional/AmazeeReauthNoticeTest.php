@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Functional;
 
-use Drupal\scolta\Cache\DrupalCacheDriver;
+use Drupal\scolta_ui\Cache\DrupalCacheDriver;
 use Drupal\Tests\BrowserTestBase;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 

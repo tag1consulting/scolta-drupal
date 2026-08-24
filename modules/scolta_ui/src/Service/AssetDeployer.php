@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\Service;
+namespace Drupal\scolta_ui\Service;
 
 use Composer\InstalledVersions;
 use Drupal\Core\File\FileExists;

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Functional;
 
-use Drupal\scolta\Cache\DrupalCacheDriver;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Cache\DrupalCacheDriver;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\user\Entity\Role;
 use Drupal\user\RoleInterface;

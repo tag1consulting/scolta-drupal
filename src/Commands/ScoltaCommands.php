@@ -13,7 +13,7 @@ use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Progress\DrushProgressReporter;
 use Drupal\scolta\Service\IndexLocator;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
@@ -60,7 +60,7 @@ class ScoltaCommands extends DrushCommands {
    *   The state service.
    * @param \Drupal\Core\Cache\CacheBackendInterface $cache
    *   The default cache backend.
-   * @param \Drupal\scolta\Service\ScoltaAiService $aiService
+   * @param \Drupal\scolta_ui\Service\ScoltaAiService $aiService
    *   The Scolta AI service.
    * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $streamWrapperManager
    *   The stream wrapper manager.

@@ -47,7 +47,7 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
 
   public function testImportsBudgetExceededHandler(): void {
     $contents = file_get_contents($this->serviceFile);
-    $this->assertStringContainsString('use Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler', $contents);
+    $this->assertStringContainsString('use Drupal\scolta_ui\AiProvider\Amazee\BudgetExceededHandler', $contents);
   }
 
   public function testImportsAmazeeBudgetExceededException(): void {

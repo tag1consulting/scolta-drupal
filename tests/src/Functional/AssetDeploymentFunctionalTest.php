@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Functional;
 
-use Drupal\scolta\Service\AssetDeployer;
+use Drupal\scolta_ui\Service\AssetDeployer;
 use Drupal\Tests\BrowserTestBase;
 
 /**
@@ -36,7 +36,7 @@ class AssetDeploymentFunctionalTest extends BrowserTestBase {
    * Install deploys every bundle file, byte-identical to the vendored source.
    */
   public function testInstallDeploysBundleFromVendor(): void {
-    /** @var \Drupal\scolta\Service\AssetDeployer $deployer */
+    /** @var \Drupal\scolta_ui\Service\AssetDeployer $deployer */
     $deployer = \Drupal::service('scolta.asset_deployer');
     $sourceDir = $deployer->sourceDir();
     $this->assertNotNull($sourceDir, 'The installed tag1/scolta-php must carry an assets/ directory.');
@@ -70,7 +70,7 @@ class AssetDeploymentFunctionalTest extends BrowserTestBase {
     // What every deploy routine runs after composer update.
     drupal_flush_all_caches();
 
-    /** @var \Drupal\scolta\Service\AssetDeployer $deployer */
+    /** @var \Drupal\scolta_ui\Service\AssetDeployer $deployer */
     $deployer = \Drupal::service('scolta.asset_deployer');
     $sourceDir = $deployer->sourceDir();
     clearstatcache();
