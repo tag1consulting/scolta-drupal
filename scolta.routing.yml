@@ -7,3 +7,11 @@ scolta.dismiss_rebuild_notice:
     _permission: 'administer scolta'
     _csrf_token: 'TRUE'
   methods: [GET]
+
+scolta.index_settings:
+  path: '/admin/config/search/scolta/index'
+  defaults:
+    _form: '\Drupal\scolta\Form\ScoltaIndexSettingsForm'
+    _title: 'Scolta index settings'
+  requirements:
+    _permission: 'administer scolta'

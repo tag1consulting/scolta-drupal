@@ -8,9 +8,10 @@ use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta_ui\Cache\DrupalCacheDriver;
-use Drupal\scolta\Service\IndexLocator;
+use Drupal\scolta_ui\Service\IndexOrigin;
 use Drupal\scolta_ui\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use GuzzleHttp\ClientInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Tag1\Scolta\Health\HealthChecker;
 
@@ -21,7 +22,7 @@ use Tag1\Scolta\Health\HealthChecker;
  *
  * Reachable anonymously so uptime monitors always work, but anonymous
  * callers receive only the overall status. The full diagnostic payload
- * (provider, index integrity, fragment counts) requires 'administer scolta'.
+ * (provider, index integrity, fragment counts) requires 'administer scolta ui'.
  */
 class HealthController extends ControllerBase {
 
@@ -42,9 +43,16 @@ class HealthController extends ControllerBase {
   /**
    * The index locator.
    *
-   * @var \Drupal\scolta\Service\IndexLocator
+   * @var \Drupal\scolta_ui\Service\IndexOrigin
    */
-  protected IndexLocator $indexLocator;
+  protected IndexOrigin $indexOrigin;
+
+  /**
+   * The HTTP client, for probing a remote index origin.
+   *
+   * @var \GuzzleHttp\ClientInterface
+   */
+  protected ClientInterface $httpClient;
 
   /**
    * The cache backend used for KeyExpiryRecovery auth-failure markers.
@@ -59,10 +67,11 @@ class HealthController extends ControllerBase {
   /**
    * {@inheritdoc}
    */
-  public function __construct(ScoltaAiService $aiService, StreamWrapperManagerInterface $streamWrapperManager, IndexLocator $indexLocator, ?CacheBackendInterface $cache = NULL) {
+  public function __construct(ScoltaAiService $aiService, StreamWrapperManagerInterface $streamWrapperManager, IndexOrigin $indexOrigin, ClientInterface $httpClient, ?CacheBackendInterface $cache = NULL) {
     $this->aiService = $aiService;
     $this->streamWrapperManager = $streamWrapperManager;
-    $this->indexLocator = $indexLocator;
+    $this->indexOrigin = $indexOrigin;
+    $this->httpClient = $httpClient;
     $this->cache = $cache;
   }
 
@@ -73,7 +82,8 @@ class HealthController extends ControllerBase {
     return new static(
       $container->get('scolta.ai_service'),
       $container->get('stream_wrapper_manager'),
-      $container->get('scolta.index_locator'),
+      $container->get('scolta_ui.index_origin'),
+      $container->get('http_client'),
       $container->get('cache.default'),
     );
   }
@@ -123,16 +133,34 @@ class HealthController extends ControllerBase {
       $result['ai_configured'] = TRUE;
     }
 
-    // Drupal-specific: index detail enrichment. The shared locator decides
-    // what "index exists" means (modern pagefind/ layout or legacy root).
-    $location = $this->indexLocator->locate($outputDir);
+    // Drupal-specific: index detail enrichment.
+    //
+    // A remote origin is reported as remote and reachability-checked, not
+    // inspected: there is no local index to stat, and reporting "not built"
+    // for a site that never builds one is a false alarm. This is the one
+    // place a synchronous check of the remote index belongs — the block
+    // renders on every page and must not pay for it, a monitor polling
+    // health can.
+    if ($this->indexOrigin->isRemote()) {
+      $result['index_origin'] = $this->indexOrigin->remoteBase();
+      $reachable = $this->remoteIndexReachable($this->indexOrigin->remoteBase());
+      $result['index_exists'] = $reachable;
+      $result['index'] = ['built' => $reachable, 'remote' => TRUE];
+      if (!$reachable) {
+        $result['status'] = 'degraded';
+      }
+      return $this->respond($result);
+    }
+
+    $result['index_origin'] = IndexOrigin::LOCAL;
+    $location = $this->indexOrigin->locateLocal();
     $result['index_exists'] = $location !== NULL;
     if ($location !== NULL) {
       $indexFile = $location['indexFile'];
 
       $mtime = filemtime($indexFile);
       // Shares the one fragment-directory glob with countFragments().
-      $fragments = $this->indexLocator->fragmentFiles($location);
+      $fragments = $this->indexOrigin->fragmentFiles($location);
 
       $result['index'] = [
         'built' => TRUE,
@@ -174,11 +202,46 @@ class HealthController extends ControllerBase {
     // reflects integrity degradation. Callers without the admin permission
     // get exactly ['status' => ...] — enough for uptime monitors, nothing
     // an anonymous visitor shouldn't see.
-    if (!$this->currentUser()->hasPermission('administer scolta')) {
+    return $this->respond($result);
+  }
+
+  /**
+   * Return the full report to an admin, the bare status to anyone else.
+   *
+   * @param array $result
+   *   The assembled health report.
+   */
+  protected function respond(array $result): JsonResponse {
+    if (!$this->currentUser()->hasPermission('administer scolta ui')) {
       return new JsonResponse(['status' => $result['status']]);
     }
 
     return new JsonResponse($result);
+  }
+
+  /**
+   * Whether a remote index origin is serving an index right now.
+   *
+   * Fetches the entry file rather than the directory: a host can answer 200
+   * for a directory it does not serve an index from, and the entry file is
+   * the first thing the browser asks for, so this fails exactly when the
+   * browser would. Short timeouts because a monitor is waiting.
+   *
+   * @param string $base
+   *   The remote origin, without a trailing slash.
+   */
+  protected function remoteIndexReachable(string $base): bool {
+    try {
+      $response = $this->httpClient->request('GET', $base . '/pagefind/pagefind-entry.json', [
+        'timeout' => 5,
+        'connect_timeout' => 3,
+        'http_errors' => FALSE,
+      ]);
+      return $response->getStatusCode() === 200;
+    }
+    catch (\Throwable) {
+      return FALSE;
+    }
   }
 
 }

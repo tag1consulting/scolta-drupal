@@ -14,15 +14,11 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
-use Drupal\scolta\Batch\ScoltaBatchOperations;
-use Drupal\scolta\Service\PagefindBuilder;
 use Drupal\scolta_ui\Service\ScoltaAiService;
-use Drupal\scolta\Service\ScoltaContentGatherer;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Config\ApiKeySource;
-use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Config\ScoltaConfig;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Prompt\DefaultPrompts;
@@ -52,12 +48,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
    */
   protected ScoltaAiService $aiService;
 
-  /**
-   * The Pagefind builder service.
-   *
-   * @var \Drupal\scolta\Service\PagefindBuilder
-   */
-  protected PagefindBuilder $pagefindBuilder;
 
   /**
    * The stream wrapper manager.
@@ -94,12 +84,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
    */
   protected CacheTagsInvalidatorInterface $cacheTagsInvalidator;
 
-  /**
-   * The content gatherer service.
-   *
-   * @var \Drupal\scolta\Service\ScoltaContentGatherer
-   */
-  protected ScoltaContentGatherer $contentGatherer;
 
   /**
    * The managed Amazee.ai gateway credential store.
@@ -117,8 +101,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
    *   The typed config manager.
    * @param \Drupal\scolta_ui\Service\ScoltaAiService $aiService
    *   The Scolta AI service.
-   * @param \Drupal\scolta\Service\PagefindBuilder $pagefindBuilder
-   *   The Pagefind builder service.
    * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $streamWrapperManager
    *   The stream wrapper manager.
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
@@ -129,8 +111,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
    *   The file system service.
    * @param \Drupal\Core\Cache\CacheTagsInvalidatorInterface $cacheTagsInvalidator
    *   The cache tags invalidator.
-   * @param \Drupal\scolta\Service\ScoltaContentGatherer $contentGatherer
-   *   The content gatherer service.
    * @param \Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface $amazeeConfigStorage
    *   The managed-gateway credential store, cleared when the operator selects
    *   a different AI provider.
@@ -139,24 +119,20 @@ class ScoltaSettingsForm extends ConfigFormBase {
     ConfigFactoryInterface $configFactory,
     TypedConfigManagerInterface $typedConfigManager,
     ScoltaAiService $aiService,
-    PagefindBuilder $pagefindBuilder,
     StreamWrapperManagerInterface $streamWrapperManager,
     EntityTypeManagerInterface $entityTypeManager,
     StateInterface $state,
     FileSystemInterface $fileSystem,
     CacheTagsInvalidatorInterface $cacheTagsInvalidator,
-    ScoltaContentGatherer $contentGatherer,
     ConfigStorageInterface $amazeeConfigStorage,
   ) {
     parent::__construct($configFactory, $typedConfigManager);
     $this->aiService = $aiService;
-    $this->pagefindBuilder = $pagefindBuilder;
     $this->streamWrapperManager = $streamWrapperManager;
     $this->entityTypeManager = $entityTypeManager;
     $this->state = $state;
     $this->fileSystem = $fileSystem;
     $this->cacheTagsInvalidator = $cacheTagsInvalidator;
-    $this->contentGatherer = $contentGatherer;
     $this->amazeeConfigStorage = $amazeeConfigStorage;
   }
 
@@ -168,13 +144,11 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $container->get('config.factory'),
       $container->get('config.typed'),
       $container->get('scolta.ai_service'),
-      $container->get('scolta.pagefind_builder'),
       $container->get('stream_wrapper_manager'),
       $container->get('entity_type.manager'),
       $container->get('state'),
       $container->get('file_system'),
       $container->get('cache_tags.invalidator'),
-      $container->get('scolta.content_gatherer'),
       $container->get('scolta.amazee_config_storage'),
     );
   }
@@ -379,12 +353,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Brief description used in AI prompts (e.g., "corporate website", "health system websites").'),
     ];
 
-    $form['content']['sortable_fields'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Sortable fields'),
-      '#default_value' => implode(', ', $config->get('sortable_fields') ?? []),
-      '#description' => $this->t('Comma-separated list of fields available for sorting (e.g., "date, price"). When non-empty, the AI can detect sort intent and return a sort hint.'),
-    ];
 
     $sortableDescRaw = $config->get('sortable_field_descriptions') ?? [];
     $sortableDescDisplay = '';
@@ -399,12 +367,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('One <code>field_name|Description</code> per line. Descriptions help the AI map natural language to field names. Example: <code>word_count|Article length in words — higher means more comprehensive coverage</code>.'),
     ];
 
-    $form['content']['filter_fields'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Filter fields'),
-      '#default_value' => implode(', ', $config->get('filter_fields') ?? []),
-      '#description' => $this->t('Comma-separated list of filter dimension names (e.g., "topic, era, region"). Must match the filter names used in data-pagefind-filter attributes.'),
-    ];
 
     $filterDescRaw = $config->get('filter_field_descriptions') ?? [];
     $filterDescDisplay = '';
@@ -424,45 +386,14 @@ class ScoltaSettingsForm extends ConfigFormBase {
     foreach ($sortableMappingRaw as $field => $dimension) {
       $sortableMappingDisplay .= "{$field}|{$dimension}\n";
     }
-    $form['content']['field_mapping_sortable'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('Sortable field mappings'),
-      '#default_value' => trim($sortableMappingDisplay),
-      '#rows' => 4,
-      '#description' => $this->t('Auto-map entity fields to sortable dimensions during indexing. One <code>entity_field_name|dimension_name</code> per line. Example: <code>field_word_count|word_count</code>. Supports entity reference fields (resolves to label), numeric fields, and text fields. The hook <code>hook_scolta_content_item_alter()</code> can still override these values.'),
-    ];
 
     $filterMappingRaw = $config->get('field_mappings.filters') ?? [];
     $filterMappingDisplay = '';
     foreach ($filterMappingRaw as $field => $dimension) {
       $filterMappingDisplay .= "{$field}|{$dimension}\n";
     }
-    $form['content']['field_mapping_filters'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('Filter field mappings'),
-      '#default_value' => trim($filterMappingDisplay),
-      '#rows' => 4,
-      '#description' => $this->t('Auto-map entity fields to filter dimensions during indexing. One <code>entity_field_name|dimension_name</code> per line. Example: <code>field_topics|topics</code>. Entity reference fields (e.g., taxonomy terms) resolve to the referenced entity label. Multi-value references are joined with commas.'),
-    ];
 
-    $form['content']['indexer'] = [
-      '#type' => 'select',
-      '#title' => $this->t('Indexer mode'),
-      '#options' => [
-        'auto' => $this->t('Auto (PHP indexer — recommended, works on all hosts)'),
-        'php' => $this->t('PHP (pure-PHP, no binary needed)'),
-        'binary' => $this->t('Binary (requires Pagefind CLI)'),
-      ],
-      '#default_value' => $config->get('indexer') ?? 'auto',
-      '#description' => $this->t('How scolta:build creates the search index. Auto uses the PHP indexer, which works on all hosting environments and supports fast incremental re-indexing. Can be overridden with --indexer on the CLI.'),
-    ];
 
-    $memoryBudgetConfig = MemoryBudgetConfig::load([
-      'profile'      => $config->get('memory_budget.profile') ?? 'conservative',
-      'custom_bytes' => $config->get('memory_budget.custom_bytes'),
-      'chunk_size'   => $config->get('memory_budget.chunk_size'),
-    ]);
-    $form['content']['memory_budget'] = MemoryBudgetSettingsFieldSet::build($memoryBudgetConfig);
 
     // ── Site Type Section ──
     $presets = ScoltaConfig::getPresets();
@@ -1072,14 +1003,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
     // Drupal handles all validation server-side.
     $form['#attributes']['novalidate'] = 'novalidate';
 
-    $form['actions']['rebuild_index'] = [
-      '#type' => 'submit',
-      '#value' => $this->t('Rebuild Index'),
-      '#name' => 'rebuild_index',
-      '#submit' => ['::rebuildSubmit'],
-      '#limit_validation_errors' => [],
-      '#weight' => 10,
-    ];
 
     return $form;
   }
@@ -1202,60 +1125,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ]);
     }
 
-    // Pagefind binary status.
-    $resolver = new PagefindBinary(
-      configuredPath: $config->get('pagefind.binary'),
-      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
-    );
-    $binaryStatus = $resolver->status();
-    if ($binaryStatus['available']) {
-      $items[] = $this->t('Pagefind binary: @message', [
-        '@message' => $binaryStatus['message'],
-      ]);
-    }
-    else {
-      $items[] = $this->t('Pagefind binary: Not available. Run drush scolta:download-pagefind or install via npm.');
-    }
-
-    // Build directory status.
-    $buildDirConfig = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
-    $resolvedBuildDir = $this->resolveStateDir($config);
-    if ($resolvedBuildDir !== $buildDirConfig) {
-      $items[] = $this->t('Build directory: @configured (resolved to @resolved)', [
-        '@configured' => $buildDirConfig,
-        '@resolved' => $resolvedBuildDir,
-      ]);
-    }
-    else {
-      $items[] = $this->t('Build directory: @path', ['@path' => $resolvedBuildDir]);
-    }
-
-    // Pagefind index status.
-    $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
-    if (str_contains($outputDir, '://')) {
-      try {
-        $resolvedDir = $this->streamWrapperManager
-          ->getViaUri($outputDir)->realpath() ?: $outputDir;
-      }
-      catch (\Exception $e) {
-        $resolvedDir = $outputDir;
-      }
-    }
-    else {
-      $resolvedDir = $outputDir;
-    }
-
-    $indexStatus = $this->pagefindBuilder->getStatus($resolvedDir);
-    if ($indexStatus['exists']) {
-      $items[] = $this->t('Pagefind index: Built (@size, @count fragments, last built @date)', [
-        '@size' => $indexStatus['index_size'],
-        '@count' => $indexStatus['file_count'],
-        '@date' => $indexStatus['last_built'] ?? 'unknown',
-      ]);
-    }
-    else {
-      $items[] = $this->t('Pagefind index: Not built yet. Run Search API indexing or drush scolta:build.');
-    }
 
     // Search API index.
     try {
@@ -1472,22 +1341,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
       // Content settings.
       ->set('site_name', $form_state->getValue('site_name'))
       ->set('site_description', $form_state->getValue('site_description'))
-      ->set('sortable_fields', array_values(array_filter(array_map(
-        'trim',
-        explode(',', $form_state->getValue('sortable_fields') ?? '')
-      ))))
       ->set('sortable_field_descriptions', $this->parseKeyValueLines($form_state->getValue('sortable_field_descriptions') ?? ''))
-      ->set('filter_fields', array_values(array_filter(array_map(
-        'trim',
-        explode(',', $form_state->getValue('filter_fields') ?? '')
-      ))))
       ->set('filter_field_descriptions', $this->parseKeyValueLines($form_state->getValue('filter_field_descriptions') ?? ''))
-      ->set('field_mappings.sortable', $this->parseKeyValueLines($form_state->getValue('field_mapping_sortable') ?? ''))
-      ->set('field_mappings.filters', $this->parseKeyValueLines($form_state->getValue('field_mapping_filters') ?? ''))
-      ->set('indexer', $form_state->getValue('indexer'))
-      ->set('memory_budget.profile', $form_state->getValue('memory_budget_profile') ?? 'conservative')
-      ->set('memory_budget.custom_bytes', NULL)
-      ->set('memory_budget.chunk_size', ($form_state->getValue('chunk_size') !== '' && $form_state->getValue('chunk_size') !== NULL) ? (int) $form_state->getValue('chunk_size') : NULL)
       // Scoring settings.
       ->set('scoring.title_match_boost', (float) $form_state->getValue('title_match_boost'))
       ->set('scoring.title_all_terms_multiplier', (float) $form_state->getValue('title_all_terms_multiplier'))
@@ -1598,284 +1453,11 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $this->aiService->clearAmazeeAuthFailure();
   }
 
-  /**
-   * Submit handler for the "Rebuild Index" button.
-   *
-   * Gathers content from Drupal entities and routes to the PHP indexer
-   * (via Batch API) or the binary indexer (synchronously) based on the
-   * configured indexer mode.
-   *
-   * @param array $form
-   *   The form array.
-   * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The form state.
-   */
-  public function rebuildSubmit(array &$form, FormStateInterface $form_state): void {
-    $config = $this->config('scolta.settings');
-    $siteName = $config->get('site_name') ?: ($this->config('system.site')->get('name') ?? '');
 
-    // Clear any previous notice so a fresh notice_id is used after this
-    // rebuild.
-    $this->state->delete('scolta.rebuild_notice');
 
-    // Resolve indexer mode up front so we choose the right gather strategy.
-    $indexerMode = $config->get('indexer') ?: 'auto';
-    if ($indexerMode === 'auto') {
-      $indexerMode = $this->resolveAutoIndexer($config);
-    }
 
-    if ($indexerMode === 'php') {
-      // For the PHP indexer, only query entity IDs here. Entity loading and
-      // content filtering happen inside each batch step so that no single
-      // web request has to load the full corpus into memory. This prevents
-      // the "Index Now" button from timing out on shared hosting at any
-      // corpus size.
-      $storage = $this->entityTypeManager->getStorage('node');
-      $ids = array_values($storage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('status', 1)
-        ->execute());
 
-      if (empty($ids)) {
-        $this->messenger()->addWarning($this->t('No content found to index.'));
-        return;
-      }
 
-      $this->rebuildWithBatch($ids, $siteName, $config);
-    }
-    else {
-      // Binary mode shells out to the Pagefind CLI, which shared hosting
-      // does not allow. Loading all content synchronously is acceptable here
-      // since binary mode is only used on hosts that support long-running
-      // processes.
-      $items = iterator_to_array($this->contentGatherer->gather('node', '', $siteName), FALSE);
-
-      if (empty($items)) {
-        $this->messenger()->addWarning($this->t('No content found to index.'));
-        return;
-      }
-
-      $outputDir = $this->resolveOutputDir($config);
-      $exporter = new ContentExporter($outputDir);
-      $filteredItems = $exporter->exportToItems($items);
-
-      if (empty($filteredItems)) {
-        $this->messenger()->addWarning($this->t('No items passed content filter.'));
-        return;
-      }
-
-      $this->rebuildWithBinary($filteredItems, $config);
-    }
-  }
-
-  /**
-   * Resolve the output directory from config, handling stream wrappers.
-   *
-   * @param \Drupal\Core\Config\ImmutableConfig $config
-   *   The Scolta settings config.
-   *
-   * @return string
-   *   The resolved output directory path.
-   */
-  protected function resolveOutputDir($config): string {
-    $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
-    if (str_contains($outputDir, '://')) {
-      try {
-        $resolved = $this->streamWrapperManager
-          ->getViaUri($outputDir)->realpath() ?: $outputDir;
-        return $resolved;
-      }
-      catch (\Exception $e) {
-        return $outputDir;
-      }
-    }
-    return $outputDir;
-  }
-
-  /**
-   * Resolve the state directory from config, handling stream wrappers.
-   *
-   * @param \Drupal\Core\Config\ImmutableConfig $config
-   *   The Scolta settings config.
-   *
-   * @return string
-   *   The resolved state directory path.
-   */
-  protected function resolveStateDir($config): string {
-    $stateDir = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
-    if (str_contains($stateDir, '://')) {
-      try {
-        $wrapper = $this->streamWrapperManager->getViaUri($stateDir);
-        // realpath() returns FALSE (or '' from some wrappers) when the
-        // wrapper cannot resolve — treat both as unresolved.
-        $resolved = $wrapper ? ($wrapper->realpath() ?: NULL) : NULL;
-        if ($resolved !== NULL) {
-          return $resolved;
-        }
-      }
-      catch (\Exception $e) {
-        // Fall through to fallback.
-      }
-
-      // When private:// is unavailable, fall back to public://scolta-build.
-      if (str_starts_with($stateDir, 'private://')) {
-        try {
-          $publicWrapper = $this->streamWrapperManager->getViaUri('public://');
-          $publicBase = $publicWrapper ? ($publicWrapper->realpath() ?: NULL) : NULL;
-          if ($publicBase !== NULL) {
-            return $publicBase . '/scolta-build';
-          }
-        }
-        catch (\Exception $e) {
-          // Fall through to original URI.
-        }
-      }
-
-      return $stateDir;
-    }
-    return $stateDir;
-  }
-
-  /**
-   * Resolve 'auto' indexer mode.
-   *
-   * Auto always uses the PHP indexer — it works on all PHP hosting
-   * environments without shell access or Node.js. Set indexer: binary to
-   * use the Pagefind binary explicitly.
-   *
-   * @param \Drupal\Core\Config\ImmutableConfig $config
-   *   The Scolta settings config (unused, kept for API consistency).
-   *
-   * @return string
-   *   Always 'php'.
-   */
-  protected function resolveAutoIndexer($config): string {
-    return 'php';
-  }
-
-  /**
-   * Rebuild using Batch API with the PHP indexer.
-   *
-   * Accepts entity IDs rather than pre-loaded ContentItems so that no single
-   * web request ever loads the full corpus. Entity loading, content extraction,
-   * and filtering all happen inside each batch step.
-   *
-   * @param array $entityIds
-   *   Flat array of published node IDs to index.
-   * @param string $siteName
-   *   Site name passed to each ContentItem.
-   * @param \Drupal\Core\Config\ImmutableConfig $config
-   *   The Scolta settings config.
-   */
-  protected function rebuildWithBatch(array $entityIds, string $siteName, $config): void {
-    $stateDir = $this->resolveStateDir($config);
-    $outputDir = $this->resolveOutputDir($config);
-    $language = $config->get('ai_languages')[0] ?? 'en';
-
-    // Ensure directories exist.
-    if (!is_dir($stateDir)) {
-      $this->fileSystem->mkdir($stateDir, 0755, TRUE);
-    }
-    if (!is_dir($outputDir)) {
-      $this->fileSystem->mkdir($outputDir, 0755, TRUE);
-    }
-
-    $batchConfig = [
-      'state_dir' => $stateDir,
-      'output_dir' => $outputDir,
-      'hmac_secret' => NULL,
-      'language' => $language,
-    ];
-
-    $chunkSize = 100;
-    $idChunks = array_chunk($entityIds, $chunkSize);
-    $totalCount = count($entityIds);
-
-    $operations = [];
-    foreach ($idChunks as $idx => $idChunk) {
-      $operations[] = [
-        [ScoltaBatchOperations::class, 'loadAndProcessChunk'],
-        [$idx, $idChunk, $totalCount, $siteName, $batchConfig],
-      ];
-    }
-
-    // Add finalize operation.
-    $operations[] = [
-      [ScoltaBatchOperations::class, 'finalize'],
-      [$batchConfig],
-    ];
-
-    $batch = [
-      'title' => $this->t('Rebuilding search index...'),
-      'operations' => $operations,
-      'finished' => [ScoltaBatchOperations::class, 'finished'],
-      'progressive' => TRUE,
-    ];
-
-    batch_set($batch);
-  }
-
-  /**
-   * Rebuild using the Pagefind binary (synchronous).
-   *
-   * @param \Tag1\Scolta\Export\ContentItem[] $items
-   *   The filtered content items.
-   * @param \Drupal\Core\Config\ImmutableConfig $config
-   *   The Scolta settings config.
-   */
-  protected function rebuildWithBinary(array $items, $config): void {
-    $outputDir = $this->resolveOutputDir($config);
-    $stateDir = $this->resolveStateDir($config);
-
-    // Ensure directories exist.
-    if (!is_dir($stateDir)) {
-      $this->fileSystem->mkdir($stateDir, 0755, TRUE);
-    }
-    if (!is_dir($outputDir)) {
-      $this->fileSystem->mkdir($outputDir, 0755, TRUE);
-    }
-
-    // Export HTML files for the binary.
-    $exporter = new ContentExporter($outputDir);
-    $exporter->prepareOutputDir();
-    foreach ($items as $item) {
-      $exporter->export($item);
-    }
-
-    // Run Pagefind binary.
-    $resolver = new PagefindBinary(
-      configuredPath: $config->get('pagefind.binary'),
-      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
-    );
-
-    $binary = $resolver->resolve();
-    if ($binary === NULL) {
-      $this->messenger()->addError($this->t('Pagefind binary not available. Use the PHP indexer or install Pagefind.'));
-      return;
-    }
-
-    // PagefindBuilder validates the binary against an allowlist and runs it
-    // through Symfony Process with a timeout — never shell out directly.
-    $result = $this->pagefindBuilder->build($binary, $outputDir, $outputDir . '/pagefind');
-
-    if (!$result['success']) {
-      $this->messenger()->addError($this->t('Pagefind build failed: @output', [
-        '@output' => $result['error'] ?? $result['output'],
-      ]));
-      return;
-    }
-
-    // Increment generation counter.
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->state->set('scolta.generation', $generation + 1);
-
-    $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
-    // Store in State so the notice persists across page loads until dismissed.
-    $this->state->set('scolta.rebuild_notice', ScoltaBatchOperations::buildNoticeData(
-      'ok',
-      (string) $this->t('Search index rebuilt successfully (binary).')
-    ));
-  }
 
   /**
    * Parse a multi-line "key|value" textarea into an associative array.

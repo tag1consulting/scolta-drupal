@@ -28,6 +28,11 @@ services:
 
   # Decorate this to narrow who reaches the AI features. Both the block that
   # advertises them and the routes that serve them ask it.
+  # Resolves where the index is: this site's build output, or another site.
+  scolta_ui.index_origin:
+    class: Drupal\scolta_ui\Service\IndexOrigin
+    arguments: ['@config.factory', '@stream_wrapper_manager']
+
   scolta.ai_access:
     class: Drupal\scolta_ui\Access\AiAccess
 

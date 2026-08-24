@@ -16,7 +16,7 @@ use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
 use Drupal\scolta_ui\Access\AiAccessInterface;
 use Drupal\scolta_ui\Service\AssetDeployer;
-use Drupal\scolta\Service\IndexLocator;
+use Drupal\scolta_ui\Service\IndexOrigin;
 use Drupal\scolta_ui\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -54,7 +54,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
     protected LanguageManagerInterface $languageManager,
     protected AccountInterface $currentUser,
     protected StreamWrapperManagerInterface $streamWrapperManager,
-    protected IndexLocator $indexLocator,
+    protected IndexOrigin $indexOrigin,
     protected AiAccessInterface $aiAccess,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
@@ -74,7 +74,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       $container->get('language_manager'),
       $container->get('current_user'),
       $container->get('stream_wrapper_manager'),
-      $container->get('scolta.index_locator'),
+      $container->get('scolta_ui.index_origin'),
       $container->get('scolta.ai_access'),
     );
   }
@@ -83,22 +83,11 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
    * {@inheritdoc}
    */
   public function build(): array {
-    // Resolve the Pagefind output directory to a web-accessible URL.
-    $drupalConfig = $this->configFactory->get('scolta.settings');
-    $outputDir = $drupalConfig->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
-
-    // Check if index exists on the filesystem.
-    $resolvedDir = $outputDir;
-    if (str_contains($outputDir, '://')) {
-      try {
-        $resolvedDir = $this->streamWrapperManager
-          ->getViaUri($outputDir)->realpath() ?: $outputDir;
-      }
-      catch (\Exception $e) {
-        // Fall through with unresolved URI.
-      }
-    }
-    $indexExists = $this->indexLocator->exists($resolvedDir);
+    // Where the index lives — this site's build output, or another site's.
+    // A remote origin has nothing on this filesystem to find, so the origin
+    // service answers both questions and the block asks it rather than
+    // resolving a path itself.
+    $indexExists = $this->indexOrigin->exists();
 
     if (!$indexExists) {
       // Output differs by the 'administer scolta' permission, so the render
@@ -109,7 +98,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       ];
       if ($this->currentUser->hasPermission('administer scolta')) {
         $notice = $this->t(
-          '<p><strong>Scolta:</strong> Search index has not been built yet.</p><p><a href=":url">Build now &rarr;</a> or run <code>drush scolta:build</code></p>',
+          '<p><strong>Scolta:</strong> No search index found.</p><p>Build one on this site with <code>drush scolta:build</code>, or <a href=":url">point this site at an index another site serves</a>.</p>',
           [':url' => Url::fromRoute('scolta.settings')->toString()]
         );
         return [
@@ -123,7 +112,9 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
 
     $config = $this->aiService->getConfig();
 
-    $pagefindPath = $this->resolvePagefindUrl($outputDir);
+    $pagefindPath = $this->indexOrigin->isRemote()
+      ? $this->indexOrigin->remoteBase()
+      : $this->resolvePagefindUrl($this->indexOrigin->outputDirUri());
 
     // Build the window.scolta configuration for the JS frontend.
     // Resolve the WASM glue JS for client-side scoring. AssetDeployer copies

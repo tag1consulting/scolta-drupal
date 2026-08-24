@@ -1,0 +1,5 @@
+scolta.index_settings:
+  title: 'Scolta index'
+  description: 'Configure what Scolta indexes and how the index is built.'
+  route_name: scolta.index_settings
+  parent: system.admin_config_search
