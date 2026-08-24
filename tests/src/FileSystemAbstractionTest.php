@@ -80,7 +80,7 @@ class FileSystemAbstractionTest extends TestCase {
   }
 
   public function testPagefindBuilderServiceArguments(): void {
-    $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml');
+    $services = ['services' => PackageManifest::services()];
     $args = $services['services']['scolta.pagefind_builder']['arguments'] ?? [];
     $this->assertCount(3, $args,
       'scolta.pagefind_builder service must have 3 arguments (logger, file_system, index_locator)');
@@ -154,24 +154,25 @@ class FileSystemAbstractionTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testSettingsFormHasFileSystemProperty(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/src/Form/ScoltaIndexSettingsForm.php';
     $contents = file_get_contents($file);
     $this->assertStringContainsString('FileSystemInterface $fileSystem', $contents,
-      'ScoltaSettingsForm constructor must accept FileSystemInterface');
+      'ScoltaIndexSettingsForm constructor must accept FileSystemInterface');
   }
 
   public function testSettingsFormUsesFileSystemMkdir(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    // The directories are the build's, so this is the index form's job now.
+    $file = $this->moduleRoot . '/src/Form/ScoltaIndexSettingsForm.php';
     $contents = file_get_contents($file);
     $this->assertStringContainsString('$this->fileSystem->mkdir(', $contents,
-      'ScoltaSettingsForm must create directories via $this->fileSystem->mkdir()');
+      'ScoltaIndexSettingsForm must create directories via $this->fileSystem->mkdir()');
   }
 
   public function testSettingsFormCreateGetsFileSystem(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/src/Form/ScoltaIndexSettingsForm.php';
     $contents = file_get_contents($file);
     $this->assertStringContainsString("'file_system'", $contents,
-      "ScoltaSettingsForm::create() must request 'file_system' from container");
+      "ScoltaIndexSettingsForm::create() must request 'file_system' from container");
   }
 
   // -------------------------------------------------------------------
@@ -179,45 +180,47 @@ class FileSystemAbstractionTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testAssetDeployerHasFileSystemInConstructor(): void {
-    $file = $this->moduleRoot . '/src/Service/AssetDeployer.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Service/AssetDeployer.php';
     $contents = file_get_contents($file);
     $this->assertStringContainsString('FileSystemInterface', $contents,
       'AssetDeployer must type-hint FileSystemInterface in its constructor');
   }
 
   public function testAssetDeployerCopiesViaFileSystem(): void {
-    $file = $this->moduleRoot . '/src/Service/AssetDeployer.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Service/AssetDeployer.php';
     $contents = file_get_contents($file);
     $this->assertStringContainsString('$this->fileSystem->copy(', $contents,
       'AssetDeployer::deploy() must use $this->fileSystem->copy() not raw copy()');
   }
 
   public function testAssetDeployerPreparesDirectoryViaFileSystem(): void {
-    $file = $this->moduleRoot . '/src/Service/AssetDeployer.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Service/AssetDeployer.php';
     $contents = file_get_contents($file);
     $this->assertStringContainsString('$this->fileSystem->prepareDirectory(', $contents,
       'AssetDeployer::deploy() must create the destination via $this->fileSystem->prepareDirectory() not raw mkdir()');
   }
 
   public function testAssetDeployerImportsFileExists(): void {
-    $file = $this->moduleRoot . '/src/Service/AssetDeployer.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Service/AssetDeployer.php';
     $contents = file_get_contents($file);
     $this->assertStringContainsString('use Drupal\Core\File\FileExists;', $contents,
       'AssetDeployer must import Drupal\Core\File\FileExists for the copy() FileExists::Replace argument');
   }
 
   public function testAssetDeployerRemovesViaDeleteRecursive(): void {
-    $file = $this->moduleRoot . '/src/Service/AssetDeployer.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Service/AssetDeployer.php';
     $contents = file_get_contents($file);
     $this->assertStringContainsString('$this->fileSystem->deleteRecursive(', $contents,
       'AssetDeployer::remove() must use $this->fileSystem->deleteRecursive() not raw unlink()/rmdir()');
   }
 
   public function testUninstallHookRemovesDeployedAssets(): void {
-    $file = $this->moduleRoot . '/scolta.install';
+    // The bundle is deployed by scolta_ui_install() and removed by
+    // scolta_ui_uninstall(): a backend-only site never had one.
+    $file = $this->moduleRoot . '/modules/scolta_ui/scolta_ui.install';
     $contents = file_get_contents($file);
     $this->assertStringContainsString("service('scolta.asset_deployer')->remove()", $contents,
-      'scolta_uninstall() must remove the deployed bundle via the asset deployer');
+      'scolta_ui_uninstall() must remove the deployed bundle via the asset deployer');
   }
 
 }

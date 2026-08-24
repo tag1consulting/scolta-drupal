@@ -40,9 +40,9 @@ class ManualProviderAndTwoActionConnectTest extends TestCase {
 
   protected function setUp(): void {
     $this->moduleRoot = dirname(__DIR__, 2);
-    $this->amazeeForm = file_get_contents($this->moduleRoot . '/src/Form/AmazeeSettingsForm.php');
-    $this->settingsForm = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
-    $this->aiService = file_get_contents($this->moduleRoot . '/src/Service/ScoltaAiService.php');
+    $this->amazeeForm = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/AmazeeSettingsForm.php');
+    $this->settingsForm = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php');
+    $this->aiService = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Service/ScoltaAiService.php');
   }
 
   // -------------------------------------------------------------------
@@ -50,7 +50,7 @@ class ManualProviderAndTwoActionConnectTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testShippedInstallConfigSelectsNoProvider(): void {
-    $installed = file_get_contents($this->moduleRoot . '/config/install/scolta.settings.yml');
+    $installed = PackageManifest::rawSettings();
 
     $this->assertMatchesRegularExpression(
       "/^ai_provider: ''$/m",
@@ -245,8 +245,8 @@ class ManualProviderAndTwoActionConnectTest extends TestCase {
    */
   private function providerReadingFiles(): array {
     $paths = [
-      'src/Service/ScoltaAiService.php',
-      'src/Form/ScoltaSettingsForm.php',
+      'modules/scolta_ui/src/Service/ScoltaAiService.php',
+      'modules/scolta_ui/src/Form/ScoltaSettingsForm.php',
       'src/Commands/ScoltaCommands.php',
     ];
 

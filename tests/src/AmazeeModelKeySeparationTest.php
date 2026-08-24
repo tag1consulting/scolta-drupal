@@ -48,8 +48,8 @@ class AmazeeModelKeySeparationTest extends TestCase {
   // -------------------------------------------------------------------------
 
   public function testGatewayKeysAreDeclaredWithEmptyDefaults(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $install = PackageManifest::settings();
+    $schema = PackageManifest::settingsSchema();
 
     foreach (['amazee_model', 'amazee_expansion_model'] as $key) {
       $this->assertArrayHasKey($key, $install, "{$key} must ship an install default");
@@ -76,7 +76,7 @@ class AmazeeModelKeySeparationTest extends TestCase {
    * alias-versus-native-ID confusion this fix removes.
    */
   public function testGatewayKeysAreNotOperatorSettable(): void {
-    $form = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
+    $form = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php');
 
     $this->assertStringNotContainsString('amazee_model', $form);
     $this->assertStringNotContainsString('amazee_expansion_model', $form);
@@ -96,7 +96,7 @@ class AmazeeModelKeySeparationTest extends TestCase {
    * there is no operator-chosen value in a gateway-scoped key to protect.
    */
   public function testTrialProvisioningFormWritesTheGatewayKeys(): void {
-    $source = file_get_contents($this->moduleRoot . '/src/Form/AmazeeSettingsForm.php');
+    $source = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/AmazeeSettingsForm.php');
 
     $this->assertStringContainsString("\$config->set('amazee_model', \$result->aiModel)", $source);
     $this->assertStringContainsString("\$config->set('amazee_expansion_model', \$result->aiExpansionModel)", $source);
@@ -113,7 +113,7 @@ class AmazeeModelKeySeparationTest extends TestCase {
    * Nothing in the AI service may write a gateway alias to the operator keys.
    */
   public function testServiceNeverWritesTheOperatorFacingModelKeys(): void {
-    $source = file_get_contents($this->moduleRoot . '/src/Service/ScoltaAiService.php');
+    $source = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Service/ScoltaAiService.php');
 
     $this->assertDoesNotMatchRegularExpression(
       "/getEditable\('scolta\.settings'\)(?:.|\n)*?->set\('ai_(?:expansion_)?model'/",
@@ -139,7 +139,10 @@ class AmazeeModelKeySeparationTest extends TestCase {
     $this->assertStringContainsString('function scolta_update_10003()', $source);
     $this->assertStringContainsString("\\Drupal::state()->get('scolta.amazee.credentials')", $source);
     $this->assertStringContainsString("\$config->get('amazee_model') ?? ''", $source);
-    $this->assertStringContainsString('ScoltaSettingsForm::DEFAULT_AI_MODEL', $source);
+    // Pinned in the install file rather than read from the settings form: an
+    // update hook must keep meaning what it meant when it was written, and
+    // since the split the form is in the other module anyway.
+    $this->assertStringContainsString('_SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL', $source);
     $this->assertStringContainsString(
       "\$config->set('amazee_model', \$strandedModel)",
       $source,

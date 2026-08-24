@@ -28,21 +28,21 @@ class ControllerHandlerTest extends TestCase {
     return [
       'ExpandQueryController' => [
         'ExpandQueryController',
-        $root . '/src/Controller/ExpandQueryController.php',
+        $root . '/modules/scolta_ui/src/Controller/ExpandQueryController.php',
       ],
       'SummarizeController' => [
         'SummarizeController',
-        $root . '/src/Controller/SummarizeController.php',
+        $root . '/modules/scolta_ui/src/Controller/SummarizeController.php',
       ],
       'FollowUpController' => [
         'FollowUpController',
-        $root . '/src/Controller/FollowUpController.php',
+        $root . '/modules/scolta_ui/src/Controller/FollowUpController.php',
       ],
     ];
   }
 
   private function baseSource(): string {
-    return file_get_contents($this->moduleRoot . '/src/Controller/AiApiControllerBase.php');
+    return file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Controller/AiApiControllerBase.php');
   }
 
   // -------------------------------------------------------------------
@@ -191,17 +191,17 @@ class ControllerHandlerTest extends TestCase {
   }
 
   public function testExpandInvokesExpandQuery(): void {
-    $contents = file_get_contents($this->moduleRoot . '/src/Controller/ExpandQueryController.php');
+    $contents = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Controller/ExpandQueryController.php');
     $this->assertStringContainsString("handleExpandQuery(\$body['query'] ?? '')", $contents);
   }
 
   public function testSummarizeInvokesSummarize(): void {
-    $contents = file_get_contents($this->moduleRoot . '/src/Controller/SummarizeController.php');
+    $contents = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Controller/SummarizeController.php');
     $this->assertStringContainsString("handleSummarize(\$body['query'] ?? '', \$body['context'] ?? '')", $contents);
   }
 
   public function testFollowUpInvokesFollowUp(): void {
-    $contents = file_get_contents($this->moduleRoot . '/src/Controller/FollowUpController.php');
+    $contents = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Controller/FollowUpController.php');
     $this->assertStringContainsString("handleFollowUp(\$body['messages'] ?? [])", $contents);
   }
 
@@ -218,7 +218,7 @@ class ControllerHandlerTest extends TestCase {
   }
 
   public function testFollowUpDoesNotUseCache(): void {
-    $contents = file_get_contents($this->moduleRoot . '/src/Controller/FollowUpController.php');
+    $contents = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Controller/FollowUpController.php');
     $this->assertStringNotContainsString('DrupalCacheDriver', $contents,
       'FollowUpController should not cache responses (conversations are stateful)');
     $this->assertStringContainsString('NullCacheDriver', $contents,
@@ -230,7 +230,7 @@ class ControllerHandlerTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testRoutingMatchesControllers(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
+    $routing = PackageManifest::routes();
 
     $expected = [
       'scolta.expand' => 'ExpandQueryController::handle',
@@ -251,18 +251,18 @@ class ControllerHandlerTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testFloodConfigShipsEverywhere(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
+    $install = PackageManifest::settings();
     foreach (['ai_ip_limit', 'ai_ip_window', 'ai_global_limit', 'ai_global_window'] as $key) {
       $this->assertArrayHasKey($key, $install['flood'], "Install config missing flood.{$key}");
     }
 
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $schema = PackageManifest::settingsSchema();
     $floodSchema = $schema['scolta.settings']['mapping']['flood']['mapping'] ?? [];
     foreach (['ai_ip_limit', 'ai_ip_window', 'ai_global_limit', 'ai_global_window'] as $key) {
       $this->assertSame('integer', $floodSchema[$key]['type'] ?? NULL, "Schema missing flood.{$key}");
     }
 
-    $form = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
+    $form = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php');
     foreach (['flood_ai_ip_limit', 'flood_ai_ip_window', 'flood_ai_global_limit', 'flood_ai_global_window'] as $field) {
       $this->assertStringContainsString("'{$field}'", $form, "Settings form missing {$field}");
     }

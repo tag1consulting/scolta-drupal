@@ -72,7 +72,7 @@ class SaytSettingsTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testInstallConfigCarriesEveryDefault(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
+    $install = PackageManifest::settings();
 
     foreach (self::DEFAULTS as $key => $value) {
       $this->assertArrayHasKey(
@@ -87,7 +87,7 @@ class SaytSettingsTest extends TestCase {
   }
 
   public function testSchemaTypesMatchTheDefaults(): void {
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $schema = PackageManifest::settingsSchema();
     $mapping = $schema['scolta.settings']['mapping'];
 
     $expectedTypes = [
@@ -108,7 +108,7 @@ class SaytSettingsTest extends TestCase {
   }
 
   public function testExampleConfigDocumentsEverySetting(): void {
-    $example = Yaml::parseFile($this->moduleRoot . '/config/scolta.settings.example.yml');
+    $example = PackageManifest::exampleSettings();
 
     foreach (self::DEFAULTS as $key => $value) {
       $this->assertArrayHasKey(
@@ -127,7 +127,7 @@ class SaytSettingsTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testFormRendersASaytSection(): void {
-    $form = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
+    $form = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php');
 
     $this->assertStringContainsString(
       "\$form['sayt'] = [",
@@ -142,7 +142,7 @@ class SaytSettingsTest extends TestCase {
   }
 
   public function testFormExposesEverySetting(): void {
-    $form = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
+    $form = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php');
 
     foreach (array_keys(self::DEFAULTS) as $key) {
       $this->assertStringContainsString(
@@ -159,7 +159,7 @@ class SaytSettingsTest extends TestCase {
   }
 
   public function testNumericFieldsAreBounded(): void {
-    $form = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
+    $form = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php');
 
     // Each numeric field's element definition, from its key to the closing
     // bracket of the array literal.
@@ -174,7 +174,7 @@ class SaytSettingsTest extends TestCase {
   }
 
   public function testEnrichmentCapExplainsTheSharedBudget(): void {
-    $form = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
+    $form = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php');
     $start = strpos($form, "\$form['sayt']['sayt_expand_per_minute']");
     $this->assertNotFalse($start, 'sayt_expand_per_minute must be a form field');
     $element = substr($form, $start, (int) strpos($form, '];', $start) - $start);
@@ -188,7 +188,7 @@ class SaytSettingsTest extends TestCase {
   }
 
   public function testSuggestionActionOffersBothActions(): void {
-    $form = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
+    $form = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php');
     $start = strpos($form, "\$form['sayt']['sayt_suggestion_action']");
     $this->assertNotFalse($start, 'sayt_suggestion_action must be a form field');
     $element = substr($form, $start, (int) strpos($form, '];', $start) - $start);
@@ -207,7 +207,7 @@ class SaytSettingsTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testBlockEmitsEveryBrowserKey(): void {
-    $block = file_get_contents($this->moduleRoot . '/src/Plugin/Block/ScoltaSearchBlock.php');
+    $block = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Plugin/Block/ScoltaSearchBlock.php');
 
     foreach (self::BROWSER_KEYS as $configKey => $browserKey) {
       $this->assertStringContainsString(

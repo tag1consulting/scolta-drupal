@@ -213,7 +213,7 @@ class ModelResolutionSelfHealTest extends TestCase {
     $src = $this->serviceSource();
 
     $found = preg_match_all(
-      "/self::modelIsResolved\(\s*\\\$this->configFactory->get\('scolta\.settings'\)->get\('([a-z_]+)'\)/",
+      "/self::modelIsResolved\(\s*\\\$this->configFactory->get\('scolta_ui\.settings'\)->get\('([a-z_]+)'\)/",
       $src,
       $matches
     );
@@ -282,7 +282,7 @@ class ModelResolutionSelfHealTest extends TestCase {
   }
 
   private function serviceSource(): string {
-    return file_get_contents(dirname(__DIR__, 2) . '/src/Service/ScoltaAiService.php');
+    return file_get_contents(dirname(__DIR__, 2) . '/modules/scolta_ui/src/Service/ScoltaAiService.php');
   }
 
   /**

@@ -132,33 +132,49 @@ class IndexLocatorTest extends TestCase {
   public function test_health_controller_uses_fragment_files(): void {
     // The health controller's inline glob is gone — it now resolves the
     // fragment list (count plus the file it filesize()s) through the shared
-    // method, so the glob pattern lives in exactly one place.
-    $src = file_get_contents(dirname(__DIR__, 2) . '/src/Controller/HealthController.php');
+    // method, so the glob pattern lives in exactly one place. Since the
+    // backend/frontend split that shared method is IndexOrigin's, because the
+    // controller is a frontend one and IndexLocator is scolta's.
+    $src = file_get_contents(dirname(__DIR__, 2) . '/modules/scolta_ui/src/Controller/HealthController.php');
     $this->assertStringContainsString(
-      '$this->indexLocator->fragmentFiles(',
+      '$this->indexOrigin->fragmentFiles(',
       $src,
-      'HealthController must enumerate fragments through IndexLocator::fragmentFiles()'
+      'HealthController must enumerate fragments through IndexOrigin::fragmentFiles()'
     );
     $this->assertStringNotContainsString(
       "glob(\$location['fragmentDir']",
       $src,
-      'HealthController must not re-glob the fragment directory — that glob now lives only in IndexLocator'
+      'HealthController must not re-glob the fragment directory — that glob now lives only in the origin service'
     );
   }
 
-  public function test_all_call_sites_use_the_locator(): void {
+  public function test_all_call_sites_use_a_resolver(): void {
+    // Still one answer per module to "is there an index", rather than the four
+    // disagreeing inline checks this class was written to end. There are two
+    // resolvers now because there are two modules: the backend asks its own
+    // filesystem through IndexLocator, and the frontend asks IndexOrigin,
+    // which answers for a remote index as well as a local one. Neither module
+    // reaches for the other's, which is what keeps the split intact.
     $root = dirname(__DIR__, 2);
     $sites = [
       'src/Service/PagefindBuilder.php' => 'indexLocator',
-      'src/Controller/HealthController.php' => 'indexLocator',
       'src/Commands/ScoltaCommands.php' => 'indexLocator',
-      'src/Plugin/Block/ScoltaSearchBlock.php' => 'indexLocator',
+      'modules/scolta_ui/src/Controller/HealthController.php' => 'indexOrigin',
+      'modules/scolta_ui/src/Plugin/Block/ScoltaSearchBlock.php' => 'indexOrigin',
     ];
     foreach ($sites as $file => $needle) {
       $this->assertStringContainsString(
         $needle,
         file_get_contents($root . '/' . $file),
-        "{$file} must resolve index existence through the shared IndexLocator"
+        "{$file} must resolve index existence through the shared resolver, not an inline check"
+      );
+    }
+
+    foreach (['Controller/HealthController.php', 'Plugin/Block/ScoltaSearchBlock.php'] as $frontend) {
+      $this->assertStringNotContainsString(
+        'IndexLocator',
+        file_get_contents($root . '/modules/scolta_ui/src/' . $frontend),
+        "scolta_ui/src/{$frontend} must not reach for the backend's IndexLocator"
       );
     }
   }

@@ -16,7 +16,7 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
   private string $serviceFile;
 
   protected function setUp(): void {
-    $this->serviceFile = dirname(__DIR__, 2) . '/src/Service/ScoltaAiService.php';
+    $this->serviceFile = dirname(__DIR__, 2) . '/modules/scolta_ui/src/Service/ScoltaAiService.php';
   }
 
   public function testImportsTheAmazeeCredentialStoreInterface(): void {
@@ -157,7 +157,7 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
   }
 
   public function testServicesYamlHasAmazeeServices(): void {
-    $yaml = file_get_contents(dirname(__DIR__, 2) . '/scolta.services.yml');
+    $yaml = PackageManifest::raw('services');
     $this->assertStringContainsString('scolta.amazee_config_storage', $yaml);
     $this->assertStringContainsString('scolta.amazee_budget_handler', $yaml);
     $this->assertStringContainsString('DrupalConfigStorage', $yaml);
@@ -165,7 +165,7 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
   }
 
   public function testScoltaAiServiceServicesYamlArgumentCount(): void {
-    $yaml = file_get_contents(dirname(__DIR__, 2) . '/scolta.services.yml');
+    $yaml = PackageManifest::raw('services');
     // The service definition should have 5 arguments now.
     $this->assertStringContainsString('@scolta.amazee_budget_handler', $yaml);
     $this->assertStringContainsString('@state', $yaml);

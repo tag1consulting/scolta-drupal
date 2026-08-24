@@ -76,9 +76,13 @@ class ManagedGatewayOptInInstallTest extends TestCase {
   }
 
   public function testInstallStillGrantsAuthenticatedAiAccess(): void {
+    // Applied by scolta_ui_install() since the split: the permission and the
+    // routes it gates are both scolta_ui's, so the grant belongs where they do.
+    $uiInstall = file_get_contents(dirname(__DIR__, 2) . '/modules/scolta_ui/scolta_ui.install');
+
     $this->assertStringContainsString(
       "user_role_grant_permissions(RoleInterface::AUTHENTICATED_ID, ['use scolta ai'])",
-      $this->installBody,
+      $uiInstall,
       'Logged-in AI search is intended out of the box; the authenticated grant stays'
     );
   }
@@ -96,10 +100,16 @@ class ManagedGatewayOptInInstallTest extends TestCase {
       $numbers,
       'scolta.install must define scolta_update_10004() so existing sites are carried over'
     );
+    // Not a pin on a number — the property is that hooks are declared in
+    // ascending order, so the newest one is always the highest. A hook added
+    // below a higher number is skipped outright by every site that already ran
+    // that higher one, and nothing else would catch it.
+    $sorted = $numbers;
+    sort($sorted);
     $this->assertSame(
-      10005,
-      max($numbers),
-      'The newest update hook must be the highest-numbered one, or sites that already ran a higher number skip it'
+      $sorted,
+      $numbers,
+      'Update hooks must be declared in ascending order, or sites that already ran a higher number skip the new one'
     );
     $this->assertSame(
       array_unique($numbers),

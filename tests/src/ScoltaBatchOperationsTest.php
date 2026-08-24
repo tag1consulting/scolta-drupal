@@ -164,7 +164,7 @@ class ScoltaBatchOperationsTest extends TestCase {
    * The new callback (loadAndProcessChunk) receives entity IDs only.
    */
   public function testRebuildWithBatchUsesLoadAndProcessChunkCallback(): void {
-    $source = file_get_contents(__DIR__ . '/../../src/Form/ScoltaSettingsForm.php');
+    $source = file_get_contents(__DIR__ . '/../../src/Form/ScoltaIndexSettingsForm.php');
 
     preg_match('/function rebuildWithBatch\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s', $source, $m);
     $body = $m[1] ?? '';
@@ -194,7 +194,7 @@ class ScoltaBatchOperationsTest extends TestCase {
    * in the method body for the PHP path.
    */
   public function testRebuildSubmitDoesNotLoadMultipleForPhpIndexer(): void {
-    $source = file_get_contents(__DIR__ . '/../../src/Form/ScoltaSettingsForm.php');
+    $source = file_get_contents(__DIR__ . '/../../src/Form/ScoltaIndexSettingsForm.php');
 
     // Locate just the rebuildSubmit method body.
     preg_match('/function rebuildSubmit\b[^{]*\{(.*?)(?=\n  (public|private|protected) function|\n})/s', $source, $m);

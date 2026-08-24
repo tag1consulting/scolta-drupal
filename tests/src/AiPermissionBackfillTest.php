@@ -27,8 +27,14 @@ class AiPermissionBackfillTest extends TestCase {
 
   private string $readme;
 
+  /**
+   * The frontend module's install file, which owns the permission now.
+   */
+  private string $uiInstallSource;
+
   protected function setUp(): void {
     $this->installSource = file_get_contents(dirname(__DIR__, 2) . '/scolta.install');
+    $this->uiInstallSource = file_get_contents(dirname(__DIR__, 2) . '/modules/scolta_ui/scolta_ui.install');
     $this->updateBody = $this->functionBody('scolta_update_10001');
     $this->readme = file_get_contents(dirname(__DIR__, 2) . '/README.md');
   }
@@ -129,19 +135,28 @@ class AiPermissionBackfillTest extends TestCase {
    * afterwards — it is a record of a step a site already took. The anonymous
    * half of it is undone for existing sites by scolta_update_10004(), pinned
    * in \Drupal\scolta\Tests\ManagedGatewayOptInInstallTest.
+   *
+   * The grant itself is scolta_ui_install()'s since the backend/frontend
+   * split: 'use scolta ai' is a scolta_ui permission gating scolta_ui routes,
+   * and a backend-only install has neither.
    */
   public function testInstallHookGrantsTheAuthenticatedRoleOnly(): void {
-    $installBody = $this->functionBody('scolta_install');
+    $installBody = $this->functionBody('scolta_ui_install', $this->uiInstallSource);
 
     $this->assertStringContainsString(
       "user_role_grant_permissions(RoleInterface::AUTHENTICATED_ID, ['use scolta ai'])",
       $installBody,
-      "scolta_install() must grant 'use scolta ai' to authenticated users — logged-in AI search is intended"
+      "scolta_ui_install() must grant 'use scolta ai' to authenticated users — logged-in AI search is intended"
     );
     $this->assertStringNotContainsString(
       'RoleInterface::ANONYMOUS_ID',
       $installBody,
-      "scolta_install() must not grant 'use scolta ai' to the anonymous role"
+      "scolta_ui_install() must not grant 'use scolta ai' to the anonymous role"
+    );
+    $this->assertStringNotContainsString(
+      'user_role_grant_permissions(',
+      $this->functionBody('scolta_install'),
+      "scolta_install() must not grant a permission scolta_ui defines — a backend-only install has no AI endpoints to open"
     );
   }
 
@@ -201,24 +216,25 @@ class AiPermissionBackfillTest extends TestCase {
    * @return string
    *   Everything between the function's opening and closing brace.
    */
-  private function functionBody(string $name): string {
-    $start = strpos($this->installSource, "function {$name}(");
-    $this->assertNotFalse($start, "scolta.install must define {$name}()");
+  private function functionBody(string $name, ?string $source = NULL): string {
+    $source ??= $this->installSource;
+    $start = strpos($source, "function {$name}(");
+    $this->assertNotFalse($start, "The install file must define {$name}()");
 
-    $open = strpos($this->installSource, '{', $start);
+    $open = strpos($source, '{', $start);
     $this->assertNotFalse($open, "{$name}() must have a body");
 
     $depth = 0;
-    $length = strlen($this->installSource);
+    $length = strlen($source);
     for ($i = $open; $i < $length; $i++) {
-      $char = $this->installSource[$i];
+      $char = $source[$i];
       if ($char === '{') {
         $depth++;
       }
       elseif ($char === '}') {
         $depth--;
         if ($depth === 0) {
-          return substr($this->installSource, $open, $i - $open + 1);
+          return substr($source, $open, $i - $open + 1);
         }
       }
     }

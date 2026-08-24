@@ -4,14 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\scolta_ui\Form;
 
-use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
-use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\Core\State\StateInterface;
-use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
 use Drupal\scolta_ui\Service\IndexOrigin;
 use Drupal\scolta_ui\Service\ScoltaAiService;
@@ -46,36 +42,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
    */
   protected ScoltaAiService $aiService;
 
-
-  /**
-   * The stream wrapper manager.
-   *
-   * @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface
-   */
-  protected StreamWrapperManagerInterface $streamWrapperManager;
-
-  /**
-   * The state service.
-   *
-   * @var \Drupal\Core\State\StateInterface
-   */
-  protected StateInterface $state;
-
-  /**
-   * The file system service.
-   *
-   * @var \Drupal\Core\File\FileSystemInterface
-   */
-  protected FileSystemInterface $fileSystem;
-
-  /**
-   * The cache tags invalidator.
-   *
-   * @var \Drupal\Core\Cache\CacheTagsInvalidatorInterface
-   */
-  protected CacheTagsInvalidatorInterface $cacheTagsInvalidator;
-
-
   /**
    * The managed Amazee.ai gateway credential store.
    *
@@ -92,14 +58,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
    *   The typed config manager.
    * @param \Drupal\scolta_ui\Service\ScoltaAiService $aiService
    *   The Scolta AI service.
-   * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $streamWrapperManager
-   *   The stream wrapper manager.
-   * @param \Drupal\Core\State\StateInterface $state
-   *   The state service.
-   * @param \Drupal\Core\File\FileSystemInterface $fileSystem
-   *   The file system service.
-   * @param \Drupal\Core\Cache\CacheTagsInvalidatorInterface $cacheTagsInvalidator
-   *   The cache tags invalidator.
    * @param \Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface $amazeeConfigStorage
    *   The managed-gateway credential store, cleared when the operator selects
    *   a different AI provider.
@@ -108,18 +66,10 @@ class ScoltaSettingsForm extends ConfigFormBase {
     ConfigFactoryInterface $configFactory,
     TypedConfigManagerInterface $typedConfigManager,
     ScoltaAiService $aiService,
-    StreamWrapperManagerInterface $streamWrapperManager,
-    StateInterface $state,
-    FileSystemInterface $fileSystem,
-    CacheTagsInvalidatorInterface $cacheTagsInvalidator,
     ConfigStorageInterface $amazeeConfigStorage,
   ) {
     parent::__construct($configFactory, $typedConfigManager);
     $this->aiService = $aiService;
-    $this->streamWrapperManager = $streamWrapperManager;
-    $this->state = $state;
-    $this->fileSystem = $fileSystem;
-    $this->cacheTagsInvalidator = $cacheTagsInvalidator;
     $this->amazeeConfigStorage = $amazeeConfigStorage;
   }
 
@@ -131,10 +81,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $container->get('config.factory'),
       $container->get('config.typed'),
       $container->get('scolta.ai_service'),
-      $container->get('stream_wrapper_manager'),
-      $container->get('state'),
-      $container->get('file_system'),
-      $container->get('cache_tags.invalidator'),
       $container->get('scolta.amazee_config_storage'),
     );
   }
@@ -389,18 +335,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#rows' => 4,
       '#description' => $this->t('One <code>dimension|Description</code> per line. Listing valid values helps the AI map user queries to filter values. Example: <code>topic|Subject area or domain. Values: Science, History, Biography, Geography, Arts</code>.'),
     ];
-
-    $sortableMappingRaw = $config->get('field_mappings.sortable') ?? [];
-    $sortableMappingDisplay = '';
-    foreach ($sortableMappingRaw as $field => $dimension) {
-      $sortableMappingDisplay .= "{$field}|{$dimension}\n";
-    }
-
-    $filterMappingRaw = $config->get('field_mappings.filters') ?? [];
-    $filterMappingDisplay = '';
-    foreach ($filterMappingRaw as $field => $dimension) {
-      $filterMappingDisplay .= "{$field}|{$dimension}\n";
-    }
 
     // ── Site Type Section ──
     $presets = ScoltaConfig::getPresets();
@@ -1282,8 +1216,6 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $pipeFields = [
       'sortable_field_descriptions' => $this->t('Sortable field descriptions'),
       'filter_field_descriptions' => $this->t('Filter field descriptions'),
-      'field_mapping_sortable' => $this->t('Sortable field mappings'),
-      'field_mapping_filters' => $this->t('Filter field mappings'),
     ];
     foreach ($pipeFields as $fieldName => $label) {
       $raw = (string) ($form_state->getValue($fieldName) ?? '');

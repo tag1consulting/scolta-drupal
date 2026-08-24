@@ -169,6 +169,37 @@ class ScoltaIndexSettingsForm extends ConfigFormBase {
   /**
    * {@inheritdoc}
    */
+  public function validateForm(array &$form, FormStateInterface $form_state): void {
+    parent::validateForm($form, $form_state);
+
+    // Reject key|value lines without a pipe instead of silently dropping them.
+    // The guard came across with the two textareas it is about; the frontend
+    // form keeps the identical guard for the two description fields it kept.
+    $pipeFields = [
+      'field_mapping_sortable' => $this->t('Sortable field mappings'),
+      'field_mapping_filters' => $this->t('Filter field mappings'),
+    ];
+    foreach ($pipeFields as $fieldName => $label) {
+      $raw = (string) ($form_state->getValue($fieldName) ?? '');
+      foreach (explode("\n", $raw) as $line) {
+        $line = trim($line);
+        if ($line !== '' && !str_contains($line, '|')) {
+          $form_state->setErrorByName(
+            $fieldName,
+            $this->t('@label: the line "@line" is missing the "|" separator. Use one key|value pair per line.', [
+              '@label' => $label,
+              '@line' => $line,
+            ])
+          );
+          break;
+        }
+      }
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $this->config('scolta.settings')
       ->set('sortable_fields', array_values(array_filter(array_map(

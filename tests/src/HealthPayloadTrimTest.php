@@ -32,7 +32,7 @@ class HealthPayloadTrimTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testHealthRouteIsAnonymouslyReachable(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
+    $routing = PackageManifest::routes();
 
     $this->assertSame(
       'TRUE',
@@ -51,12 +51,14 @@ class HealthPayloadTrimTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testControllerTrimsDetailWithoutAdministerScolta(): void {
-    $src = file_get_contents($this->moduleRoot . '/src/Controller/HealthController.php');
+    $src = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Controller/HealthController.php');
 
+    // The frontend's own admin permission: /health is a scolta_ui route, and a
+    // frontend-only install has no 'administer scolta' to check against.
     $this->assertStringContainsString(
-      "hasPermission('administer scolta')",
+      "hasPermission('administer scolta ui')",
       $src,
-      'HealthController must gate the full payload on the administer scolta permission'
+      'HealthController must gate the full payload on the administer scolta ui permission'
     );
     $this->assertStringContainsString(
       "new JsonResponse(['status' => \$result['status']])",
@@ -66,7 +68,7 @@ class HealthPayloadTrimTest extends TestCase {
   }
 
   public function testControllerDoesNotUseFloodControl(): void {
-    $src = file_get_contents($this->moduleRoot . '/src/Controller/HealthController.php');
+    $src = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Controller/HealthController.php');
 
     // The health endpoint is excluded from AI-endpoint flood limits — a
     // throttled monitor is worse than no monitor. It must not extend the

@@ -17,7 +17,7 @@ class ScoltaAiServiceGatewayClientTest extends TestCase {
   private string $serviceSource;
 
   protected function setUp(): void {
-    $this->serviceFile = dirname(__DIR__, 2) . '/src/Service/ScoltaAiService.php';
+    $this->serviceFile = dirname(__DIR__, 2) . '/modules/scolta_ui/src/Service/ScoltaAiService.php';
     $this->serviceSource = file_get_contents($this->serviceFile);
   }
 

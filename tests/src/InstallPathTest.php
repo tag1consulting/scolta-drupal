@@ -26,7 +26,7 @@ class InstallPathTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testDefaultPathsUseDrupalStreamWrappers(): void {
-    $config = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
+    $config = PackageManifest::settings();
 
     $this->assertStringStartsWith(
       'public://',
@@ -45,17 +45,7 @@ class InstallPathTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testModuleSourceHasNoFfiReferences(): void {
-    $srcDir = $this->moduleRoot . '/src';
-    $it     = new \RecursiveIteratorIterator(
-      new \RecursiveDirectoryIterator($srcDir, \FilesystemIterator::SKIP_DOTS)
-    );
-
-    foreach ($it as $file) {
-      if ($file->getExtension() !== 'php') {
-        continue;
-      }
-      $content = file_get_contents($file->getPathname());
-      $rel     = str_replace($this->moduleRoot . '/', '', $file->getPathname());
+    foreach (PackageManifest::sourceFiles() as $rel => $content) {
 
       foreach (['ext-ffi', 'Extism', 'extism', 'extension_loaded(\'ffi\')'] as $term) {
         $this->assertStringNotContainsString(
@@ -72,10 +62,18 @@ class InstallPathTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testDrushCommandsRegistered(): void {
-    $commandsFile = $this->moduleRoot . '/src/Commands/ScoltaCommands.php';
-    $this->assertFileExists($commandsFile);
+    // Two command classes since the backend/frontend split: the build
+    // pipeline in scolta, the AI commands in scolta_ui.
+    $classes = [
+      'ScoltaCommands' => $this->moduleRoot . '/src/Commands/ScoltaCommands.php',
+      'ScoltaUiCommands' => $this->moduleRoot . '/modules/scolta_ui/src/Commands/ScoltaUiCommands.php',
+    ];
+    $source = '';
+    foreach ($classes as $name => $file) {
+      $this->assertFileExists($file, "{$name} must exist");
+      $source .= file_get_contents($file) . "\n";
+    }
 
-    $source   = file_get_contents($commandsFile);
     $commands = [
       'build',
       'export',
@@ -90,7 +88,7 @@ class InstallPathTest extends TestCase {
       $this->assertStringContainsString(
         "function $cmd",
         $source,
-        "Drush command \"$cmd\" must be defined in ScoltaCommands"
+        "Drush command \"$cmd\" must be defined in one of the command classes"
       );
     }
   }
@@ -100,7 +98,8 @@ class InstallPathTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testDrushCommandsHaveNoFfiReferences(): void {
-    $source = file_get_contents($this->moduleRoot . '/src/Commands/ScoltaCommands.php');
+    $source = file_get_contents($this->moduleRoot . '/src/Commands/ScoltaCommands.php')
+      . file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Commands/ScoltaUiCommands.php');
     $this->assertStringNotContainsString('FFI', $source);
     $this->assertStringNotContainsString('Extism', $source);
     $this->assertStringNotContainsString('ext-ffi', $source);

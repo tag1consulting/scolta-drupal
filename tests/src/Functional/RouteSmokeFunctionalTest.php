@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Functional;
 
+use Drupal\scolta\Tests\PackageManifest;
 use Drupal\Tests\BrowserTestBase;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Smoke-tests every route defined in scolta.routing.yml.
+ * Smoke-tests every route the package defines, in either module.
  *
  * Reads the routing file at runtime so any newly-added route is automatically
  * covered on the next CI run — no manual test-list updates needed. This is
@@ -173,11 +174,11 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
    *   Route name => [path, permission].
    */
   private function loadRoutes(string $method): array {
-    // tests/src/Functional is three levels below the module root.
-    $routingFile = dirname(__DIR__, 3) . '/scolta.routing.yml';
-    $this->assertFileExists($routingFile, 'scolta.routing.yml not found at module root');
+    // Both modules' routes: this smoke test is about every path the package
+    // serves, and half of them moved to scolta_ui.
+    $routing = PackageManifest::routes();
+    $this->assertNotEmpty($routing, 'Neither module declares any route.');
 
-    $routing = Yaml::parseFile($routingFile);
     $routes = [];
 
     foreach ($routing as $routeName => $def) {
