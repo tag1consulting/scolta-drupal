@@ -286,8 +286,12 @@ class SaytSettingsTest extends TestCase {
   public function testUpdateHookReturnsASummary(): void {
     $body = $this->functionBody('scolta_update_10002');
 
+    // Not anchored on `return t(`: since the split, this hook may have applied
+    // the module split on the way through and prefixes whatever that reported
+    // to its own summary. What must stay true is that every exit hands back a
+    // translated string.
     $this->assertMatchesRegularExpression(
-      '/return t\(/',
+      '/return [^;]*\bt\(/',
       $body,
       'An update hook returns a translated summary string for drush updatedb and update.php'
     );

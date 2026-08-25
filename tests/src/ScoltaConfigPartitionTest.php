@@ -339,4 +339,88 @@ class ScoltaConfigPartitionTest extends TestCase {
     );
   }
 
+
+  /**
+   * Only the migration itself may write a migrated key to scolta.settings.
+   *
+   * Update hooks run in number order, and three that predate the split --
+   * 10002, 10003 and 10004 -- back-fill or migrate settings the split moved
+   * to scolta_ui.settings. Each of them went on writing them to
+   * scolta.settings, whose schema no longer declares a single one, so on any
+   * site upgrading from before those hooks `drush updb` wrote keys with no
+   * schema behind them and the functional suite failed outright under config
+   * schema checking. The partition test that guards the rest of the codebase
+   * excludes scolta.install wholesale, because the migration legitimately
+   * touches both objects -- which is exactly why this needs saying separately.
+   *
+   * The rule: a function in scolta.install that opens scolta.settings for
+   * writing may not also name a key the split moved away. The one exception
+   * is the migration, whose entire job is to hold both objects at once.
+   */
+  public function testNoUpdateHookWritesAMigratedKeyToTheBackendObject(): void {
+    $migrated = $this->migratedKeys();
+    $source = file_get_contents(PackageManifest::root() . '/scolta.install');
+    $this->assertNotFalse($source);
+
+    $offenders = [];
+    foreach ($this->installFunctions($source) as $name => $body) {
+      if ($name === '_scolta_apply_module_split') {
+        continue;
+      }
+      if (!str_contains($body, "getEditable('scolta.settings')")) {
+        continue;
+      }
+      foreach ($migrated as $key) {
+        if (str_contains($body, "'" . $key . "'")) {
+          $offenders[] = $name . ' writes ' . $key;
+        }
+      }
+    }
+
+    $this->assertSame(
+      [],
+      $offenders,
+      'These write a key the split moved into the object the split emptied: '
+      . implode(', ', $offenders)
+    );
+  }
+
+  /**
+   * Every function in scolta.install, keyed by name, with its body.
+   *
+   * Brace-counted from each function's opening brace, which is enough for a
+   * procedural file with no closures or nested functions.
+   *
+   * @param string $source
+   *   The contents of scolta.install.
+   *
+   * @return array<string, string>
+   *   Function name => body source.
+   */
+  private function installFunctions(string $source): array {
+    preg_match_all('/^function ([a-z0-9_]+)\s*\(/mi', $source, $matches, PREG_OFFSET_CAPTURE);
+
+    $functions = [];
+    foreach ($matches[1] as $i => [$name, $_]) {
+      $start = strpos($source, '{', $matches[0][$i][1]);
+      $depth = 0;
+      for ($pos = $start; $pos < strlen($source); $pos++) {
+        if ($source[$pos] === '{') {
+          $depth++;
+        }
+        elseif ($source[$pos] === '}') {
+          $depth--;
+          if ($depth === 0) {
+            break;
+          }
+        }
+      }
+      $functions[$name] = substr($source, $start, $pos - $start);
+    }
+
+    $this->assertNotEmpty($functions, 'scolta.install must define functions');
+
+    return $functions;
+  }
+
 }
