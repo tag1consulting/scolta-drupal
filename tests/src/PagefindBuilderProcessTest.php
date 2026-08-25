@@ -231,13 +231,12 @@ class PagefindBuilderProcessTest extends TestCase {
     $result = [
       'exists' => false,
       'file_count' => 0,
-      'index_size' => '0 B',
       'last_built' => null,
     ];
 
     $this->assertArrayHasKey('exists', $result);
     $this->assertArrayHasKey('file_count', $result);
-    $this->assertArrayHasKey('index_size', $result);
+    $this->assertArrayNotHasKey('index_size', $result);
     $this->assertArrayHasKey('last_built', $result);
     $this->assertFalse($result['exists']);
     $this->assertEquals(0, $result['file_count']);
@@ -259,7 +258,6 @@ class PagefindBuilderProcessTest extends TestCase {
     $result = [
       'exists' => true,
       'file_count' => count($fragments),
-      'index_size' => $this->formatBytes($this->calculateDirectorySize($this->tmpDir)),
       'last_built' => $mtime ? date('Y-m-d H:i:s', $mtime) : null,
     ];
 
@@ -311,20 +309,6 @@ class PagefindBuilderProcessTest extends TestCase {
     return round($bytes / (1024 ** $exp), 1) . ' ' . $units[$exp];
   }
 
-  /**
-   * Mirror of PagefindBuilder::calculateDirectorySize for testing.
-   */
-  private function calculateDirectorySize(string $dir): int {
-    $size = 0;
-    $iterator = new \RecursiveIteratorIterator(
-      new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
-    );
-    foreach ($iterator as $file) {
-      $size += $file->getSize();
-    }
-    return $size;
-  }
-
   // -------------------------------------------------------------------
   // PagefindBuilder source file has expected methods.
   // -------------------------------------------------------------------
@@ -352,6 +336,26 @@ class PagefindBuilderProcessTest extends TestCase {
   public function testPagefindBuilderHasCalculateDirectorySizeMethod(): void {
     $contents = file_get_contents($this->moduleRoot . '/src/Service/PagefindBuilder.php');
     $this->assertStringContainsString('function calculateDirectorySize(', $contents);
+  }
+
+  /**
+   * getStatus() runs on every settings-form GET and must not walk the index.
+   *
+   * calculateDirectorySize() stat()s every file under the output directory.
+   * With a six-figure fragment count on network storage that walk took about
+   * four minutes, which is what made /admin/config/search/scolta hang and
+   * sometimes exceed max_execution_time. build() may still call it; getStatus()
+   * may not.
+   */
+  public function testGetStatusDoesNotWalkTheIndexDirectory(): void {
+    $contents = file_get_contents($this->moduleRoot . '/src/Service/PagefindBuilder.php');
+    $start = strpos($contents, 'public function getStatus(');
+    $this->assertNotFalse($start);
+    $end = strpos($contents, 'protected function calculateDirectorySize(', $start);
+    $this->assertNotFalse($end);
+    $body = substr($contents, $start, $end - $start);
+    $this->assertStringNotContainsString('calculateDirectorySize(', $body);
+    $this->assertStringNotContainsString('index_size', $body);
   }
 
   // -------------------------------------------------------------------
