@@ -399,3 +399,18 @@ function scolta_update_10005() {
 
   return t('Deployed the Scolta browser bundle (JS, CSS, WASM) from the installed tag1/scolta-php to public://scolta-assets. It is refreshed automatically on every cache rebuild whenever the installed scolta-php changes.');
 }
+
+/**
+ * Seed the body_fields setting with the previously hardcoded field list.
+ */
+function scolta_update_10006() {
+  $config = \Drupal::configFactory()->getEditable('scolta.settings');
+
+  if ($config->get('body_fields')) {
+    return t('body_fields already set; left alone.');
+  }
+
+  $config->set('body_fields', ['body', 'field_body', 'field_content'])->save();
+
+  return t('Added the body_fields setting, seeded with the field list that used to be hardcoded in ScoltaContentGatherer (body, field_body, field_content), so indexing behaviour is unchanged. Add bundle-specific fields at /admin/config/search/scolta — content with none of the listed fields is skipped, which is how Umami recipe nodes went unindexed.');
+}

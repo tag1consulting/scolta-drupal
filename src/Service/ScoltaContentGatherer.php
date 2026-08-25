@@ -651,6 +651,20 @@ class ScoltaContentGatherer {
   }
 
   /**
+   * The entity fields to search for body content, in precedence order.
+   *
+   * @return string[]
+   *   Field names; the first one holding a value on a given translation wins.
+   */
+  private function bodyFields(): array {
+    $configured = $this->configFactory->get('scolta.settings')->get('body_fields');
+
+    // A site that has never saved the setting, or has emptied it, still needs
+    // the historical defaults rather than an index of nothing.
+    return array_filter($configured ?: ['body', 'field_body', 'field_content']);
+  }
+
+  /**
    * Build the ContentItems for one entity — the single conversion pipeline.
    *
    * Yields every translation as a separate indexed page, renders body text
@@ -674,9 +688,13 @@ class ScoltaContentGatherer {
     foreach ($entity->getTranslationLanguages() as $langcode => $language) {
       $translation = $entity->getTranslation($langcode);
 
-      // Extract body content — try common field names.
+      // Extract body content from the first configured field that has a
+      // value. The list is configurable because bundles do not agree on where
+      // their prose lives: Umami's recipe nodes carry theirs in
+      // field_recipe_instruction, and with a hardcoded list every recipe fell
+      // out of the index at the empty-body check below without a word.
       $body = '';
-      foreach (['body', 'field_body', 'field_content'] as $field) {
+      foreach ($this->bodyFields() as $field) {
         if ($translation->hasField($field) && !$translation->get($field)->isEmpty()) {
           $item = $translation->get($field)->first();
           if ($item instanceof TextItemBase) {
