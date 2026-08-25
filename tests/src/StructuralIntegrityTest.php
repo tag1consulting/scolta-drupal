@@ -658,6 +658,130 @@ class StructuralIntegrityTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
+  // Distribution archive manifest
+  // -------------------------------------------------------------------
+
+  /**
+   * Every entry that ships at the top level must be change-controlled.
+   *
+   * scripts/validate-dist-archive.sh fails closed on a top-level entry it
+   * does not recognise, which is the right posture — but it runs in its own
+   * CI job, and a branch whose full suite has not been fired yet never asks
+   * it anything. Splitting the package into scolta and scolta_ui added a
+   * top-level modules/ directory that the allowlist did not name, so the
+   * release that exists to ship the frontend would have been refused by the
+   * gate guarding it. Ask the same question here, where the suite runs.
+   */
+  public function testEveryTopLevelEntryIsEitherShippedOrExportIgnored(): void {
+    $allowed = $this->distArchiveList('ALLOWED_TOP_LEVEL');
+    $excluded = $this->distArchiveList('EXCLUDED_PATHS');
+    $known = array_merge($allowed, $excluded);
+
+    foreach ($this->trackedTopLevelEntries() as $entry) {
+      $this->assertContains(
+        $entry,
+        $known,
+        "Top-level entry '{$entry}' is neither on ALLOWED_TOP_LEVEL nor on "
+        . 'EXCLUDED_PATHS in scripts/validate-dist-archive.sh, so the dist '
+        . 'archive gate will refuse the release. Ship it or export-ignore it.'
+      );
+    }
+  }
+
+  /**
+   * Nothing on the allowlist may name a path that no longer exists.
+   *
+   * The allowlist is a permit list, so a stale entry cannot fail the script —
+   * it just quietly permits nothing. That is how scolta.libraries.yml and js/
+   * stayed on it after both moved into scolta_ui: the list stopped describing
+   * the archive and nobody heard about it.
+   */
+  public function testTheAllowlistDescribesTheArchiveItGuards(): void {
+    foreach ($this->distArchiveList('ALLOWED_TOP_LEVEL') as $entry) {
+      $this->assertFileExists(
+        $this->moduleRoot . '/' . $entry,
+        "ALLOWED_TOP_LEVEL names '{$entry}', which is not in the tree any more"
+      );
+    }
+  }
+
+  /**
+   * Every runtime path the gate requires must actually be there.
+   *
+   * REQUIRED_PATHS is the list that catches an over-broad export-ignore
+   * shipping a dead module. It named the backend's files only; after the
+   * split, a filter that dropped modules/ entirely would have produced a
+   * tarball that installs scolta and cannot install scolta_ui, and every
+   * required path would still have been present.
+   */
+  public function testEveryRequiredRuntimePathIsPresent(): void {
+    $required = $this->distArchiveList('REQUIRED_PATHS');
+    $this->assertContains(
+      'modules/scolta_ui/scolta_ui.info.yml',
+      $required,
+      'The frontend module ships from this package; its manifest must be a required path'
+    );
+
+    foreach ($required as $path) {
+      $this->assertFileExists(
+        $this->moduleRoot . '/' . $path,
+        "scripts/validate-dist-archive.sh requires '{$path}' in the archive, "
+        . 'but it is not in the tree'
+      );
+    }
+  }
+
+  /**
+   * Read one bash array out of the dist-archive validator.
+   *
+   * @return string[]
+   *   The array's entries, comments and quoting stripped.
+   */
+  private function distArchiveList(string $name): array {
+    $script = file_get_contents($this->moduleRoot . '/scripts/validate-dist-archive.sh');
+    $this->assertIsString($script, 'scripts/validate-dist-archive.sh must be readable');
+
+    $matched = preg_match('/^' . preg_quote($name, '/') . '=\((.*?)^\)/ms', $script, $m);
+    $this->assertSame(1, $matched, "scripts/validate-dist-archive.sh must define {$name}");
+
+    $entries = [];
+    foreach (explode("\n", $m[1]) as $line) {
+      $line = trim($line);
+      if ($line === '' || str_starts_with($line, '#')) {
+        continue;
+      }
+      $entries[] = trim($line, '"\'');
+    }
+    $this->assertNotEmpty($entries, "{$name} must not be empty");
+
+    return $entries;
+  }
+
+  /**
+   * Top-level entries that git tracks, and so that git archive will emit.
+   *
+   * Derived from .gitignore rather than from a hardcoded skip list, so a new
+   * build directory does not have to be taught to this test twice.
+   *
+   * @return string[]
+   *   Top-level file and directory names.
+   */
+  private function trackedTopLevelEntries(): array {
+    $ignored = ['.', '..', '.git'];
+    foreach (explode("\n", file_get_contents($this->moduleRoot . '/.gitignore')) as $line) {
+      $line = trim($line);
+      if ($line === '' || str_starts_with($line, '#')) {
+        continue;
+      }
+      $ignored[] = explode('/', trim($line, '/'))[0];
+    }
+
+    $entries = array_diff(scandir($this->moduleRoot), $ignored);
+
+    return array_values($entries);
+  }
+
+  // -------------------------------------------------------------------
   // Release workflow constraint guard
   // -------------------------------------------------------------------
 
