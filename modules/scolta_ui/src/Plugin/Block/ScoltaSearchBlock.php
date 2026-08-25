@@ -207,8 +207,17 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       ],
       '#cache' => [
         // config:system.site covers the site-name fallback in drupalSettings;
-        // the language context covers currentLanguage.
-        'tags' => ['config:scolta_ui.settings', 'config:system.site', 'scolta_search_index'],
+        // the language context covers currentLanguage. config:scolta.settings
+        // is the backend's object, and this block still depends on one key in
+        // it: IndexOrigin resolves the local pagefindPath from
+        // pagefind.output_dir, so an operator who relocates the build output
+        // has to invalidate this block along with it.
+        'tags' => [
+          'config:scolta_ui.settings',
+          'config:scolta.settings',
+          'config:system.site',
+          'scolta_search_index',
+        ],
         'contexts' => ['languages:language_content'],
       ],
     ];
