@@ -72,7 +72,7 @@ Rules that follow:
 
 Documentation follows code. When a PR changes behavior, the same PR must update the relevant docs.
 
-- **CHANGELOG.md**: Every PR that changes code (not docs-only) SHOULD add an brief entry under `## [Unreleased]` unless its chnage is trivial.
+- **CHANGELOG.md**: Every PR that changes code (not docs-only) SHOULD add an brief entry under `## [Unreleased]` unless its change is trivial.
 - **README.md**: Update if the change affects installation, Drush commands, API endpoints, permissions, or configuration.
 - **Config schema**: `config/schema/scolta.schema.yml` MUST stay in sync with `config/install/scolta.settings.yml` and the settings form.
 - **PHPDoc**: All public methods SHOULD have complete PHPDoc including `@since` and `@stability`.
