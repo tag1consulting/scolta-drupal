@@ -12,7 +12,8 @@
     "require": {
         "php": ">=8.1",
         "drupal/search_api": "^1.0",
-        "tag1/scolta-php": "^1.3.0"
+        "tag1/scolta-php": "^1.3.0",
+        "composer/installers": "^2"
     },
     "suggest": {
         "drupal/ai": "For enhanced multi-provider AI support via the Drupal AI Initiative module (48+ providers, Key module integration, rate limiting, token tracking)"
@@ -56,6 +57,22 @@
         }
     },
     "extra": {
+        "installer-paths": {
+            "web/core": ["type:drupal-core"],
+            "web/modules/contrib/{$name}": ["type:drupal-module"],
+            "web/themes/contrib/{$name}": ["type:drupal-theme"],
+            "web/libraries/{$name}": ["type:drupal-library"]
+        },
+        "drupal-scaffold": {
+            "locations": {
+                "web-root": "web/"
+            },
+            "file-mapping": {
+                "[project-root]/.gitattributes": false,
+                "[project-root]/.editorconfig": false,
+                "[project-root]/recipes/README.txt": false
+            }
+        },
         "phpstan/extension-installer": {
             "ignore": [
                 "phpstan/phpstan-deprecation-rules"
@@ -69,8 +86,9 @@
     "config": {
         "sort-packages": true,
         "allow-plugins": {
+            "composer/installers": true,
             "dealerdirect/phpcodesniffer-composer-installer": true,
-            "drupal/core-composer-scaffold": false,
+            "drupal/core-composer-scaffold": true,
             "symfony/runtime": false
         },
         "audit": {
