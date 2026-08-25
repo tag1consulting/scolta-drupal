@@ -62,7 +62,8 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->adminUser = $this->drupalCreateUser(['administer scolta']);
+    // Both AI screens moved behind 'administer scolta ui'.
+    $this->adminUser = $this->drupalCreateUser(['administer scolta', 'administer scolta ui']);
     // The explicit-key paths outrank everything and are covered by the source
     // matrix; these cases are about the gateway, so make sure none is set.
     $this->originalEnvKey = getenv('SCOLTA_API_KEY');

@@ -68,7 +68,8 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
     putenv('SCOLTA_API_KEY');
     $this->container->get('state')->delete('scolta.amazee.credentials');
 
-    $this->drupalLogin($this->drupalCreateUser(['administer scolta']));
+    // The key-source row is on scolta_ui's settings form.
+    $this->drupalLogin($this->drupalCreateUser(['administer scolta', 'administer scolta ui']));
   }
 
   /**

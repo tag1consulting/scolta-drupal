@@ -47,7 +47,9 @@ class AmazeeReauthNoticeTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->adminUser = $this->drupalCreateUser(['administer scolta']);
+    // The re-authentication notice is rendered by scolta_ui_page_top(),
+    // which gates on 'administer scolta ui'.
+    $this->adminUser = $this->drupalCreateUser(['administer scolta', 'administer scolta ui']);
 
     // Put the site on the Amazee.ai path: the provider selected and a stored
     // connection, with no explicit key, so ScoltaAiService wires the recovery

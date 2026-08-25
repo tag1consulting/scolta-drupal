@@ -44,6 +44,7 @@ class ScoltaExportFunctionalTest extends BrowserTestBase {
     $this->drupalCreateContentType(['type' => 'page']);
     $this->adminUser = $this->drupalCreateUser([
       'administer scolta',
+      'administer scolta ui',
       'administer search_api',
       'administer nodes',
       'create article content',

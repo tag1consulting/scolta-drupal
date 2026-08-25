@@ -37,12 +37,23 @@ class ConfigSplitUpdateFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api'];
+  protected static $modules = ['scolta', 'search_api', 'block'];
 
   /**
    * {@inheritdoc}
    */
   protected $defaultTheme = 'stark';
+
+  /**
+   * {@inheritdoc}
+   *
+   * The fixture writes the pre-split object: one scolta.settings holding both
+   * halves. Those keys are, correctly, no longer in scolta's schema, so the
+   * strict checker refuses the save and the migration under test never runs.
+   * Turning it off is the point — this class exists to exercise config that
+   * the shipped schema deliberately no longer describes.
+   */
+  protected $strictConfigSchema = FALSE;
 
   /**
    * Query-time values, none of them the shipped default.

@@ -39,8 +39,12 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    // Both halves: the screen under test is scolta_ui's and is behind
+    // 'administer scolta ui' since the split, while the rebuild notice and
+    // the index panel it links to are still the backend's.
     $this->adminUser = $this->drupalCreateUser([
       'administer scolta',
+      'administer scolta ui',
       'access administration pages',
     ]);
     // Create a minimal fake index so ScoltaSearchBlock renders the full UI.

@@ -48,8 +48,10 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    // Every route the package serves, so every permission it requires.
     $this->adminUser = $this->drupalCreateUser([
       'administer scolta',
+      'administer scolta ui',
       'use scolta ai',
       'access administration pages',
     ]);

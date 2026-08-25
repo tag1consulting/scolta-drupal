@@ -173,7 +173,11 @@ class FrontendOnlyInstallFunctionalTest extends BrowserTestBase {
    * A remote AI origin sends the three endpoint calls to the other site.
    */
   public function testRemoteAiOriginReachesDrupalSettings(): void {
+    // The index origin has to be remote too, or the block short-circuits on
+    // "no index found" and attaches no drupalSettings at all — the assertion
+    // below would then fail on a missing key rather than a wrong endpoint.
     $this->config('scolta_ui.settings')
+      ->set('index_origin', 'https://index.example.com')
       ->set('ai_origin', 'https://ai.example.com')
       ->save();
 

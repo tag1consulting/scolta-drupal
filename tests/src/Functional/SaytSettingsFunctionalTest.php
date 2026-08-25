@@ -62,8 +62,10 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    // The SAYT settings are on scolta_ui's form, behind its own permission.
     $this->adminUser = $this->drupalCreateUser([
       'administer scolta',
+      'administer scolta ui',
       'access administration pages',
     ]);
     // ScoltaSearchBlock::build() attaches no drupalSettings at all when the

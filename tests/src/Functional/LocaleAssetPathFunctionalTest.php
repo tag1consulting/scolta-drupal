@@ -121,9 +121,12 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
    * locale while silently losing aggregation and cache busting.
    */
   public function testResolvedLibraryPathIsLocalAndDeployed(): void {
+    // scolta_ui, not scolta: the library moved with the block that attaches
+    // it. Asked of the wrong extension this returns FALSE and the test fails
+    // on a library that is perfectly healthy.
     $library = \Drupal::service('library.discovery')
-      ->getLibraryByName('scolta', 'search');
-    $this->assertNotFalse($library, 'The scolta/search library must exist.');
+      ->getLibraryByName('scolta_ui', 'search');
+    $this->assertNotFalse($library, 'The scolta_ui/search library must exist.');
 
     $assets = array_merge($library['js'], $library['css']);
     $this->assertCount(2, $assets, 'The search library must declare one JS and one CSS file.');
