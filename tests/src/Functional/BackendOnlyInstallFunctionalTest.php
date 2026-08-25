@@ -85,10 +85,23 @@ class BackendOnlyInstallFunctionalTest extends BrowserTestBase {
       'message' => 'Rebuilt.',
     ]);
 
-    $url = \Drupal\Core\Url::fromRoute('scolta.dismiss_rebuild_notice', [], [
-      'query' => ['notice_id' => 'test_notice'],
+    // The route is CSRF-protected, and a token minted in the test runner does
+    // not match the browser session's. Take the one the rendered notice
+    // carries: the token is derived from the path alone, so it stays valid
+    // when the query changes.
+    $this->drupalGet('admin/config/search/scolta/index');
+    $dismiss = $this->assertSession()->elementExists(
+      'css',
+      'a[href*="dismiss-rebuild-notice"]'
+    );
+    parse_str((string) parse_url($dismiss->getAttribute('href'), PHP_URL_QUERY), $query);
+    $this->assertArrayHasKey('token', $query, 'The dismiss link must carry a CSRF token');
+
+    // Deliberately without a destination: that is the path through the
+    // controller that used to build a URL for a route only scolta_ui defines.
+    $this->drupalGet('admin/config/search/scolta/dismiss-rebuild-notice', [
+      'query' => ['notice_id' => 'test_notice', 'token' => $query['token']],
     ]);
-    $this->drupalGet($url);
 
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->addressEquals('admin/config/search/scolta/index');
