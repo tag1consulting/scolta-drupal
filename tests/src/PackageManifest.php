@@ -88,6 +88,37 @@ final class PackageManifest {
   }
 
   /**
+   * Every namespace-less PHP file both modules ship.
+   *
+   * .module and .install files are the package's blind spot: phpstan analyses
+   * .php only, and no phpcs sniff resolves a class name, so a missing import
+   * in one of these is invisible to both gates and fatal at runtime — a
+   * .module file has no namespace, so an unimported Foo::BAR resolves to \Foo
+   * and throws "Class not found" on the first request that runs it.
+   *
+   * @return array<string, string>
+   *   File contents, keyed by path relative to the repository root.
+   */
+  public static function proceduralFiles(): array {
+    $paths = [
+      'scolta.module',
+      'scolta.install',
+      'modules/scolta_ui/scolta_ui.module',
+      'modules/scolta_ui/scolta_ui.install',
+    ];
+
+    $files = [];
+    foreach ($paths as $relative) {
+      $absolute = self::root() . '/' . $relative;
+      if (is_file($absolute)) {
+        $files[$relative] = (string) file_get_contents($absolute);
+      }
+    }
+
+    return $files;
+  }
+
+  /**
    * The install defaults of both settings objects, merged.
    *
    * scolta.settings and scolta_ui.settings partition one former object, so a

@@ -129,6 +129,31 @@ class FrontendOnlyInstallFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * The asset libraries build, which means the library alter ran.
+   *
+   * scolta_ui_library_info_alter() rewrites the deployed public:// URIs to
+   * DRUPAL_ROOT-relative paths, and it reads AssetDeployer::DIRECTORY to
+   * recognise them. A .module file has no namespace, so a missing import
+   * there is not a warning but a fatal on every library build — and every
+   * page render behind it. Resolving the library is what executes the hook.
+   */
+  public function testTheSearchLibraryResolves(): void {
+    $library = \Drupal::service('library.discovery')
+      ->getLibraryByName('scolta_ui', 'search');
+
+    $this->assertNotFalse($library, 'The scolta_ui/search library must exist.');
+    $this->assertNotEmpty($library['js']);
+
+    foreach (array_merge($library['js'], $library['css']) as $asset) {
+      $this->assertStringNotContainsString(
+        ':',
+        $asset['data'],
+        'The alter must have resolved the stream-wrapper URI to a local path: ' . $asset['data']
+      );
+    }
+  }
+
+  /**
    * Only this module's permissions exist, and the AI grant was applied.
    */
   public function testPermissionsAreTheFrontendsOwn(): void {

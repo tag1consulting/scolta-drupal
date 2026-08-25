@@ -181,6 +181,141 @@ class ScoltaConfigPartitionTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
+  // The code has to agree with the partition, not just the schemas.
+  // -------------------------------------------------------------------
+
+  /**
+   * No backend file reads a key the migration moved out from under it.
+   *
+   * The partition above is a statement about two YAML files. This is the
+   * statement about the code, and it is the one that broke: site_name and
+   * ai_languages moved to scolta_ui.settings while four build-time callers
+   * went on reading them off scolta.settings. After scolta_update_10006()
+   * clears them from the source object every one of those reads returns
+   * NULL, so an upgraded site silently indexed under the Drupal site name
+   * and in English regardless of what it had configured — with nothing
+   * failing, because a build with a wrong site name still succeeds.
+   *
+   * scolta.install is out of scope: its update hooks are historical records
+   * that read the pre-split object on purpose.
+   */
+  public function testTheBackendReadsNoKeyTheSplitMovedAway(): void {
+    $migrated = $this->migratedKeys();
+
+    foreach ($this->backendSourceFiles() as $relative => $source) {
+      foreach ($this->keysReadFromBackendSettings($source) as $key) {
+        $top = explode('.', $key)[0];
+        $this->assertNotContains(
+          $top,
+          $migrated,
+          "{$relative} reads '{$key}' from scolta.settings, but scolta_update_10006() moves it to scolta_ui.settings — on every upgraded site that read returns NULL"
+        );
+      }
+    }
+  }
+
+  /**
+   * The deliberate cross-object reads are all still made.
+   *
+   * Four keys are read across the split on purpose, and each one is a bug
+   * the moment it stops being read rather than the moment it starts. The
+   * dimension names are the ones that were actually missing: they stayed in
+   * scolta.settings, correctly, but ScoltaAiService never read them, so
+   * ScoltaConfig::sortableFields and ::filterFields reached
+   * AiEndpointHandler empty and it quietly stopped detecting sort intent and
+   * emitting filter suggestions on every site that had configured any.
+   *
+   * @param string $file
+   *   The source file expected to make the read.
+   * @param string $key
+   *   The config key it must read out of scolta.settings.
+   */
+  #[\PHPUnit\Framework\Attributes\DataProvider('crossObjectReadProvider')]
+  public function testTheDeliberateCrossObjectReadsAreStillMade(string $file, string $key): void {
+    $source = file_get_contents(PackageManifest::root() . '/' . $file);
+    $this->assertNotFalse($source, "{$file} must exist");
+
+    $this->assertContains(
+      $key,
+      $this->keysReadFromBackendSettings($source),
+      "{$file} must read '{$key}' from scolta.settings: it is build-time state the frontend needs, and losing the read fails silently rather than loudly"
+    );
+  }
+
+  public static function crossObjectReadProvider(): array {
+    return [
+      // The vocabulary the AI expands sort and filter intent against.
+      'sortable dimension names' => ['modules/scolta_ui/src/Service/ScoltaAiService.php', 'sortable_fields'],
+      'filter dimension names' => ['modules/scolta_ui/src/Service/ScoltaAiService.php', 'filter_fields'],
+      // Where the local index is, for the block and for /health.
+      'index output directory' => ['modules/scolta_ui/src/Service/IndexOrigin.php', 'pagefind.output_dir'],
+      // The binary row on the health report.
+      'pagefind binary' => ['modules/scolta_ui/src/Controller/HealthController.php', 'pagefind.binary'],
+    ];
+  }
+
+  /**
+   * The backend's own PHP, excluding the update hooks.
+   *
+   * @return array<string, string>
+   *   File contents, keyed by path relative to the repository root.
+   */
+  private function backendSourceFiles(): array {
+    $files = [];
+
+    foreach (PackageManifest::sourceFiles() + PackageManifest::proceduralFiles() as $relative => $source) {
+      if ($relative === 'scolta.install' || str_starts_with($relative, 'modules/')) {
+        continue;
+      }
+      $files[$relative] = $source;
+    }
+
+    return $files;
+  }
+
+  /**
+   * The config keys a file reads out of the scolta.settings object.
+   *
+   * Two forms, because both are in use: the inline chain
+   * `$this->config('scolta.settings')->get('x')`, and the far commoner
+   * `$config = ...get('scolta.settings')` followed by `$config->get('x')`
+   * somewhere below — including inside a helper the object was passed to,
+   * which is why the binding is tracked per file rather than per function.
+   *
+   * @param string $source
+   *   PHP source.
+   *
+   * @return string[]
+   *   Distinct config keys.
+   */
+  private function keysReadFromBackendSettings(string $source): array {
+    $keys = [];
+
+    preg_match_all(
+      "/(?:config|get)\(\s*'scolta\.settings'\s*\)\s*->\s*get\(\s*'([a-z0-9_.]+)'/i",
+      $source,
+      $inline
+    );
+    foreach ($inline[1] as $key) {
+      $keys[$key] = TRUE;
+    }
+
+    preg_match_all(
+      "/\\\$(\w+)\s*=\s*[^;\n]*(?:config|get)\(\s*'scolta\.settings'\s*\)/i",
+      $source,
+      $bindings
+    );
+    foreach (array_unique($bindings[1]) as $variable) {
+      preg_match_all("/\\\$" . preg_quote($variable, '/') . "->get\(\s*'([a-z0-9_.]+)'/i", $source, $reads);
+      foreach ($reads[1] as $key) {
+        $keys[$key] = TRUE;
+      }
+    }
+
+    return array_keys($keys);
+  }
+
+  // -------------------------------------------------------------------
   // Both pointers default to this site.
   // -------------------------------------------------------------------
 

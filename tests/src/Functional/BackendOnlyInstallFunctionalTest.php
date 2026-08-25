@@ -69,6 +69,32 @@ class BackendOnlyInstallFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * Dismissing the rebuild notice redirects instead of crashing.
+   *
+   * The notice is the backend's and so is the route, but its no-destination
+   * fallback used to build a URL for scolta.settings — a route only the
+   * frontend defines. On this install combination Url::fromRoute() throws
+   * RouteNotFoundException, so the dismiss link answered 500.
+   */
+  public function testDismissingTheRebuildNoticeDoesNotCrash(): void {
+    $this->drupalLogin($this->drupalCreateUser(['administer scolta']));
+
+    \Drupal::state()->set('scolta.rebuild_notice', [
+      'notice_id' => 'test_notice',
+      'status' => 'ok',
+      'message' => 'Rebuilt.',
+    ]);
+
+    $url = \Drupal\Core\Url::fromRoute('scolta.dismiss_rebuild_notice', [], [
+      'query' => ['notice_id' => 'test_notice'],
+    ]);
+    $this->drupalGet($url);
+
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->addressEquals('admin/config/search/scolta/index');
+  }
+
+  /**
    * Installing the backend alone writes only the backend's config object.
    */
   public function testOnlyTheBuildSettingsAreInstalled(): void {

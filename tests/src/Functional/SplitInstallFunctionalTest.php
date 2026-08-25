@@ -78,4 +78,29 @@ class SplitInstallFunctionalTest extends BrowserTestBase {
     $this->assertNotNull(\Drupal::service('scolta_ui.ai_origin'));
   }
 
+  /**
+   * The AI tier still sees the dimension names the index was built around.
+   *
+   * The names are build-time and stay in scolta.settings; the AI endpoints
+   * need them at query time, because AiEndpointHandler detects sort intent
+   * and filter intent against exactly this vocabulary. When the split left
+   * ScoltaAiService reading scolta_ui.settings alone, both lists reached the
+   * handler empty and it stopped emitting either — with the endpoints still
+   * answering 200, so nothing looked wrong.
+   */
+  public function testTheAiConfigCarriesTheIndexDimensionNames(): void {
+    $this->config('scolta.settings')
+      ->set('sortable_fields', ['date', 'price'])
+      ->set('filter_fields', ['topic', 'region'])
+      ->save();
+
+    // ScoltaAiService builds its ScoltaConfig once, in the constructor, so
+    // the container has to hand back a service instantiated after the save.
+    $this->rebuildContainer();
+    $config = \Drupal::service('scolta.ai_service')->getConfig();
+
+    $this->assertSame(['date', 'price'], $config->sortableFields);
+    $this->assertSame(['topic', 'region'], $config->filterFields);
+  }
+
 }
