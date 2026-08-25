@@ -6,15 +6,24 @@ on:
   pull_request:
     branches: [main]
 
-# Composer resolves the tag1consulting/scolta-php VCS repo and every packagist
-# dist through api.github.com. Unauthenticated that is 60 req/hour/IP, and when
-# it runs dry composer cannot prompt under no-interaction and dies with
-# "Could not authenticate against github.com" (AuthHelper.php:152, exit 100).
-# The run's own token raises it to 1,000 req/hour/repo. Read-only is enough:
-# scolta-php is public, so GITHUB_TOKEN can read it even though the token is
-# scoped to this repository.
+# Every dist composer downloads from a GitHub-hosted package is one
+# api.github.com request. Unauthenticated that budget is 60 req/hour/IP, and
+# when it runs dry composer cannot prompt under no-interaction and dies with
+# "Could not authenticate against github.com" (AuthHelper.php:152, exit 100) —
+# a rate limit reported as an auth failure. The run's own token raises it to
+# 1,000 req/hour/repo. Read-only is enough: scolta-php is public, so
+# GITHUB_TOKEN can read it even though the token is scoped to this repository.
+#
+# 1,000/hour is a per-repository budget shared by every job of every run, so it
+# is spent in parallel by the six jobs below and refilled once an hour. Two
+# things keep it from running dry. The jobs resolve tag1/scolta-php from
+# Packagist rather than from a GitHub VCS repo (see the resolution steps), which
+# is what stopped the budget being spent on metadata; and COMPOSER_CACHE_DIR is
+# a cached directory, so a warm run re-downloads only the dists that actually
+# changed.
 env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
+  COMPOSER_CACHE_DIR: /home/runner/.composer-cache
 
 jobs:
   test:
@@ -38,23 +47,53 @@ jobs:
           extensions: intl
           coverage: none
 
-      # The path repo is swapped for the public VCS one, and the constraint in
-      # composer.json is deliberately left alone. It used to be overwritten with
-      # dev-main@dev here, which meant this job never once resolved the
-      # constraint this package ships: composer.json required tag1/scolta-php as
-      # ^1.1.0 while src/AiProvider/Amazee/DrupalConfigStorage.php declared
-      # `implements ProvenanceAwareConfigStorageInterface`, a class 1.1.0 does
-      # not have, and every job in this file quietly replaced the constraint
-      # before asking composer anything. A guard that edits the thing it is
-      # guarding is not a guard. The shipped ^1.2@dev reaches the development
-      # branch on its own, so there is nothing left to overwrite.
-      - name: Replace path repo with GitHub VCS repo
+      # Warm dist cache. Each dist composer pulls from a GitHub-hosted package is
+      # an api.github.com request against the shared 1,000/hour budget described
+      # at the top of this file, and with no committed lock every job resolves
+      # from scratch. Restoring the cache means a run re-downloads only what
+      # actually changed. The key carries run_id so every run writes a fresh
+      # entry rather than restoring one and never updating it; restore-keys is
+      # what makes the previous run's entry the starting point.
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.composer-cache
+          key: composer-php${{ matrix.php }}-${{ github.run_id }}
+          restore-keys: composer-php${{ matrix.php }}-
+
+      # The ../scolta-php path repo only exists for a developer with a sibling
+      # checkout; on a runner there is nothing at that path, so it is dropped and
+      # tag1/scolta-php resolves from Packagist, which is left implicit here
+      # because composer adds it unless a repository entry disables it.
+      #
+      # This used to name a `{"type": "vcs"}` GitHub repository instead, and that
+      # is what made CI intermittently fail in `composer update` with "Could not
+      # authenticate against github.com" before a single test ran. Composer's
+      # GitHub VCS driver reads composer.json for every ref it finds, one
+      # api.github.com call each, and scolta-php has 164 branches and tags. Six
+      # jobs doing that concurrently is ~1,000 API calls per run against a
+      # 1,000/hour per-repository token budget that also has to pay for the dist
+      # downloads, so a run landing near a full budget got a 403 that composer
+      # surfaces as an auth error. Packagist metadata is static JSON off a CDN
+      # and costs the budget nothing; it serves scolta-php's dev branches too,
+      # which is what the jobs pinning dev-main@dev need.
+      #
+      # The constraint in composer.json is deliberately left alone. It used to be
+      # overwritten with dev-main@dev here, which meant this job never once
+      # resolved the constraint this package ships: composer.json required
+      # tag1/scolta-php as ^1.1.0 while
+      # src/AiProvider/Amazee/DrupalConfigStorage.php declared `implements
+      # ProvenanceAwareConfigStorageInterface`, a class 1.1.0 does not have, and
+      # every job in this file quietly replaced the constraint before asking
+      # composer anything. A guard that edits the thing it is guarding is not a
+      # guard. The shipped ^1.2@dev reaches the development branch on its own, so
+      # there is nothing left to overwrite.
+      - name: Drop the local path repo so scolta-php resolves from Packagist
         run: |
           php -r '
             $j = json_decode(file_get_contents("composer.json"), true);
             $j["repositories"] = [
               ["type" => "composer", "url" => "https://packages.drupal.org/8"],
-              ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
             ];
             // Provide drupal/core so drupal/search_api dependency resolves without
             // pulling in the full Drupal framework into the unit test environment.
@@ -125,6 +164,12 @@ jobs:
           extensions: intl
           coverage: none
 
+      # The only job that keeps the GitHub VCS repo. It resolves whatever ref
+      # .github/upstream-preview names, including a branch pushed moments ago
+      # that Packagist's webhook has not indexed yet, and being informational it
+      # must not report a green-vs-stale ambiguity. Its cost to the API budget is
+      # one job's worth of ref traversal, and only on the rare pull request that
+      # commits that file at all.
       - name: Point composer at the requested scolta-php ref
         if: steps.ref.outputs.run == 'true'
         env:
@@ -159,13 +204,20 @@ jobs:
           php-version: '8.3'
           extensions: intl
           coverage: none
-      - name: Replace path repo with GitHub VCS repo
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.composer-cache
+          key: composer-phpstan-${{ github.run_id }}
+          restore-keys: composer-phpstan-
+
+      - name: Drop the local path repo so scolta-php resolves from Packagist
         run: |
           php -r '
             $j = json_decode(file_get_contents("composer.json"), true);
             $j["repositories"] = [
               ["type" => "composer", "url" => "https://packages.drupal.org/8"],
-              ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
             ];
             $j["require"]["tag1/scolta-php"] = "dev-main@dev";
             // Do NOT provide drupal/core here — PHPStan needs the actual source
@@ -188,13 +240,19 @@ jobs:
           extensions: intl
           coverage: xdebug
 
-      - name: Replace path repo with GitHub VCS repo
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.composer-cache
+          key: composer-coverage-${{ github.run_id }}
+          restore-keys: composer-coverage-
+
+      - name: Drop the local path repo so scolta-php resolves from Packagist
         run: |
           php -r '
             $j = json_decode(file_get_contents("composer.json"), true);
             $j["repositories"] = [
               ["type" => "composer", "url" => "https://packages.drupal.org/8"],
-              ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
             ];
             $j["require"]["tag1/scolta-php"] = "dev-main@dev";
             // Provide drupal/core so drupal/search_api dependency resolves without
@@ -251,6 +309,13 @@ jobs:
           php-version: '8.3'
           extensions: intl, pdo_sqlite, sqlite3
           coverage: none
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.composer-cache
+          key: composer-functional-${{ github.run_id }}
+          restore-keys: composer-functional-
 
       - name: Strip path-repo entry from scolta-drupal composer.json
         run: |
@@ -341,13 +406,19 @@ jobs:
           extensions: intl
           coverage: none
 
-      - name: Replace path repo with GitHub VCS repo
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.composer-cache
+          key: composer-playwright-${{ github.run_id }}
+          restore-keys: composer-playwright-
+
+      - name: Drop the local path repo so scolta-php resolves from Packagist
         run: |
           php -r '
             $j = json_decode(file_get_contents("composer.json"), true);
             $j["repositories"] = [
               ["type" => "composer", "url" => "https://packages.drupal.org/8"],
-              ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
             ];
             $j["require"]["tag1/scolta-php"] = "dev-main@dev";
             // Provide drupal/core so drupal/search_api dependency resolves without
