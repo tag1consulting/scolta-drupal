@@ -483,7 +483,10 @@ function scolta_update_10005() {
  *    there — so this is not an opt-in. Enabling it first also writes its
  *    install defaults, which is what step 2 then overwrites with the site's
  *    real values, and what leaves a key the site never had at its documented
- *    default rather than absent.
+ *    default rather than absent. What it must not carry over from a fresh
+ *    install is scolta_ui_install()'s 'use scolta ai' grant: this site has
+ *    already decided who may spend money on the AI endpoints, so the grant
+ *    is snapshotted before the install and restored after it.
  *
  * 2. Each query-time key moves from scolta.settings to scolta_ui.settings and
  *    is removed from the source, so every key ends in exactly one object. The
@@ -510,8 +513,28 @@ function scolta_update_10006() {
 
   // 1. Enable the frontend.
   if (!\Drupal::moduleHandler()->moduleExists('scolta_ui')) {
+    // scolta_ui_install() grants 'use scolta ai' to the authenticated role,
+    // which is the right default for a fresh install and the wrong thing to
+    // do to a site that has already made that decision. This site made it
+    // when it installed scolta, and may have revoked the grant since — the
+    // AI endpoints cost money per request, so silently reopening them to
+    // every logged-in user is not a no-op upgrade. Record who holds the
+    // permission now and put it back the way it was afterwards.
+    $aiGrantBefore = [];
+    foreach (Role::loadMultiple() as $roleId => $role) {
+      $aiGrantBefore[$roleId] = $role->isAdmin() || $role->hasPermission('use scolta ai');
+    }
+
     \Drupal::service('module_installer')->install(['scolta_ui']);
-    $messages[] = t('Enabled the Scolta AI Search UI (scolta_ui) module, which now renders search and serves the AI endpoints. Its index and AI origins both default to this site, so nothing about how this site searches has changed.');
+
+    foreach (Role::loadMultiple() as $roleId => $role) {
+      if (!$role->isAdmin() && ($aiGrantBefore[$roleId] ?? FALSE) === FALSE && $role->hasPermission('use scolta ai')) {
+        $role->revokePermission('use scolta ai');
+        $role->save();
+      }
+    }
+
+    $messages[] = t('Enabled the Scolta AI Search UI (scolta_ui) module, which now renders search and serves the AI endpoints. Its index and AI origins both default to this site, so nothing about how this site searches has changed, and every role holds exactly the AI access it held before.');
   }
 
   // 2. Move the query-time settings. getEditable() is re-fetched here rather
