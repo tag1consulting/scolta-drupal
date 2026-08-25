@@ -25,7 +25,7 @@ declared version and a site tracking a dev branch could then `composer update` b
 shows the version, with `version` and `version_normalized` agreeing.
 
 **CI checks.** phpunit (`test`, `functional`, `playwright`, `coverage`), `phpstan`,
-`docs-check` (CHANGELOG when code changes), `version-consistency` (no `composer.json` version key, plus
+`version-consistency` (no `composer.json` version key, plus
 an advisory `scripts/validate-release.php`), `lock-guard`, `dist-archive`, `antipatterns`, and
 `Version coherence`. `upstream-preview` is informational and deliberately not a merge gate. The
 scolta-php floor is covered by `tests/src/ScoltaPhpFloorTest.php`.
