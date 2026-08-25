@@ -658,15 +658,36 @@ class StructuralIntegrityTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // Release workflow lock guard
+  // Release workflow constraint guard
   // -------------------------------------------------------------------
 
-  public function test_release_workflow_has_lock_guard(): void {
+  /**
+   * The release must be gated on scolta-php existing as a published release.
+   *
+   * This used to read the committed composer.lock and refuse a lock naming a
+   * development version. No lock is committed here — this is a library, not a
+   * deployed application — so the same question is asked of the manifest and
+   * of Packagist: the declared floor must not be a development constraint,
+   * and a published stable release must satisfy it. Without this job the
+   * coordination is prose again, and scolta-drupal could be tagged against a
+   * scolta-php that nobody can install.
+   */
+  public function test_release_workflow_has_constraint_guard(): void {
     $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
     $this->assertStringContainsString(
+      'CONSTRAINT GUARD FAILED',
+      $workflow,
+      'Release workflow must gate on the tag1/scolta-php constraint naming a published release'
+    );
+    $this->assertStringContainsString(
+      'repo.packagist.org/p2/tag1/scolta-php.json',
+      $workflow,
+      'The constraint guard must check the constraint against published releases, not just its syntax'
+    );
+    $this->assertStringNotContainsString(
       'LOCK GUARD FAILED',
       $workflow,
-      'Release workflow must include the scolta-php lock-source guard'
+      'No composer.lock is committed here; the release gate must not read one'
     );
   }
 

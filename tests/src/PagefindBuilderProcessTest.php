@@ -231,13 +231,12 @@ class PagefindBuilderProcessTest extends TestCase {
     $result = [
       'exists' => false,
       'file_count' => 0,
-      'index_size' => '0 B',
       'last_built' => null,
     ];
 
     $this->assertArrayHasKey('exists', $result);
     $this->assertArrayHasKey('file_count', $result);
-    $this->assertArrayHasKey('index_size', $result);
+    $this->assertArrayNotHasKey('index_size', $result);
     $this->assertArrayHasKey('last_built', $result);
     $this->assertFalse($result['exists']);
     $this->assertEquals(0, $result['file_count']);
@@ -259,7 +258,6 @@ class PagefindBuilderProcessTest extends TestCase {
     $result = [
       'exists' => true,
       'file_count' => count($fragments),
-      'index_size' => $this->formatBytes($this->calculateDirectorySize($this->tmpDir)),
       'last_built' => $mtime ? date('Y-m-d H:i:s', $mtime) : null,
     ];
 
@@ -309,20 +307,6 @@ class PagefindBuilderProcessTest extends TestCase {
     $exp = $bytes > 0 ? floor(log($bytes, 1024)) : 0;
     $exp = min($exp, count($units) - 1);
     return round($bytes / (1024 ** $exp), 1) . ' ' . $units[$exp];
-  }
-
-  /**
-   * Mirror of PagefindBuilder::calculateDirectorySize for testing.
-   */
-  private function calculateDirectorySize(string $dir): int {
-    $size = 0;
-    $iterator = new \RecursiveIteratorIterator(
-      new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
-    );
-    foreach ($iterator as $file) {
-      $size += $file->getSize();
-    }
-    return $size;
   }
 
   // -------------------------------------------------------------------
