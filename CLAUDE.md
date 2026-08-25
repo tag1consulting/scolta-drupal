@@ -2,7 +2,7 @@
 
 ## Versioning (CRITICAL — read scolta-core/VERSIONING.md)
 
-Each Scolta package versions independently, from its own git tags. Compatibility with scolta-php is expressed by the caret constraint in `composer.json`, not by matching version numbers with it. Adapters pin scolta-php via `composer.lock` within that constraint. This is a platform adapter — it depends on scolta-php, never on scolta-core directly.
+Each Scolta package versions independently, from its own git tags. Compatibility with scolta-php is expressed by the caret constraint in `composer.json`, not by matching version numbers with it — and that constraint is the only statement this repository makes about which scolta-php it needs. **No `composer.lock` is committed here.** This is a library, not a deployed application: drupal.org ships the git tarball, a consuming site resolves scolta-php against its own lock, and every CI job resolves with `composer update`, so a committed lock governed nothing but added a file that a path repository made machine-specific. This is a platform adapter — it depends on scolta-php, never on scolta-core directly.
 
 ### Rules
 
@@ -34,9 +34,9 @@ We use DDEV and [a few custom commands](.ddev/commands/web) from the https://git
 
 ### Local cross-package development
 
-To test against un-released scolta-php locally, run `composer config minimum-stability dev && composer require tag1/scolta-php:@dev` (the path repo then supplies the dev build). **Do not commit a lock resolved from the path repo** — it describes one developer's machine, and the CI lock guard rejects `dist.type=path` on every branch.
+To test against un-released scolta-php locally, run `composer config minimum-stability dev && composer require tag1/scolta-php:@dev` (the path repo then supplies the dev build). Both edits are local-only: `minimum-stability` must stay `stable` in the committed `composer.json`, and there is no lock to accidentally commit.
 
-The lock does not have to name a stable scolta-php on a branch, and while the floor is `^1.2@dev` it cannot: no stable release satisfies `^1.2`. The committed lock names `dev-main` from Packagist, `composer validate` in CI keeps it agreeing with `composer.json`, and `release.yml` refuses to publish while it is a development version. That is the gate: scolta-drupal 1.2.0 cannot be released before scolta-php 1.2.0 exists. Drop the `@dev` suffix from the constraint and re-lock when it does.
+The constraint is the coordination gate. While the adapter needs an unreleased scolta-php the floor carries a `@dev` suffix (e.g. `^1.5@dev`), which reaches the development branch from a root that asks for it; `release.yml`'s `constraint-guard` refuses to publish while the floor is a development constraint or while no published stable release satisfies it. So scolta-drupal 1.5.0 cannot ship before scolta-php 1.5.0 exists. Drop the `@dev` suffix when it does.
 
 ### Drupal conventions
 
@@ -53,7 +53,7 @@ Why this design, in one paragraph of history: the bundle used to be committed he
 
 Rules that follow:
 
-- **Never commit a copy of the bundle here** (`StructuralIntegrityTest::testNoBrowserBundleFilesAreCommitted` enforces this). All bundle changes go to scolta-php; this repo picks them up through `composer.lock`.
+- **Never commit a copy of the bundle here** (`StructuralIntegrityTest::testNoBrowserBundleFilesAreCommitted` enforces this). All bundle changes go to scolta-php; this repo picks them up from whatever `composer update` resolves the caret constraint to.
 - **Never remove `hook_rebuild()` or the install-time deploy** — `hook_install()` runs once per site ever, so the rebuild hook is the only thing keeping updating sites current.
 - `AssetDeploymentFunctionalTest` is the behavioral guard: install deploys byte-identical copies, a cache rebuild repairs a stale one, uninstall removes the directory.
 
