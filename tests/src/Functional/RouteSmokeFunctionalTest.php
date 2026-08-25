@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Functional;
 
-use Drupal\scolta\Tests\PackageManifest;
 use Drupal\Tests\BrowserTestBase;
 use Symfony\Component\Yaml\Yaml;
 
@@ -164,6 +163,33 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * Both modules' routing manifests, merged.
+   *
+   * This smoke test is about every path the package serves and half of them
+   * moved to scolta_ui, so it reads both files. It reads them itself rather
+   * than through the unit suite's PackageManifest helper: that class lives in
+   * Drupal\\scolta\\Tests, a namespace only the package's own composer
+   * autoload-dev maps, and a functional test runs inside a Drupal site where
+   * this module is a dependency whose autoload-dev is never registered. The
+   * class is simply not there, and the test errored on every route.
+   *
+   * @return array<string, array<string, mixed>>
+   *   Route name => route definition, as declared in YAML.
+   */
+  private function packageRouting(): array {
+    $moduleList = \Drupal::service('extension.list.module');
+
+    $routing = [];
+    foreach (['scolta', 'scolta_ui'] as $module) {
+      $file = DRUPAL_ROOT . '/' . $moduleList->getPath($module) . '/' . $module . '.routing.yml';
+      $this->assertFileExists($file, "{$module} must declare a routing manifest");
+      $routing += Yaml::parseFile($file) ?: [];
+    }
+
+    return $routing;
+  }
+
+  /**
    * Parses scolta.routing.yml and returns routes matching the given method.
    *
    * Routes with path parameters (e.g. {node}) are excluded — they require
@@ -176,9 +202,7 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
    *   Route name => [path, permission].
    */
   private function loadRoutes(string $method): array {
-    // Both modules' routes: this smoke test is about every path the package
-    // serves, and half of them moved to scolta_ui.
-    $routing = PackageManifest::routes();
+    $routing = $this->packageRouting();
     $this->assertNotEmpty($routing, 'Neither module declares any route.');
 
     $routes = [];

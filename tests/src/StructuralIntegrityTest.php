@@ -658,6 +658,57 @@ class StructuralIntegrityTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
+  // The functional suite runs somewhere else
+  // -------------------------------------------------------------------
+
+  /**
+   * A functional test may not reach into the unit suite's namespace.
+   *
+   * The two suites are autoloaded by different things. Unit tests run against
+   * this package's own composer autoloader, where autoload-dev maps
+   * Drupal\\scolta\\Tests to tests/src. Functional tests run inside a Drupal
+   * site where this package is a dependency, and composer never registers a
+   * dependency's autoload-dev — so every class in that namespace is simply
+   * absent, and the test errors on its first line rather than failing on an
+   * assertion. RouteSmokeFunctionalTest imported PackageManifest and errored
+   * on all three of its cases, in CI only, where nothing else could see it.
+   *
+   * Anything a functional test needs belongs in the test itself or under
+   * Drupal\\Tests\\scolta, which Drupal's own test autoloader maps.
+   */
+  public function testNoFunctionalTestImportsTheUnitSuiteNamespace(): void {
+    $dir = $this->moduleRoot . '/tests/src/Functional';
+    $this->assertDirectoryExists($dir);
+
+    $found = [];
+    foreach (glob($dir . '/*.php') ?: [] as $file) {
+      $source = file_get_contents($file);
+      if ($source === FALSE) {
+        continue;
+      }
+      // Tokenized, so a docblock that cross-references a unit test by its
+      // fully-qualified name is prose and not a dependency.
+      foreach (token_get_all($source) as $token) {
+        if (is_array($token) && in_array($token[0], [T_COMMENT, T_DOC_COMMENT], TRUE)) {
+          continue;
+        }
+        $text = is_array($token) ? $token[1] : $token;
+        if (str_contains($text, 'Drupal\\scolta\\Tests') || str_contains($text, 'scolta\\Tests')) {
+          $found[] = basename($file);
+          break;
+        }
+      }
+    }
+
+    $this->assertSame(
+      [],
+      $found,
+      'These functional tests name Drupal\\scolta\\Tests, which does not '
+      . 'autoload inside a Drupal site: ' . implode(', ', $found)
+    );
+  }
+
+  // -------------------------------------------------------------------
   // Distribution archive manifest
   // -------------------------------------------------------------------
 
