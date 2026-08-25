@@ -327,6 +327,20 @@ class ScoltaAiService extends AiServiceAdapter {
     // Remove pagefind config (not relevant to ScoltaConfig).
     unset($values['pagefind']);
 
+    // The sort and filter dimension NAMES are build-time and live in
+    // scolta.settings, but AiEndpointHandler needs them at query time: they
+    // are the vocabulary it detects sort intent and filter intent against,
+    // and with empty lists it stops emitting either, silently. Read by config
+    // name for the reason IndexOrigin reads output_dir the same way — Drupal
+    // config is global, so the read is legal whether or not scolta is
+    // installed, and a frontend-only site simply has no dimensions to declare.
+    //
+    // Their human descriptions are query-time and are already in $values;
+    // this is the other half of that deliberately split pair.
+    $buildSettings = $this->configFactory->get('scolta.settings');
+    $values['sortable_fields'] = $buildSettings->get('sortable_fields') ?? [];
+    $values['filter_fields'] = $buildSettings->get('filter_fields') ?? [];
+
     // One resolution, shared with every surface that reports on it. The key,
     // its source and the provider that goes with it arrive together, so the
     // settings form, /health and Drush cannot describe this differently from
