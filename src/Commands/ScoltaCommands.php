@@ -99,10 +99,17 @@ class ScoltaCommands extends DrushCommands {
     string $entity_type = 'node',
     array $options = ['bundle' => '', 'output-dir' => ''],
   ): void {
-    $config = $this->configFactory->get('scolta.settings');
     $outputDir = $options['output-dir'] ?: '/var/www/html/pagefind-site';
     $bundle = $options['bundle'] ?: '';
-    $siteName = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
+    // site_name and ai_languages are dual-lifecycle keys: the frontend owns
+    // and edits them, but a build bakes both into the index — the site name
+    // onto every content item, the language into the Pagefind index itself.
+    // Read from scolta_ui.settings by config name, the same way IndexOrigin
+    // reads pagefind.output_dir the other way: Drupal config is global, so
+    // this works with or without that module installed, and a backend-only
+    // site falls back to the Drupal site name and English.
+    $uiConfig = $this->configFactory->get('scolta_ui.settings');
+    $siteName = $uiConfig->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
 
     $exporter = new ContentExporter($outputDir);
     $exporter->prepareOutputDir();
@@ -254,8 +261,16 @@ class ScoltaCommands extends DrushCommands {
   private function buildWithPhpIndexer(array $options, $config, bool $force): void {
     $entityType = $options['entity-type'] ?: 'node';
     $bundle     = $options['bundle'] ?: '';
-    $siteName   = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
-    $language   = $config->get('ai_languages')[0] ?? 'en';
+    // site_name and ai_languages are dual-lifecycle keys: the frontend owns
+    // and edits them, but a build bakes both into the index — the site name
+    // onto every content item, the language into the Pagefind index itself.
+    // Read from scolta_ui.settings by config name, the same way IndexOrigin
+    // reads pagefind.output_dir the other way: Drupal config is global, so
+    // this works with or without that module installed, and a backend-only
+    // site falls back to the Drupal site name and English.
+    $uiConfig = $this->configFactory->get('scolta_ui.settings');
+    $siteName = $uiConfig->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
+    $language = ($uiConfig->get('ai_languages') ?? [])[0] ?? 'en';
 
     $budget = MemoryBudgetConfig::fromCliAndConfig(
       (isset($options['memory-budget']) && $options['memory-budget'] !== NULL)
@@ -798,7 +813,9 @@ class ScoltaCommands extends DrushCommands {
       'out'   => $resolvedOutputDir,
     ]);
 
-    $language     = $config->get('ai_languages')[0] ?? 'en';
+    // The index language is edited on the frontend but baked into the index
+    // by this build, so it is read from scolta_ui.settings by config name.
+    $language     = ($this->configFactory->get('scolta_ui.settings')->get('ai_languages') ?? [])[0] ?? 'en';
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
     $report       = $orchestrator->finalize($budget, $this->logger());
 

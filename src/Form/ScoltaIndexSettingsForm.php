@@ -235,7 +235,15 @@ class ScoltaIndexSettingsForm extends ConfigFormBase {
    */
   public function rebuildSubmit(array &$form, FormStateInterface $form_state): void {
     $config = $this->config('scolta.settings');
-    $siteName = $config->get('site_name') ?: ($this->config('system.site')->get('name') ?? '');
+    // site_name and ai_languages are dual-lifecycle keys: the frontend owns
+    // and edits them, but a build bakes both into the index — the site name
+    // onto every content item, the language into the Pagefind index itself.
+    // Read from scolta_ui.settings by config name, the same way IndexOrigin
+    // reads pagefind.output_dir the other way: Drupal config is global, so
+    // this works with or without that module installed, and a backend-only
+    // site falls back to the Drupal site name and English.
+    $siteName = $this->config('scolta_ui.settings')->get('site_name')
+      ?: ($this->config('system.site')->get('name') ?? '');
 
     // Clear any previous notice so a fresh notice_id is used after this
     // rebuild.
@@ -393,7 +401,7 @@ class ScoltaIndexSettingsForm extends ConfigFormBase {
   protected function rebuildWithBatch(array $entityIds, string $siteName, $config): void {
     $stateDir = $this->resolveStateDir($config);
     $outputDir = $this->resolveOutputDir($config);
-    $language = $config->get('ai_languages')[0] ?? 'en';
+    $language = ($this->config('scolta_ui.settings')->get('ai_languages') ?? [])[0] ?? 'en';
 
     // Ensure directories exist.
     if (!is_dir($stateDir)) {
