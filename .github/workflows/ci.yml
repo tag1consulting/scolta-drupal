@@ -6,21 +6,16 @@ on:
   pull_request:
     branches: [main]
 
-# Every dist composer downloads from a GitHub-hosted package is one
-# api.github.com request. Unauthenticated that budget is 60 req/hour/IP, and
-# when it runs dry composer cannot prompt under no-interaction and dies with
-# "Could not authenticate against github.com" (AuthHelper.php:152, exit 100) —
-# a rate limit reported as an auth failure. The run's own token raises it to
-# 1,000 req/hour/repo. Read-only is enough: scolta-php is public, so
-# GITHUB_TOKEN can read it even though the token is scoped to this repository.
+# Every dist composer pulls from a GitHub-hosted package is one api.github.com
+# request. Unauthenticated that is 60/hour/IP; GITHUB_TOKEN raises it to
+# 1,000/hour, shared by every job of every run and refilled hourly. When it runs
+# dry composer cannot prompt under no-interaction and dies with "Could not
+# authenticate against github.com" (AuthHelper.php:152) — a rate limit reported
+# as an auth failure. Read-only is enough: scolta-php is public.
 #
-# 1,000/hour is a per-repository budget shared by every job of every run, so it
-# is spent in parallel by the six jobs below and refilled once an hour. Two
-# things keep it from running dry. The jobs resolve tag1/scolta-php from
-# Packagist rather than from a GitHub VCS repo (see the resolution steps), which
-# is what stopped the budget being spent on metadata; and COMPOSER_CACHE_DIR is
-# a cached directory, so a warm run re-downloads only the dists that actually
-# changed.
+# Two things keep the budget from running dry: the jobs resolve tag1/scolta-php
+# from Packagist rather than a GitHub VCS repo (see below), and
+# COMPOSER_CACHE_DIR is cached across runs.
 env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
   COMPOSER_CACHE_DIR: /home/runner/.composer-cache
@@ -47,13 +42,12 @@ jobs:
           extensions: intl
           coverage: none
 
-      # Warm dist cache. Each dist composer pulls from a GitHub-hosted package is
-      # an api.github.com request against the shared 1,000/hour budget described
-      # at the top of this file, and with no committed lock every job resolves
-      # from scratch. Restoring the cache means a run re-downloads only what
-      # actually changed. The key carries run_id so every run writes a fresh
-      # entry rather than restoring one and never updating it; restore-keys is
-      # what makes the previous run's entry the starting point.
+      # Warm dist cache: with no committed lock every job downloads from scratch,
+      # spending the API budget above. restore-keys is what restores here — it
+      # prefix-matches the newest entry. The unique run_id in `key` makes the
+      # exact lookup always miss on purpose, because actions/cache skips the save
+      # when the primary key hits, and an entry that is never re-saved goes
+      # permanently stale. Do not drop run_id from the key.
       - name: Cache Composer downloads
         uses: actions/cache@v4
         with:
@@ -62,21 +56,17 @@ jobs:
           restore-keys: composer-php${{ matrix.php }}-
 
       # The ../scolta-php path repo only exists for a developer with a sibling
-      # checkout; on a runner there is nothing at that path, so it is dropped and
-      # tag1/scolta-php resolves from Packagist, which is left implicit here
-      # because composer adds it unless a repository entry disables it.
+      # checkout, so it is dropped and tag1/scolta-php resolves from Packagist —
+      # implicit here, since composer adds it unless a repository entry disables
+      # it.
       #
-      # This used to name a `{"type": "vcs"}` GitHub repository instead, and that
-      # is what made CI intermittently fail in `composer update` with "Could not
-      # authenticate against github.com" before a single test ran. Composer's
-      # GitHub VCS driver reads composer.json for every ref it finds, one
-      # api.github.com call each, and scolta-php has 164 branches and tags. Six
-      # jobs doing that concurrently is ~1,000 API calls per run against a
-      # 1,000/hour per-repository token budget that also has to pay for the dist
-      # downloads, so a run landing near a full budget got a 403 that composer
-      # surfaces as an auth error. Packagist metadata is static JSON off a CDN
-      # and costs the budget nothing; it serves scolta-php's dev branches too,
-      # which is what the jobs pinning dev-main@dev need.
+      # This used to name a `{"type": "vcs"}` GitHub repo, which is what made CI
+      # fail intermittently in `composer update`. Composer's GitHub VCS driver
+      # reads composer.json once per ref, and scolta-php has 164 branches and
+      # tags: ~1,000 API calls per run across six jobs, against the 1,000/hour
+      # budget above that also pays for dist downloads. Packagist metadata is
+      # static CDN JSON, costs the budget nothing, and serves scolta-php's dev
+      # branches, which is what the jobs pinning dev-main@dev need.
       #
       # The constraint in composer.json is deliberately left alone. It used to be
       # overwritten with dev-main@dev here, which meant this job never once
@@ -164,12 +154,10 @@ jobs:
           extensions: intl
           coverage: none
 
-      # The only job that keeps the GitHub VCS repo. It resolves whatever ref
-      # .github/upstream-preview names, including a branch pushed moments ago
-      # that Packagist's webhook has not indexed yet, and being informational it
-      # must not report a green-vs-stale ambiguity. Its cost to the API budget is
-      # one job's worth of ref traversal, and only on the rare pull request that
-      # commits that file at all.
+      # The only job that keeps the GitHub VCS repo: it must resolve whatever ref
+      # .github/upstream-preview names, possibly a branch pushed moments ago that
+      # Packagist has not indexed yet. One usually-skipped job's ref traversal
+      # fits the budget.
       - name: Point composer at the requested scolta-php ref
         if: steps.ref.outputs.run == 'true'
         env:
