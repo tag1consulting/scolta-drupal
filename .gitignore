@@ -11,3 +11,6 @@
 .editorconfig
 .gitattributes
 /web/
+
+# Composer
+/composer.lock

@@ -49,8 +49,8 @@ including what to do when the mirror hasn't moved, is in the shared
   request wasn't merged.
 - The browser bundle (JS/CSS/WASM) is not committed here and never should be. It deploys from the
   installed `tag1/scolta-php` into `public://scolta-assets` at install time and on every cache
-  rebuild, so a bundle change ships by bumping `composer.lock` — no re-vendor commit, no parity CI
-  job. See "Browser assets" in CLAUDE.md.
+  rebuild, so a bundle change ships by whatever `composer update` resolves — no lock to bump, no
+  re-vendor commit, no parity CI job. See "Browser assets" in CLAUDE.md.
 - `phpstan` needs a raised memory limit. CI passes `--memory-limit=512M` explicitly, and the
   `composer analyse` script does not, so running it locally the composer way can OOM on unmodified
   `main`. That OOM is not a signal about your branch; raise the limit and re-run before you read it as

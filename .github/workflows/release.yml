@@ -7,38 +7,61 @@ on:
       - '[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
-  # The stable-release rule lives here alone, and this is now the gate that
-  # enforces the coordination the CHANGELOG used to promise in prose: while main
-  # requires an unreleased scolta-php, the committed lock names a development
-  # branch and this job refuses the release. scolta-drupal 1.2.0 cannot ship
-  # before scolta-php 1.2.0 exists, and nobody has to remember that.
-  lock-guard:
-    name: Verify scolta-php lock source
+  # The stable-release rule lives here alone, and this is the gate that enforces
+  # the coordination the CHANGELOG used to promise in prose. It used to read the
+  # committed composer.lock; no lock is committed any more (this is a library,
+  # not a deployed application), so it asks the same question of the manifest
+  # and of Packagist directly: the declared tag1/scolta-php constraint must not
+  # be a development constraint, and a published stable release must satisfy it.
+  # scolta-drupal 1.4.0 cannot ship before the scolta-php it requires exists,
+  # and nobody has to remember that.
+  constraint-guard:
+    name: Verify scolta-php constraint is satisfiable by a release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check scolta-php is stable and from Packagist
+      - name: Check the scolta-php constraint names a published release
         run: |
           python3 - <<'PY'
-          import json,sys,re
-          lock=json.load(open("composer.lock"))
-          pkgs=lock.get("packages",[])+lock.get("packages-dev",[])
-          p=next((x for x in pkgs if x["name"]=="tag1/scolta-php"),None)
-          if not p: sys.exit("scolta-php not in lock")
-          dist=(p.get("dist") or {}).get("type")
-          ver=p.get("version","")
-          bad=[]
-          if dist=="path": bad.append(f"dist.type=path ({(p.get('dist') or {}).get('url')})")
-          if not re.fullmatch(r"\d+\.\d+\.\d+", ver): bad.append(f"non-stable version {ver}")
-          if bad: sys.exit("LOCK GUARD FAILED for tag1/scolta-php: "+"; ".join(bad))
-          print(f"Lock guard OK: tag1/scolta-php {ver} via {dist}")
+          import json,re,sys,urllib.request
+
+          manifest = json.load(open("composer.json"))
+          constraint = (manifest.get("require") or {}).get("tag1/scolta-php")
+          if not constraint:
+              sys.exit("composer.json does not require tag1/scolta-php")
+
+          if constraint.endswith("@dev") or constraint.startswith("dev-"):
+              sys.exit(f'CONSTRAINT GUARD FAILED: tag1/scolta-php is required as "{constraint}", '
+                       "a development constraint. Drop the @dev suffix and require the release.")
+
+          m = re.fullmatch(r"\^(\d+)\.(\d+)(?:\.(\d+))?", constraint.strip())
+          if not m:
+              sys.exit(f'CONSTRAINT GUARD FAILED: tag1/scolta-php constraint "{constraint}" is not a '
+                       "caret constraint; VERSIONING.md requires ^X.Y.")
+          floor = (int(m.group(1)), int(m.group(2)), int(m.group(3) or 0))
+
+          url = "https://repo.packagist.org/p2/tag1/scolta-php.json"
+          data = json.load(urllib.request.urlopen(url, timeout=30))
+          releases = []
+          for v in data["packages"]["tag1/scolta-php"]:
+              sv = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", v["version"])
+              if sv:
+                  releases.append(tuple(int(g) for g in sv.groups()))
+
+          satisfying = [r for r in releases if r >= floor and r[0] == floor[0]]
+          if not satisfying:
+              sys.exit(f'CONSTRAINT GUARD FAILED: no published stable tag1/scolta-php satisfies '
+                       f'"{constraint}". Tag and publish it before releasing this module.')
+
+          best = ".".join(str(n) for n in max(satisfying))
+          print(f"Constraint guard OK: tag1/scolta-php {constraint} is satisfied by the published {best}")
           PY
 
   release:
     name: Build and publish release
     runs-on: ubuntu-latest
-    needs: lock-guard
+    needs: constraint-guard
     permissions:
       contents: write
     steps:

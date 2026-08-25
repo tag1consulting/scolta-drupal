@@ -414,22 +414,12 @@ jobs:
         run: |
           php scripts/validate-release.php || echo "Note: -dev versions expected in development"
 
-  # What the committed lock has to be true of on a branch, which is not the same
-  # as what it has to be true of in a release.
-  #
-  # This job used to demand a stable Packagist version unconditionally. That was
-  # right while the floor was a released line and became unsatisfiable the moment
-  # the floor moved to ^1.2@dev: no stable scolta-php satisfies ^1.2, so the only
-  # way to keep the rule would be to tag a release in order to make a constraint
-  # check pass, which is the tail wagging the dog. The stable-release rule now
-  # lives in release.yml alone, where it belongs and where it is a real
-  # coordination gate: scolta-drupal cannot be released until scolta-php 1.2.0
-  # exists.
-  #
-  # What remains here is the part that is true on any branch. The lock has to
-  # describe the constraint beside it, and it must never point at a developer's
-  # working copy.
-  lock-guard:
+  # This module is a library, not a deployed application: no composer.lock is
+  # committed here (drupal.org ships the git tarball, consumers resolve against
+  # their own site's lock, and every job in this file resolves with
+  # `composer update`). What is left to check on a branch is the manifest
+  # itself.
+  manifest-guard:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -439,41 +429,8 @@ jobs:
           php-version: '8.3'
           coverage: none
 
-      # A lock that no longer matches composer.json is not a slow-burning
-      # inconsistency: `composer install` refuses outright, so a stale lock
-      # breaks every clean checkout while every CI job here, which resolves with
-      # `composer update`, stays green.
-      - name: The lock must agree with the composer.json beside it
+      - name: composer.json must be valid
         run: composer validate --no-check-all --no-check-publish
-
-      - name: scolta-php must not be locked from a path repository
-        run: |
-          node -e '
-            const fs = require("fs");
-            const manifest = JSON.parse(fs.readFileSync("composer.json", "utf8"));
-            const lock = JSON.parse(fs.readFileSync("composer.lock", "utf8"));
-            const constraint = (manifest.require || {})["tag1/scolta-php"];
-            const pkg = [...(lock.packages || []), ...(lock["packages-dev"] || [])]
-              .find((p) => p.name === "tag1/scolta-php");
-            if (!constraint) { console.error("composer.json does not require tag1/scolta-php"); process.exit(1); }
-            if (!pkg) { console.error("tag1/scolta-php is not in composer.lock"); process.exit(1); }
-
-            const bad = [];
-            // The path repository exists so a developer can work against a
-            // sibling checkout. A lock resolved from it describes one machine.
-            if ((pkg.dist || {}).type === "path") bad.push(`dist.type=path (${(pkg.dist || {}).url})`);
-
-            // A development floor may lock either a branch or, once one exists,
-            // a release that satisfies it. A released floor may only lock a
-            // release: that direction is how a dev dependency would sneak into
-            // a line that claims to be stable.
-            const devFloor = /@dev$/.test(constraint) || constraint.startsWith("dev-");
-            const stableLock = /^\d+\.\d+\.\d+$/.test(pkg.version);
-            if (!devFloor && !stableLock) bad.push(`floor "${constraint}" is a released line but the lock names ${pkg.version}`);
-
-            if (bad.length) { console.error(`LOCK GUARD FAILED for tag1/scolta-php: ${bad.join("; ")}`); process.exit(1); }
-            console.log(`Lock guard OK: tag1/scolta-php ${pkg.version} via ${(pkg.dist || {}).type} against floor ${constraint}`);
-          '
 
   dist-archive:
     runs-on: ubuntu-latest

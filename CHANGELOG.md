@@ -4,6 +4,11 @@ All notable changes to scolta-drupal will be documented in this file.
 
 This project uses [Semantic Versioning](https://semver.org/). Each Scolta package versions independently; compatibility with scolta-php is expressed by the caret constraint in `composer.json` rather than by matching version numbers.
 
+## [Unreleased]
+
+### Changed
+- **`composer.lock` is no longer committed (`composer.lock` deleted, `.gitignore`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `scripts/validate-dist-archive.sh`, `tests/src/StructuralIntegrityTest.php`, `CLAUDE.md`, `MAINTAINING.md`).** This module is a library, not a deployed application: drupal.org ships the git tarball, a consuming site resolves `tag1/scolta-php` against its own lock, and every CI job here resolves with `composer update` and never installs from the lock. So the committed lock governed nothing it was supposed to govern while still costing something — the `../scolta-php` path repository makes any lock resolved on a machine with the sibling checkout machine-specific, which is why `ci.yml`'s `lock-guard` existed to reject `dist.type=path`, and why a coordinated change meant re-locking as a separate step. The `lock-guard` job becomes `manifest-guard` and keeps the part that still applies without a lock, `composer validate`. The release gate is preserved rather than dropped: `release.yml`'s `lock-guard` refused to publish while the lock named a development version, and the new `constraint-guard` asks the same question of the manifest and Packagist — the declared `tag1/scolta-php` floor must not be a development constraint (`@dev`/`dev-`), must be a caret constraint, and a published stable release must satisfy it. So scolta-drupal still cannot be released before the scolta-php it requires exists. `composer.lock` also comes off the dist-archive top-level allowlist, since it is no longer in the tarball. `StructuralIntegrityTest`'s release-guard test now pins the constraint guard rather than the lock guard.
+
 ## [1.4.0] - 2026-08-24
 
 ### Fixed

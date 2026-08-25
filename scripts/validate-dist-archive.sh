@@ -90,7 +90,6 @@ ALLOWED_TOP_LEVEL=(
   "README.md"
   "UPGRADE.md"
   "composer.json"
-  "composer.lock"
   "config"
   "drush.services.yml"
   "js"
