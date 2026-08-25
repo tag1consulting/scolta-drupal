@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+## Description: Setup Umami for searching
+## Usage: umami [flags] [args]
+## Example: "ddev umami"
+## ExecRaw: true
+
+set -eu -o pipefail
+
+drush recipe ../recipes/scolta_umami
+drush search-api:reset-tracker
+drush search-api:index

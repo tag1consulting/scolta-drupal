@@ -8,6 +8,7 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ### Added
 - Added `recipes/scolta_umami/`, a recipe that configures Scolta against Drupal's Umami demo profile — presets, facet/sort field mappings, both languages, and the search block — so a demo site can be stood up with `drush recipe`. Development and demo aid, not for production. ([#232](https://github.com/tag1consulting/scolta-drupal/pull/232))
+- `recipes/scolta_umami/` now also creates the Search API server (`scolta_pagefind`) and index (`scolta_umami`) that Scolta's status output expects, so a recipe-built demo site tracks content changes instead of reporting "No Scolta index configured".
 
 ### Changed
 - A `CHANGELOG.md` entry is now recommended rather than required, entries are expected to be brief, and the `docs-check` CI job was deleted.
