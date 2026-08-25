@@ -27,7 +27,7 @@ class AiPermissionBackfillFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api', 'node'];
+  protected static $modules = ['scolta', 'scolta_ui', 'search_api', 'node'];
 
   /**
    * {@inheritdoc}

@@ -31,7 +31,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api'];
+  protected static $modules = ['scolta', 'scolta_ui', 'search_api'];
 
   /**
    * {@inheritdoc}
@@ -91,7 +91,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
     );
     $this->assertSame(
       '',
-      $this->config('scolta.settings')->get('ai_provider'),
+      $this->config('scolta_ui.settings')->get('ai_provider'),
       'A fresh install must select no AI provider at all: AI is off until an '
       . 'operator chooses one, and in particular is not Anthropic'
     );
@@ -237,7 +237,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
 
     $this->assertSame(
       'anthropic',
-      $this->config('scolta.settings')->get('ai_provider'),
+      $this->config('scolta_ui.settings')->get('ai_provider'),
       'The selected provider must be saved'
     );
     $this->assertNull(
@@ -320,7 +320,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
 
     $this->assertSame(
       'amazee',
-      $this->config('scolta.settings')->get('ai_provider'),
+      $this->config('scolta_ui.settings')->get('ai_provider'),
       'A site whose traffic already went through the stored connection must keep working'
     );
   }
@@ -339,7 +339,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
 
     $this->assertSame(
       'anthropic',
-      $this->config('scolta.settings')->get('ai_provider'),
+      $this->config('scolta_ui.settings')->get('ai_provider'),
       'The stored connection never served this site, so its provider must not be touched'
     );
   }
@@ -354,7 +354,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
 
     $this->assertSame(
       'openai',
-      $this->config('scolta.settings')->get('ai_provider'),
+      $this->config('scolta_ui.settings')->get('ai_provider'),
       'There is no connection to carry over, so nothing changes'
     );
   }
@@ -391,10 +391,10 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
     $this->selectProvider('anthropic');
 
     $this->runUpdate();
-    $afterFirst = $this->config('scolta.settings')->get('ai_provider');
+    $afterFirst = $this->config('scolta_ui.settings')->get('ai_provider');
     $this->runUpdate();
 
-    $this->assertSame($afterFirst, $this->config('scolta.settings')->get('ai_provider'));
+    $this->assertSame($afterFirst, $this->config('scolta_ui.settings')->get('ai_provider'));
     $this->assertFalse(
       $this->reloadRole(RoleInterface::ANONYMOUS_ID)->hasPermission('use scolta ai')
     );
@@ -459,7 +459,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
       'litellm_api_url' => self::GATEWAY_URL,
       'region' => 'test-region',
     ]);
-    \Drupal::configFactory()->getEditable('scolta.settings')
+    \Drupal::configFactory()->getEditable('scolta_ui.settings')
       ->set('amazee_model', self::GATEWAY_ALIAS)
       ->save();
   }
@@ -468,7 +468,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
    * Save an AI provider selection.
    */
   private function selectProvider(string $provider): void {
-    \Drupal::configFactory()->getEditable('scolta.settings')
+    \Drupal::configFactory()->getEditable('scolta_ui.settings')
       ->set('ai_provider', $provider)
       ->save();
   }

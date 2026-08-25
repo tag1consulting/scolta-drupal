@@ -21,7 +21,7 @@ class RebuildNoticePersistenceTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta'];
+  protected static $modules = ['scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}

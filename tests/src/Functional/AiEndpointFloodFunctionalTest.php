@@ -26,7 +26,7 @@ class AiEndpointFloodFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api', 'node'];
+  protected static $modules = ['scolta', 'scolta_ui', 'search_api', 'node'];
 
   /**
    * {@inheritdoc}
@@ -49,7 +49,7 @@ class AiEndpointFloodFunctionalTest extends BrowserTestBase {
       'litellm_api_url' => 'http://127.0.0.1:1',
       'region' => 'test',
     ]);
-    $this->config('scolta.settings')
+    $this->config('scolta_ui.settings')
       ->set('ai_provider', 'amazee')
       ->set('amazee_model', 'claude-4-5-sonnet')
       ->save();
@@ -61,7 +61,7 @@ class AiEndpointFloodFunctionalTest extends BrowserTestBase {
    * Requests beyond the per-IP threshold get HTTP 429.
    */
   public function testPerIpThresholdReturns429(): void {
-    $this->config('scolta.settings')
+    $this->config('scolta_ui.settings')
       ->set('flood.ai_ip_limit', 2)
       ->set('flood.ai_ip_window', 60)
       ->save();
@@ -87,7 +87,7 @@ class AiEndpointFloodFunctionalTest extends BrowserTestBase {
    * The global threshold throttles independently of the per-IP layer.
    */
   public function testGlobalThresholdReturns429(): void {
-    $this->config('scolta.settings')
+    $this->config('scolta_ui.settings')
       ->set('flood.ai_ip_limit', 100)
       ->set('flood.ai_global_limit', 1)
       ->set('flood.ai_global_window', 60)
@@ -105,7 +105,7 @@ class AiEndpointFloodFunctionalTest extends BrowserTestBase {
    * A threshold of 0 disables that flood layer.
    */
   public function testZeroLimitDisablesLayer(): void {
-    $this->config('scolta.settings')
+    $this->config('scolta_ui.settings')
       ->set('flood.ai_ip_limit', 0)
       ->set('flood.ai_global_limit', 0)
       ->save();

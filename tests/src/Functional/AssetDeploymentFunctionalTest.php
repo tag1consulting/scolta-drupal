@@ -25,7 +25,7 @@ class AssetDeploymentFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api'];
+  protected static $modules = ['scolta', 'scolta_ui', 'search_api'];
 
   /**
    * {@inheritdoc}

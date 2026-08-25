@@ -36,7 +36,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api'];
+  protected static $modules = ['scolta', 'scolta_ui', 'search_api'];
 
   /**
    * {@inheritdoc}
@@ -251,7 +251,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
     }
 
     $this->container->get('config.factory')
-      ->getEditable('scolta.settings')
+      ->getEditable('scolta_ui.settings')
       ->set('ai_provider', $provider)
       ->save();
 

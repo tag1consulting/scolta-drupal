@@ -20,7 +20,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api', 'node', 'block'];
+  protected static $modules = ['scolta', 'scolta_ui', 'search_api', 'node', 'block'];
 
   /**
    * {@inheritdoc}
@@ -114,7 +114,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->assertSession()->pageTextContains('The configuration options have been saved.');
 
     // Verify config was actually persisted.
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $this->assertEquals('Test Site', $config->get('site_name'));
     $this->assertEquals('a test website', $config->get('site_description'));
     $this->assertEquals(2.0, $config->get('scoring.title_match_boost'));
@@ -167,12 +167,12 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->assertSession()->pageTextContains('The configuration options have been saved.');
     $this->assertEquals(
       ['topic' => 'Subject area'],
-      $this->config('scolta.settings')->get('filter_field_descriptions')
+      $this->config('scolta_ui.settings')->get('filter_field_descriptions')
     );
   }
 
   /**
-   * settings.php $config['scolta.settings'] overrides must reach AI traffic.
+   * settings.php $config['scolta_ui.settings'] overrides must reach AI traffic.
    *
    * Pre-fix, ScoltaAiService::buildConfig() read getRawData(), so the
    * standard way of keeping keys out of exported config silently did not
@@ -181,7 +181,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
   public function testSettingsPhpOverrideAppliesToAiConfig(): void {
     $this->writeSettings([
       'config' => [
-        'scolta.settings' => [
+        'scolta_ui.settings' => [
           'site_description' => (object) [
             'value' => 'overridden-by-settings-php',
             'required' => TRUE,
@@ -208,7 +208,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->assertSession()->statusCodeEquals(200);
 
     // The stored config should be empty (meaning "use default").
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $this->assertEmpty($config->get('prompt_expand_query'),
       'Default expand prompt should be stored as empty string');
     $this->assertEmpty($config->get('prompt_summarize'),
@@ -232,7 +232,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->assertSession()->statusCodeEquals(200);
 
     // Verify it's persisted.
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $this->assertEquals($customPrompt, $config->get('prompt_expand_query'));
 
     // Reload and verify the custom prompt is shown.
@@ -260,7 +260,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->assertSession()->statusCodeEquals(200);
 
     // Persisted as a lowercase token array.
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $this->assertEquals(['hot', 'easy'], $config->get('scoring.expand_subword_deny_list'));
 
     // Reload and verify the saved value is rendered (comma-joined).
@@ -294,7 +294,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->assertSession()->statusCodeEquals(200);
 
     // Persisted with the selected mode; no per-term top-K is written.
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $this->assertEquals('round_robin', $config->get('scoring.expansion_combine_mode'));
     $this->assertNull($config->get('scoring.expansion_per_term_top_k'));
 
@@ -317,7 +317,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->drupalPlaceBlock('scolta_search', ['region' => 'content']);
 
     // Set config directly (bypasses form field name mapping issues).
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $config->set('display.results_per_page', 42);
     $config->set('scoring.title_match_boost', 3.5);
     $config->save();
@@ -362,7 +362,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->drupalGet('/admin/config/search/scolta');
     $this->submitForm(['hide_empty_facets' => FALSE], 'Save configuration');
     $this->assertSession()->pageTextContains('The configuration options have been saved.');
-    $this->assertFalse($this->config('scolta.settings')->get('hide_empty_facets'));
+    $this->assertFalse($this->config('scolta_ui.settings')->get('hide_empty_facets'));
 
     // Half two: the saved FALSE reaches window.scolta on a rendered page.
     $this->drupalGet($node->toUrl());
@@ -390,7 +390,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->drupalGet('/admin/config/search/scolta');
     $this->submitForm(['facet_mode' => 'deferred'], 'Save configuration');
     $this->assertSession()->pageTextContains('The configuration options have been saved.');
-    $this->assertSame('deferred', $this->config('scolta.settings')->get('facet_mode'));
+    $this->assertSame('deferred', $this->config('scolta_ui.settings')->get('facet_mode'));
 
     $this->drupalGet($node->toUrl());
     $this->assertSession()->statusCodeEquals(200);
@@ -416,7 +416,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->drupalLogin($this->adminUser);
     $this->drupalGet('/admin/config/search/scolta');
     $this->submitForm(['facet_mode' => 'disabled'], 'Save configuration');
-    $this->assertSame('disabled', $this->config('scolta.settings')->get('facet_mode'));
+    $this->assertSame('disabled', $this->config('scolta_ui.settings')->get('facet_mode'));
 
     $this->drupalGet($node->toUrl());
     $this->assertSession()->responseContains('"facetMode":"disabled"');
@@ -493,7 +493,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
    */
   public function testProviderFieldReflectsSavedValueWhenAmazeeActive(): void {
     $this->activateAmazee();
-    $this->config('scolta.settings')->set('ai_provider', 'anthropic')->save();
+    $this->config('scolta_ui.settings')->set('ai_provider', 'anthropic')->save();
 
     $this->drupalLogin($this->adminUser);
     $this->drupalGet('/admin/config/search/scolta');
@@ -511,7 +511,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
    */
   public function testProviderFieldRespectsSavedOpenAiWhenAmazeeActive(): void {
     $this->activateAmazee();
-    $this->config('scolta.settings')->set('ai_provider', 'openai')->save();
+    $this->config('scolta_ui.settings')->set('ai_provider', 'openai')->save();
 
     $this->drupalLogin($this->adminUser);
     $this->drupalGet('/admin/config/search/scolta');
@@ -532,7 +532,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
   public function testProviderFieldDoesNotSelectAmazeeFromStoredCredentials(): void {
     $this->activateAmazee();
     // Ensure no provider has been explicitly saved.
-    $this->config('scolta.settings')->clear('ai_provider')->save();
+    $this->config('scolta_ui.settings')->clear('ai_provider')->save();
 
     $this->drupalLogin($this->adminUser);
     $this->drupalGet('/admin/config/search/scolta');
@@ -555,7 +555,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     }
 
     $this->activateAmazee();
-    $this->config('scolta.settings')->set('ai_provider', 'drupal_ai')->save();
+    $this->config('scolta_ui.settings')->set('ai_provider', 'drupal_ai')->save();
 
     $this->drupalLogin($this->adminUser);
     $this->drupalGet('/admin/config/search/scolta');
@@ -574,7 +574,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->drupalPlaceBlock('scolta_search', ['region' => 'content']);
 
     // Disable AI expand via config directly.
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $config->set('ai_expand_query', FALSE);
     $config->save();
 

@@ -24,7 +24,7 @@ class AmazeeReauthNoticeTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta'];
+  protected static $modules = ['scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
@@ -54,7 +54,7 @@ class AmazeeReauthNoticeTest extends BrowserTestBase {
     // whose marker drives the notice.
     \Drupal::service('scolta.amazee_config_storage')
       ->store('sk-stored-token', 'https://llm.test.amazee.ai', 'test-region');
-    $this->config('scolta.settings')->set('ai_provider', 'amazee')->save();
+    $this->config('scolta_ui.settings')->set('ai_provider', 'amazee')->save();
   }
 
   /**
@@ -123,7 +123,7 @@ class AmazeeReauthNoticeTest extends BrowserTestBase {
    */
   public function testNoNoticeWhenAnotherProviderIsSelected(): void {
     $this->recovery()->flagUpgradeNeeded();
-    $this->config('scolta.settings')->set('ai_provider', 'anthropic')->save();
+    $this->config('scolta_ui.settings')->set('ai_provider', 'anthropic')->save();
     $this->drupalLogin($this->adminUser);
 
     $this->drupalGet('/admin/config/search/scolta');
