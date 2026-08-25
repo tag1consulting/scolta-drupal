@@ -20,7 +20,7 @@ class ScoltaExportFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api', 'node', 'block'];
+  protected static $modules = ['scolta', 'scolta_ui', 'search_api', 'node', 'block'];
 
   /**
    * {@inheritdoc}
@@ -44,6 +44,7 @@ class ScoltaExportFunctionalTest extends BrowserTestBase {
     $this->drupalCreateContentType(['type' => 'page']);
     $this->adminUser = $this->drupalCreateUser([
       'administer scolta',
+      'administer scolta ui',
       'administer search_api',
       'administer nodes',
       'create article content',
@@ -91,7 +92,7 @@ class ScoltaExportFunctionalTest extends BrowserTestBase {
     $this->drupalPlaceBlock('scolta_search', ['region' => 'content']);
 
     // Set custom config.
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $config->set('display.results_per_page', 42);
     $config->set('scoring.title_match_boost', 3.5);
     $config->save();
@@ -110,7 +111,7 @@ class ScoltaExportFunctionalTest extends BrowserTestBase {
     $this->drupalPlaceBlock('scolta_search', ['region' => 'content']);
 
     // Disable AI expand.
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $config->set('ai_expand_query', FALSE);
     $config->save();
 
@@ -152,7 +153,7 @@ class ScoltaExportFunctionalTest extends BrowserTestBase {
     $this->drupalLogin($user);
 
     // Set max follow-ups to 0.
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $config->set('max_follow_ups', 0);
     $config->save();
 
@@ -193,7 +194,7 @@ class ScoltaExportFunctionalTest extends BrowserTestBase {
     $this->assertSession()->pageTextContains('The configuration options have been saved.');
 
     // Verify all values persisted.
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $this->assertEquals(2.5, $config->get('scoring.title_match_boost'));
     $this->assertEquals(0.8, $config->get('scoring.content_match_boost'));
     $this->assertEquals(0.9, $config->get('scoring.recency_boost_max'));
@@ -223,7 +224,7 @@ class ScoltaExportFunctionalTest extends BrowserTestBase {
     $this->assertSession()->pageTextContains('The configuration options have been saved.');
 
     // Reload and verify the custom prompt persisted with placeholders intact.
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $this->assertEquals($customPrompt, $config->get('prompt_expand_query'));
 
     // Reload form and verify it shows in the textarea.

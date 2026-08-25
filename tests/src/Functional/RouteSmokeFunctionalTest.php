@@ -8,7 +8,7 @@ use Drupal\Tests\BrowserTestBase;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Smoke-tests every route defined in scolta.routing.yml.
+ * Smoke-tests every route the package defines, in either module.
  *
  * Reads the routing file at runtime so any newly-added route is automatically
  * covered on the next CI run — no manual test-list updates needed. This is
@@ -28,7 +28,7 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api', 'node', 'block'];
+  protected static $modules = ['scolta', 'scolta_ui', 'search_api', 'node', 'block'];
 
   /**
    * {@inheritdoc}
@@ -47,8 +47,10 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    // Every route the package serves, so every permission it requires.
     $this->adminUser = $this->drupalCreateUser([
       'administer scolta',
+      'administer scolta ui',
       'use scolta ai',
       'access administration pages',
     ]);
@@ -161,6 +163,33 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * Both modules' routing manifests, merged.
+   *
+   * This smoke test is about every path the package serves and half of them
+   * moved to scolta_ui, so it reads both files. It reads them itself rather
+   * than through the unit suite's PackageManifest helper: that class lives in
+   * Drupal\\scolta\\Tests, a namespace only the package's own composer
+   * autoload-dev maps, and a functional test runs inside a Drupal site where
+   * this module is a dependency whose autoload-dev is never registered. The
+   * class is simply not there, and the test errored on every route.
+   *
+   * @return array<string, array<string, mixed>>
+   *   Route name => route definition, as declared in YAML.
+   */
+  private function packageRouting(): array {
+    $moduleList = \Drupal::service('extension.list.module');
+
+    $routing = [];
+    foreach (['scolta', 'scolta_ui'] as $module) {
+      $file = DRUPAL_ROOT . '/' . $moduleList->getPath($module) . '/' . $module . '.routing.yml';
+      $this->assertFileExists($file, "{$module} must declare a routing manifest");
+      $routing += Yaml::parseFile($file) ?: [];
+    }
+
+    return $routing;
+  }
+
+  /**
    * Parses scolta.routing.yml and returns routes matching the given method.
    *
    * Routes with path parameters (e.g. {node}) are excluded — they require
@@ -173,11 +202,9 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
    *   Route name => [path, permission].
    */
   private function loadRoutes(string $method): array {
-    // tests/src/Functional is three levels below the module root.
-    $routingFile = dirname(__DIR__, 3) . '/scolta.routing.yml';
-    $this->assertFileExists($routingFile, 'scolta.routing.yml not found at module root');
+    $routing = $this->packageRouting();
+    $this->assertNotEmpty($routing, 'Neither module declares any route.');
 
-    $routing = Yaml::parseFile($routingFile);
     $routes = [];
 
     foreach ($routing as $routeName => $def) {

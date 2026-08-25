@@ -21,7 +21,7 @@ class ScoltaSearchBlockTest extends TestCase {
 
   protected function setUp(): void {
     $this->moduleRoot = dirname(__DIR__, 2);
-    $this->blockFile = $this->moduleRoot . '/src/Plugin/Block/ScoltaSearchBlock.php';
+    $this->blockFile = $this->moduleRoot . '/modules/scolta_ui/src/Plugin/Block/ScoltaSearchBlock.php';
     $this->blockContents = file_get_contents($this->blockFile);
   }
 
@@ -165,17 +165,17 @@ class ScoltaSearchBlockTest extends TestCase {
 
   public function testBuildAttachesSearchLibrary(): void {
     $this->assertStringContainsString(
-      "'scolta/search'",
+      "'scolta_ui/search'",
       $this->blockContents,
-      'build() must attach scolta/search library'
+      'build() must attach scolta_ui/search library'
     );
   }
 
   public function testBuildAttachesDrupalBridgeLibrary(): void {
     $this->assertStringContainsString(
-      "'scolta/drupal_bridge'",
+      "'scolta_ui/drupal_bridge'",
       $this->blockContents,
-      'build() must attach scolta/drupal_bridge library'
+      'build() must attach scolta_ui/drupal_bridge library'
     );
   }
 
@@ -208,12 +208,21 @@ class ScoltaSearchBlockTest extends TestCase {
   }
 
   public function testSettingsIncludesAllEndpoints(): void {
-    $endpoints = ['expand', 'summarize', 'followup'];
-    foreach ($endpoints as $endpoint) {
+    // The three URLs are AiOrigin's to produce — they depend on whether the
+    // AI origin is this site or another one — so the block delegates and the
+    // keys are asserted where they are now written.
+    $this->assertStringContainsString(
+      '$this->aiOrigin->endpoints()',
+      $this->blockContents,
+      'build() must take the AI endpoints from the AI origin service, so a remote origin reaches the browser'
+    );
+
+    $origin = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Service/AiOrigin.php');
+    foreach (['expand', 'summarize', 'followup'] as $endpoint) {
       $this->assertStringContainsString(
-        "'{$endpoint}'",
-        $this->blockContents,
-        "drupalSettings endpoints should include '{$endpoint}'"
+        "'{$endpoint}' =>",
+        $origin,
+        "AiOrigin::endpoints() should include '{$endpoint}'"
       );
     }
   }
@@ -379,9 +388,9 @@ class ScoltaSearchBlockTest extends TestCase {
 
   public function testBuildDeclaresScoringConfigCacheTag(): void {
     $this->assertStringContainsString(
-      "'config:scolta.settings'",
+      "'config:scolta_ui.settings'",
       $this->blockContents,
-      "build() must include 'config:scolta.settings' cache tag so Drupal invalidates cached pages when scoring config is saved"
+      "build() must include 'config:scolta_ui.settings' cache tag so Drupal invalidates cached pages when scoring config is saved"
     );
   }
 

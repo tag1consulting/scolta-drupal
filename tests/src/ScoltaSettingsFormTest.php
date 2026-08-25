@@ -37,7 +37,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * with only one argument instead of two.
    */
   public function testConstructorAcceptsTypedConfigManager(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php';
     $contents = file_get_contents($file);
 
     // Must import TypedConfigManagerInterface.
@@ -66,7 +66,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * Verifies create() passes typed config from the container.
    */
   public function testCreatePassesTypedConfigFromContainer(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php';
     $contents = file_get_contents($file);
 
     $this->assertStringContainsString(
@@ -84,7 +84,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * This test catches the pattern statically.
    */
   public function testStringReturnMethodsDoNotReturnTranslatableMarkupUncasted(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php';
     $contents = file_get_contents($file);
 
     // Find all methods with ': string' return type.
@@ -121,7 +121,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * admin to run check-setup.
    */
   public function testGetDefaultPromptShowsWarningOnFailure(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php';
     $contents = file_get_contents($file);
 
     // The catch block should NOT return empty string.
@@ -166,8 +166,12 @@ class ScoltaSettingsFormTest extends TestCase {
    * Every config key in the install defaults should be settable via the form.
    */
   public function testFormSubmitCoversAllInstallConfigKeys(): void {
-    $installDefaults = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $formFile = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
+    $installDefaults = PackageManifest::settings();
+    // Both forms: the settings split by lifecycle and so did the screens that
+    // edit them, so the property is that every shipped key is settable
+    // somewhere, not that one form covers all of them.
+    $formFile = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php')
+      . "\n" . file_get_contents($this->moduleRoot . '/src/Form/ScoltaIndexSettingsForm.php');
 
     // Flatten nested keys to dot notation (scoring.title_match_boost, etc.)
     $configKeys = $this->flattenKeys($installDefaults);
@@ -204,7 +208,7 @@ class ScoltaSettingsFormTest extends TestCase {
       $this->assertStringContainsString(
         "'{$key}'",
         $formFile,
-        "Config key '{$key}' from install defaults is not referenced in ScoltaSettingsForm"
+        "Config key '{$key}' from install defaults is not referenced in either settings form"
       );
     }
   }
@@ -468,7 +472,7 @@ class ScoltaSettingsFormTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testRebuildSubmitUsesLoadAndProcessChunkCallback(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/src/Form/ScoltaIndexSettingsForm.php';
     $source = file_get_contents($file);
     $this->assertStringContainsString(
       'loadAndProcessChunk',
@@ -478,7 +482,7 @@ class ScoltaSettingsFormTest extends TestCase {
   }
 
   public function testGatherContentItemsUrlDoesNotUseSetAbsolute(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/src/Form/ScoltaIndexSettingsForm.php';
     $source = file_get_contents($file);
     // setAbsolute(TRUE) was the cause of doubled URLs on subdirectory installs
     // (issue #40). Verify gatherContentItems() uses ->toString() without it.
@@ -494,7 +498,7 @@ class ScoltaSettingsFormTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testRebuildSubmitFallsBackToSystemSiteName(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/src/Form/ScoltaIndexSettingsForm.php';
     $source = file_get_contents($file);
     $this->assertStringContainsString(
       'system.site',
@@ -504,7 +508,7 @@ class ScoltaSettingsFormTest extends TestCase {
   }
 
   public function testRebuildSubmitDoesNotUseEmptyStringDefault(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/src/Form/ScoltaIndexSettingsForm.php';
     $source = file_get_contents($file);
     // Old code: `$config->get('site_name') ?: ''` — silently used empty string,
     // preventing the system.site fallback from ever kicking in.
@@ -523,7 +527,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * validateForm() must exist and validate the ai_base_url field.
    */
   public function testValidateFormMethodExists(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php';
     $contents = file_get_contents($file);
 
     $this->assertStringContainsString(
@@ -537,7 +541,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * validateForm() must reject non-URL strings for ai_base_url.
    */
   public function testValidateFormRejectsNonUrlStrings(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php';
     $contents = file_get_contents($file);
     $body = $this->extractMethod($contents, 'validateForm');
 
@@ -558,7 +562,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * validateForm() must require http or https scheme for ai_base_url.
    */
   public function testValidateFormRequiresHttpOrHttpsScheme(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php';
     $contents = file_get_contents($file);
     $body = $this->extractMethod($contents, 'validateForm');
 
@@ -579,7 +583,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * validateForm() must allow an empty ai_base_url (optional field).
    */
   public function testValidateFormAllowsEmptyBaseUrl(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php';
     $contents = file_get_contents($file);
     $body = $this->extractMethod($contents, 'validateForm');
 
@@ -641,7 +645,7 @@ class ScoltaSettingsFormTest extends TestCase {
   // -------------------------------------------------------------------
 
   private function getInstallDefaults(): array {
-    return Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
+    return PackageManifest::settings();
   }
 
   /**
@@ -710,7 +714,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * hold its own copy of the prompt text (issue #49).
    */
   public function testGetDefaultPromptDelegatesToDefaultPromptsGetTemplate(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php';
     $body = $this->extractMethod(file_get_contents($file), 'getDefaultPrompt');
 
     $this->assertStringContainsString(
@@ -799,7 +803,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * The install default must be 'eager' — the behavior every site already has.
    */
   public function testFacetModeInstallDefaultIsEager(): void {
-    $defaults = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
+    $defaults = PackageManifest::settings();
 
     $this->assertArrayHasKey(
       'facet_mode',
@@ -821,7 +825,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * nothing.
    */
   public function testSettingsFormOffersTheThreeFacetModes(): void {
-    $contents = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
+    $contents = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php');
 
     $this->assertMatchesRegularExpression(
       "/\\\$form\['display'\]\['facet_mode'\] = \[\s*'#type' => 'select'/",
@@ -842,7 +846,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * submitForm() must persist facet_mode, clamping anything unrecognized.
    */
   public function testSubmitFormPersistsFacetModeAndClamps(): void {
-    $contents = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
+    $contents = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php');
 
     $this->assertStringContainsString(
       "->set('facet_mode'",
@@ -861,7 +865,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * The settings form must contain a show_attribution checkbox field.
    */
   public function testSettingsFormContainsShowAttributionCheckbox(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php';
     $contents = file_get_contents($file);
 
     $this->assertStringContainsString(
@@ -881,7 +885,7 @@ class ScoltaSettingsFormTest extends TestCase {
    * submitForm() must persist show_attribution as a boolean.
    */
   public function testSubmitFormPersistsShowAttribution(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php';
     $contents = file_get_contents($file);
 
     $this->assertStringContainsString(
@@ -902,29 +906,29 @@ class ScoltaSettingsFormTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testSettingsFormContainsFieldMappingSortable(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/src/Form/ScoltaIndexSettingsForm.php';
     $contents = file_get_contents($file);
 
     $this->assertStringContainsString(
       "'field_mapping_sortable'",
       $contents,
-      'ScoltaSettingsForm must reference field_mapping_sortable'
+      'ScoltaIndexSettingsForm must reference field_mapping_sortable'
     );
   }
 
   public function testSettingsFormContainsFieldMappingFilters(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/src/Form/ScoltaIndexSettingsForm.php';
     $contents = file_get_contents($file);
 
     $this->assertStringContainsString(
       "'field_mapping_filters'",
       $contents,
-      'ScoltaSettingsForm must reference field_mapping_filters'
+      'ScoltaIndexSettingsForm must reference field_mapping_filters'
     );
   }
 
   public function testSubmitFormPersistsFieldMappings(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
+    $file = $this->moduleRoot . '/src/Form/ScoltaIndexSettingsForm.php';
     $contents = file_get_contents($file);
 
     $this->assertStringContainsString(

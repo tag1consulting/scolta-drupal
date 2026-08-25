@@ -13,17 +13,28 @@ use Symfony\Component\Yaml\Yaml;
  * Verifies that each Drush command method exists with correct attributes,
  * command names and aliases match documentation, and constructor parameters
  * align with drush.services.yml arguments.
+ *
+ * The commands ship from two classes since the backend/frontend split — the
+ * build pipeline in scolta, the AI commands in scolta_ui — so the assertions
+ * about the command surface read both, and the assertions about a particular
+ * class's wiring name the class they are about.
  */
 class ScoltaCommandsValidationTest extends TestCase {
 
   private string $moduleRoot;
   private string $commandsFile;
   private string $commandsContents;
+  private string $uiCommandsFile;
+  private string $uiCommandsContents;
+  private string $allCommandsContents;
 
   protected function setUp(): void {
     $this->moduleRoot = dirname(__DIR__, 2);
     $this->commandsFile = $this->moduleRoot . '/src/Commands/ScoltaCommands.php';
     $this->commandsContents = file_get_contents($this->commandsFile);
+    $this->uiCommandsFile = $this->moduleRoot . '/modules/scolta_ui/src/Commands/ScoltaUiCommands.php';
+    $this->uiCommandsContents = file_get_contents($this->uiCommandsFile);
+    $this->allCommandsContents = $this->commandsContents . "\n" . $this->uiCommandsContents;
   }
 
   // -------------------------------------------------------------------
@@ -34,8 +45,8 @@ class ScoltaCommandsValidationTest extends TestCase {
   public function testCommandMethodExists(string $methodName): void {
     $this->assertStringContainsString(
       "function {$methodName}(",
-      $this->commandsContents,
-      "ScoltaCommands must have {$methodName}() method"
+      $this->allCommandsContents,
+      "The package must have a {$methodName}() Drush command method"
     );
   }
 
@@ -48,6 +59,8 @@ class ScoltaCommandsValidationTest extends TestCase {
       'checkSetup' => ['checkSetup'],
       'status' => ['status'],
       'downloadPagefind' => ['downloadPagefind'],
+      'cachePrompts' => ['cachePrompts'],
+      'aiStatus' => ['aiStatus'],
     ];
   }
 
@@ -59,7 +72,7 @@ class ScoltaCommandsValidationTest extends TestCase {
   public function testCommandNameExists(string $commandName): void {
     $this->assertStringContainsString(
       "name: '{$commandName}'",
-      $this->commandsContents,
+      $this->allCommandsContents,
       "Drush command '{$commandName}' should be defined"
     );
   }
@@ -73,6 +86,8 @@ class ScoltaCommandsValidationTest extends TestCase {
       'scolta:check-setup' => ['scolta:check-setup'],
       'scolta:status' => ['scolta:status'],
       'scolta:download-pagefind' => ['scolta:download-pagefind'],
+      'scolta:cache-prompts' => ['scolta:cache-prompts'],
+      'scolta:ai-status' => ['scolta:ai-status'],
     ];
   }
 
@@ -84,7 +99,7 @@ class ScoltaCommandsValidationTest extends TestCase {
   public function testCommandAliasExists(string $commandName, string $alias): void {
     $this->assertStringContainsString(
       "aliases: ['{$alias}']",
-      $this->commandsContents,
+      $this->allCommandsContents,
       "Command '{$commandName}' should have alias '{$alias}'"
     );
   }
@@ -98,6 +113,8 @@ class ScoltaCommandsValidationTest extends TestCase {
       'check-setup -> scs' => ['scolta:check-setup', 'scs'],
       'status -> sst' => ['scolta:status', 'sst'],
       'download-pagefind -> sdp' => ['scolta:download-pagefind', 'sdp'],
+      'cache-prompts -> scp' => ['scolta:cache-prompts', 'scp'],
+      'ai-status -> sais' => ['scolta:ai-status', 'sais'],
     ];
   }
 
@@ -145,8 +162,12 @@ class ScoltaCommandsValidationTest extends TestCase {
     $this->assertStringContainsString('CacheBackendInterface $cache', $this->commandsContents);
   }
 
-  public function testConstructorAcceptsScoltaAiService(): void {
-    $this->assertStringContainsString('ScoltaAiService $aiService', $this->commandsContents);
+  public function testUiConstructorAcceptsScoltaAiService(): void {
+    // The AI service moved to the frontend with the commands that use it, and
+    // the backend command class must no longer reach for it at all.
+    $this->assertStringContainsString('ScoltaAiService $aiService', $this->uiCommandsContents);
+    $this->assertStringNotContainsString('ScoltaAiService', $this->commandsContents,
+      'The backend Drush commands must not depend on the frontend AI service');
   }
 
   public function testConstructorAcceptsStreamWrapperManager(): void {
@@ -158,19 +179,36 @@ class ScoltaCommandsValidationTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testExtendsCorrectBaseClass(): void {
-    $this->assertStringContainsString(
-      'extends DrushCommands',
-      $this->commandsContents,
-      'ScoltaCommands must extend DrushCommands'
-    );
+    foreach ($this->commandClasses() as $class => $contents) {
+      $this->assertStringContainsString(
+        'extends DrushCommands',
+        $contents,
+        "{$class} must extend DrushCommands"
+      );
+    }
   }
 
   public function testCallsParentConstructor(): void {
-    $this->assertStringContainsString(
-      'parent::__construct()',
-      $this->commandsContents,
-      'ScoltaCommands must call parent::__construct()'
-    );
+    foreach ($this->commandClasses() as $class => $contents) {
+      $this->assertStringContainsString(
+        'parent::__construct()',
+        $contents,
+        "{$class} must call parent::__construct()"
+      );
+    }
+  }
+
+  /**
+   * The package's Drush command classes, keyed by short name.
+   *
+   * @return array<string, string>
+   *   File contents keyed by class name.
+   */
+  private function commandClasses(): array {
+    return [
+      'ScoltaCommands' => $this->commandsContents,
+      'ScoltaUiCommands' => $this->uiCommandsContents,
+    ];
   }
 
   // -------------------------------------------------------------------
@@ -178,17 +216,19 @@ class ScoltaCommandsValidationTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testUsesDrushAttributes(): void {
-    $this->assertStringContainsString(
-      'use Drush\Attributes as CLI',
-      $this->commandsContents,
-      'ScoltaCommands should import Drush\Attributes'
-    );
+    foreach ($this->commandClasses() as $class => $contents) {
+      $this->assertStringContainsString(
+        'use Drush\Attributes as CLI',
+        $contents,
+        "{$class} should import Drush\Attributes"
+      );
+    }
   }
 
   public function testCommandsUseCLICommandAttribute(): void {
-    preg_match_all('/#\[CLI\\\\Command\(/', $this->commandsContents, $matches);
-    $this->assertGreaterThanOrEqual(7, count($matches[0]),
-      'At least 7 commands should use #[CLI\\Command] attribute');
+    preg_match_all('/#\[CLI\\\\Command\(/', $this->allCommandsContents, $matches);
+    $this->assertGreaterThanOrEqual(9, count($matches[0]),
+      'At least 9 commands should use #[CLI\\Command] attribute');
   }
 
   // -------------------------------------------------------------------
@@ -214,6 +254,31 @@ class ScoltaCommandsValidationTest extends TestCase {
     $this->assertEquals(
       'Drupal\scolta\Commands\ScoltaCommands',
       $drush['services']['scolta.commands']['class']
+    );
+  }
+
+  public function testUiModuleRegistersItsOwnCommandService(): void {
+    $drush = Yaml::parseFile($this->moduleRoot . '/modules/scolta_ui/drush.services.yml');
+    $definition = $drush['services']['scolta_ui.commands'] ?? NULL;
+
+    $this->assertNotNull($definition,
+      'scolta_ui must register its own Drush command service, so its commands exist on a frontend-only install');
+    $this->assertEquals('Drupal\scolta_ui\Commands\ScoltaUiCommands', $definition['class']);
+    $this->assertContains('drush.command', array_column($definition['tags'] ?? [], 'name'));
+  }
+
+  public function testUiConstructorParameterCountMatchesDrushServices(): void {
+    $drush = Yaml::parseFile($this->moduleRoot . '/modules/scolta_ui/drush.services.yml');
+    $args = $drush['services']['scolta_ui.commands']['arguments'] ?? [];
+
+    $this->assertTrue(
+      (bool) preg_match('/function\s+__construct\s*\(([^)]*)\)/s', $this->uiCommandsContents, $m),
+      'ScoltaUiCommands has no constructor'
+    );
+    $params = array_filter(array_map('trim', explode(',', $m[1])));
+    $this->assertCount(
+      count($args), $params,
+      'ScoltaUiCommands constructor param count must match its drush.services.yml argument count'
     );
   }
 
@@ -319,7 +384,7 @@ class ScoltaCommandsValidationTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testConfigSchemaHasMemoryBudgetChunkSize(): void {
-    $schema = file_get_contents($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $schema = PackageManifest::rawSettingsSchema();
     $this->assertStringContainsString(
       'chunk_size',
       $schema,
@@ -328,7 +393,7 @@ class ScoltaCommandsValidationTest extends TestCase {
   }
 
   public function testConfigInstallHasMemoryBudgetChunkSize(): void {
-    $install = file_get_contents($this->moduleRoot . '/config/install/scolta.settings.yml');
+    $install = PackageManifest::rawSettings();
     $this->assertStringContainsString(
       'chunk_size',
       $install,
@@ -427,7 +492,7 @@ class ScoltaCommandsValidationTest extends TestCase {
   }
 
   public function testDefaultBuildDirIsPublic(): void {
-    $install = file_get_contents($this->moduleRoot . '/config/install/scolta.settings.yml');
+    $install = PackageManifest::rawSettings();
     $this->assertStringContainsString(
       "build_dir: 'public://scolta-build'",
       $install,

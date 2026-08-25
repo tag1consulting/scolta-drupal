@@ -29,12 +29,12 @@ class HealthControllerIndexDetailTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testControllerIncludesIndexDetailEnrichment(): void {
-    $src = file_get_contents($this->moduleRoot . '/src/Controller/HealthController.php');
+    $src = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Controller/HealthController.php');
 
     $this->assertStringContainsString(
-      '$this->indexLocator->locate(',
+      '$this->indexOrigin->locateLocal(',
       $src,
-      'HealthController must resolve index existence through the shared IndexLocator'
+      'HealthController must resolve index existence through the shared IndexOrigin'
     );
     $this->assertStringContainsString(
       "'fragments' => count(\$fragments)",
@@ -59,7 +59,7 @@ class HealthControllerIndexDetailTest extends TestCase {
   }
 
   public function testControllerSetsStatusDegradedOnBadIntegrity(): void {
-    $src = file_get_contents($this->moduleRoot . '/src/Controller/HealthController.php');
+    $src = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Controller/HealthController.php');
 
     $this->assertStringContainsString(
       "\$result['status'] = 'degraded'",

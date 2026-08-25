@@ -32,7 +32,7 @@ class AiAccessFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api', 'node', 'block'];
+  protected static $modules = ['scolta', 'scolta_ui', 'search_api', 'node', 'block'];
 
   /**
    * {@inheritdoc}
@@ -127,7 +127,7 @@ class AiAccessFunctionalTest extends BrowserTestBase {
    * on a site that has decorated nothing.
    */
   public function testFeatureDisabledInConfigIsUnchangedOnTheRoute(): void {
-    $this->config('scolta.settings')
+    $this->config('scolta_ui.settings')
       ->set('ai_expand_query', FALSE)
       ->set('ai_summarize', FALSE)
       ->save();

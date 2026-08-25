@@ -206,9 +206,7 @@ class ControllerValidationTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testApiRoutesRequirePermission(): void {
-    $routing = \Symfony\Component\Yaml\Yaml::parseFile(
-      dirname(__DIR__, 2) . '/scolta.routing.yml'
-    );
+    $routing = PackageManifest::routes();
 
     foreach (['scolta.expand', 'scolta.summarize', 'scolta.followup'] as $route) {
       $this->assertEquals(

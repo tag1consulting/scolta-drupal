@@ -27,7 +27,7 @@ class ManagedGatewaySwitchAwayTest extends TestCase {
   private string $formSource;
 
   protected function setUp(): void {
-    $this->formSource = file_get_contents(dirname(__DIR__, 2) . '/src/Form/ScoltaSettingsForm.php');
+    $this->formSource = file_get_contents(dirname(__DIR__, 2) . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php');
   }
 
   // -------------------------------------------------------------------------
@@ -70,7 +70,7 @@ class ManagedGatewaySwitchAwayTest extends TestCase {
 
   public function testSubmitComparesTheProviderAgainstTheSavedOne(): void {
     $this->assertStringContainsString(
-      "\$previousProvider = \$this->config('scolta.settings')->get('ai_provider');",
+      "\$previousProvider = \$this->config('scolta_ui.settings')->get('ai_provider');",
       $this->formSource,
       'submitForm() must read the saved provider before overwriting it'
     );

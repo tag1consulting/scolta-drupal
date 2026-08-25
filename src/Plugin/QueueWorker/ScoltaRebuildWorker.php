@@ -164,8 +164,16 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
         return;
       }
 
-      $siteName = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
-      $language = $config->get('ai_languages')[0] ?? 'en';
+      // site_name and ai_languages are dual-lifecycle keys: the frontend owns
+      // and edits them, but a build bakes both into the index — the site name
+      // onto every content item, the language into the Pagefind index itself.
+      // Read from scolta_ui.settings by config name, the same way IndexOrigin
+      // reads pagefind.output_dir the other way: Drupal config is global, so
+      // this works with or without that module installed, and a backend-only
+      // site falls back to the Drupal site name and English.
+      $uiConfig = $this->configFactory->get('scolta_ui.settings');
+      $siteName = $uiConfig->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
+      $language = ($uiConfig->get('ai_languages') ?? [])[0] ?? 'en';
 
       // Aggregate every rebuild request visible right now into one change set.
       // Anything enqueued after this claim loop returns is deliberately left

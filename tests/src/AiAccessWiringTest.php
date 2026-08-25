@@ -34,7 +34,7 @@ class AiAccessWiringTest extends TestCase {
    * alone.
    */
   public function testRouteAccessCheckIsTagged(): void {
-    $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml')['services'];
+    $services = ['services' => PackageManifest::services()]['services'];
 
     $this->assertArrayHasKey('scolta.ai_feature_access_check', $services);
     $this->assertContains(
@@ -48,7 +48,7 @@ class AiAccessWiringTest extends TestCase {
    * Every AI route carries both the permission and the feature requirement.
    */
   public function testAiRoutesCarryBothRequirements(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
+    $routing = PackageManifest::routes();
 
     $expected = [
       'scolta.expand' => 'expand',
@@ -79,7 +79,7 @@ class AiAccessWiringTest extends TestCase {
    * the bug where the browser is offered what the endpoint will refuse.
    */
   public function testBlockCombinesConfigWithTheAccessAnswer(): void {
-    $block = file_get_contents($this->moduleRoot . '/src/Plugin/Block/ScoltaSearchBlock.php');
+    $block = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Plugin/Block/ScoltaSearchBlock.php');
 
     $this->assertStringContainsString(
       'aiAccess->access($this->currentUser, AiAccessInterface::FEATURE_EXPAND)',
@@ -111,7 +111,7 @@ class AiAccessWiringTest extends TestCase {
    * rule counts messages in the request body.
    */
   public function testTheShippedRuleDoesNotRestateConfig(): void {
-    $access = file_get_contents($this->moduleRoot . '/src/Access/AiAccess.php');
+    $access = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Access/AiAccess.php');
 
     $this->assertStringContainsString(
       "allowedIfHasPermission(\$account, 'use scolta ai')",
@@ -135,7 +135,7 @@ class AiAccessWiringTest extends TestCase {
    * that looks like a caching mystery rather than an access bug.
    */
   public function testBlockBubblesTheAccessCacheability(): void {
-    $block = file_get_contents($this->moduleRoot . '/src/Plugin/Block/ScoltaSearchBlock.php');
+    $block = file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Plugin/Block/ScoltaSearchBlock.php');
 
     $this->assertStringContainsString('CacheableMetadata::createFromRenderArray($build)', $block);
     $this->assertStringContainsString('addCacheableDependency($expandAccess)', $block);

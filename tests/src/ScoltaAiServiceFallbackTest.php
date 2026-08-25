@@ -23,7 +23,7 @@ class ScoltaAiServiceFallbackTest extends TestCase {
 
   protected function setUp(): void {
     $this->moduleRoot = dirname(__DIR__, 2);
-    $this->serviceFile = $this->moduleRoot . '/src/Service/ScoltaAiService.php';
+    $this->serviceFile = $this->moduleRoot . '/modules/scolta_ui/src/Service/ScoltaAiService.php';
     $this->serviceContents = file_get_contents($this->serviceFile);
 
     $this->adapterFile = $this->moduleRoot . '/vendor/tag1/scolta-php/src/Service/AiServiceAdapter.php';

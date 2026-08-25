@@ -23,7 +23,7 @@ class ScoltaAiServiceValidationTest extends TestCase {
 
   protected function setUp(): void {
     $this->moduleRoot = dirname(__DIR__, 2);
-    $this->serviceFile = $this->moduleRoot . '/src/Service/ScoltaAiService.php';
+    $this->serviceFile = $this->moduleRoot . '/modules/scolta_ui/src/Service/ScoltaAiService.php';
     $this->serviceContents = file_get_contents($this->serviceFile);
 
     // The base class lives in scolta-php.
@@ -350,7 +350,7 @@ class ScoltaAiServiceValidationTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testConstructorParameterCountMatchesServices(): void {
-    $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml');
+    $services = ['services' => PackageManifest::services()];
     $args = $services['services']['scolta.ai_service']['arguments'] ?? [];
 
     if (preg_match('/function\s+__construct\s*\(([^)]*)\)/s', $this->serviceContents, $m)) {

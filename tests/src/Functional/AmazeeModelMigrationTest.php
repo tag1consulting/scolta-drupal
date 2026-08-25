@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Functional;
 
-use Drupal\scolta\Form\ScoltaSettingsForm;
+use Drupal\scolta_ui\Form\ScoltaSettingsForm;
 use Drupal\Tests\BrowserTestBase;
 
 /**
@@ -30,7 +30,7 @@ class AmazeeModelMigrationTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta'];
+  protected static $modules = ['scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
@@ -49,7 +49,7 @@ class AmazeeModelMigrationTest extends BrowserTestBase {
     $this->simulatePreFixSite(self::GATEWAY_ALIAS, self::GATEWAY_EXPANSION_ALIAS);
 
     $message = (string) $this->runMigration();
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
 
     $this->assertSame(self::GATEWAY_ALIAS, $config->get('amazee_model'));
     $this->assertSame(self::GATEWAY_EXPANSION_ALIAS, $config->get('amazee_expansion_model'));
@@ -74,7 +74,7 @@ class AmazeeModelMigrationTest extends BrowserTestBase {
     $this->simulatePreFixSite(self::ADMIN_CHOICE, '');
 
     $this->runMigration();
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
 
     $this->assertSame(
       self::ADMIN_CHOICE,
@@ -89,7 +89,7 @@ class AmazeeModelMigrationTest extends BrowserTestBase {
    */
   public function testAlreadyMigratedSiteIsLeftAlone(): void {
     $this->storeAmazeeCredentials();
-    $config = \Drupal::configFactory()->getEditable('scolta.settings');
+    $config = \Drupal::configFactory()->getEditable('scolta_ui.settings');
     $config
       ->set('ai_model', self::ADMIN_CHOICE)
       ->set('amazee_model', self::GATEWAY_ALIAS)
@@ -98,8 +98,8 @@ class AmazeeModelMigrationTest extends BrowserTestBase {
 
     $this->runMigration();
 
-    $this->assertSame(self::ADMIN_CHOICE, $this->config('scolta.settings')->get('ai_model'));
-    $this->assertSame(self::GATEWAY_ALIAS, $this->config('scolta.settings')->get('amazee_model'));
+    $this->assertSame(self::ADMIN_CHOICE, $this->config('scolta_ui.settings')->get('ai_model'));
+    $this->assertSame(self::GATEWAY_ALIAS, $this->config('scolta_ui.settings')->get('amazee_model'));
   }
 
   /**
@@ -110,7 +110,7 @@ class AmazeeModelMigrationTest extends BrowserTestBase {
     $this->simulatePreFixSite(ScoltaSettingsForm::DEFAULT_AI_MODEL, '');
 
     $this->runMigration();
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
 
     $this->assertSame(ScoltaSettingsForm::DEFAULT_AI_MODEL, $config->get('ai_model'));
     $this->assertSame('', $config->get('amazee_model'), 'Nothing was resolved, so nothing moves');
@@ -127,7 +127,7 @@ class AmazeeModelMigrationTest extends BrowserTestBase {
     $this->simulatePreFixSite(ScoltaSettingsForm::DEFAULT_AI_MODEL, '');
 
     $this->runMigration();
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
 
     $this->assertSame('', $config->get('amazee_model'));
     $this->assertSame('', $config->get('amazee_expansion_model'));
@@ -141,11 +141,11 @@ class AmazeeModelMigrationTest extends BrowserTestBase {
     $this->simulatePreFixSite(self::GATEWAY_ALIAS, self::GATEWAY_EXPANSION_ALIAS);
 
     $this->runMigration();
-    $after = $this->config('scolta.settings')->getRawData();
+    $after = $this->config('scolta_ui.settings')->getRawData();
 
     $this->runMigration();
 
-    $this->assertSame($after, $this->config('scolta.settings')->getRawData());
+    $this->assertSame($after, $this->config('scolta_ui.settings')->getRawData());
   }
 
   // -------------------------------------------------------------------------
@@ -175,7 +175,7 @@ class AmazeeModelMigrationTest extends BrowserTestBase {
    * Recreate a site installed before the gateway keys existed.
    */
   private function simulatePreFixSite(string $aiModel, string $aiExpansionModel): void {
-    \Drupal::configFactory()->getEditable('scolta.settings')
+    \Drupal::configFactory()->getEditable('scolta_ui.settings')
       ->set('ai_model', $aiModel)
       ->set('ai_expansion_model', $aiExpansionModel)
       ->clear('amazee_model')

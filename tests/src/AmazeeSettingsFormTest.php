@@ -19,7 +19,7 @@ class AmazeeSettingsFormTest extends TestCase {
 
   protected function setUp(): void {
     $this->moduleRoot = dirname(__DIR__, 2);
-    $this->formFile = $this->moduleRoot . '/src/Form/AmazeeSettingsForm.php';
+    $this->formFile = $this->moduleRoot . '/modules/scolta_ui/src/Form/AmazeeSettingsForm.php';
   }
 
   public function testFormFileExists(): void {
@@ -53,12 +53,12 @@ class AmazeeSettingsFormTest extends TestCase {
 
   public function testUsesCorrectNamespace(): void {
     $contents = file_get_contents($this->formFile);
-    $this->assertStringContainsString("namespace Drupal\\scolta\\Form;", $contents);
+    $this->assertStringContainsString("namespace Drupal\\scolta_ui\\Form;", $contents);
   }
 
   public function testImportsDrupalConfigStorage(): void {
     $contents = file_get_contents($this->formFile);
-    $this->assertStringContainsString('use Drupal\\scolta\\AiProvider\\Amazee\\DrupalConfigStorage', $contents);
+    $this->assertStringContainsString('use Drupal\\scolta_ui\\AiProvider\\Amazee\\DrupalConfigStorage', $contents);
   }
 
   public function testImportsAmazeeClasses(): void {
@@ -69,8 +69,7 @@ class AmazeeSettingsFormTest extends TestCase {
   }
 
   public function testRouteExistsInRoutingYaml(): void {
-    $routingFile = $this->moduleRoot . '/scolta.routing.yml';
-    $contents = file_get_contents($routingFile);
+    $contents = PackageManifest::raw('routing');
     $this->assertStringContainsString('scolta.settings.amazee', $contents);
     $this->assertStringContainsString('AmazeeSettingsForm', $contents);
   }

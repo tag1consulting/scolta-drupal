@@ -51,7 +51,7 @@ class PagefindExporterValidationTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testConstructorParameterCountMatchesServices(): void {
-    $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml');
+    $services = ['services' => PackageManifest::services()];
     $args = $services['services']['scolta.pagefind_exporter']['arguments'] ?? [];
     $contents = file_get_contents($this->exporterFile);
 

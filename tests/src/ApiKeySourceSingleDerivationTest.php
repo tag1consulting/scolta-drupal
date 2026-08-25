@@ -27,9 +27,9 @@ class ApiKeySourceSingleDerivationTest extends TestCase {
    * making one.
    */
   private const ALLOWED = [
-    'src/Service/ScoltaAiService.php',
-    'src/AiProvider/Amazee/DrupalConfigStorage.php',
-    'src/Form/ScoltaSettingsForm.php',
+    'modules/scolta_ui/src/Service/ScoltaAiService.php',
+    'modules/scolta_ui/src/AiProvider/Amazee/DrupalConfigStorage.php',
+    'modules/scolta_ui/src/Form/ScoltaSettingsForm.php',
   ];
 
   /**
@@ -81,9 +81,9 @@ class ApiKeySourceSingleDerivationTest extends TestCase {
    */
   public function testEveryReportingSurfaceDerivesFromTheResolution(): void {
     $surfaces = [
-      'src/Form/ScoltaSettingsForm.php' => 'the settings form',
-      'src/Controller/HealthController.php' => 'the health payload',
-      'src/Commands/ScoltaCommands.php' => 'the Drush status and check-setup commands',
+      'modules/scolta_ui/src/Form/ScoltaSettingsForm.php' => 'the settings form',
+      'modules/scolta_ui/src/Controller/HealthController.php' => 'the health payload',
+      'modules/scolta_ui/src/Commands/ScoltaUiCommands.php' => 'the Drush ai-status and check-setup commands',
     ];
 
     foreach ($surfaces as $file => $label) {
@@ -103,19 +103,7 @@ class ApiKeySourceSingleDerivationTest extends TestCase {
    *   Relative path => contents.
    */
   private function moduleFiles(): array {
-    $root = dirname(__DIR__, 2);
-    $files = [];
-
-    $iterator = new \RecursiveIteratorIterator(
-      new \RecursiveDirectoryIterator($root . '/src', \FilesystemIterator::SKIP_DOTS)
-    );
-    foreach ($iterator as $file) {
-      if (!$file instanceof \SplFileInfo || $file->getExtension() !== 'php') {
-        continue;
-      }
-      $files[str_replace($root . '/', '', $file->getPathname())] = (string) file_get_contents($file->getPathname());
-    }
-
+    $files = PackageManifest::sourceFiles();
     $this->assertNotEmpty($files, 'Found no module sources to scan');
 
     return $files;

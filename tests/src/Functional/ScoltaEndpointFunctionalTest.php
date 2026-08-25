@@ -16,7 +16,7 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api', 'node', 'block'];
+  protected static $modules = ['scolta', 'scolta_ui', 'search_api', 'node', 'block'];
 
   /**
    * {@inheritdoc}
@@ -31,7 +31,7 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
    * (but empty) index file at the configured output location.
    */
   protected function createFakeIndex(): void {
-    $settings = \Drupal::config('scolta.settings');
+    $settings = \Drupal::config('scolta_ui.settings');
     $outputUri = $settings->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
     $wrappers = \Drupal::service('stream_wrapper_manager');
     $realDir = $wrappers->getViaUri($outputUri)->realpath();

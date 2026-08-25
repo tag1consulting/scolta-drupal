@@ -188,7 +188,7 @@ class RenameIntegrityTest extends TestCase {
   }
 
   public function testLibrariesYmlDoesNotReferenceOldPackageName(): void {
-    $content = file_get_contents($this->moduleRoot . '/scolta.libraries.yml');
+    $content = PackageManifest::raw('libraries');
 
     // Must not reference the old vendor path (vendor/tag1/scolta/).
     $this->assertStringNotContainsString('vendor/tag1/scolta/', $content,

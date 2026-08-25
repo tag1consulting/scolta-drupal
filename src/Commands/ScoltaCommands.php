@@ -13,7 +13,6 @@ use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Progress\DrushProgressReporter;
 use Drupal\scolta\Service\IndexLocator;
-use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
@@ -24,8 +23,6 @@ use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
-use Tag1\Scolta\Prompt\DefaultPrompts;
-use Tag1\Scolta\SetupCheck;
 
 /**
  * Drush commands for Scolta.
@@ -60,8 +57,6 @@ class ScoltaCommands extends DrushCommands {
    *   The state service.
    * @param \Drupal\Core\Cache\CacheBackendInterface $cache
    *   The default cache backend.
-   * @param \Drupal\scolta\Service\ScoltaAiService $aiService
-   *   The Scolta AI service.
    * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $streamWrapperManager
    *   The stream wrapper manager.
    * @param \Drupal\scolta\Service\ScoltaContentGatherer $contentGatherer
@@ -79,7 +74,6 @@ class ScoltaCommands extends DrushCommands {
     private readonly ClientInterface $httpClient,
     private readonly StateInterface $state,
     private readonly CacheBackendInterface $cache,
-    private readonly ScoltaAiService $aiService,
     private readonly StreamWrapperManagerInterface $streamWrapperManager,
     private readonly ScoltaContentGatherer $contentGatherer,
     private readonly FileSystemInterface $fileSystem,
@@ -105,10 +99,17 @@ class ScoltaCommands extends DrushCommands {
     string $entity_type = 'node',
     array $options = ['bundle' => '', 'output-dir' => ''],
   ): void {
-    $config = $this->configFactory->get('scolta.settings');
     $outputDir = $options['output-dir'] ?: '/var/www/html/pagefind-site';
     $bundle = $options['bundle'] ?: '';
-    $siteName = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
+    // site_name and ai_languages are dual-lifecycle keys: the frontend owns
+    // and edits them, but a build bakes both into the index — the site name
+    // onto every content item, the language into the Pagefind index itself.
+    // Read from scolta_ui.settings by config name, the same way IndexOrigin
+    // reads pagefind.output_dir the other way: Drupal config is global, so
+    // this works with or without that module installed, and a backend-only
+    // site falls back to the Drupal site name and English.
+    $uiConfig = $this->configFactory->get('scolta_ui.settings');
+    $siteName = $uiConfig->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
 
     $exporter = new ContentExporter($outputDir);
     $exporter->prepareOutputDir();
@@ -190,7 +191,9 @@ class ScoltaCommands extends DrushCommands {
 
     // Cache resolved prompts regardless of indexer mode.
     $this->logger()->notice('Caching resolved prompts...');
-    $this->cacheResolvedPrompts();
+    // Resolved prompts are no longer warmed here. They are query-time state
+    // owned by scolta_ui, which caches them on first use or on demand with
+    // `drush scolta:cache-prompts`, and a build must not reach across for it.
   }
 
   /**
@@ -258,8 +261,16 @@ class ScoltaCommands extends DrushCommands {
   private function buildWithPhpIndexer(array $options, $config, bool $force): void {
     $entityType = $options['entity-type'] ?: 'node';
     $bundle     = $options['bundle'] ?: '';
-    $siteName   = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
-    $language   = $config->get('ai_languages')[0] ?? 'en';
+    // site_name and ai_languages are dual-lifecycle keys: the frontend owns
+    // and edits them, but a build bakes both into the index — the site name
+    // onto every content item, the language into the Pagefind index itself.
+    // Read from scolta_ui.settings by config name, the same way IndexOrigin
+    // reads pagefind.output_dir the other way: Drupal config is global, so
+    // this works with or without that module installed, and a backend-only
+    // site falls back to the Drupal site name and English.
+    $uiConfig = $this->configFactory->get('scolta_ui.settings');
+    $siteName = $uiConfig->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
+    $language = ($uiConfig->get('ai_languages') ?? [])[0] ?? 'en';
 
     $budget = MemoryBudgetConfig::fromCliAndConfig(
       (isset($options['memory-budget']) && $options['memory-budget'] !== NULL)
@@ -802,7 +813,9 @@ class ScoltaCommands extends DrushCommands {
       'out'   => $resolvedOutputDir,
     ]);
 
-    $language     = $config->get('ai_languages')[0] ?? 'en';
+    // The index language is edited on the frontend but baked into the index
+    // by this build, so it is read from scolta_ui.settings by config name.
+    $language     = ($this->configFactory->get('scolta_ui.settings')->get('ai_languages') ?? [])[0] ?? 'en';
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
     $report       = $orchestrator->finalize($budget, $this->logger());
 
@@ -885,98 +898,6 @@ class ScoltaCommands extends DrushCommands {
 
     $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
     $this->logger()->success('Index built successfully.');
-  }
-
-  /**
-   * Pre-resolve and cache all prompt templates.
-   *
-   * Stores resolved prompts in Drupal's cache so API endpoints can
-   * read them without resolving on every request.
-   */
-  private function cacheResolvedPrompts(): void {
-    $config = $this->aiService->getConfig();
-    $siteName = $config->siteName;
-    $siteDescription = $config->siteDescription;
-
-    $prompts = [
-      'expand_query' => DefaultPrompts::resolve(DefaultPrompts::EXPAND_QUERY, $siteName, $siteDescription),
-      'summarize' => DefaultPrompts::resolve(DefaultPrompts::SUMMARIZE, $siteName, $siteDescription),
-      'follow_up' => DefaultPrompts::resolve(DefaultPrompts::FOLLOW_UP, $siteName, $siteDescription),
-    ];
-
-    $cacheTtl = $config->cacheTtl > 0 ? $config->cacheTtl : 2592000;
-    foreach ($prompts as $name => $resolved) {
-      $this->cache->set("scolta.prompt.{$name}", $resolved, time() + $cacheTtl);
-    }
-
-    $this->logger()->success('Cached resolved prompts for: ' . implode(', ', array_keys($prompts)));
-  }
-
-  /**
-   * Clear Scolta caches (expansion and summary).
-   *
-   * Scolta shares the cache.default bin with every other module, so wiping
-   * the bin is off limits. AI expansion/summary entries embed the
-   * scolta.generation counter in their cache key, so bumping the generation
-   * orphans all existing entries; the resolved-prompt entries use known
-   * fixed keys and are deleted directly.
-   */
-  #[CLI\Command(name: 'scolta:clear-cache', aliases: ['scc'])]
-  public function clearCache(): void {
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->state->set('scolta.generation', $generation + 1);
-
-    $this->cache->deleteMultiple([
-      'scolta.prompt.expand_query',
-      'scolta.prompt.summarize',
-      'scolta.prompt.follow_up',
-    ]);
-
-    $this->logger()->success('Scolta caches cleared (generation bumped, resolved prompts deleted).');
-  }
-
-  /**
-   * Verify Scolta dependencies and configuration.
-   *
-   * Checks PHP version, Pagefind binary, and AI key.
-   */
-  #[CLI\Command(name: 'scolta:check-setup', aliases: ['scs'])]
-  public function checkSetup(): void {
-    $config = $this->configFactory->get('scolta.settings');
-
-    $results = SetupCheck::run(
-      configuredBinaryPath: $config->get('pagefind.binary'),
-      projectDir: defined('DRUPAL_ROOT')
-        ? DRUPAL_ROOT : getcwd(),
-      aiApiKey: $this->aiService->getApiKey(),
-      // The AI-key row names the source and reports an overridden Amazee.ai
-      // credential, from the same resolution the settings form and /health
-      // read (scolta-php#252).
-      resolvedKey: $this->aiService->resolveApiKey(),
-    );
-
-    foreach ($results as $r) {
-      $icon = match ($r['status']) {
-        'pass' => '[OK]',
-        'warn' => '[!!]',
-        'fail' => '[FAIL]',
-        default => '[??]',
-      };
-      $method = match ($r['status']) {
-        'fail' => 'error',
-        'warn' => 'warning',
-        default => 'notice',
-      };
-      $this->logger()->$method("{$icon} {$r['name']}: {$r['message']}");
-    }
-
-    $exit = SetupCheck::exitCode($results);
-    if ($exit === 0) {
-      $this->logger()->success('All critical checks passed.');
-    }
-    else {
-      $this->logger()->error('One or more critical checks failed.');
-    }
   }
 
   /**
@@ -1086,35 +1007,6 @@ class ScoltaCommands extends DrushCommands {
       $this->logger()->notice("  Path: {$outputDir} (no index built yet)");
     }
 
-    // AI provider. Routing only goes through the Drupal AI module when the
-    // admin explicitly selected 'drupal_ai' AND the module is installed —
-    // mirror that here instead of reporting on module presence alone.
-    $this->logger()->notice('--- AI Provider ---');
-    // No coalescing to a provider nobody chose: an empty value means AI is off,
-    // and a status command has to report that rather than name Anthropic.
-    $provider = $config->get('ai_provider') ?? '';
-    if ($provider === '') {
-      $this->logger()->notice('  Provider: none selected — AI features are off (search is unaffected)');
-    }
-    elseif ($provider === 'drupal_ai' && $this->aiService->hasDrupalAiModule()) {
-      $this->logger()->notice('  Provider: Drupal AI module');
-    }
-    elseif ($provider === 'drupal_ai') {
-      $this->logger()->notice('  Provider: drupal_ai selected but AI module not installed — falling back to built-in client');
-    }
-    else {
-      $this->logger()->notice("  Provider: {$provider} (built-in)");
-    }
-    // The source and the description come from the same resolution the client
-    // uses, so `status` cannot claim Amazee.ai while an explicit key serves
-    // every request (scolta-php#252).
-    $resolvedKey = $this->aiService->resolveApiKey();
-    $this->logger()->notice("  API key:  {$resolvedKey->source->value}");
-    $this->logger()->notice('  ' . $resolvedKey->describe());
-
-    // Generation counter.
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->logger()->notice("  Cache generation: {$generation}");
   }
 
   /**

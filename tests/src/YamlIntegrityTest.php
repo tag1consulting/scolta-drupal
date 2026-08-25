@@ -49,8 +49,8 @@ class YamlIntegrityTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testInstallConfigKeysMatchSchema(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $install = PackageManifest::settings();
+    $schema = PackageManifest::settingsSchema();
 
     $this->assertArrayHasKey('scolta.settings', $schema);
     $schemaMapping = $schema['scolta.settings']['mapping'];
@@ -73,8 +73,8 @@ class YamlIntegrityTest extends TestCase {
   }
 
   public function testScoringSubkeysMatchSchema(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $install = PackageManifest::settings();
+    $schema = PackageManifest::settingsSchema();
 
     $installScoring = $install['scoring'] ?? [];
     $schemaScoring = $schema['scolta.settings']['mapping']['scoring']['mapping'] ?? [];
@@ -90,8 +90,8 @@ class YamlIntegrityTest extends TestCase {
   }
 
   public function testDisplaySubkeysMatchSchema(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $install = PackageManifest::settings();
+    $schema = PackageManifest::settingsSchema();
 
     $installDisplay = $install['display'] ?? [];
     $schemaDisplay = $schema['scolta.settings']['mapping']['display']['mapping'] ?? [];
@@ -107,8 +107,8 @@ class YamlIntegrityTest extends TestCase {
   }
 
   public function testPagefindSubkeysMatchSchema(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $install = PackageManifest::settings();
+    $schema = PackageManifest::settingsSchema();
 
     $installPagefind = $install['pagefind'] ?? [];
     $schemaPagefind = $schema['scolta.settings']['mapping']['pagefind']['mapping'] ?? [];
@@ -128,8 +128,8 @@ class YamlIntegrityTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testInstallConfigValueTypesMatchSchema(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $install = PackageManifest::settings();
+    $schema = PackageManifest::settingsSchema();
     $mapping = $schema['scolta.settings']['mapping'];
 
     $typeChecks = [
@@ -157,7 +157,7 @@ class YamlIntegrityTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testServicesYamlStructure(): void {
-    $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml');
+    $services = ['services' => PackageManifest::services()];
     $this->assertArrayHasKey('services', $services);
 
     $expected = [
@@ -188,7 +188,7 @@ class YamlIntegrityTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testRoutingYamlStructure(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
+    $routing = PackageManifest::routes();
 
     $expectedRoutes = [
       'scolta.settings' => '/admin/config/search/scolta',
@@ -207,7 +207,7 @@ class YamlIntegrityTest extends TestCase {
   }
 
   public function testAllFromRouteCallsReferenceDefinedRoutes(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
+    $routing = PackageManifest::routes();
     $definedRoutes = array_keys($routing);
 
     // Scan all PHP and .module files (excluding vendor and tests) for
@@ -242,7 +242,7 @@ class YamlIntegrityTest extends TestCase {
   }
 
   public function testApiRoutesRequirePostMethod(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
+    $routing = PackageManifest::routes();
 
     $apiRoutes = ['scolta.expand', 'scolta.summarize', 'scolta.followup'];
     foreach ($apiRoutes as $route) {
@@ -252,13 +252,21 @@ class YamlIntegrityTest extends TestCase {
   }
 
   public function testApiRoutesRequireCorrectPermission(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
-    $permissions = Yaml::parseFile($this->moduleRoot . '/scolta.permissions.yml');
+    $routing = PackageManifest::routes();
+    $permissions = PackageManifest::permissions();
 
-    // Admin route requires 'administer scolta'.
+    // Each admin route requires the permission its own module defines. That
+    // is what makes either module installable alone: no route anywhere in the
+    // package asks for a permission that might not be there.
+    $this->assertEquals(
+      'administer scolta ui',
+      $routing['scolta.settings']['requirements']['_permission']
+    );
+    $this->assertArrayHasKey('administer scolta ui', $permissions);
+
     $this->assertEquals(
       'administer scolta',
-      $routing['scolta.settings']['requirements']['_permission']
+      $routing['scolta.index_settings']['requirements']['_permission']
     );
     $this->assertArrayHasKey('administer scolta', $permissions);
 
@@ -278,21 +286,21 @@ class YamlIntegrityTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testLibrariesYamlStructure(): void {
-    $libs = Yaml::parseFile($this->moduleRoot . '/scolta.libraries.yml');
+    $libs = PackageManifest::libraries();
 
     $this->assertArrayHasKey('search', $libs);
     $this->assertArrayHasKey('drupal_bridge', $libs);
 
     // drupal_bridge depends on search.
     $this->assertContains(
-      'scolta/search',
+      'scolta_ui/search',
       $libs['drupal_bridge']['dependencies']
     );
   }
 
   public function testBridgeJsFileExists(): void {
     $this->assertFileExists(
-      $this->moduleRoot . '/js/scolta-drupal-bridge.js',
+      $this->moduleRoot . '/modules/scolta_ui/js/scolta-drupal-bridge.js',
       'drupal_bridge JS file must exist'
     );
   }
@@ -315,7 +323,7 @@ class YamlIntegrityTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testSearchApiBackendSchemaExists(): void {
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $schema = PackageManifest::settingsSchema();
     $this->assertArrayHasKey('search_api.backend.plugin.scolta_pagefind', $schema);
 
     $backendMapping = $schema['search_api.backend.plugin.scolta_pagefind']['mapping'];

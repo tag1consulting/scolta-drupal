@@ -1,8 +1,4 @@
 administer scolta:
-  title: 'Administer Scolta'
-  description: 'Configure Scolta AI search settings'
+  title: 'Administer Scolta indexing'
+  description: 'Configure how the Scolta search index is built'
   restrict access: true
-
-use scolta ai:
-  title: 'Use Scolta AI features'
-  description: 'Access AI-powered query expansion and summarization'

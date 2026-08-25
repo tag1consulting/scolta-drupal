@@ -22,14 +22,47 @@ The LLM tier — query expansion, result summarization, follow-up questions — 
 
 - Drupal 10.3+ or Drupal 11
 - PHP 8.1+
-- `drupal/search_api` ^1.0
+- `drupal/search_api` ^1.0 (required by `scolta`; `scolta_ui` does not need it)
+
+## The two modules
+
+This package ships two modules, and a standard site enables both:
+
+| Module | Owns |
+|---|---|
+| `scolta` | Building the index and serving its files: the Search API backend, the build pipeline and its Drush commands, the index dimensions, the auto-rebuild queue |
+| `scolta_ui` | Everything the visitor experiences: the search block and browser assets, scoring and display settings, and the AI tier |
+
+Neither depends on the other, which is what makes two deployments possible
+from the same code:
+
+1. **One site (the default).** Enable both. It builds its own index, serves it
+   locally and answers AI locally, with no configuration.
+2. **A central index and thin consumers.** One site enables only `scolta` and
+   publishes the built index (directly, or behind a CDN). Each consumer site
+   enables only `scolta_ui`, points its **index origin** at the builder's URL,
+   and gets full in-browser search with no build step, no `search_api` and no
+   access to the builder's content.
+
+Both origin settings default to `<local>`, meaning "this site", so the second
+deployment is something an operator opts into rather than something the split
+imposes. See **Searching an index another site builds** below for what a
+remote origin requires of the index host.
 
 ## Installation
 
 ```bash
 composer require tag1/scolta-drupal
-drush en scolta
+drush en scolta scolta_ui
 ```
+
+Upgrading from a version before the split needs nothing extra: `drush updatedb`
+enables `scolta_ui`, moves the query-time settings into the new
+`scolta_ui.settings` object, and grants the new **Administer Scolta search and
+AI** permission to every role that already held **Administer Scolta indexing**.
+Both origins initialize to `<local>`, so the site keeps building and serving
+locally with no behaviour change. Sites that manage configuration through
+exported YAML should `drush cex` afterwards and commit both objects.
 
 The browser assets (search JS/CSS and the WASM scorer) are not part of the
 module's codebase: at install time — and again on every cache rebuild — they
@@ -54,6 +87,40 @@ drush scolta:build
 
 5. Place the **Scolta Search** block on your site via *Structure > Block Layout*
 
+### Where the settings live
+
+The settings split the same way the modules do:
+
+- `/admin/config/search/scolta` — search, scoring, display, the AI tier and the
+  two origin pointers (`scolta_ui`, permission **Administer Scolta search and AI**)
+- `/admin/config/search/scolta/index` — the indexer, memory budget, index
+  dimensions and field mappings, plus the rebuild control and index status
+  (`scolta`, permission **Administer Scolta indexing**)
+
+## Searching an index another site builds
+
+Set **Index origin** on `/admin/config/search/scolta` to the base URL the
+builder's `pagefind/` directory sits under, for example
+`https://search.example.com`. The browser then loads the index from there and
+this site needs no build step, no `search_api` and no `scolta` module.
+
+Three things are required of the index host, all standard CDN configuration:
+
+- permissive CORS headers for the consumer origins, because the browser fetches
+  the index cross-origin;
+- correct content types for `.js` and `.wasm` (`application/wasm`), because the
+  browser imports the Pagefind module and streams its WASM from that origin;
+- indexed URLs that are the canonical, consumer-facing ones — result links come
+  from what the builder stored at build time, not from where the index is served.
+
+`GET /api/scolta/v1/health` reports whether a remote origin is actually serving
+an index: it fetches the entry file rather than the directory, so a host that
+answers 200 for a directory it serves no index from still fails the check.
+
+**AI origin** works the same way and is independent: `<local>` answers query
+expansion, summaries and follow-ups from this site using the AI configuration
+on the same screen, and a URL routes those three calls to another site instead.
+
 ## Drush Commands
 
 | Command | Description |
@@ -69,10 +136,22 @@ drush scolta:build
 | `drush scolta:build --entity-ids=12,34` | Build an index of only these entities; IDs that cannot be loaded are logged and skipped. `--bundle` is ignored (PHP indexer only) |
 | `drush scolta:finalize` (`sf`) | Merge chunks into the final search index |
 | `drush scolta:rebuild-index` (`sri`) | Rebuild index from existing exported HTML files |
-| `drush scolta:clear-cache` (`scc`) | Clear expansion and summary caches |
-| `drush scolta:check-setup` (`scs`) | Verify dependencies and configuration |
-| `drush scolta:status` (`sst`) | Show current index, indexer, and AI provider status |
+| `drush scolta:clear-cache` (`scc`) | Clear expansion and summary caches (`scolta_ui`) |
+| `drush scolta:check-setup` (`scs`) | Verify dependencies and configuration (`scolta_ui`) |
+| `drush scolta:ai-status` (`sais`) | Show the AI provider, effective key and cache generation (`scolta_ui`) |
+| `drush scolta:cache-prompts` (`scp`) | Resolve and cache the AI prompts ahead of the first request (`scolta_ui`) |
+| `drush scolta:status` (`sst`) | Show current index and indexer status. The AI half of this command is now `scolta:ai-status` |
 | `drush scolta:download-pagefind` (`sdp`) | Download the Pagefind binary for the current platform |
+
+Commands marked `scolta_ui` ship with that module and are absent on a
+backend-only install; the rest ship with `scolta` and are absent on a
+frontend-only one.
+
+`scolta:cache-prompts` is new because a build no longer pre-warms the prompt
+cache: resolved prompts are query-time state, and a site that only renders
+search has no build to hang them off. The endpoints resolve and cache on first
+use either way, so the only cost of not running it is one slightly slower first
+AI request after a prompt change.
 
 ## Large Corpora and Shared Hosting
 
@@ -239,13 +318,13 @@ Everything is configurable at *Administration > Configuration > Search and Metad
 | AI enrichment delay | `sayt_expansion_delay_ms` | `500` | Idle milliseconds before the AI call fires |
 | Selecting a suggestion | `sayt_suggestion_action` | `navigate` | `navigate` opens the result, `search` runs the full search for it |
 
-**The off switch.** Set **Enable search as you type** to off (`drush config:set scolta.settings sayt_enabled 0`) and the search widget behaves exactly as it did before this feature existed: no dropdown, no combobox roles on the input, no browser storage touched on any path, and no suggestion searches. The results, ranking and AI overview are unaffected either way.
+**The off switch.** Set **Enable search as you type** to off (`drush config:set scolta_ui.settings sayt_enabled 0`) and the search widget behaves exactly as it did before this feature existed: no dropdown, no combobox roles on the input, no browser storage touched on any path, and no suggestion searches. The results, ranking and AI overview are unaffected either way.
 
 **Sites in Chinese, Japanese or Korean generally want `sayt_min_chars: 1`.** The count is in characters as a person sees them, and a single han character is already a meaningful query; a floor of two means a CJK visitor gets no suggestions until their query is twice as specific as an English speaker's needs to be.
 
 **Why the enrichment cap exists.** Suggestion-driven AI expansions share the AI flood budget with committed searches — expansion, summarize and follow-up all count against the same per-IP limit described under [AI endpoint rate limiting](#ai-endpoint-rate-limiting) (60 requests/minute by default). Without a cap, a visitor's whole allowance could be spent on prefixes they never submitted, and the search they actually ran would come back with no expansion and no AI overview. Over the cap, suggestions silently fall back to keyword matches until the window rolls.
 
-**On an existing site**, `drush updatedb` (or `/update.php`) adds these defaults to `scolta.settings`. Any of the ten you had already set by hand is left alone, including `sayt_enabled: false`. Sites that manage permissions and settings through exported configuration should `drush cex` afterwards and commit the changed `scolta.settings.yml`.
+**On an existing site**, `drush updatedb` (or `/update.php`) adds these defaults to `scolta_ui.settings`. Any of the ten you had already set by hand is left alone, including `sayt_enabled: false`. Sites that manage permissions and settings through exported configuration should `drush cex` afterwards and commit the changed `scolta_ui.settings.yml`.
 
 ## Troubleshooting
 
@@ -261,7 +340,7 @@ If you have previously run `drush search-api:index`, that is not sufficient — 
 
 ### Permissions
 
-Scolta defines a **Use Scolta AI features** permission (`use scolta ai`) that gates the AI API endpoints. This permission is granted to the **authenticated** role automatically at module install, so logged-in visitors receive AI overviews with no admin action required. The **anonymous** role is deliberately not granted it: the AI endpoints make cost-bearing LLM calls, and opening them to unauthenticated traffic is a decision for the site rather than a default.
+`scolta_ui` defines a **Use Scolta AI features** permission (`use scolta ai`) that gates the AI API endpoints. This permission is granted to the **authenticated** role automatically when that module is installed, so logged-in visitors receive AI overviews with no admin action required. The **anonymous** role is deliberately not granted it: the AI endpoints make cost-bearing LLM calls, and opening them to unauthenticated traffic is a decision for the site rather than a default.
 
 To serve AI overviews to anonymous visitors, grant **Use Scolta AI features** to the anonymous role at *Administration > People > Permissions*. Until you do, anonymous requests to the AI endpoints return 403.
 
@@ -269,7 +348,12 @@ A site installed before this change may already hold the anonymous grant, which 
 
 **If the site manages permissions through exported configuration, the update alone is not enough.** Run the update in the environment you export from, then `drush cex`, and commit the changed `user.role.anonymous.yml` and `user.role.authenticated.yml`. `drush deploy` runs `config:import` after `updatedb`, so on a site whose exported config predates the update, the import restores the old grant seconds after the hook removed it — the update having run and the permission still being present at the same time is exactly what this looks like. Re-exporting also makes the change survive every later `config:import`, which running the update on each environment separately does not.
 
-The health endpoint (`GET /api/scolta/v1/health`) is reachable without any permission so uptime monitors always work, but callers without **Administer Scolta** (`administer scolta`) receive only `{"status": "ok"|"degraded"}`. The full diagnostic payload (AI provider, index integrity, fragment counts) requires `administer scolta`.
+The health endpoint (`GET /api/scolta/v1/health`) is reachable without any permission so uptime monitors always work, but callers without **Administer Scolta search and AI** (`administer scolta ui`) receive only `{"status": "ok"|"degraded"}`. The full diagnostic payload (AI provider, index origin, index integrity, fragment counts) requires `administer scolta ui`.
+
+Each module defines its own admin permission, so neither is left referring to
+one the other might not have installed: `administer scolta` covers the index
+build, `administer scolta ui` covers search, scoring, display and AI. The
+update hook grants the second to every role that already held the first.
 
 #### Narrowing AI access beyond the permission
 
@@ -386,11 +470,11 @@ Scolta's config stores scoring and display values in nested namespaces (`scoring
 
 ```bash
 # Correct — nested path used by the admin UI
-drush config:set scolta.settings display.max_pagefind_results 10
-drush config:set scolta.settings scoring.title_match_boost 2.0
+drush config:set scolta_ui.settings display.max_pagefind_results 10
+drush config:set scolta_ui.settings scoring.title_match_boost 2.0
 
 # Also accepted — top-level keys take precedence over nested values
-drush config:set scolta.settings max_pagefind_results 10
+drush config:set scolta_ui.settings max_pagefind_results 10
 ```
 
 Top-level keys (without a namespace prefix) override nested values of the same name, so both forms work. The nested path is canonical and matches the admin UI; the top-level form is convenient for one-off overrides.

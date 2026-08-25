@@ -3,18 +3,6 @@ services:
     parent: logger.channel_base
     arguments: ['scolta']
 
-  scolta.amazee_config_storage:
-    class: Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage
-    arguments: ['@state']
-
-  scolta.amazee_budget_handler:
-    class: Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler
-    arguments: ['@messenger', '@state']
-
-  scolta.ai_service:
-    class: Drupal\scolta\Service\ScoltaAiService
-    arguments: ['@http_client', '@config.factory', '@logger.channel.scolta', '@scolta.amazee_budget_handler', '@scolta.amazee_config_storage', '@?ai.provider', '@cache.default']
-
   scolta.pagefind_exporter:
     class: Drupal\scolta\Service\PagefindExporter
     arguments: ['@entity_type.manager', '@renderer', '@file_system', '@logger.channel.scolta']
@@ -29,21 +17,3 @@ services:
 
   scolta.index_locator:
     class: Drupal\scolta\Service\IndexLocator
-
-  # Copies the scolta-php browser bundle from vendor/ into
-  # public://scolta-assets. Runs at install and on every cache rebuild;
-  # copies only files that differ from the vendored canonical.
-  scolta.asset_deployer:
-    class: Drupal\scolta\Service\AssetDeployer
-    arguments: ['@file_system', '@logger.channel.scolta', '@stream_wrapper_manager']
-
-  # Decorate this to narrow who reaches the AI features. Both the block that
-  # advertises them and the routes that serve them ask it.
-  scolta.ai_access:
-    class: Drupal\scolta\Access\AiAccess
-
-  scolta.ai_feature_access_check:
-    class: Drupal\scolta\Access\AiFeatureAccessCheck
-    arguments: ['@scolta.ai_access']
-    tags:
-      - { name: access_check, applies_to: _scolta_ai }

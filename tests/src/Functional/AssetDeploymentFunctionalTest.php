@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Functional;
 
-use Drupal\scolta\Service\AssetDeployer;
+use Drupal\scolta_ui\Service\AssetDeployer;
 use Drupal\Tests\BrowserTestBase;
 
 /**
@@ -25,7 +25,7 @@ class AssetDeploymentFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api'];
+  protected static $modules = ['scolta', 'scolta_ui', 'search_api'];
 
   /**
    * {@inheritdoc}
@@ -36,7 +36,7 @@ class AssetDeploymentFunctionalTest extends BrowserTestBase {
    * Install deploys every bundle file, byte-identical to the vendored source.
    */
   public function testInstallDeploysBundleFromVendor(): void {
-    /** @var \Drupal\scolta\Service\AssetDeployer $deployer */
+    /** @var \Drupal\scolta_ui\Service\AssetDeployer $deployer */
     $deployer = \Drupal::service('scolta.asset_deployer');
     $sourceDir = $deployer->sourceDir();
     $this->assertNotNull($sourceDir, 'The installed tag1/scolta-php must carry an assets/ directory.');
@@ -70,7 +70,7 @@ class AssetDeploymentFunctionalTest extends BrowserTestBase {
     // What every deploy routine runs after composer update.
     drupal_flush_all_caches();
 
-    /** @var \Drupal\scolta\Service\AssetDeployer $deployer */
+    /** @var \Drupal\scolta_ui\Service\AssetDeployer $deployer */
     $deployer = \Drupal::service('scolta.asset_deployer');
     $sourceDir = $deployer->sourceDir();
     clearstatcache();
@@ -92,11 +92,27 @@ class AssetDeploymentFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Uninstall removes the deployed directory.
+   * Removing the backend leaves the frontend's bundle where it is.
+   *
+   * The bundle is what the browser loads, and on a frontend-only site there
+   * is no backend to own it. Uninstalling scolta from a site that keeps
+   * scolta_ui must therefore leave every deployed file alone: the site can
+   * still search, against whatever index its origin points at.
+   */
+  public function testUninstallingTheBackendLeavesTheBundle(): void {
+    \Drupal::service('module_installer')->uninstall(['scolta']);
+    $this->assertFileExists(
+      AssetDeployer::DIRECTORY . '/js/scolta.js',
+      'The frontend still needs its bundle after the backend goes away.'
+    );
+  }
+
+  /**
+   * Uninstalling the frontend removes the deployed directory.
    */
   public function testUninstallRemovesDeployedAssets(): void {
     $this->assertFileExists(AssetDeployer::DIRECTORY . '/js/scolta.js');
-    \Drupal::service('module_installer')->uninstall(['scolta']);
+    \Drupal::service('module_installer')->uninstall(['scolta_ui']);
     $this->assertDirectoryDoesNotExist(AssetDeployer::DIRECTORY);
   }
 

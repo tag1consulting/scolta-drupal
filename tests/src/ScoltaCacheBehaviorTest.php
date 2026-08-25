@@ -23,7 +23,7 @@ namespace Drupal\Core\Cache {
 
 namespace Drupal\scolta\Tests {
 
-    use Drupal\scolta\Cache\DrupalCacheDriver;
+    use Drupal\scolta_ui\Cache\DrupalCacheDriver;
     use PHPUnit\Framework\TestCase;
     use Tag1\Scolta\Http\AiEndpointHandler;
 

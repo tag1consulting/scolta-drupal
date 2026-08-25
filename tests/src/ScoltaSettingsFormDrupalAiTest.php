@@ -24,7 +24,7 @@ class ScoltaSettingsFormDrupalAiTest extends TestCase {
 
   protected function setUp(): void {
     $this->formContents = file_get_contents(
-      dirname(__DIR__, 2) . '/src/Form/ScoltaSettingsForm.php'
+      dirname(__DIR__, 2) . '/modules/scolta_ui/src/Form/ScoltaSettingsForm.php'
     );
   }
 

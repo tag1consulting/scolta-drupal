@@ -84,7 +84,7 @@ class ScoltaContentGathererTest extends TestCase {
       $this->gathererContents,
       'ScoltaContentGatherer must inject Drupal\\Core\\Database\\Connection'
     );
-    $servicesYml = file_get_contents(dirname(__DIR__, 2) . '/scolta.services.yml');
+    $servicesYml = PackageManifest::raw('services');
     $this->assertStringContainsString(
       '@database',
       $servicesYml,
@@ -164,7 +164,7 @@ class ScoltaContentGathererTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testServiceIsRegisteredInServicesYml(): void {
-    $servicesYml = file_get_contents($this->moduleRoot . '/scolta.services.yml');
+    $servicesYml = PackageManifest::raw('services');
 
     $this->assertStringContainsString(
       'scolta.content_gatherer',
@@ -174,7 +174,7 @@ class ScoltaContentGathererTest extends TestCase {
   }
 
   public function testServiceClassInServicesYml(): void {
-    $servicesYml = file_get_contents($this->moduleRoot . '/scolta.services.yml');
+    $servicesYml = PackageManifest::raw('services');
 
     $this->assertStringContainsString(
       'Drupal\\scolta\\Service\\ScoltaContentGatherer',
@@ -184,7 +184,7 @@ class ScoltaContentGathererTest extends TestCase {
   }
 
   public function testServiceArgumentIsEntityTypeManager(): void {
-    $servicesYml = file_get_contents($this->moduleRoot . '/scolta.services.yml');
+    $servicesYml = PackageManifest::raw('services');
 
     // The gatherer entry must have @entity_type.manager as its argument.
     $this->assertMatchesRegularExpression(
@@ -273,7 +273,7 @@ class ScoltaContentGathererTest extends TestCase {
       $this->gathererContents,
       'ScoltaContentGatherer must inject ConfigFactoryInterface for field_mappings config'
     );
-    $servicesYml = file_get_contents(dirname(__DIR__, 2) . '/scolta.services.yml');
+    $servicesYml = PackageManifest::raw('services');
     $this->assertStringContainsString(
       '@config.factory',
       $servicesYml,

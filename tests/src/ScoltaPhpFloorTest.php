@@ -102,7 +102,7 @@ class ScoltaPhpFloorTest extends TestCase {
    * on loaded classes, so it holds whether or not scolta-php is installed.
    */
   public function testTheSymbolsTheFloorExistsForAreStillLoadedUnguarded(): void {
-    $storage = (string) file_get_contents(dirname(__DIR__, 2) . '/src/AiProvider/Amazee/DrupalConfigStorage.php');
+    $storage = (string) file_get_contents(dirname(__DIR__, 2) . '/modules/scolta_ui/src/AiProvider/Amazee/DrupalConfigStorage.php');
     $this->assertStringContainsString(
       'implements ProvenanceAwareConfigStorageInterface',
       $storage,

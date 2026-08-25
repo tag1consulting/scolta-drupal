@@ -233,6 +233,16 @@ jobs:
             echo "SKIP: No code changes detected."
           fi
 
+  # This package ships two modules that must each work alone, so #168 called for
+  # a three-way install matrix: backend only, frontend only, both. It is not a
+  # job matrix here, and deliberately so — BrowserTestBase already installs
+  # exactly the modules a test class names, so the three combinations are three
+  # test classes (BackendOnlyInstallFunctionalTest,
+  # FrontendOnlyInstallFunctionalTest, SplitInstallFunctionalTest) rather than
+  # three site builds. That is cheaper, and it puts the combination next to the
+  # assertions about it instead of in a workflow file, so a later change that
+  # reintroduces a cross-module reference fails on a named test rather than on
+  # a matrix leg nobody reads.
   functional:
     runs-on: ubuntu-latest
     steps:

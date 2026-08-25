@@ -36,21 +36,21 @@ class ControllerJsonSafetyTest extends TestCase {
     return [
       'ExpandQueryController' => [
         'ExpandQueryController',
-        $root . '/src/Controller/ExpandQueryController.php',
+        $root . '/modules/scolta_ui/src/Controller/ExpandQueryController.php',
       ],
       'SummarizeController' => [
         'SummarizeController',
-        $root . '/src/Controller/SummarizeController.php',
+        $root . '/modules/scolta_ui/src/Controller/SummarizeController.php',
       ],
       'FollowUpController' => [
         'FollowUpController',
-        $root . '/src/Controller/FollowUpController.php',
+        $root . '/modules/scolta_ui/src/Controller/FollowUpController.php',
       ],
     ];
   }
 
   private function baseSource(): string {
-    return file_get_contents($this->moduleRoot . '/src/Controller/AiApiControllerBase.php');
+    return file_get_contents($this->moduleRoot . '/modules/scolta_ui/src/Controller/AiApiControllerBase.php');
   }
 
   // -------------------------------------------------------------------
@@ -96,7 +96,7 @@ class ControllerJsonSafetyTest extends TestCase {
 
   public function testExpandDoesNotLogRawResponse(): void {
     $contents = file_get_contents(
-      $this->moduleRoot . '/src/Controller/ExpandQueryController.php'
+      $this->moduleRoot . '/modules/scolta_ui/src/Controller/ExpandQueryController.php'
     ) . $this->baseSource();
     $this->assertStringNotContainsString(
       'Expand raw response',

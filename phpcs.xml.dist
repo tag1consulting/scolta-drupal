@@ -8,6 +8,9 @@
   <file>src</file>
   <file>scolta.module</file>
   <file>scolta.install</file>
+  <!-- The scolta_ui module ships from this package and is held to the
+       same standard; its own tests are excluded by the pattern below. -->
+  <file>modules</file>
 
   <!--
     Tests are out of scope. The <file> list above already says so when phpcs is

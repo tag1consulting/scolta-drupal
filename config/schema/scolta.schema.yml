@@ -1,73 +1,21 @@
+# Build-time settings only. Everything query-time — scoring, display, the AI
+# tier, the field descriptions — is scolta_ui.settings, owned by scolta_ui.
 scolta.settings:
   type: config_object
-  label: 'Scolta settings'
+  label: 'Scolta index settings'
   mapping:
-    preset:
-      type: string
-      label: 'Site type preset'
-    ai_provider:
-      type: string
-      label: 'AI provider'
-    ai_model:
-      type: string
-      label: 'AI model'
-    ai_expansion_model:
-      type: string
-      label: 'AI expansion model'
-    amazee_model:
-      type: string
-      label: 'Amazee.ai gateway model'
-    amazee_expansion_model:
-      type: string
-      label: 'Amazee.ai gateway expansion model'
-    ai_base_url:
-      type: string
-      label: 'AI base URL'
-    ai_expand_query:
-      type: boolean
-      label: 'Enable AI query expansion'
-    ai_summarize:
-      type: boolean
-      label: 'Enable AI summarization'
-    ai_languages:
-      type: sequence
-      label: 'AI response languages'
-      sequence:
-        type: string
-        label: 'Language code'
-    max_follow_ups:
-      type: integer
-      label: 'Maximum follow-up questions'
-    site_name:
-      type: string
-      label: 'Site name'
-    site_description:
-      type: string
-      label: 'Site description'
     sortable_fields:
       type: sequence
       label: 'Sortable fields'
       sequence:
         type: string
         label: 'Field name'
-    sortable_field_descriptions:
-      type: sequence
-      label: 'Sortable field descriptions'
-      sequence:
-        type: string
-        label: 'Field description'
     filter_fields:
       type: sequence
       label: 'Filter fields'
       sequence:
         type: string
         label: 'Filter dimension name'
-    filter_field_descriptions:
-      type: sequence
-      label: 'Filter field descriptions'
-      sequence:
-        type: string
-        label: 'Filter field description'
     body_fields:
       type: sequence
       label: 'Body content fields'
@@ -90,150 +38,6 @@ scolta.settings:
           sequence:
             type: string
             label: 'Dimension name for this entity field'
-    scoring:
-      type: mapping
-      label: 'Scoring configuration'
-      mapping:
-        title_match_boost:
-          type: float
-          label: 'Title match boost'
-        title_all_terms_multiplier:
-          type: float
-          label: 'Title all terms multiplier'
-        content_match_boost:
-          type: float
-          label: 'Content match boost'
-        recency_boost_max:
-          type: float
-          label: 'Recency boost maximum'
-        recency_half_life_days:
-          type: integer
-          label: 'Recency half-life in days'
-        recency_penalty_after_days:
-          type: integer
-          label: 'Recency penalty after days'
-        recency_max_penalty:
-          type: float
-          label: 'Recency maximum penalty'
-        expand_primary_weight:
-          type: float
-          label: 'Expanded term primary weight'
-        cross_list_bonus:
-          type: float
-          label: 'Cross-list agreement bonus'
-        expand_subword_max_frequency:
-          type: float
-          label: 'Sub-word maximum corpus frequency'
-        specificity_weighting:
-          type: boolean
-          label: 'Specificity-weighted ranking'
-        specificity_floor:
-          type: float
-          label: 'Specificity floor'
-        specificity_strong_match:
-          type: float
-          label: 'Specificity strong-match threshold'
-        specificity_cooccurrence:
-          type: float
-          label: 'Co-occurrence agreement bonus'
-        specificity_agreement_gate:
-          type: float
-          label: 'Co-occurrence agreement gate'
-        specificity_agreement_decay:
-          type: float
-          label: 'Co-occurrence agreement decay'
-        expansion_combine_mode:
-          type: string
-          label: 'Expansion combine mode'
-        exact_title_match_boost:
-          type: float
-          label: 'Exact title match boost'
-        phrase_adjacent_multiplier:
-          type: float
-          label: 'Phrase adjacent multiplier'
-        phrase_near_multiplier:
-          type: float
-          label: 'Phrase near multiplier'
-        phrase_near_window:
-          type: integer
-          label: 'Phrase near window'
-        phrase_window:
-          type: integer
-          label: 'Phrase window'
-        language:
-          type: string
-          label: 'Scoring language'
-        custom_stop_words:
-          type: sequence
-          label: 'Custom stop words'
-          sequence:
-            type: string
-            label: 'Stop word'
-        expand_subword_deny_list:
-          type: sequence
-          label: 'Sub-word guard denylist'
-          sequence:
-            type: string
-            label: 'Denylisted word'
-        recency_strategy:
-          type: string
-          label: 'Recency strategy'
-        recency_curve:
-          type: sequence
-          label: 'Custom recency curve control points'
-          sequence:
-            type: sequence
-            label: 'Control point [days, boost]'
-            sequence:
-              type: float
-              label: 'Value'
-    display:
-      type: mapping
-      label: 'Display configuration'
-      mapping:
-        excerpt_length:
-          type: integer
-          label: 'Excerpt length'
-        results_per_page:
-          type: integer
-          label: 'Results per page'
-        max_pagefind_results:
-          type: integer
-          label: 'Maximum Pagefind results'
-        ai_summary_top_n:
-          type: integer
-          label: 'AI summary top N results'
-        ai_summary_max_chars:
-          type: integer
-          label: 'AI summary max characters'
-    cache_ttl:
-      type: integer
-      label: 'Cache TTL in seconds'
-    flood:
-      type: mapping
-      label: 'AI endpoint rate limiting'
-      mapping:
-        ai_ip_limit:
-          type: integer
-          label: 'Maximum AI API requests per IP per window (0 disables)'
-        ai_ip_window:
-          type: integer
-          label: 'Per-IP flood window in seconds'
-        ai_global_limit:
-          type: integer
-          label: 'Maximum AI API requests site-wide per window (0 disables)'
-        ai_global_window:
-          type: integer
-          label: 'Site-wide flood window in seconds'
-    prompt_expand_query:
-      type: string
-      label: 'Custom expand query prompt'
-    prompt_summarize:
-      type: string
-      label: 'Custom summarize prompt'
-    prompt_follow_up:
-      type: string
-      label: 'Custom follow-up prompt'
     indexer:
       type: string
       label: 'Indexer mode (auto, php, or binary)'
@@ -250,45 +54,6 @@ scolta.settings:
         chunk_size:
           type: integer
           label: 'Pages per chunk (null uses profile default)'
-    show_attribution:
-      type: boolean
-      label: 'Show Scolta attribution on search page'
-    hide_empty_facets:
-      type: boolean
-      label: 'Hide facet values with zero results for the current query'
-    facet_mode:
-      type: string
-      label: 'When the facet index loads: eager, deferred or disabled'
-    sayt_enabled:
-      type: boolean
-      label: 'Enable search as you type'
-    sayt_min_chars:
-      type: integer
-      label: 'Minimum characters before suggestions are requested'
-    sayt_debounce_ms:
-      type: integer
-      label: 'Suggestion debounce in milliseconds'
-    sayt_max_suggestions:
-      type: integer
-      label: 'Maximum suggestions shown'
-    sayt_recent_searches:
-      type: boolean
-      label: 'Offer the visitor their own recent searches'
-    sayt_max_recent:
-      type: integer
-      label: 'Maximum recent searches shown'
-    sayt_expand:
-      type: boolean
-      label: 'Enrich suggestions with AI query expansion'
-    sayt_expand_per_minute:
-      type: integer
-      label: 'Maximum SAYT AI expansion calls per minute'
-    sayt_expansion_delay_ms:
-      type: integer
-      label: 'Idle delay before the AI enrichment call, in milliseconds'
-    sayt_suggestion_action:
-      type: string
-      label: 'What selecting a title suggestion does (navigate or search)'
     pagefind:
       type: mapping
       label: 'Pagefind configuration'

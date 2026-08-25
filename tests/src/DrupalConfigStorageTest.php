@@ -21,7 +21,7 @@ class DrupalConfigStorageTest extends TestCase {
 
   protected function setUp(): void {
     $this->moduleRoot = dirname(__DIR__, 2);
-    $this->storageFile = $this->moduleRoot . '/src/AiProvider/Amazee/DrupalConfigStorage.php';
+    $this->storageFile = $this->moduleRoot . '/modules/scolta_ui/src/AiProvider/Amazee/DrupalConfigStorage.php';
   }
 
   public function testFileExists(): void {
@@ -86,7 +86,7 @@ class DrupalConfigStorageTest extends TestCase {
   }
 
   public function testServiceRegistered(): void {
-    $yaml = file_get_contents($this->moduleRoot . '/scolta.services.yml');
+    $yaml = PackageManifest::raw('services');
     $this->assertStringContainsString('scolta.amazee_config_storage', $yaml);
     $this->assertStringContainsString('DrupalConfigStorage', $yaml);
     $this->assertStringContainsString("'@state'", $yaml);

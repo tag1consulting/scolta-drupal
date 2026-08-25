@@ -59,8 +59,10 @@ class ScoltaAiServiceTest extends TestCase {
    * Load the install defaults as if they came from Drupal config.
    */
   private function getInstallDefaults(): array {
-    $file = dirname(__DIR__, 2) . '/config/install/scolta.settings.yml';
-    return \Symfony\Component\Yaml\Yaml::parseFile($file);
+    // Both objects: what this service reads is the query-time half, which is
+    // scolta_ui.settings since the split, and the tests below assert on the
+    // shipped defaults of the package rather than of one module.
+    return PackageManifest::settings();
   }
 
   // -------------------------------------------------------------------

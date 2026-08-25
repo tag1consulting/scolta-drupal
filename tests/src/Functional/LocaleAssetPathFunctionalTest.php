@@ -7,7 +7,7 @@ namespace Drupal\Tests\scolta\Functional;
 use Drupal\Core\Logger\RfcLogLevel;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\language\Entity\ConfigurableLanguage;
-use Drupal\scolta\Service\AssetDeployer;
+use Drupal\scolta_ui\Service\AssetDeployer;
 
 /**
  * Proves a multilingual site can render pages with the search library on.
@@ -43,7 +43,7 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
    * {@inheritdoc}
    */
   protected static $modules = [
-    'scolta',
+    'scolta', 'scolta_ui',
     'search_api',
     'node',
     'block',
@@ -121,9 +121,12 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
    * locale while silently losing aggregation and cache busting.
    */
   public function testResolvedLibraryPathIsLocalAndDeployed(): void {
+    // scolta_ui, not scolta: the library moved with the block that attaches
+    // it. Asked of the wrong extension this returns FALSE and the test fails
+    // on a library that is perfectly healthy.
     $library = \Drupal::service('library.discovery')
-      ->getLibraryByName('scolta', 'search');
-    $this->assertNotFalse($library, 'The scolta/search library must exist.');
+      ->getLibraryByName('scolta_ui', 'search');
+    $this->assertNotFalse($library, 'The scolta_ui/search library must exist.');
 
     $assets = array_merge($library['js'], $library['css']);
     $this->assertCount(2, $assets, 'The search library must declare one JS and one CSS file.');
@@ -142,7 +145,7 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
     // followed. Comparing against the deployer's own resolution of the same
     // URI is the assertion that a hardcoded sites/default/files would fail
     // on a relocated site.
-    /** @var \Drupal\scolta\Service\AssetDeployer $deployer */
+    /** @var \Drupal\scolta_ui\Service\AssetDeployer $deployer */
     $deployer = \Drupal::service('scolta.asset_deployer');
     $expected = ltrim((string) $deployer->webPath(AssetDeployer::DIRECTORY . '/js/scolta.js'), '/');
     $this->assertSame($expected, $library['js'][0]['data'],

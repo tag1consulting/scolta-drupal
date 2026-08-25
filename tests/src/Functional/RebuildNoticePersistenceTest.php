@@ -21,7 +21,7 @@ class RebuildNoticePersistenceTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta'];
+  protected static $modules = ['scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
@@ -47,8 +47,10 @@ class RebuildNoticePersistenceTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->adminUser = $this->drupalCreateUser(['administer scolta']);
-    $this->adminUser2 = $this->drupalCreateUser(['administer scolta']);
+    // The notice itself is the backend's, but the admin page it is asserted
+    // on is scolta_ui's settings form.
+    $this->adminUser = $this->drupalCreateUser(['administer scolta', 'administer scolta ui']);
+    $this->adminUser2 = $this->drupalCreateUser(['administer scolta', 'administer scolta ui']);
     // Clear any pre-existing notice state.
     \Drupal::state()->delete('scolta.rebuild_notice');
   }
