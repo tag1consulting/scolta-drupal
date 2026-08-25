@@ -65,13 +65,14 @@ Rules that follow:
 
 - Run: `./vendor/bin/phpunit`
 - Tests run without a Drupal bootstrap — they use YAML parsing and reflection.
+- Only write valuable tests that exercise important functionality. Don't make assertions about a method's source code, for example. A PR without a test is acceptable for trivial PRs.
 - WASM-dependent tests are covered by scolta-php, not this package.
 
 ## Documentation Rules
 
 Documentation follows code. When a PR changes behavior, the same PR must update the relevant docs.
 
-- **CHANGELOG.md**: Every PR that changes code (not docs-only) MUST add an entry under `## [Unreleased]`. CI enforces this.
+- **CHANGELOG.md**: Every PR that changes code (not docs-only) SHOULD add an brief entry under `## [Unreleased]` unless its change is trivial.
 - **README.md**: Update if the change affects installation, Drush commands, API endpoints, permissions, or configuration.
 - **Config schema**: `config/schema/scolta.schema.yml` MUST stay in sync with `config/install/scolta.settings.yml` and the settings form.
 - **PHPDoc**: All public methods SHOULD have complete PHPDoc including `@since` and `@stability`.
