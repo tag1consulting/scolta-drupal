@@ -22,12 +22,12 @@ use Symfony\Component\Yaml\Yaml;
  *
  * The pre-split key set is not read from a file — it is gone from the tree —
  * but it is recorded exactly: its query-time half is
- * _SCOLTA_UPDATE_10006_FRONTEND_KEYS, pinned in scolta.install as the record
+ * _SCOLTA_UPDATE_10007_FRONTEND_KEYS, pinned in scolta.install as the record
  * of what that update moved, and its build-time half is what remains in
  * scolta.settings. Asserting the two schemas against those two halves is the
  * same proof against the same closed set.
  *
- * @see scolta_update_10006()
+ * @see scolta_update_10007()
  */
 class ScoltaConfigPartitionTest extends TestCase {
 
@@ -56,17 +56,17 @@ class ScoltaConfigPartitionTest extends TestCase {
   }
 
   /**
-   * The key list scolta_update_10006() moves, read out of the install file.
+   * The key list scolta_update_10007() moves, read out of the install file.
    *
    * Parsed from the source rather than called: including scolta.install to
-   * call _scolta_update_10006_frontend_keys() would pull the whole file, and
+   * call _scolta_update_10007_frontend_keys() would pull the whole file, and
    * its hooks, into a suite that never boots Drupal — and the point is to
    * check what the shipped file says anyway.
    */
   private function migratedKeys(): array {
     $source = file_get_contents(PackageManifest::root() . '/scolta.install');
 
-    $start = strpos($source, 'function _scolta_update_10006_frontend_keys(): array {');
+    $start = strpos($source, 'function _scolta_update_10007_frontend_keys(): array {');
     $this->assertNotFalse($start, 'scolta.install must pin the migrated key list');
     $end = strpos($source, '];', $start);
     $this->assertNotFalse($end, 'The pinned key list must be terminated');
@@ -190,7 +190,7 @@ class ScoltaConfigPartitionTest extends TestCase {
    * The partition above is a statement about two YAML files. This is the
    * statement about the code, and it is the one that broke: site_name and
    * ai_languages moved to scolta_ui.settings while four build-time callers
-   * went on reading them off scolta.settings. After scolta_update_10006()
+   * went on reading them off scolta.settings. After scolta_update_10007()
    * clears them from the source object every one of those reads returns
    * NULL, so an upgraded site silently indexed under the Drupal site name
    * and in English regardless of what it had configured — with nothing
@@ -208,7 +208,7 @@ class ScoltaConfigPartitionTest extends TestCase {
         $this->assertNotContains(
           $top,
           $migrated,
-          "{$relative} reads '{$key}' from scolta.settings, but scolta_update_10006() moves it to scolta_ui.settings — on every upgraded site that read returns NULL"
+          "{$relative} reads '{$key}' from scolta.settings, but scolta_update_10007() moves it to scolta_ui.settings — on every upgraded site that read returns NULL"
         );
       }
     }

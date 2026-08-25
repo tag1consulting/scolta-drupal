@@ -16,6 +16,12 @@ scolta.settings:
       sequence:
         type: string
         label: 'Filter dimension name'
+    body_fields:
+      type: sequence
+      label: 'Body content fields'
+      sequence:
+        type: string
+        label: 'Entity field name holding body content'
     field_mappings:
       type: mapping
       label: 'Automatic field-to-dimension mappings'

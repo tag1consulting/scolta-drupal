@@ -8,7 +8,7 @@ use Drupal\Tests\BrowserTestBase;
 use Drupal\user\Entity\Role;
 
 /**
- * Runs scolta_update_10006() against a pre-split site and checks the result.
+ * Runs scolta_update_10007() against a pre-split site and checks the result.
  *
  * The partition itself is proved statically over the schemas, in
  * \Drupal\scolta\Tests\ScoltaConfigPartitionTest. What cannot be proved that
@@ -120,11 +120,11 @@ class ConfigSplitUpdateFunctionalTest extends BrowserTestBase {
   private function runSplitUpdate() {
     \Drupal::moduleHandler()->loadInclude('scolta', 'install');
     $this->assertTrue(
-      function_exists('scolta_update_10006'),
-      'scolta.install must define scolta_update_10006()'
+      function_exists('scolta_update_10007'),
+      'scolta.install must define scolta_update_10007()'
     );
 
-    $message = scolta_update_10006();
+    $message = scolta_update_10007();
     // Enabling a module rebuilds the container; without this the assertions
     // below read the config factory the update no longer writes to.
     $this->rebuildContainer();

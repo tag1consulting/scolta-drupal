@@ -58,6 +58,9 @@ EXCLUDED_PATHS=(
   "CLAUDE.md"
   "MAINTAINING.md"
   "scripts"
+  # Development and demo aid: applying it rewrites scolta.settings and places a
+  # block, which is not something a release tarball should offer a live site.
+  "recipes"
 )
 
 # Committed runtime assets that MUST be present in the archive. A broken or

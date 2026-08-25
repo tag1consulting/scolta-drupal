@@ -91,6 +91,13 @@ class ScoltaIndexSettingsForm extends ConfigFormBase {
       '#open' => TRUE,
     ];
 
+    $form['content']['body_fields'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Body content fields'),
+      '#default_value' => implode(', ', $config->get('body_fields') ?? []),
+      '#description' => $this->t('Comma-separated entity fields searched for body text, in precedence order — the first one holding a value on a given translation is indexed. Content with none of these fields is skipped entirely, so add any bundle-specific field here (e.g. <code>body, field_body, field_content, field_recipe_instruction</code>). Leave empty to fall back to <code>body, field_body, field_content</code>.'),
+    ];
+
     $form['content']['sortable_fields'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Sortable fields'),
@@ -202,6 +209,10 @@ class ScoltaIndexSettingsForm extends ConfigFormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $this->config('scolta.settings')
+      ->set('body_fields', array_values(array_filter(array_map(
+        'trim',
+        explode(',', $form_state->getValue('body_fields') ?? '')
+      ))))
       ->set('sortable_fields', array_values(array_filter(array_map(
         'trim',
         explode(',', $form_state->getValue('sortable_fields') ?? '')

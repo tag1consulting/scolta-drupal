@@ -4,6 +4,10 @@
 # descriptions — is scolta_ui.settings, owned by the scolta_ui module.
 sortable_fields: []
 filter_fields: []
+body_fields:
+  - body
+  - field_body
+  - field_content
 field_mappings:
   sortable: {}
   filters: {}

@@ -31,7 +31,7 @@ function _scolta_update_10003_default_ai_model(): string {
 }
 
 /**
- * The query-time keys scolta_update_10006() moves into scolta_ui.settings.
+ * The query-time keys scolta_update_10007() moves into scolta_ui.settings.
  *
  * Pinned rather than derived from the shipped schema, for the reason the hook
  * explains: it is a historical record of one migration, and a frontend key
@@ -42,10 +42,10 @@ function _scolta_update_10003_default_ai_model(): string {
  * @return string[]
  *   The config keys the split moved to scolta_ui.settings.
  *
- * @see scolta_update_10006()
+ * @see scolta_update_10007()
  * @see \Drupal\scolta\Tests\ScoltaConfigPartitionTest
  */
-function _scolta_update_10006_frontend_keys(): array {
+function _scolta_update_10007_frontend_keys(): array {
   return [
     'preset',
     'ai_provider',
@@ -263,7 +263,7 @@ function scolta_update_10002() {
   ];
 
   // These are query-time settings, so they belong to scolta_ui now. On a site
-  // that has not reached update 10006 yet, that module is not installed and
+  // that has not reached update 10007 yet, that module is not installed and
   // the object does not exist, so apply the split first.
   $split = _scolta_apply_module_split();
 
@@ -474,10 +474,10 @@ function scolta_update_10004() {
  */
 function scolta_update_10005() {
   // The deployer moved to scolta_ui with the bundle it deploys, and this hook
-  // runs before scolta_update_10006() enables that module, so on a site
+  // runs before scolta_update_10007() enables that module, so on a site
   // updating across the split the service is not there yet. Skipping is
   // correct rather than merely safe: scolta_ui_install() deploys the bundle a
-  // moment later, from 10006.
+  // moment later, from 10007.
   if (!\Drupal::hasService('scolta.asset_deployer')) {
     return t('The Scolta browser bundle is deployed by scolta_ui, which is enabled by the next update in this run.');
   }
@@ -485,6 +485,21 @@ function scolta_update_10005() {
   \Drupal::service('scolta.asset_deployer')->deploy();
 
   return t('Deployed the Scolta browser bundle (JS, CSS, WASM) from the installed tag1/scolta-php to public://scolta-assets. It is refreshed automatically on every cache rebuild whenever the installed scolta-php changes.');
+}
+
+/**
+ * Seed the body_fields setting with the previously hardcoded field list.
+ */
+function scolta_update_10006() {
+  $config = \Drupal::configFactory()->getEditable('scolta.settings');
+
+  if ($config->get('body_fields')) {
+    return t('body_fields already set; left alone.');
+  }
+
+  $config->set('body_fields', ['body', 'field_body', 'field_content'])->save();
+
+  return t('Added the body_fields setting, seeded with the field list that used to be hardcoded in ScoltaContentGatherer (body, field_body, field_content), so indexing behaviour is unchanged. Add bundle-specific fields at /admin/config/search/scolta — content with none of the listed fields is skipped, which is how Umami recipe nodes went unindexed.');
 }
 
 /**
@@ -509,7 +524,7 @@ function scolta_update_10005() {
  *
  * 2. Each query-time key moves from scolta.settings to scolta_ui.settings and
  *    is removed from the source, so every key ends in exactly one object. The
- *    key list is pinned in _SCOLTA_UPDATE_10006_FRONTEND_KEYS rather than read
+ *    key list is pinned in _SCOLTA_UPDATE_10007_FRONTEND_KEYS rather than read
  *    from the shipped schema: an update hook is a historical record of one
  *    migration and has to keep meaning what it meant when it was written, and
  *    a later release that adds a frontend key must not retroactively change
@@ -527,7 +542,7 @@ function scolta_update_10005() {
  * moves nothing (the source keys are gone), and grants nothing (the roles hold
  * the permission), so a second run produces config identical to the first.
  *
- * scolta_update_10006() is the hook that announces this migration, but it
+ * scolta_update_10007() is the hook that announces this migration, but it
  * cannot be its only caller. Update hooks run in number order, and three that
  * predate it -- 10002, 10003 and 10004 -- write settings this release moved to
  * scolta_ui.settings. A site upgrading from before them runs those hooks
@@ -537,7 +552,7 @@ function scolta_update_10005() {
  * object that the later install then declines to seed with its own defaults.
  * Each of those hooks therefore applies the split before it touches a key the
  * split moved, and idempotence is what makes that safe: whichever hook runs
- * first does the work, and 10006 finds it done.
+ * first does the work, and 10007 finds it done.
  *
  * @return array
  *   Operator-facing messages describing what changed. Empty when the split
@@ -580,7 +595,7 @@ function _scolta_apply_module_split(): array {
   $target = \Drupal::configFactory()->getEditable('scolta_ui.settings');
 
   $moved = [];
-  foreach (_scolta_update_10006_frontend_keys() as $key) {
+  foreach (_scolta_update_10007_frontend_keys() as $key) {
     // An absent key is left to the install default rather than written as
     // NULL. This is also what makes a second run a no-op: after the first,
     // every one of these is absent from the source.
@@ -649,7 +664,7 @@ function _scolta_with_split_messages(array $split, $message): string {
  * same run may already have called; see its documentation for what the split
  * does and why it is not only this hook's to do.
  */
-function scolta_update_10006() {
+function scolta_update_10007() {
   $messages = _scolta_apply_module_split();
 
   if (!$messages) {

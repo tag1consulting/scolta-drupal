@@ -20,7 +20,7 @@ lets one site build an index that other, thin sites consume.
 
 **What to do:**
 
-1. Run `drush updatedb`. `scolta_update_10006()` enables `scolta_ui`, moves the
+1. Run `drush updatedb`. `scolta_update_10007()` enables `scolta_ui`, moves the
    query-time settings out of `scolta.settings` into the new
    `scolta_ui.settings`, and grants the new `administer scolta ui` permission
    to every role that already held `administer scolta`. Both origin settings
