@@ -81,7 +81,12 @@ class DismissRebuildNoticeController extends ControllerBase {
       }
     }
 
-    return new LocalRedirectResponse(Url::fromRoute('scolta.settings')->toString());
+    // scolta.index_settings, not scolta.settings: the latter is scolta_ui's
+    // route, and a site that builds an index without rendering search does not
+    // have it — Url::fromRoute() would throw RouteNotFoundException and turn
+    // dismissing a notice into a 500. The rebuild notice is the backend's, so
+    // its fallback destination is the backend's screen.
+    return new LocalRedirectResponse(Url::fromRoute('scolta.index_settings')->toString());
   }
 
 }
