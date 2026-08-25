@@ -1,0 +1,36 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - search_api.server.scolta_pagefind
+  module:
+    - node
+    - search_api
+id: scolta_umami
+name: 'Scolta Umami content'
+description: 'Tracks Umami nodes for Scolta. Scolta indexes the full rendered entity, so no field configuration is needed.'
+read_only: false
+# Scolta renders each entity through the view mode configured on the server;
+# individual Search API fields are never read. The list stays empty on purpose.
+field_settings: {}
+processor_settings:
+  # Keep unpublished nodes out of a client-side index — once a fragment is
+  # built it is public, so exclusion has to happen before export.
+  entity_status: {}
+datasource_settings:
+  'entity:node':
+    bundles:
+      default: true
+      selected: {}
+    # Umami ships every node in English and Spanish, and Scolta emits one
+    # indexed page per translation.
+    languages:
+      default: true
+      selected: {}
+tracker_settings:
+  default:
+    indexing_order: fifo
+options:
+  cron_limit: 50
+  index_directly: false
+server: scolta_pagefind

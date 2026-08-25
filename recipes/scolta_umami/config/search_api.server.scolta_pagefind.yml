@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - scolta
+id: scolta_pagefind
+name: 'Scolta (Pagefind)'
+description: 'Exports Umami content as static HTML and builds the client-side Pagefind index.'
+backend: scolta_pagefind
+backend_config:
+  # Mirrors the module's own defaults, so the server and the Scolta settings
+  # form report the same directories.
+  build_dir: 'public://scolta-build'
+  output_dir: 'public://scolta-pagefind'
+  # PHP indexer: no pagefind binary, no exec(), works in a plain DDEV web
+  # container. Switch to 'binary' only where the CLI is actually installed.
+  indexer: php
+  pagefind_binary: pagefind
+  auto_rebuild: true
+  auto_rebuild_delay: 300
+  view_mode: search_index
