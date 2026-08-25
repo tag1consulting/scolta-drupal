@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Url;
+use Drupal\scolta_ui\Service\AssetDeployer;
 
 /**
  * Implements hook_help().
