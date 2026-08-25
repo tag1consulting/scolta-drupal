@@ -1254,8 +1254,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
 
     $indexStatus = $this->pagefindBuilder->getStatus($resolvedDir);
     if ($indexStatus['exists']) {
-      $items[] = $this->t('Pagefind index: Built (@size, @count fragments, last built @date)', [
-        '@size' => $indexStatus['index_size'],
+      $items[] = $this->t('Pagefind index: Built (@count fragments, last built @date)', [
         '@count' => $indexStatus['file_count'],
         '@date' => $indexStatus['last_built'] ?? 'unknown',
       ]);

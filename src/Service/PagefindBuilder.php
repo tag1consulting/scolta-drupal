@@ -153,8 +153,15 @@ class PagefindBuilder {
   /**
    * Get stats about the current Pagefind index.
    *
-   * @return array{exists: bool, file_count: int,
-   *   index_size: string, last_built: ?string}
+   * No index size. This runs on every GET of the settings form, and
+   * calculateDirectorySize() stat()s every file under the output directory to
+   * produce it. On a site with a six-figure fragment count sitting on network
+   * storage that is minutes of latency per page load -- measured at ~4 minutes
+   * for 120k files over NFS, enough to hit max_execution_time -- spent on the
+   * least load-bearing line in the status list. build() still reports a size,
+   * where the walk is one-off and the files were just written.
+   *
+   * @return array{exists: bool, file_count: int, last_built: ?string}
    *   The index status array.
    */
   public function getStatus(string $outputDir): array {
@@ -163,18 +170,15 @@ class PagefindBuilder {
       return [
         'exists' => FALSE,
         'file_count' => 0,
-        'index_size' => '0 B',
         'last_built' => NULL,
       ];
     }
 
-    $size = $this->calculateDirectorySize($outputDir);
     $mtime = filemtime($location['indexFile']);
 
     return [
       'exists' => TRUE,
       'file_count' => $this->indexLocator->countFragments($location),
-      'index_size' => $this->formatBytes($size),
       'last_built' => $mtime ? date('Y-m-d H:i:s', $mtime) : NULL,
     ];
   }
