@@ -142,7 +142,7 @@ class AmazeeModelKeySeparationTest extends TestCase {
     // Pinned in the install file rather than read from the settings form: an
     // update hook must keep meaning what it meant when it was written, and
     // since the split the form is in the other module anyway.
-    $this->assertStringContainsString('_SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL', $source);
+    $this->assertStringContainsString('_scolta_update_10003_default_ai_model()', $source);
     $this->assertStringContainsString(
       "\$config->set('amazee_model', \$strandedModel)",
       $source,

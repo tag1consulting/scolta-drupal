@@ -17,11 +17,12 @@ use Drupal\Core\Url;
 function scolta_help($route_name, RouteMatchInterface $route_match) {
   switch ($route_name) {
     case 'help.page.scolta':
-    case 'scolta.settings':
-      return '<p>' . t('Getting fewer search results than you expect on a recipe, product, or catalog site? Open the <strong>Site Type</strong> section and choose the <em>Recipe &amp; Content Catalog</em> preset, then rebuild the index. See the module README ("Tuning search breadth") for the full guide.') . '</p>';
+      // The Site Type preset lives on scolta_ui's settings form, so the help
+      // for that route is scolta_ui's to answer; this is the backend's own
+      // help page, which still has to point at the setting.
+      return '<p>' . t('Getting fewer search results than you expect on a recipe, product, or catalog site? Open the <strong>Site Type</strong> section of the Scolta search settings and choose the <em>Recipe &amp; Content Catalog</em> preset, then rebuild the index. See the module README ("Tuning search breadth") for the full guide.') . '</p>';
   }
 }
-
 
 /**
  * Implements hook_entity_insert().
@@ -73,7 +74,6 @@ function scolta_page_top(array &$page_top) {
 
   _scolta_rebuild_notice($page_top, $current_user);
 }
-
 
 /**
  * Render the persistent index rebuild notice with per-user dismissal.

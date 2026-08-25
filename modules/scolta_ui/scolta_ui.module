@@ -19,8 +19,14 @@ use Drupal\scolta_ui\Service\AssetDeployer;
  * Implements hook_help().
  */
 function scolta_ui_help($route_name, RouteMatchInterface $route_match) {
-  if ($route_name === 'help.page.scolta_ui') {
-    return '<p>' . t('Renders Scolta search and answers its AI endpoints. Searches an index built on this site, or one owned by another site.') . '</p>';
+  switch ($route_name) {
+    case 'help.page.scolta_ui':
+      return '<p>' . t('Renders Scolta search and answers its AI endpoints. Searches an index built on this site, or one owned by another site.') . '</p>';
+
+    case 'scolta.settings':
+      // The Site Type preset is on this form, so the pointer to it belongs
+      // here rather than with the backend that no longer renders it.
+      return '<p>' . t('Getting fewer search results than you expect on a recipe, product, or catalog site? Open the <strong>Site Type</strong> section below and choose the <em>Recipe &amp; Content Catalog</em> preset, then rebuild the index. See the module README ("Tuning search breadth") for the full guide.') . '</p>';
   }
   return NULL;
 }

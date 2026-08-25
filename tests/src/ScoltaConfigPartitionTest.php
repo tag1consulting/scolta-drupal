@@ -58,14 +58,15 @@ class ScoltaConfigPartitionTest extends TestCase {
   /**
    * The key list scolta_update_10006() moves, read out of the install file.
    *
-   * Parsed from the source rather than reached for as a constant: including
-   * scolta.install would run its top-level code in a suite that never boots
-   * Drupal, and the point is to check what the shipped file says anyway.
+   * Parsed from the source rather than called: including scolta.install to
+   * call _scolta_update_10006_frontend_keys() would pull the whole file, and
+   * its hooks, into a suite that never boots Drupal — and the point is to
+   * check what the shipped file says anyway.
    */
   private function migratedKeys(): array {
     $source = file_get_contents(PackageManifest::root() . '/scolta.install');
 
-    $start = strpos($source, 'const _SCOLTA_UPDATE_10006_FRONTEND_KEYS = [');
+    $start = strpos($source, 'function _scolta_update_10006_frontend_keys(): array {');
     $this->assertNotFalse($start, 'scolta.install must pin the migrated key list');
     $end = strpos($source, '];', $start);
     $this->assertNotFalse($end, 'The pinned key list must be terminated');

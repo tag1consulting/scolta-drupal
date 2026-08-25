@@ -18,8 +18,17 @@ use Drupal\user\RoleInterface;
  * when it was written, and the live default can move under it. Since the
  * backend/frontend split it would also be reaching across into scolta_ui,
  * which the backend must not do.
+ *
+ * A function rather than a global constant because Drupal's coding standards
+ * forbid one in a module file, and the value has nowhere sensible to live as
+ * a class constant: nothing but this one hook may ever read it.
+ *
+ * @return string
+ *   The model name scolta_update_10003 treats as "the shipped default".
  */
-const _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL = 'claude-sonnet-4-5-20250929';
+function _scolta_update_10003_default_ai_model(): string {
+  return 'claude-sonnet-4-5-20250929';
+}
 
 /**
  * The query-time keys scolta_update_10006() moves into scolta_ui.settings.
@@ -30,46 +39,51 @@ const _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL = 'claude-sonnet-4-5-20250929';
  * and ai_origin are deliberately absent — they are new in this release, so
  * there is nothing on an upgrading site to move into them.
  *
+ * @return string[]
+ *   The config keys the split moved to scolta_ui.settings.
+ *
  * @see scolta_update_10006()
  * @see \Drupal\scolta\Tests\ScoltaConfigPartitionTest
  */
-const _SCOLTA_UPDATE_10006_FRONTEND_KEYS = [
-  'preset',
-  'ai_provider',
-  'ai_model',
-  'ai_expansion_model',
-  'amazee_model',
-  'amazee_expansion_model',
-  'ai_base_url',
-  'ai_expand_query',
-  'ai_summarize',
-  'ai_languages',
-  'max_follow_ups',
-  'site_name',
-  'site_description',
-  'sortable_field_descriptions',
-  'filter_field_descriptions',
-  'scoring',
-  'display',
-  'cache_ttl',
-  'flood',
-  'prompt_expand_query',
-  'prompt_summarize',
-  'prompt_follow_up',
-  'show_attribution',
-  'hide_empty_facets',
-  'facet_mode',
-  'sayt_enabled',
-  'sayt_min_chars',
-  'sayt_debounce_ms',
-  'sayt_max_suggestions',
-  'sayt_recent_searches',
-  'sayt_max_recent',
-  'sayt_expand',
-  'sayt_expand_per_minute',
-  'sayt_expansion_delay_ms',
-  'sayt_suggestion_action',
-];
+function _scolta_update_10006_frontend_keys(): array {
+  return [
+    'preset',
+    'ai_provider',
+    'ai_model',
+    'ai_expansion_model',
+    'amazee_model',
+    'amazee_expansion_model',
+    'ai_base_url',
+    'ai_expand_query',
+    'ai_summarize',
+    'ai_languages',
+    'max_follow_ups',
+    'site_name',
+    'site_description',
+    'sortable_field_descriptions',
+    'filter_field_descriptions',
+    'scoring',
+    'display',
+    'cache_ttl',
+    'flood',
+    'prompt_expand_query',
+    'prompt_summarize',
+    'prompt_follow_up',
+    'show_attribution',
+    'hide_empty_facets',
+    'facet_mode',
+    'sayt_enabled',
+    'sayt_min_chars',
+    'sayt_debounce_ms',
+    'sayt_max_suggestions',
+    'sayt_recent_searches',
+    'sayt_max_recent',
+    'sayt_expand',
+    'sayt_expand_per_minute',
+    'sayt_expansion_delay_ms',
+    'sayt_suggestion_action',
+  ];
+}
 
 /**
  * Implements hook_install().
@@ -320,7 +334,7 @@ function scolta_update_10003() {
   $needsMigration = $hasCredentials
     && ($config->get('amazee_model') ?? '') === ''
     && $strandedModel !== ''
-    && $strandedModel !== _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL;
+    && $strandedModel !== _scolta_update_10003_default_ai_model();
 
   if (!$needsMigration) {
     if ($backfilled) {
@@ -333,7 +347,7 @@ function scolta_update_10003() {
   $strandedExpansionModel = $config->get('ai_expansion_model') ?? '';
 
   $config->set('amazee_model', $strandedModel);
-  $config->set('ai_model', _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL);
+  $config->set('ai_model', _scolta_update_10003_default_ai_model());
   if ($strandedExpansionModel !== '') {
     $config->set('amazee_expansion_model', $strandedExpansionModel);
     $config->set('ai_expansion_model', '');
@@ -345,13 +359,13 @@ function scolta_update_10003() {
     [
       '@model' => $strandedModel,
       '@expansion' => $strandedExpansionModel !== '' ? $strandedExpansionModel : '(none)',
-      '@default' => _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL,
+      '@default' => _scolta_update_10003_default_ai_model(),
     ]
   );
 
   return t('Moved the Amazee.ai gateway model @model out of ai_model into amazee_model, and reset ai_model to the shipped default @default. Amazee.ai keeps working unchanged. If you switch to a direct Anthropic or OpenAI key, set your own model at Administration › Configuration › Search and metadata › Scolta — @model is an Amazee.ai gateway name and no other provider accepts it.', [
     '@model' => $strandedModel,
-    '@default' => _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL,
+    '@default' => _scolta_update_10003_default_ai_model(),
   ]);
 }
 
@@ -508,7 +522,7 @@ function scolta_update_10006() {
   $target = \Drupal::configFactory()->getEditable('scolta_ui.settings');
 
   $moved = [];
-  foreach (_SCOLTA_UPDATE_10006_FRONTEND_KEYS as $key) {
+  foreach (_scolta_update_10006_frontend_keys() as $key) {
     // An absent key is left to the install default rather than written as
     // NULL. This is also what makes a second run a no-op: after the first,
     // every one of these is absent from the source.

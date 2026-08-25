@@ -354,15 +354,15 @@ class QuickWinsRegressionTest extends TestCase {
     $this->assertSame(
       1,
       substr_count($install, "'claude-sonnet-"),
-      'scolta.install must spell the model literal once, in the pinned constant'
+      'scolta.install must spell the model literal once, in the pinned accessor'
     );
-    $this->assertStringContainsString(
-      "const _SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL = 'claude-sonnet-",
+    $this->assertMatchesRegularExpression(
+      "/function _scolta_update_10003_default_ai_model\(\): string \{\s*return 'claude-sonnet-/",
       $install,
-      'The one occurrence must be the pinned update constant'
+      'The one occurrence must be the pinned update accessor'
     );
-    $this->assertStringContainsString('_SCOLTA_UPDATE_10003_DEFAULT_AI_MODEL', $install,
-      'The migration hook must reset ai_model to the constant pinned beside it');
+    $this->assertStringContainsString('_scolta_update_10003_default_ai_model()', $install,
+      'The migration hook must reset ai_model to the value pinned beside it');
   }
 
   // -------------------------------------------------------------------
