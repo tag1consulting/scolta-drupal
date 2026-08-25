@@ -12,13 +12,13 @@
     "require": {
         "php": ">=8.1",
         "drupal/search_api": "^1.0",
-        "tag1/scolta-php": "^1.3.0",
-        "composer/installers": "^2"
+        "tag1/scolta-php": "^1.3.0"
     },
     "suggest": {
         "drupal/ai": "For enhanced multi-provider AI support via the Drupal AI Initiative module (48+ providers, Key module integration, rate limiting, token tracking)"
     },
     "require-dev": {
+        "composer/installers": "^2",
         "drupal/coder": "^8.3.30 || ^9.0",
         "drush/drush": "^13",
         "mglaman/phpstan-drupal": "^2.0",
