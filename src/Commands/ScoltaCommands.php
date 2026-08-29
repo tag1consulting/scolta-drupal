@@ -24,8 +24,10 @@ use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
+use Tag1\Scolta\Index\RetiredIndexTrash;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 use Tag1\Scolta\SetupCheck;
+use Tag1\Scolta\Storage\FilesystemDriver;
 
 /**
  * Drush commands for Scolta.
@@ -33,6 +35,7 @@ use Tag1\Scolta\SetupCheck;
  * Scolta:export  -- Export CMS content as HTML files.
  * scolta:build   -- Run export, pagefind CLI, deploy.
  * scolta:clear-cache -- Clear expansion/summary caches.
+ * scolta:cleanup -- Delete retired index (.scolta-trash-*) directories.
  * scolta:download-pagefind -- Download the Pagefind binary.
  */
 class ScoltaCommands extends DrushCommands {
@@ -910,6 +913,70 @@ class ScoltaCommands extends DrushCommands {
     }
 
     $this->logger()->success('Cached resolved prompts for: ' . implode(', ', array_keys($prompts)));
+  }
+
+  /**
+   * Delete retired index directories left by index builds.
+   *
+   * Publishing a new index renames the previous one to a `.scolta-trash-*`
+   * directory next to `pagefind/` and sweeps trash right after publishing —
+   * the old inline file-by-file deletion made a finished build look hung
+   * for hours on NFS-backed file storage. This command and the cron sweep
+   * are the backstops: they delete trash left by builds that died before
+   * their own sweep and by the batch-UI indexing path, which never sweeps.
+   * Always safe: the live index is never touched, and a directory that
+   * cannot be deleted is left for the next run.
+   *
+   * A stale `.scolta-old` left by a swap that died partway is retired to
+   * trash first, so it is cleaned up here too. `.scolta-new` and
+   * `.scolta-building` are left alone: they may belong to a build that is
+   * running right now.
+   */
+  #[CLI\Command(name: 'scolta:cleanup', aliases: ['scu'])]
+  #[CLI\Option(name: 'dry-run', description: 'List the directories that would be deleted without deleting anything.')]
+  #[CLI\Usage(name: 'scolta:cleanup', description: 'Delete retired index directories')]
+  #[CLI\Usage(name: 'scolta:cleanup --dry-run', description: 'Show what would be deleted')]
+  public function cleanup(array $options = ['dry-run' => FALSE]): void {
+    $config = $this->configFactory->get('scolta.settings');
+    $outputDir = rtrim($this->resolvePath(
+      $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind'
+    ), '/');
+    // The orchestrator publishes to <output_dir>/pagefind and normalizes a
+    // config value that already carries the suffix; trash sits beside the
+    // published directory, so mirror that normalization here.
+    if (str_ends_with($outputDir, '/pagefind')) {
+      $outputDir = substr($outputDir, 0, -strlen('/pagefind'));
+    }
+
+    $trash = new RetiredIndexTrash(new FilesystemDriver(), $outputDir);
+
+    // A `.scolta-old` corpse from an interrupted swap becomes trash too. If a
+    // swap is retiring the previous index this very moment, taking the
+    // directory out from under it is harmless — it was headed to trash anyway.
+    $oldDir = $outputDir . '/.scolta-old';
+    if (file_exists($oldDir)) {
+      $trash->retire($oldDir);
+    }
+
+    $dirs = $trash->trashDirs();
+    if ($dirs === []) {
+      $this->logger()->success('No retired index directories to delete.');
+      return;
+    }
+
+    if ($options['dry-run']) {
+      $this->logger()->notice("Would delete:\n  " . implode("\n  ", $dirs));
+      return;
+    }
+
+    $trash->sweep($this->logger());
+    $remaining = count($trash->trashDirs());
+    if ($remaining === 0) {
+      $this->logger()->success(sprintf('Deleted %d retired index director%s.', count($dirs), count($dirs) === 1 ? 'y' : 'ies'));
+    }
+    else {
+      $this->logger()->warning(sprintf('%d retired index director%s could not be deleted; run scolta:cleanup again later.', $remaining, $remaining === 1 ? 'y' : 'ies'));
+    }
   }
 
   /**

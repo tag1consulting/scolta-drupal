@@ -93,3 +93,5 @@ pagefind:
 incremental:
   enabled: true
   max_changed_items: 100
+cleanup:
+  cron_seconds: 180

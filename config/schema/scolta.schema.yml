@@ -318,6 +318,13 @@ scolta.settings:
         max_changed_items:
           type: integer
           label: 'Largest change set applied incrementally before falling back to a full rebuild'
+    cleanup:
+      type: mapping
+      label: 'Retired index cleanup configuration'
+      mapping:
+        cron_seconds:
+          type: integer
+          label: 'Wall-clock seconds each cron run may spend deleting retired index directories (0 disables cron cleanup)'
 
 search_api.backend.plugin.scolta_pagefind:
   type: mapping
