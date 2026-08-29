@@ -65,7 +65,7 @@ Rules that follow:
 
 - Run: `./vendor/bin/phpunit`
 - Tests run without a Drupal bootstrap — they use YAML parsing and reflection.
-- Only write valuable tests that exercise important functionality: construct the class with stubbed services and assert on behavior — return values, filesystem effects, logged records (see `ScoltaRebuildWorkerTest`, `RetiredIndexCleanupTest`). Don't make assertions about a method's source code or config-file text; some older tests here do that, and they are not a pattern to copy. A PR without a test is acceptable for trivial PRs.
+- Only write valuable tests that exercise important functionality: construct the class with stubbed services and assert on behavior — return values, filesystem effects, logged records (see `ScoltaRebuildWorkerTest`). A hook or service that needs a real `\Drupal` container (e.g. `hook_cron()`) belongs in a `tests/src/Functional/*` test extending `BrowserTestBase` instead of a hand-stubbed unit test — see `CronCleanupFunctionalTest`. Don't make assertions about a method's source code or config-file text; some older tests here do that, and they are not a pattern to copy. A PR without a test is acceptable for trivial PRs.
 - WASM-dependent tests are covered by scolta-php, not this package.
 
 ## Documentation Rules
