@@ -64,10 +64,17 @@ function scolta_cron(): void {
       $wrapper = \Drupal::service('stream_wrapper_manager')->getViaUri($output_dir);
       $resolved = $wrapper ? $wrapper->realpath() : FALSE;
     }
-    catch (\Throwable) {
-      $resolved = FALSE;
+    catch (\Throwable $e) {
+      \Drupal::logger('scolta')->warning('Cron cleanup could not resolve pagefind.output_dir (@dir): @message', [
+        '@dir' => $output_dir,
+        '@message' => $e->getMessage(),
+      ]);
+      return;
     }
     if (!$resolved) {
+      \Drupal::logger('scolta')->warning('Cron cleanup could not resolve pagefind.output_dir (@dir) to a real path; skipping this run.', [
+        '@dir' => $output_dir,
+      ]);
       return;
     }
     $output_dir = $resolved;
