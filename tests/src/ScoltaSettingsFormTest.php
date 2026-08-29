@@ -193,6 +193,11 @@ class ScoltaSettingsFormTest extends TestCase {
       // bumps the scolta-php constraint and turns the path on.
       'incremental.enabled',
       'incremental.max_changed_items',
+      // Cron time budget for retired-index trash deletion. An operational
+      // knob (drush config:set) with a default that suits every site running
+      // drush cron; a form field would invite tuning something that only
+      // matters on NFS-backed hosting, where the operator lives in the CLI.
+      'cleanup.cron_seconds',
     ];
 
     foreach ($configKeys as $key) {

@@ -121,6 +121,21 @@ On very large sites, `drush scolta:build` may defer the final merge step to stay
 drush scolta:finalize
 ```
 
+### Retired-index cleanup on network filesystems
+
+When a build publishes a new index, the previous one is renamed to a `.scolta-trash-*` directory next to `pagefind/`, then deleted after publishing (scolta-php ≥ 1.5.0). On NFS-backed file storage (e.g. Lagoon's `/mnt/files`) the deletion is parallelized (16 concurrent `rm` workers), which turns the hours-long serial deletion that used to make a finished `drush scolta:build` look hung into minutes — and it now happens after the new index is live, announced with a notice so it is never mistaken for a hang. Environments without process spawning fall back to serial deletion automatically.
+
+Two backstops catch trash from builds that died before their own sweep, and from the batch-UI indexing path (which never sweeps):
+
+- **Cron.** Each cron run spends up to `cleanup.cron_seconds` (default 180) deleting leftover trash, then stops; an interrupted sweep resumes on the next run, and the common no-trash case costs one directory listing and logs nothing. On web-triggered cron the budget is further capped by the request's remaining execution time. Disable or tune with `drush config:set scolta.settings cleanup.cron_seconds 0`.
+- **On demand:**
+
+```bash
+drush scolta:cleanup
+```
+
+`--dry-run` lists what would be deleted. Cleanup is always safe: the live index is never touched. A stale `.scolta-old` from an interrupted swap is cleaned up by the command too, and `.scolta-trash-*` directories are safe to remove by hand at any time.
+
 ## AI Provider Configuration
 
 Scolta supports three AI provider paths. The right path depends on where you are in your deployment:

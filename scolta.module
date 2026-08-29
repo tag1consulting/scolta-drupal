@@ -11,6 +11,8 @@ use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
 use Drupal\scolta\Service\AssetDeployer;
+use Tag1\Scolta\Index\RetiredIndexTrash;
+use Tag1\Scolta\Storage\FilesystemDriver;
 
 /**
  * Implements hook_help().
@@ -21,6 +23,75 @@ function scolta_help($route_name, RouteMatchInterface $route_match) {
     case 'scolta.settings':
       return '<p>' . t('Getting fewer search results than you expect on a recipe, product, or catalog site? Open the <strong>Site Type</strong> section and choose the <em>Recipe &amp; Content Catalog</em> preset, then rebuild the index. See the module README ("Tuning search breadth") for the full guide.') . '</p>';
   }
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * Time-boxed deletion of retired index directories (`.scolta-trash-*`).
+ * Publishing a new index renames the previous one to trash and sweeps it
+ * right after publishing (see RetiredIndexTrash in scolta-php), so this
+ * cron sweep is a backstop: it deletes trash left by builds that died
+ * before their own sweep, and by the batch-UI indexing path, which never
+ * sweeps. `drush scolta:cleanup` remains for on-demand or unbounded runs.
+ *
+ * The budget comes from cleanup.cron_seconds (0 disables cron cleanup, 180
+ * when unset). On web-triggered cron the budget is additionally capped by
+ * the request's remaining max_execution_time, minus a margin for the other
+ * hook_cron implementations queued behind this one — an interrupted sweep is
+ * harmless (it resumes next run), but killing the whole cron request is not.
+ */
+function scolta_cron(): void {
+  $config = \Drupal::config('scolta.settings');
+  $budget = (float) ($config->get('cleanup.cron_seconds') ?? 180);
+  if ($budget <= 0) {
+    return;
+  }
+
+  $limit = (int) ini_get('max_execution_time');
+  if ($limit > 0) {
+    $elapsed = microtime(TRUE) - (float) ($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(TRUE));
+    $remaining = $limit - $elapsed - 10.0;
+    if ($remaining <= 1.0) {
+      return;
+    }
+    $budget = min($budget, $remaining);
+  }
+
+  $output_dir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
+  if (str_contains($output_dir, '://')) {
+    try {
+      $wrapper = \Drupal::service('stream_wrapper_manager')->getViaUri($output_dir);
+      $resolved = $wrapper ? $wrapper->realpath() : FALSE;
+    }
+    catch (\Throwable $e) {
+      \Drupal::logger('scolta')->warning('Cron cleanup could not resolve pagefind.output_dir (@dir): @message', [
+        '@dir' => $output_dir,
+        '@message' => $e->getMessage(),
+      ]);
+      return;
+    }
+    if (!$resolved) {
+      \Drupal::logger('scolta')->warning('Cron cleanup could not resolve pagefind.output_dir (@dir) to a real path; skipping this run.', [
+        '@dir' => $output_dir,
+      ]);
+      return;
+    }
+    $output_dir = $resolved;
+  }
+  $output_dir = rtrim($output_dir, '/');
+  // The orchestrator publishes to <output_dir>/pagefind and normalizes a
+  // config value that already carries the suffix; trash sits beside the
+  // published directory, so mirror that normalization here.
+  if (str_ends_with($output_dir, '/pagefind')) {
+    $output_dir = substr($output_dir, 0, -strlen('/pagefind'));
+  }
+
+  $trash = new RetiredIndexTrash(new FilesystemDriver(), $output_dir);
+  if ($trash->trashDirs() === []) {
+    return;
+  }
+  $trash->sweep(\Drupal::logger('scolta'), $budget);
 }
 
 /**

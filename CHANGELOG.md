@@ -10,6 +10,10 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 - Added `recipes/scolta_umami/`, a recipe that configures Scolta against Drupal's Umami demo profile — presets, facet/sort field mappings, both languages, and the search block — so a demo site can be stood up with `drush recipe`. Development and demo aid, not for production. ([#232](https://github.com/tag1consulting/scolta-drupal/pull/232))
 - `recipes/scolta_umami/` now also creates the Search API server (`scolta_pagefind`) and index (`scolta_umami`) that Scolta's status output expects, so a recipe-built demo site tracks content changes instead of reporting "No Scolta index configured".
 
+### Added
+- `drush scolta:cleanup` (`scu`): deletes leftover `.scolta-trash-*` directories (scolta-php ≥ 1.5.0 renames the outgoing index to trash and sweeps it after publishing instead of deleting it inline, which on NFS made a finished build look hung for hours). A backstop for builds that died before their own sweep and for the batch-UI path; `--dry-run` lists without deleting, and a stale `.scolta-old` from an interrupted swap is retired and cleaned too. Raises the `tag1/scolta-php` constraint to `^1.5.0`.
+- `hook_cron` also sweeps leftover trash, time-boxed by the new `cleanup.cron_seconds` setting (default 180, `0` disables; on web-triggered cron the budget is additionally capped by remaining `max_execution_time`). An interrupted sweep resumes on the next run, and a cron run with no trash logs nothing.
+
 ### Changed
 - A `CHANGELOG.md` entry is now recommended rather than required, entries are expected to be brief, and the `docs-check` CI job was deleted.
 - A test is recommended but no longer required in new PRs. Trivial PRs may skip the test requirement.
