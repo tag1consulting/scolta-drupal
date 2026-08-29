@@ -4,162 +4,126 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Tests;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\scolta\Service\ScoltaAiService;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Verifies how ScoltaAiService builds its client for the managed gateway.
+ * Verifies how ScoltaAiService persists gateway model resolution.
  *
- * File-inspection tests — no Drupal bootstrap required.
+ * The regression under guard is scolta-drupal#187: the onModelsResolved
+ * callback used to write ai_model / ai_expansion_model — the keys an
+ * administrator uses to name a provider-native model. Those hold names the
+ * Amazee gateway never returns, so persisting a gateway alias there clobbered
+ * an explicit choice and broke AI outright once the effective provider
+ * changed. persistResolvedAmazeeModels() is executed here against a spy
+ * editable config, so the guard is behavioral rather than a source grep.
  */
 class ScoltaAiServiceGatewayClientTest extends TestCase {
 
-  private string $serviceFile;
-  private string $serviceSource;
+  public function testPersistWritesOnlyTheGatewayScopedKeys(): void {
+    $editable = $this->spyEditableConfig();
+    $service = $this->serviceWith($editable);
 
-  protected function setUp(): void {
-    $this->serviceFile = dirname(__DIR__, 2) . '/src/Service/ScoltaAiService.php';
-    $this->serviceSource = file_get_contents($this->serviceFile);
+    $this->invokePersist($service, 'claude-4-5-sonnet', 'claude-haiku-4-5');
+
+    $this->assertSame(
+      [
+        'amazee_model' => 'claude-4-5-sonnet',
+        'amazee_expansion_model' => 'claude-haiku-4-5',
+      ],
+      $editable->sets,
+      'Resolved gateway aliases must go to the gateway-scoped keys only'
+    );
+    $this->assertArrayNotHasKey('ai_model', $editable->sets,
+      'The operator-facing ai_model must never be written');
+    $this->assertArrayNotHasKey('ai_expansion_model', $editable->sets,
+      'The operator-facing ai_expansion_model must never be written');
+    $this->assertSame(1, $editable->saves, 'The resolved models must be saved');
   }
 
-  public function testImportsAutoProvisioner(): void {
-    $this->assertStringContainsString(
-      'use Tag1\Scolta\AiProvider\Amazee\AutoProvisioner',
-      $this->serviceSource,
-      'ScoltaAiService must import AutoProvisioner'
-    );
+  public function testPersistSkipsEmptyValues(): void {
+    // An empty resolution result must not clobber a stored alias.
+    $editable = $this->spyEditableConfig();
+    $service = $this->serviceWith($editable);
+
+    $this->invokePersist($service, '', '');
+
+    $this->assertSame([], $editable->sets, 'Empty resolution results must not be persisted');
   }
 
-  public function testOverridesCreateClient(): void {
-    $this->assertStringContainsString(
-      'protected function createClient(): AiClient',
-      $this->serviceSource,
-      'ScoltaAiService must override createClient()'
-    );
+  public function testPersistSkipsOnlyTheEmptyHalf(): void {
+    $editable = $this->spyEditableConfig();
+    $service = $this->serviceWith($editable);
+
+    $this->invokePersist($service, 'claude-4-5-sonnet', '');
+
+    $this->assertSame(['amazee_model' => 'claude-4-5-sonnet'], $editable->sets);
   }
 
-  public function testCreateClientChecksTheSharedResolution(): void {
-    // The guard reads the shared resolution rather than a source string, so
-    // the client and every status surface agree about which key is in play.
-    $this->assertStringContainsString(
-      '$resolved = $this->resolveApiKey();',
-      $this->serviceSource,
-      'createClient() must take its answer from resolveApiKey()'
-    );
-    $this->assertStringContainsString(
-      '$resolved->isAmazee() && $resolved->amazeeCredentialsStored',
-      $this->serviceSource,
-      'createClient() may reach the gateway only for a selected provider with a connection already stored'
-    );
-  }
+  // -------------------------------------------------------------------
+  // Structural: the overrides createClient() relies on.
+  // -------------------------------------------------------------------
 
-  public function testCreateClientResolvesGatewayModels(): void {
-    $this->assertStringContainsString(
-      'AutoProvisioner::ensureAiAvailable(',
-      $this->serviceSource,
-      'createClient() must re-resolve gateway model names through AutoProvisioner::ensureAiAvailable()'
-    );
-  }
+  public function testCreateClientIsOverriddenByTheAdapter(): void {
+    $method = new \ReflectionMethod(ScoltaAiService::class, 'createClient');
 
-  public function testCreateClientUsesConfigStorage(): void {
-    $this->assertStringContainsString(
-      '$this->amazeeConfigStorage',
-      $this->serviceSource,
-      'createClient() must use the injected Amazee config storage'
-    );
-    $this->assertStringNotContainsString(
-      "\Drupal::service('scolta.amazee_config_storage')",
-      $this->serviceSource,
-      'The Amazee config storage must be constructor-injected, not fetched statically'
-    );
-  }
-
-  public function testCreateClientRebuildsFreshConfigAfterProvisioning(): void {
-    $this->assertStringContainsString(
-      '$this->buildConfig()->toAiClientConfig()',
-      $this->serviceSource,
-      'createClient() must rebuild config after provisioning to pick up new credentials'
-    );
+    $this->assertSame(ScoltaAiService::class, $method->getDeclaringClass()->getName(),
+      'ScoltaAiService must override createClient() to carry the model self-heal');
   }
 
   public function testBuildConfigIsProtected(): void {
-    $this->assertMatchesRegularExpression(
-      '/protected function buildConfig\(\)/',
-      $this->serviceSource,
-      'buildConfig() must be protected so createClient() can call it for fresh credentials'
-    );
+    $method = new \ReflectionMethod(ScoltaAiService::class, 'buildConfig');
+
+    $this->assertTrue($method->isProtected(),
+      'buildConfig() must be protected so createClient() can rebuild config after a heal');
+  }
+
+  // -------------------------------------------------------------------
+  // Helpers.
+  // -------------------------------------------------------------------
+
+  /**
+   * Build a service whose config factory hands out the given editable spy.
+   */
+  private function serviceWith(object $editable): ScoltaAiService {
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('getEditable')->with('scolta.settings')->willReturn($editable);
+
+    $ref = new \ReflectionClass(ScoltaAiService::class);
+    $service = $ref->newInstanceWithoutConstructor();
+    $prop = $ref->getProperty('configFactory');
+    $prop->setValue($service, $configFactory);
+    return $service;
   }
 
   /**
-   * Resolved models are persisted, and only to the gateway-scoped keys.
-   *
-   * Updated for scolta-drupal#187: the callback used to write ai_model /
-   * ai_expansion_model, the keys an administrator uses to name a
-   * provider-native model. Those hold names the Amazee gateway never returns,
-   * so persisting a gateway alias there clobbered an explicit choice and broke
-   * AI outright once the effective provider changed.
+   * Invoke the protected persistResolvedAmazeeModels().
    */
-  public function testCreateClientPersistsResolvedModelsToTheGatewayKeys(): void {
-    $callback = $this->persistCallbackBody();
-
-    $this->assertStringContainsString(
-      "\$config->set('amazee_model', \$aiModel)",
-      $callback,
-      'The onModelsResolved callback must persist the resolved model to amazee_model'
-    );
-    $this->assertStringContainsString(
-      "\$config->set('amazee_expansion_model', \$aiExpansionModel)",
-      $callback,
-      'The onModelsResolved callback must persist the resolved expansion model to amazee_expansion_model'
-    );
-    $this->assertStringNotContainsString(
-      "set('ai_model'",
-      $callback,
-      'The onModelsResolved callback must never write the operator-facing ai_model'
-    );
-    $this->assertStringNotContainsString(
-      "set('ai_expansion_model'",
-      $callback,
-      'The onModelsResolved callback must never write the operator-facing ai_expansion_model'
-    );
-  }
-
-  public function testCreateClientWiresThePersistCallback(): void {
-    $this->assertMatchesRegularExpression(
-      '/onModelsResolved: function \(.*?\) use \(&\$healedModel\): void \{\s*\n\s*\$this->persistResolvedAmazeeModels\(\$aiModel, \$aiExpansionModel\);/',
-      $this->serviceSource,
-      'createClient() must persist whatever the resolution returned through persistResolvedAmazeeModels()'
-    );
-    $this->assertStringContainsString(
-      '$healedModel = $aiModel;',
-      $this->serviceSource,
-      'The degrade guard must key on what the resolution returned, not on a second config read'
-    );
+  private function invokePersist(ScoltaAiService $service, string $model, string $expansionModel): void {
+    $method = new \ReflectionMethod($service, 'persistResolvedAmazeeModels');
+    $method->invoke($service, $model, $expansionModel);
   }
 
   /**
-   * Nothing in the service may write a gateway alias to the operator keys.
+   * A spy standing in for the editable scolta.settings config object.
    */
-  public function testServiceNeverWritesTheOperatorFacingModelKeys(): void {
-    $this->assertDoesNotMatchRegularExpression(
-      "/getEditable\('scolta\.settings'\)(?:.|\n)*?->set\('ai_(?:expansion_)?model'/",
-      $this->serviceSource,
-      'ScoltaAiService must not persist any model into the operator-facing keys'
-    );
-  }
+  private function spyEditableConfig(): object {
+    return new class() {
+      public array $sets = [];
+      public int $saves = 0;
 
-  /**
-   * The body of persistResolvedAmazeeModels(), the onModelsResolved callback.
-   */
-  private function persistCallbackBody(): string {
-    $start = strpos($this->serviceSource, 'protected function persistResolvedAmazeeModels(');
-    $this->assertNotFalse(
-      $start,
-      'ScoltaAiService must define persistResolvedAmazeeModels() as the onModelsResolved callback'
-    );
-    $end = strpos($this->serviceSource, "\n  }", $start);
-    $this->assertNotFalse($end, 'persistResolvedAmazeeModels() must have a closing brace');
+      public function set(string $key, mixed $value): static {
+        $this->sets[$key] = $value;
+        return $this;
+      }
 
-    return substr($this->serviceSource, $start, $end - $start);
+      public function save(): static {
+        $this->saves++;
+        return $this;
+      }
+
+    };
   }
 
 }

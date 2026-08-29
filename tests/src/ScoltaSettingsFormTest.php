@@ -2,8 +2,49 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\Tests;
+// The unit-test environment runs without drupal/core (CI "provides" it), so
+// the form's base class and the interfaces validateForm() touches are stubbed
+// when absent — the same pattern ScoltaRebuildWorkerTest uses. Locally (and in
+// the phpstan job) the real core classes exist and the stubs are skipped.
+// phpcs:disable
+namespace Drupal\Core\Form {
+    if (!class_exists(ConfigFormBase::class)) {
+        abstract class ConfigFormBase {
+            protected $stringTranslation;
 
+            public function setStringTranslation($translation) {
+                $this->stringTranslation = $translation;
+                return $this;
+            }
+
+            protected function t($string, array $args = [], array $options = []) {
+                return $string;
+            }
+
+            public function validateForm(array &$form, FormStateInterface $form_state) {}
+        }
+    }
+    if (!interface_exists(FormStateInterface::class)) {
+        interface FormStateInterface {
+            public function getValue($key, $default = NULL);
+            public function get($property);
+            public function setErrorByName($name, $message = '');
+        }
+    }
+}
+
+namespace Drupal\Core\StringTranslation {
+    if (!interface_exists(TranslationInterface::class)) {
+        interface TranslationInterface {}
+    }
+}
+// phpcs:enable
+
+namespace Drupal\scolta\Tests {
+
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\StringTranslation\TranslationInterface;
+use Drupal\scolta\Form\ScoltaSettingsForm;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\Config\ScoltaConfig;
@@ -12,11 +53,10 @@ use Tag1\Scolta\Config\ScoltaConfig;
  * Validates the ScoltaSettingsForm and the full config pipeline.
  *
  * Tests verify that:
- * 1. The form class is structurally compatible with Drupal 11's ConfigFormBase.
- * 2. Every form field maps to a config key in the install defaults.
- * 3. Every config key actually reaches ScoltaConfig and affects behavior.
- * 4. The JS scoring output changes when config values change.
- * 5. AI feature toggles flow through to ScoltaConfig correctly.
+ * 1. Every config key actually reaches ScoltaConfig and affects behavior.
+ * 2. The JS scoring output changes when config values change.
+ * 3. AI feature toggles flow through to ScoltaConfig correctly.
+ * 4. validateForm() accepts and rejects AI base URLs behaviorally.
  */
 class ScoltaSettingsFormTest extends TestCase {
 
@@ -37,185 +77,26 @@ class ScoltaSettingsFormTest extends TestCase {
    * with only one argument instead of two.
    */
   public function testConstructorAcceptsTypedConfigManager(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-
-    // Must import TypedConfigManagerInterface.
-    $this->assertStringContainsString(
-      'use Drupal\Core\Config\TypedConfigManagerInterface',
-      $contents,
-      'ScoltaSettingsForm must import TypedConfigManagerInterface for Drupal 11 compatibility'
+    $params = (new \ReflectionMethod(ScoltaSettingsForm::class, '__construct'))->getParameters();
+    $types = array_map(
+      static fn (\ReflectionParameter $p): string => $p->getType() instanceof \ReflectionNamedType ? $p->getType()->getName() : '',
+      $params,
     );
 
-    // Constructor must accept TypedConfigManagerInterface as a parameter.
-    $this->assertMatchesRegularExpression(
-      '/function\s+__construct\s*\([^)]*TypedConfigManagerInterface/s',
-      $contents,
-      'Constructor must accept TypedConfigManagerInterface parameter'
+    $this->assertContains(
+      'Drupal\Core\Config\TypedConfigManagerInterface',
+      $types,
+      'Constructor must accept a TypedConfigManagerInterface parameter for Drupal 11 compatibility'
     );
-
-    // parent::__construct must receive two arguments.
-    $this->assertMatchesRegularExpression(
-      '/parent::__construct\s*\(\s*\$\w+\s*,\s*\$\w+\s*\)/',
-      $contents,
-      'parent::__construct() must pass both $configFactory and $typedConfigManager'
+    $this->assertSame(
+      'Drupal\Core\Config\TypedConfigManagerInterface',
+      $types[1],
+      'The typed config manager must be the second constructor parameter, matching ConfigFormBase'
     );
-  }
-
-  /**
-   * Verifies create() passes typed config from the container.
-   */
-  public function testCreatePassesTypedConfigFromContainer(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-
-    $this->assertStringContainsString(
-      "config.typed",
-      $contents,
-      'create() must inject config.typed service for TypedConfigManagerInterface'
-    );
-  }
-
-  /**
-   * Methods with ': string' return type must not return $this->t() uncasted.
-   *
-   * Drupal's $this->t() returns TranslatableMarkup, not string. Returning
-   * it from a method typed ': string' causes a TypeError at runtime.
-   * This test catches the pattern statically.
-   */
-  public function testStringReturnMethodsDoNotReturnTranslatableMarkupUncasted(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-
-    // Find all methods with ': string' return type.
-    preg_match_all(
-      '/function\s+(\w+)\([^)]*\)\s*:\s*string\s*\{(.*?)\n  \}/s',
-      $contents,
-      $matches,
-      PREG_SET_ORDER,
-    );
-
-    $violations = [];
-    foreach ($matches as $match) {
-      $method = $match[1];
-      $body = $match[2];
-
-      // Look for 'return $this->t(' without a (string) cast.
-      if (preg_match('/return\s+\$this->t\s*\(/', $body)) {
-        $violations[] = $method;
-      }
-    }
-
-    $this->assertEmpty(
-      $violations,
-      'Methods with : string return type must cast $this->t() with (string): '
-      . implode(', ', $violations)
-    );
-  }
-
-  /**
-   * Verifies getDefaultPrompt shows a warning message on WASM failure.
-   *
-   * When WASM fails to load, the method should NOT return an empty
-   * string — it should return a visible warning message telling the
-   * admin to run check-setup.
-   */
-  public function testGetDefaultPromptShowsWarningOnFailure(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-
-    // The catch block should NOT return empty string.
-    $this->assertStringNotContainsString(
-      "return '';",
-      // Extract just the getDefaultPrompt method body.
-      $this->extractMethod($contents, 'getDefaultPrompt'),
-      'getDefaultPrompt catch block should not return empty string'
-    );
-
-    // Should contain a user-visible message.
-    $this->assertStringContainsString(
-      'check-setup',
-      $this->extractMethod($contents, 'getDefaultPrompt'),
-      'getDefaultPrompt catch should mention check-setup command'
-    );
-
-    // Should log the error.
-    $this->assertStringContainsString(
-      'getLogger',
-      $this->extractMethod($contents, 'getDefaultPrompt'),
-      'getDefaultPrompt should log warning when WASM fails'
-    );
-  }
-
-  /**
-   * Extract a method body from PHP source.
-   */
-  private function extractMethod(string $source, string $methodName): string {
-    $pattern = '/function\s+' . preg_quote($methodName) . '\s*\([^)]*\)[^{]*\{(.*?)\n  \}/s';
-    if (preg_match($pattern, $source, $m)) {
-      return $m[1];
-    }
-    return '';
   }
 
   // -------------------------------------------------------------------
-  // 2. Form fields map to install config keys.
-  // -------------------------------------------------------------------
-
-  /**
-   * Every config key in the install defaults should be settable via the form.
-   */
-  public function testFormSubmitCoversAllInstallConfigKeys(): void {
-    $installDefaults = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $formFile = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
-
-    // Flatten nested keys to dot notation (scoring.title_match_boost, etc.)
-    $configKeys = $this->flattenKeys($installDefaults);
-
-    // These keys are intentionally not in the form (read-only or handled elsewhere).
-    $excluded = [
-      'pagefind.build_dir',
-      'pagefind.output_dir',
-      'pagefind.binary',
-      'pagefind.auto_rebuild',
-      'pagefind.view_mode',
-      // Gateway-scoped model aliases, written only by Amazee model resolution
-      // and read only while Amazee credentials are effective. Deliberately not
-      // operator-settable: giving them a form field would recreate the
-      // scolta-drupal#187 confusion between a gateway alias and the
-      // provider-native ai_model an administrator chooses.
-      'amazee_model',
-      'amazee_expansion_model',
-      // Incremental update routing. The path stays dormant until a
-      // tag1/scolta-php release carrying IncrementalIndexUpdater is installed,
-      // and a settings field for a feature that cannot run yet is a support
-      // question, not a control. These gain form fields in the change that
-      // bumps the scolta-php constraint and turns the path on.
-      'incremental.enabled',
-      'incremental.max_changed_items',
-      // Cron time budget for retired-index trash deletion. An operational
-      // knob (drush config:set) with a default that suits every site running
-      // drush cron; a form field would invite tuning something that only
-      // matters on NFS-backed hosting, where the operator lives in the CLI.
-      'cleanup.cron_seconds',
-    ];
-
-    foreach ($configKeys as $key) {
-      if (in_array($key, $excluded, true)) {
-        continue;
-      }
-
-      // The submitForm method should contain ->set('key', ...) for this key.
-      $this->assertStringContainsString(
-        "'{$key}'",
-        $formFile,
-        "Config key '{$key}' from install defaults is not referenced in ScoltaSettingsForm"
-      );
-    }
-  }
-
-  // -------------------------------------------------------------------
-  // 3. Config values reach ScoltaConfig and affect its properties.
+  // 2. Config values reach ScoltaConfig and affect its properties.
   // -------------------------------------------------------------------
 
   /**
@@ -305,7 +186,7 @@ class ScoltaSettingsFormTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // 4. Config changes propagate to JS scoring output.
+  // 3. Config changes propagate to JS scoring output.
   // -------------------------------------------------------------------
 
   /**
@@ -346,7 +227,7 @@ class ScoltaSettingsFormTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // 5. AI feature toggles flow correctly.
+  // 4. AI feature toggles flow correctly.
   // -------------------------------------------------------------------
 
   public function testDisablingAiExpandQueryAffectsConfig(): void {
@@ -465,161 +346,47 @@ class ScoltaSettingsFormTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // site_name fallback to system.site in rebuildSubmit().
-  // -------------------------------------------------------------------
-
-  // -------------------------------------------------------------------
-  // rebuildSubmit dispatches to Batch API without pre-loading entities.
-  // -------------------------------------------------------------------
-
-  public function testRebuildSubmitUsesLoadAndProcessChunkCallback(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $source = file_get_contents($file);
-    $this->assertStringContainsString(
-      'loadAndProcessChunk',
-      $source,
-      'rebuildSubmit() must route through loadAndProcessChunk (entity-ID batch dispatch), not processChunk'
-    );
-  }
-
-  public function testGatherContentItemsUrlDoesNotUseSetAbsolute(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $source = file_get_contents($file);
-    // setAbsolute(TRUE) was the cause of doubled URLs on subdirectory installs
-    // (issue #40). Verify gatherContentItems() uses ->toString() without it.
-    $this->assertStringNotContainsString(
-      'setAbsolute(TRUE)',
-      $source,
-      'gatherContentItems() must not call setAbsolute(TRUE) — use ->toString() to produce root-relative URLs'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // site_name fallback to system.site in rebuildSubmit().
-  // -------------------------------------------------------------------
-
-  public function testRebuildSubmitFallsBackToSystemSiteName(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $source = file_get_contents($file);
-    $this->assertStringContainsString(
-      'system.site',
-      $source,
-      'rebuildSubmit() must fall back to system.site when site_name is empty'
-    );
-  }
-
-  public function testRebuildSubmitDoesNotUseEmptyStringDefault(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $source = file_get_contents($file);
-    // Old code: `$config->get('site_name') ?: ''` — silently used empty string,
-    // preventing the system.site fallback from ever kicking in.
-    $this->assertStringNotContainsString(
-      "get('site_name') ?: ''",
-      $source,
-      "rebuildSubmit() must not default site_name to '' — use the system.site fallback instead"
-    );
-  }
-
-  // -------------------------------------------------------------------
   // validateForm — AI Base URL validation (issue #86).
   // -------------------------------------------------------------------
 
   /**
-   * validateForm() must exist and validate the ai_base_url field.
-   */
-  public function testValidateFormMethodExists(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-
-    $this->assertStringContainsString(
-      'function validateForm(',
-      $contents,
-      'ScoltaSettingsForm must implement validateForm()'
-    );
-  }
-
-  /**
-   * validateForm() must reject non-URL strings for ai_base_url.
-   */
-  public function testValidateFormRejectsNonUrlStrings(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-    $body = $this->extractMethod($contents, 'validateForm');
-
-    $this->assertStringContainsString(
-      'ai_base_url',
-      $body,
-      'validateForm() must check the ai_base_url field'
-    );
-
-    $this->assertStringContainsString(
-      'setErrorByName',
-      $body,
-      'validateForm() must call setErrorByName() to report URL errors'
-    );
-  }
-
-  /**
-   * validateForm() must require http or https scheme for ai_base_url.
-   */
-  public function testValidateFormRequiresHttpOrHttpsScheme(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-    $body = $this->extractMethod($contents, 'validateForm');
-
-    $this->assertStringContainsString(
-      'https',
-      $body,
-      'validateForm() must require https:// scheme'
-    );
-
-    $this->assertStringContainsString(
-      'http',
-      $body,
-      'validateForm() must require http:// scheme'
-    );
-  }
-
-  /**
-   * validateForm() must allow an empty ai_base_url (optional field).
-   */
-  public function testValidateFormAllowsEmptyBaseUrl(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-    $body = $this->extractMethod($contents, 'validateForm');
-
-    // The guard condition that skips validation for empty values.
-    $this->assertMatchesRegularExpression(
-      '/\$baseUrl\s*!==\s*\'\'|\bempty\b.*\$baseUrl/s',
-      $body,
-      'validateForm() must skip validation when ai_base_url is empty'
-    );
-  }
-
-  /**
-   * URL validation logic accepts valid http/https URLs and rejects bad ones.
+   * validateForm() flags invalid AI base URLs and accepts valid or empty ones.
    *
-   * Tests the logic extracted from validateForm() in isolation.
+   * Runs the real validateForm() against a stub form state: getValue() feeds
+   * the candidate URL and setErrorByName() records what the form flags. The
+   * form object is built without its constructor — validateForm() touches no
+   * injected service, only the form state and string translation.
    */
   #[\PHPUnit\Framework\Attributes\DataProvider('urlValidationProvider')]
-  public function testUrlValidationLogic(string $url, bool $shouldBeValid): void {
-    $baseUrl = trim($url);
-    if ($baseUrl === '') {
-      // Empty is always valid (field is optional).
-      $this->assertTrue(TRUE);
-      return;
-    }
+  public function testValidateFormBaseUrlValidation(string $url, bool $shouldBeValid): void {
+    /** @var \Drupal\scolta\Form\ScoltaSettingsForm $formObject */
+    $formObject = (new \ReflectionClass(ScoltaSettingsForm::class))->newInstanceWithoutConstructor();
+    $formObject->setStringTranslation($this->createStub(TranslationInterface::class));
 
-    $parsed = parse_url($baseUrl);
-    $scheme = $parsed['scheme'] ?? '';
-    $isValid = filter_var($baseUrl, FILTER_VALIDATE_URL) !== FALSE
-      && in_array($scheme, ['http', 'https'], TRUE);
-
-    $this->assertEquals(
-      $shouldBeValid,
-      $isValid,
-      "URL '{$url}' should be " . ($shouldBeValid ? 'valid' : 'invalid')
+    $errors = [];
+    $formState = $this->createStub(FormStateInterface::class);
+    // ai_base_url carries the candidate; every other validated field (the
+    // recency curve, the pipe-separated mappings) reads as empty so only the
+    // URL rule can fire.
+    $formState->method('getValue')->willReturnCallback(
+      static fn ($key, $default = NULL) => $key === 'ai_base_url' ? $url : ''
     );
+    $formState->method('setErrorByName')->willReturnCallback(
+      function ($name, $message = '') use (&$errors, $formState) {
+        $errors[] = $name;
+        return $formState;
+      }
+    );
+
+    $form = [];
+    $formObject->validateForm($form, $formState);
+
+    if ($shouldBeValid) {
+      $this->assertSame([], $errors, "URL '{$url}' must be accepted without a form error");
+    }
+    else {
+      $this->assertSame(['ai_base_url'], $errors, "URL '{$url}' must set an error on ai_base_url");
+    }
   }
 
   /**
@@ -676,22 +443,6 @@ class ScoltaSettingsFormTest extends TestCase {
   }
 
   /**
-   * Flatten nested array keys to dot notation.
-   */
-  private function flattenKeys(array $array, string $prefix = ''): array {
-    $keys = [];
-    foreach ($array as $key => $value) {
-      $fullKey = $prefix ? "{$prefix}.{$key}" : $key;
-      if (is_array($value) && !array_is_list($value)) {
-        $keys = array_merge($keys, $this->flattenKeys($value, $fullKey));
-      } else {
-        $keys[] = $fullKey;
-      }
-    }
-    return $keys;
-  }
-
-  /**
    * Set a dot-notation key in a nested array.
    */
   private function setNestedValue(array &$array, string $dotKey, mixed $value): void {
@@ -711,26 +462,10 @@ class ScoltaSettingsFormTest extends TestCase {
   // -------------------------------------------------------------------
 
   /**
-   * getDefaultPrompt() must delegate to DefaultPrompts::getTemplate(), not
-   * hold its own copy of the prompt text (issue #49).
-   */
-  public function testGetDefaultPromptDelegatesToDefaultPromptsGetTemplate(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $body = $this->extractMethod(file_get_contents($file), 'getDefaultPrompt');
-
-    $this->assertStringContainsString(
-      'DefaultPrompts::getTemplate(',
-      $body,
-      'getDefaultPrompt() must delegate to DefaultPrompts::getTemplate() — no inline prompt copies allowed'
-    );
-  }
-
-  /**
    * The resolved default for each prompt key matches what DefaultPrompts
    * produces, so Drupal and WordPress are guaranteed to show identical text.
-   *
-   * @dataProvider allPromptNamesProvider
    */
+  #[\PHPUnit\Framework\Attributes\DataProvider('allPromptNamesProvider')]
   public function testDefaultPromptMatchesDefaultPromptsResolve(string $name): void {
     $template = \Tag1\Scolta\Prompt\DefaultPrompts::getTemplate($name);
     $resolved = \Tag1\Scolta\Prompt\DefaultPrompts::resolve($name, 'Acme', 'tech company');
@@ -818,131 +553,9 @@ class ScoltaSettingsFormTest extends TestCase {
     );
   }
 
-  /**
-   * The form must offer exactly the three modes the bundle understands.
-   *
-   * A fourth option, or a renamed one, would save a value that clamps back to
-   * 'eager' in the block and in the bundle, so the control would silently do
-   * nothing.
-   */
-  public function testSettingsFormOffersTheThreeFacetModes(): void {
-    $contents = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
-
-    $this->assertMatchesRegularExpression(
-      "/\\\$form\['display'\]\['facet_mode'\] = \[\s*'#type' => 'select'/",
-      $contents,
-      'facet_mode must be a select'
-    );
-
-    foreach (['eager', 'deferred', 'disabled'] as $mode) {
-      $this->assertMatchesRegularExpression(
-        "/'{$mode}' => \\\$this->t\(/",
-        $contents,
-        "facet_mode must offer the '{$mode}' option"
-      );
-    }
-  }
-
-  /**
-   * submitForm() must persist facet_mode, clamping anything unrecognized.
-   */
-  public function testSubmitFormPersistsFacetModeAndClamps(): void {
-    $contents = file_get_contents($this->moduleRoot . '/src/Form/ScoltaSettingsForm.php');
-
-    $this->assertStringContainsString(
-      "->set('facet_mode'",
-      $contents,
-      "submitForm() must call ->set('facet_mode', ...) to persist the setting"
-    );
-
-    $this->assertMatchesRegularExpression(
-      "/in_array\(\\\$form_state->getValue\('facet_mode'\), \['eager', 'deferred', 'disabled'\], TRUE\)/",
-      $contents,
-      'submitForm() must validate facet_mode against the three supported modes'
-    );
-  }
-
-  /**
-   * The settings form must contain a show_attribution checkbox field.
-   */
-  public function testSettingsFormContainsShowAttributionCheckbox(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-
-    $this->assertStringContainsString(
-      "'show_attribution'",
-      $contents,
-      'ScoltaSettingsForm must reference show_attribution'
-    );
-
-    $this->assertStringContainsString(
-      "'#type' => 'checkbox'",
-      $contents,
-      'show_attribution field must be a checkbox'
-    );
-  }
-
-  /**
-   * submitForm() must persist show_attribution as a boolean.
-   */
-  public function testSubmitFormPersistsShowAttribution(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-
-    $this->assertStringContainsString(
-      "->set('show_attribution'",
-      $contents,
-      "submitForm() must call ->set('show_attribution', ...) to persist the setting"
-    );
-
-    $this->assertStringContainsString(
-      "(bool) \$form_state->getValue('show_attribution')",
-      $contents,
-      "submitForm() must cast show_attribution to bool before saving"
-    );
-  }
-
   // -------------------------------------------------------------------
-  // Field mapping form fields.
+  // Field mapping install defaults.
   // -------------------------------------------------------------------
-
-  public function testSettingsFormContainsFieldMappingSortable(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-
-    $this->assertStringContainsString(
-      "'field_mapping_sortable'",
-      $contents,
-      'ScoltaSettingsForm must reference field_mapping_sortable'
-    );
-  }
-
-  public function testSettingsFormContainsFieldMappingFilters(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-
-    $this->assertStringContainsString(
-      "'field_mapping_filters'",
-      $contents,
-      'ScoltaSettingsForm must reference field_mapping_filters'
-    );
-  }
-
-  public function testSubmitFormPersistsFieldMappings(): void {
-    $file = $this->moduleRoot . '/src/Form/ScoltaSettingsForm.php';
-    $contents = file_get_contents($file);
-
-    $this->assertStringContainsString(
-      "->set('field_mappings.sortable'",
-      $contents,
-      "submitForm() must persist field_mappings.sortable"
-    );
-    $this->assertStringContainsString(
-      "->set('field_mappings.filters'",
-      $contents,
-      "submitForm() must persist field_mappings.filters"
-    );
-  }
 
   public function testFieldMappingsInInstallDefaults(): void {
     $defaults = $this->getInstallDefaults();
@@ -952,5 +565,7 @@ class ScoltaSettingsFormTest extends TestCase {
     $this->assertEmpty($defaults['field_mappings']['sortable'], 'Default field_mappings.sortable must be empty');
     $this->assertEmpty($defaults['field_mappings']['filters'], 'Default field_mappings.filters must be empty');
   }
+
+}
 
 }

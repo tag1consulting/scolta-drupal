@@ -10,8 +10,8 @@ use Symfony\Component\Yaml\Yaml;
 /**
  * Regression tests for the quality quick-wins audit fixes.
  *
- * Source/YAML-inspection tests in the established no-bootstrap style. Each
- * section pins one audit finding so the defect cannot silently return.
+ * Structural (YAML/reflection) tests in the established no-bootstrap style.
+ * Each section pins one audit finding so the defect cannot silently return.
  */
 class QuickWinsRegressionTest extends TestCase {
 
@@ -21,95 +21,14 @@ class QuickWinsRegressionTest extends TestCase {
     $this->moduleRoot = dirname(__DIR__, 2);
   }
 
-  private function src(string $relative): string {
-    return file_get_contents($this->moduleRoot . '/' . $relative);
-  }
-
   // -------------------------------------------------------------------
   // hook_requirements() must read the real config key (pagefind.binary).
   // -------------------------------------------------------------------
 
   public function testRequirementsReadsExistingConfigKey(): void {
-    $install = $this->src('scolta.install');
-    $this->assertStringContainsString("get('pagefind.binary')", $install,
-      'hook_requirements() must read pagefind.binary');
-    $this->assertStringNotContainsString("get('pagefind_binary')", $install,
-      "The flat 'pagefind_binary' key does not exist in scolta.settings");
-
-    // The key it reads must actually ship in install config.
+    // The key hook_requirements() reads must actually ship in install config.
     $installConfig = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
     $this->assertArrayHasKey('binary', $installConfig['pagefind']);
-  }
-
-  // -------------------------------------------------------------------
-  // Provider reporting keys off the CONFIGURED provider, not module
-  // presence (same class as #125).
-  // -------------------------------------------------------------------
-
-  public function testHealthControllerConditionsProviderOverrideOnConfig(): void {
-    $contents = $this->src('src/Controller/HealthController.php');
-    $this->assertMatchesRegularExpression(
-      "/aiProvider === 'drupal_ai'\s*&&\s*\\\$this->aiService->hasDrupalAiModule\(\)/",
-      $contents,
-      'Health must only report drupal-ai when the configured provider is drupal_ai AND the module exists'
-    );
-  }
-
-  public function testDrushStatusConditionsProviderReportOnConfig(): void {
-    $contents = $this->src('src/Commands/ScoltaCommands.php');
-    $this->assertMatchesRegularExpression(
-      "/\\\$provider === 'drupal_ai'\s*&&\s*\\\$this->aiService->hasDrupalAiModule\(\)/",
-      $contents,
-      'drush scolta:status must only report the Drupal AI module when drupal_ai is the configured provider'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // scolta:clear-cache must be targeted — never wipe the shared bin.
-  // -------------------------------------------------------------------
-
-  public function testClearCacheDoesNotWipeSharedBin(): void {
-    $contents = $this->src('src/Commands/ScoltaCommands.php');
-    $this->assertStringNotContainsString('$this->cache->deleteAll()', $contents,
-      'clearCache() must not wipe the shared cache.default bin');
-  }
-
-  public function testClearCacheBumpsGenerationAndDeletesPromptKeys(): void {
-    $contents = $this->src('src/Commands/ScoltaCommands.php');
-    $body = $this->extractMethod($contents, 'clearCache');
-    $this->assertStringContainsString("'scolta.generation'", $body,
-      'clearCache() must bump the generation counter — the live AI-cache invalidation mechanism');
-    $this->assertStringContainsString('deleteMultiple', $body,
-      'clearCache() must delete the fixed resolved-prompt keys, not everything');
-    $this->assertStringContainsString("'scolta.prompt.expand_query'", $body);
-    $this->assertStringContainsString("'scolta.prompt.summarize'", $body);
-    $this->assertStringContainsString("'scolta.prompt.follow_up'", $body);
-  }
-
-  // -------------------------------------------------------------------
-  // triggerRebuild(): binary success path bumps the generation; the dead
-  // 'scolta:expand' tag (entries are set with no tags) is gone.
-  // -------------------------------------------------------------------
-
-  public function testTriggerRebuildBinarySuccessBumpsGeneration(): void {
-    $contents = $this->src('src/Plugin/search_api/backend/ScoltaBackend.php');
-    $body = $this->extractMethod($contents, 'triggerRebuild');
-    $this->assertStringContainsString("'scolta.generation'", $body,
-      'A successful binary rebuild must bump scolta.generation or AI caches stay stale for up to 30 days');
-  }
-
-  public function testDeadExpandTagInvalidationIsGone(): void {
-    $contents = $this->src('src/Plugin/search_api/backend/ScoltaBackend.php');
-    $this->assertStringNotContainsString("'scolta:expand'", $contents,
-      "DrupalCacheDriver sets entries with NO tags — invalidating tag 'scolta:expand' is a no-op");
-  }
-
-  public function testBackendUsesInjectedQueueAndState(): void {
-    $contents = $this->src('src/Plugin/search_api/backend/ScoltaBackend.php');
-    $this->assertStringNotContainsString('\Drupal::queue(', $contents,
-      'ScoltaBackend must use the injected queue factory');
-    $this->assertStringContainsString("\$container->get('queue')", $contents);
-    $this->assertStringContainsString("\$container->get('state')", $contents);
   }
 
   // -------------------------------------------------------------------
@@ -123,22 +42,6 @@ class QuickWinsRegressionTest extends TestCase {
       $routing['scolta.dismiss_rebuild_notice']['requirements']['_csrf_token'] ?? NULL,
       'The state-changing dismiss GET route must require a CSRF token'
     );
-  }
-
-  public function testDismissControllerRejectsProtocolRelativeDestination(): void {
-    $contents = $this->src('src/Controller/DismissRebuildNoticeController.php');
-    $this->assertStringContainsString("!str_starts_with(\$destination, '//')", $contents,
-      "str_starts_with(\$destination, '/') alone passes protocol-relative '//evil.com'");
-    $this->assertStringContainsString('LocalRedirectResponse', $contents,
-      'Redirects must be constrained to local URLs');
-    $this->assertStringContainsString('Url::fromUserInput(', $contents,
-      'The destination must be validated as user-input path, not echoed raw');
-  }
-
-  public function testDismissControllerInjectsUserData(): void {
-    $contents = $this->src('src/Controller/DismissRebuildNoticeController.php');
-    $this->assertStringContainsString("\$container->get('user.data')", $contents);
-    $this->assertStringNotContainsString("\\Drupal::service('user.data')", $contents);
   }
 
   // -------------------------------------------------------------------
@@ -180,122 +83,6 @@ class QuickWinsRegressionTest extends TestCase {
       'auto_rebuild_delay is saved by ScoltaBackend::submitConfigurationForm() and must have schema');
   }
 
-  // -------------------------------------------------------------------
-  // Settings form: no hand-rolled exec() — the injected PagefindBuilder
-  // (binary allowlist, Symfony Process, timeout) does the build.
-  // -------------------------------------------------------------------
-
-  public function testSettingsFormDoesNotShellOut(): void {
-    $contents = $this->src('src/Form/ScoltaSettingsForm.php');
-    $this->assertDoesNotMatchRegularExpression('/\bexec\s*\(/', $contents,
-      'rebuildWithBinary() must not build shell commands');
-    $this->assertStringContainsString('$this->pagefindBuilder->build(', $contents,
-      'rebuildWithBinary() must run the binary through the injected PagefindBuilder');
-  }
-
-  public function testSettingsFormValidatesRecencyCurveJson(): void {
-    $contents = $this->src('src/Form/ScoltaSettingsForm.php');
-    $body = $this->extractMethod($contents, 'validateForm');
-    $this->assertStringContainsString("'recency_curve'", $body,
-      'Malformed recency-curve JSON must produce a form error, not be silently discarded');
-  }
-
-  public function testSettingsFormValidatesPipeLines(): void {
-    $contents = $this->src('src/Form/ScoltaSettingsForm.php');
-    $body = $this->extractMethod($contents, 'validateForm');
-    foreach ([
-      'sortable_field_descriptions',
-      'filter_field_descriptions',
-      'field_mapping_sortable',
-      'field_mapping_filters',
-    ] as $field) {
-      $this->assertStringContainsString("'{$field}'", $body,
-        "Pipe-less lines in {$field} must produce a form error, not be silently dropped");
-    }
-  }
-
-  public function testSettingsFormInjectsCacheTagsInvalidator(): void {
-    $contents = $this->src('src/Form/ScoltaSettingsForm.php');
-    $this->assertStringContainsString("\$container->get('cache_tags.invalidator')", $contents);
-    $this->assertStringNotContainsString("\\Drupal::service('cache_tags.invalidator')", $contents);
-  }
-
-  // -------------------------------------------------------------------
-  // Hardcoded admin paths → routes / validated user input.
-  // -------------------------------------------------------------------
-
-  public function testBudgetHandlerUsesRouteForAmazeeSettings(): void {
-    $contents = $this->src('src/AiProvider/Amazee/BudgetExceededHandler.php');
-    $this->assertStringContainsString("Url::fromRoute('scolta.settings.amazee')", $contents);
-    $this->assertStringNotContainsString("'/admin/config/search/scolta/amazee'", $contents);
-  }
-
-  public function testSettingsFormResolvesAiProvidersPath(): void {
-    $contents = $this->src('src/Form/ScoltaSettingsForm.php');
-    $this->assertStringNotContainsString('href="/admin/config/ai/providers"', $contents,
-      'Hardcoded hrefs break subdirectory installs — resolve via Url::fromUserInput()');
-    $this->assertStringContainsString("Url::fromUserInput('/admin/config/ai/providers')", $contents);
-  }
-
-  public function testSearchBlockUsesSettingsRoute(): void {
-    $contents = $this->src('src/Plugin/Block/ScoltaSearchBlock.php');
-    $this->assertStringNotContainsString('"/admin/config/search/scolta"', $contents);
-    $this->assertStringContainsString("Url::fromRoute('scolta.settings')", $contents);
-  }
-
-  // -------------------------------------------------------------------
-  // Search block cache metadata + i18n.
-  // -------------------------------------------------------------------
-
-  public function testSearchBlockVariesOnPermissions(): void {
-    $contents = $this->src('src/Plugin/Block/ScoltaSearchBlock.php');
-    $this->assertStringContainsString("'user.permissions'", $contents,
-      'Output differs for administer-scolta users; the render cache must vary on permissions');
-  }
-
-  public function testSearchBlockVariesOnContentLanguage(): void {
-    $contents = $this->src('src/Plugin/Block/ScoltaSearchBlock.php');
-    $this->assertStringContainsString("'languages:language_content'", $contents,
-      'drupalSettings carries currentLanguage; the render cache must vary on content language');
-  }
-
-  public function testSearchBlockDependsOnSiteConfig(): void {
-    $contents = $this->src('src/Plugin/Block/ScoltaSearchBlock.php');
-    $this->assertStringContainsString("'config:system.site'", $contents,
-      'The site-name fallback requires the system.site config cache tag');
-  }
-
-  public function testSearchBlockInjectsFormerStatics(): void {
-    $contents = $this->src('src/Plugin/Block/ScoltaSearchBlock.php');
-    $this->assertStringNotContainsString('\Drupal::', $contents,
-      'ScoltaSearchBlock must use injected services');
-    $this->assertStringContainsString("\$container->get('current_user')", $contents);
-    $this->assertStringContainsString("\$container->get('stream_wrapper_manager')", $contents);
-  }
-
-  public function testSearchBlockTranslatesUserFacingStrings(): void {
-    $contents = $this->src('src/Plugin/Block/ScoltaSearchBlock.php');
-    $this->assertStringContainsString("\$this->t('Powered by Scolta')", $contents);
-    $this->assertMatchesRegularExpression('/\$this->t\(\s*\n?\s*\'<p><strong>Scolta:<\/strong> Search index has not been built yet/', $contents);
-  }
-
-  // -------------------------------------------------------------------
-  // ScoltaAiService: config overrides + DI.
-  // -------------------------------------------------------------------
-
-  public function testBuildConfigHonorsConfigOverrides(): void {
-    $contents = $this->src('src/Service/ScoltaAiService.php');
-    $this->assertStringNotContainsString('getRawData()', $contents,
-      'getRawData() bypasses settings.php $config overrides — AI traffic must see them');
-    $this->assertStringContainsString('$drupalConfig->get()', $contents);
-  }
-
-  public function testAiServiceHasNoStaticServiceCalls(): void {
-    $contents = $this->src('src/Service/ScoltaAiService.php');
-    $this->assertStringNotContainsString('\Drupal::', $contents,
-      'ScoltaAiService must use injected services (@?ai.provider for the optional plugin manager)');
-  }
-
   public function testAiServiceDefinitionInjectsOptionalAiProvider(): void {
     $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml');
     $args = $services['services']['scolta.ai_service']['arguments'];
@@ -305,102 +92,27 @@ class QuickWinsRegressionTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // Default-model literal lives in exactly one place.
-  // -------------------------------------------------------------------
-
-  public function testDefaultModelConstantMatchesInstallConfig(): void {
-    $installConfig = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $contents = $this->src('src/Form/ScoltaSettingsForm.php');
-    $this->assertMatchesRegularExpression(
-      "/public const DEFAULT_AI_MODEL = '" . preg_quote($installConfig['ai_model'], '/') . "';/",
-      $contents,
-      'ScoltaSettingsForm::DEFAULT_AI_MODEL must match the shipped install default'
-    );
-  }
-
-  /**
-   * The default-model literal is never duplicated at an Amazee binding site.
-   *
-   * The trial form used to compare ai_model against the constant before
-   * overwriting it. Under scolta-drupal#187 that comparison is gone with the
-   * write itself — gateway aliases have their own key, so there is no
-   * operator-chosen value there to protect — and the only remaining consumer of
-   * the constant outside the settings form is the migration hook, which resets
-   * ai_model to it. Both files must still reach for the constant rather than
-   * repeating the literal.
-   */
-  public function testAmazeeBindingSitesNeverDuplicateTheDefaultModelLiteral(): void {
-    foreach (['src/Form/AmazeeSettingsForm.php', 'scolta.install'] as $file) {
-      $this->assertStringNotContainsString("'claude-sonnet-", $this->src($file),
-        "No duplicated model literal in {$file}");
-    }
-
-    $this->assertStringContainsString('ScoltaSettingsForm::DEFAULT_AI_MODEL', $this->src('scolta.install'),
-      'The migration hook must reset ai_model to the shared constant');
-  }
-
-  // -------------------------------------------------------------------
-  // Lint scope: .module/.install are linted, warnings are not suppressed.
-  // -------------------------------------------------------------------
-
-  public function testPhpcsCoversModuleAndInstallFiles(): void {
-    $ruleset = $this->src('phpcs.xml.dist');
-    $this->assertStringContainsString('<file>scolta.module</file>', $ruleset);
-    $this->assertStringContainsString('<file>scolta.install</file>', $ruleset);
-  }
-
-  public function testCiLintDoesNotSuppressWarnings(): void {
-    $ci = $this->src('.github/workflows/ci.yml');
-    $this->assertStringNotContainsString('--warning-severity=0', $ci,
-      'CI must not silence phpcs warnings');
-  }
-
-  // -------------------------------------------------------------------
   // Dead code stays dead.
   // -------------------------------------------------------------------
 
   public function testDeadBatchProcessChunkIsRemoved(): void {
-    $contents = $this->src('src/Batch/ScoltaBatchOperations.php');
-    $this->assertStringNotContainsString('public static function processChunk(', $contents,
-      'processChunk() had no callers (loadAndProcessChunk replaced it)');
+    $this->assertFalse(
+      (new \ReflectionClass(\Drupal\scolta\Batch\ScoltaBatchOperations::class))->hasMethod('processChunk'),
+      'processChunk() had no callers (loadAndProcessChunk replaced it)'
+    );
   }
 
   public function testDeadMemoryBudgetHelpersAreRemoved(): void {
-    $contents = $this->src('src/Form/MemoryBudgetSettingsFieldSet.php');
-    $this->assertStringNotContainsString('function extract(', $contents);
-    $this->assertStringNotContainsString('function formatBytes(', $contents);
+    $reflection = new \ReflectionClass(\Drupal\scolta\Form\MemoryBudgetSettingsFieldSet::class);
+    $this->assertFalse($reflection->hasMethod('extract'));
+    $this->assertFalse($reflection->hasMethod('formatBytes'));
   }
 
   public function testAmazeeFormDropsUnusedClientProperty(): void {
-    $contents = $this->src('src/Form/AmazeeSettingsForm.php');
-    $this->assertStringNotContainsString('private readonly AmazeeClient $amazeeClient', $contents,
-      'The constructor-injected AmazeeClient was never read');
-  }
-
-  // -------------------------------------------------------------------
-  // Helpers.
-  // -------------------------------------------------------------------
-
-  /**
-   * Extract a method body by name via brace counting.
-   */
-  private function extractMethod(string $contents, string $method): string {
-    $pos = strpos($contents, "function {$method}(");
-    $this->assertNotFalse($pos, "Method {$method}() not found");
-    $start = strpos($contents, '{', $pos);
-    $depth = 0;
-    for ($i = $start, $len = strlen($contents); $i < $len; $i++) {
-      if ($contents[$i] === '{') {
-        $depth++;
-      }
-      elseif ($contents[$i] === '}') {
-        $depth--;
-        if ($depth === 0) {
-          return substr($contents, $start, $i - $start + 1);
-        }
-      }
-    }
-    $this->fail("Unbalanced braces extracting {$method}()");
+    $this->assertFalse(
+      (new \ReflectionClass(\Drupal\scolta\Form\AmazeeSettingsForm::class))->hasProperty('amazeeClient'),
+      'The constructor-injected AmazeeClient was never read'
+    );
   }
 
 }

@@ -98,17 +98,25 @@ class ScoltaPhpFloorTest extends TestCase {
    * The symbols the floor is there for are really loaded unguarded.
    *
    * Without this, the floor could be raised for a reason that has since gone
-   * away and nothing would say so. It reads the source rather than reflecting
-   * on loaded classes, so it holds whether or not scolta-php is installed.
+   * away and nothing would say so. Reflects the loaded class rather than
+   * reading its source, so it needs scolta-php actually installed; skips
+   * otherwise rather than falling back to a source-text assertion.
    */
   public function testTheSymbolsTheFloorExistsForAreStillLoadedUnguarded(): void {
-    $storage = (string) file_get_contents(dirname(__DIR__, 2) . '/src/AiProvider/Amazee/DrupalConfigStorage.php');
-    $this->assertStringContainsString(
-      'implements ProvenanceAwareConfigStorageInterface',
-      $storage,
+    foreach (self::REQUIRES_1_2 as $symbol) {
+      if (!interface_exists($symbol) && !class_exists($symbol)) {
+        $this->markTestSkipped("$symbol is not installed; cannot verify unguarded use.");
+      }
+    }
+
+    $class = new \ReflectionClass(\Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage::class);
+    $this->assertTrue(
+      $class->implementsInterface('Tag1\Scolta\AiProvider\Amazee\ProvenanceAwareConfigStorageInterface'),
       'If this class no longer implements the interface, the floor may be reconsidered on its own merits.',
     );
-    $this->assertStringContainsString('AmazeeConnectionSource $source', $storage);
+
+    $param = $class->getMethod('storeConnectionSource')->getParameters()[0];
+    $this->assertSame('Tag1\Scolta\AiProvider\Amazee\AmazeeConnectionSource', (string) $param->getType());
   }
 
   /**

@@ -4,92 +4,175 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Tests;
 
+use Drupal\Core\Site\Settings;
+use Drupal\Core\State\StateInterface;
+use Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage;
 use PHPUnit\Framework\TestCase;
-use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
+use Symfony\Component\Yaml\Yaml;
+use Tag1\Scolta\AiProvider\Amazee\AmazeeConnectionSource;
 
 /**
- * Validates DrupalConfigStorage without a Drupal bootstrap.
+ * Behavioral tests for DrupalConfigStorage.
  *
- * Uses source-level checks (the same pattern as StructuralIntegrityTest)
- * because Drupal\Core\State\StateInterface is not available without a
- * Drupal bootstrap.
+ * Exercises store()/load(), storeConnectionSource()/loadConnectionSource(),
+ * and clear() against a real (array-backed) StateInterface implementation,
+ * plus the scolta.services.yml wiring and the ProvenanceAwareConfigStorageInterface
+ * contract.
  */
 class DrupalConfigStorageTest extends TestCase {
 
-  private string $moduleRoot;
-  private string $storageFile;
-
   protected function setUp(): void {
-    $this->moduleRoot = dirname(__DIR__, 2);
-    $this->storageFile = $this->moduleRoot . '/src/AiProvider/Amazee/DrupalConfigStorage.php';
+    // deriveKey() calls Settings::getHashSalt(), which reads the process-wide
+    // singleton. Initializing it here (idempotently) is what lets store()/
+    // load() run without a Drupal bootstrap. getInstance() throws (rather
+    // than returning NULL) before the singleton exists.
+    try {
+      Settings::getInstance();
+    }
+    catch (\BadMethodCallException) {
+      new Settings(['hash_salt' => 'test-hash-salt-for-drupalconfigstoragetest']);
+    }
   }
 
-  public function testFileExists(): void {
-    $this->assertFileExists($this->storageFile);
+  /**
+   * A minimal array-backed StateInterface, standing in for KeyValue storage.
+   */
+  private function fakeState(): StateInterface {
+    return new class implements StateInterface {
+      private array $data = [];
+
+      public function get($key, $default = NULL) {
+        return $this->data[$key] ?? $default;
+      }
+
+      public function getMultiple(array $keys) {
+        return array_intersect_key($this->data, array_flip($keys));
+      }
+
+      public function set($key, $value) {
+        $this->data[$key] = $value;
+      }
+
+      public function setMultiple(array $data) {
+        foreach ($data as $key => $value) {
+          $this->data[$key] = $value;
+        }
+      }
+
+      public function delete($key) {
+        unset($this->data[$key]);
+      }
+
+      public function deleteMultiple(array $keys) {
+        foreach ($keys as $key) {
+          unset($this->data[$key]);
+        }
+      }
+
+      public function resetCache() {}
+
+      public function getValuesSetDuringRequest(string $key): ?array {
+        return NULL;
+      }
+    };
   }
 
-  public function testDeclaresStrictTypes(): void {
-    $contents = file_get_contents($this->storageFile);
-    $this->assertStringContainsString('declare(strict_types=1)', $contents);
+  // -------------------------------------------------------------------
+  // Behavioral: store()/load() round-trip.
+  // -------------------------------------------------------------------
+
+  public function testStoreAndLoadRoundTrips(): void {
+    $storage = new DrupalConfigStorage($this->fakeState());
+
+    $this->assertNull($storage->load(), 'Nothing stored yet.');
+
+    $storage->store('secret-token', 'https://litellm.example.com', 'us-east');
+    $loaded = $storage->load();
+
+    $this->assertIsArray($loaded);
+    $this->assertSame('secret-token', $loaded['litellm_token'], 'The token must decrypt back to its original value.');
+    $this->assertSame('https://litellm.example.com', $loaded['litellm_api_url']);
+    $this->assertSame('us-east', $loaded['region']);
   }
+
+  public function testStoreEncryptsTheTokenAtRest(): void {
+    $state = $this->fakeState();
+    $storage = new DrupalConfigStorage($state);
+
+    $storage->store('super-secret-token', 'https://litellm.example.com', 'eu-west');
+
+    $raw = $state->get('scolta.amazee.credentials');
+    $this->assertIsArray($raw);
+    $this->assertStringNotContainsString(
+      'super-secret-token',
+      $raw['litellm_token'],
+      'The stored value must not contain the plaintext token.',
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // Behavioral: storeConnectionSource()/loadConnectionSource() round-trip.
+  // -------------------------------------------------------------------
+
+  public function testConnectionSourceRoundTrips(): void {
+    $storage = new DrupalConfigStorage($this->fakeState());
+
+    $this->assertNull($storage->loadConnectionSource(), 'Nothing recorded yet.');
+
+    $storage->storeConnectionSource(AmazeeConnectionSource::Demo);
+    $this->assertSame(AmazeeConnectionSource::Demo, $storage->loadConnectionSource());
+
+    $storage->storeConnectionSource(AmazeeConnectionSource::Account);
+    $this->assertSame(AmazeeConnectionSource::Account, $storage->loadConnectionSource());
+  }
+
+  // -------------------------------------------------------------------
+  // Behavioral: clear() removes both credentials and provenance.
+  // -------------------------------------------------------------------
+
+  public function testClearRemovesCredentialsAndProvenance(): void {
+    $storage = new DrupalConfigStorage($this->fakeState());
+
+    $storage->store('a-token', 'https://litellm.example.com', 'us-east');
+    $storage->storeConnectionSource(AmazeeConnectionSource::Account);
+
+    $this->assertNotNull($storage->load());
+    $this->assertNotNull($storage->loadConnectionSource());
+
+    $storage->clear();
+
+    $this->assertNull($storage->load(), 'clear() must remove the stored credentials.');
+    $this->assertNull($storage->loadConnectionSource(), 'clear() must also drop the recorded connection source.');
+  }
+
+  // -------------------------------------------------------------------
+  // Structural: service wiring.
+  // -------------------------------------------------------------------
+
+  public function testServiceRegisteredWithStateArgument(): void {
+    $moduleRoot = dirname(__DIR__, 2);
+    $services = Yaml::parseFile($moduleRoot . '/scolta.services.yml');
+
+    $this->assertArrayHasKey('scolta.amazee_config_storage', $services['services']);
+    $definition = $services['services']['scolta.amazee_config_storage'];
+
+    $this->assertSame(DrupalConfigStorage::class, $definition['class']);
+    $this->assertSame(['@state'], $definition['arguments']);
+  }
+
+  // -------------------------------------------------------------------
+  // Contract: implements ProvenanceAwareConfigStorageInterface.
+  // -------------------------------------------------------------------
 
   public function testImplementsProvenanceAwareConfigStorageInterface(): void {
-    // The provenance-aware sub-interface extends ConfigStorageInterface, so
-    // this is still the credential store contract — with somewhere to record
-    // which operator action established the connection, so no surface has to
-    // guess between the demo and the operator's own account.
-    $contents = file_get_contents($this->storageFile);
-    $this->assertStringContainsString('implements ProvenanceAwareConfigStorageInterface', $contents);
-  }
+    if (!interface_exists('Tag1\Scolta\AiProvider\Amazee\ProvenanceAwareConfigStorageInterface')) {
+      $this->markTestSkipped('ProvenanceAwareConfigStorageInterface is not installed.');
+    }
 
-  public function testImportsProvenanceAwareConfigStorageInterface(): void {
-    $contents = file_get_contents($this->storageFile);
-    $this->assertStringContainsString(
-      'use Tag1\\Scolta\\AiProvider\\Amazee\\ProvenanceAwareConfigStorageInterface',
-      $contents,
+    $this->assertContains(
+      'Tag1\Scolta\AiProvider\Amazee\ProvenanceAwareConfigStorageInterface',
+      class_implements(DrupalConfigStorage::class),
     );
-    // Both interfaces must exist in the installed scolta-php vendor copy.
-    $vendorAmazee = $this->moduleRoot . '/vendor/tag1/scolta-php/src/AiProvider/Amazee/';
-    $this->assertFileExists($vendorAmazee . 'ConfigStorageInterface.php', 'ConfigStorageInterface must exist in installed tag1/scolta-php');
-    $this->assertFileExists($vendorAmazee . 'ProvenanceAwareConfigStorageInterface.php', 'ProvenanceAwareConfigStorageInterface must exist in installed tag1/scolta-php');
-  }
-
-  public function testRecordsAndClearsTheConnectionSource(): void {
-    $contents = file_get_contents($this->storageFile);
-    $this->assertStringContainsString('public function storeConnectionSource(', $contents);
-    $this->assertStringContainsString('public function loadConnectionSource(', $contents);
-    // Clearing credentials must drop the provenance with them: a stale record
-    // would be paired with whatever connection comes next.
-    $this->assertMatchesRegularExpression(
-      '/function clear\(\).*SOURCE_STATE_KEY/s',
-      $contents,
-      'clear() must delete the recorded connection source',
-    );
-  }
-
-  public function testHasRequiredMethods(): void {
-    $contents = file_get_contents($this->storageFile);
-    $this->assertStringContainsString('public function store(', $contents, 'store() method missing');
-    $this->assertStringContainsString('public function load(', $contents, 'load() method missing');
-    $this->assertStringContainsString('public function clear(', $contents, 'clear() method missing');
-  }
-
-  public function testUsesStateKey(): void {
-    $contents = file_get_contents($this->storageFile);
-    $this->assertStringContainsString('scolta.amazee.credentials', $contents);
-  }
-
-  public function testInjectsStateInterface(): void {
-    $contents = file_get_contents($this->storageFile);
-    $this->assertStringContainsString('StateInterface', $contents);
-    $this->assertStringContainsString('use Drupal\Core\State\StateInterface', $contents);
-  }
-
-  public function testServiceRegistered(): void {
-    $yaml = file_get_contents($this->moduleRoot . '/scolta.services.yml');
-    $this->assertStringContainsString('scolta.amazee_config_storage', $yaml);
-    $this->assertStringContainsString('DrupalConfigStorage', $yaml);
-    $this->assertStringContainsString("'@state'", $yaml);
   }
 
 }

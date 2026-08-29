@@ -36,8 +36,7 @@ use Tag1\Scolta\Exception\ApiKeyMissingException;
  * instantiated here (the same reason the other AI-service tests are
  * source-level). These tests prove the Drupal-specific contract three ways:
  * the predicate's logic directly (it loads as a static), the library self-heal
- * driven by that exact predicate, and the key-less degrade behavior — plus a
- * structural check that createClient() carries the wiring.
+ * driven by that exact predicate, and the key-less degrade behavior.
  */
 class ModelResolutionSelfHealTest extends TestCase {
 
@@ -190,85 +189,6 @@ class ModelResolutionSelfHealTest extends TestCase {
   }
 
   // -------------------------------------------------------------------------
-  // Structural: createClient() carries the wiring with the dated-default gate.
-  // -------------------------------------------------------------------------
-
-  public function testCreateClientPassesResolvedModelsPredicate(): void {
-    $src = $this->serviceSource();
-    $this->assertStringContainsString('hasResolvedModels:', $src,
-      'createClient() must pass the hasResolvedModels predicate to ensureAiAvailable()');
-    $this->assertStringContainsString('self::modelIsResolved(', $src,
-      'The predicate must delegate to modelIsResolved()');
-  }
-
-  /**
-   * Both readers must consult the gateway-scoped key the callback writes.
-   *
-   * scolta-drupal#187: they used to read ai_model, which after the fix holds
-   * the operator's provider-native choice. Left there, the predicate would
-   * report TRUE on any site whose administrator had named a model, and the
-   * self-heal would never fire on precisely the sites needing it.
-   */
-  public function testResolvedModelReadersUseTheGatewayScopedKey(): void {
-    $src = $this->serviceSource();
-
-    $found = preg_match_all(
-      "/self::modelIsResolved\(\s*\\\$this->configFactory->get\('scolta\.settings'\)->get\('([a-z_]+)'\)/",
-      $src,
-      $matches
-    );
-
-    // Two callers read config: the gate that decides whether a heal is
-    // warranted at all, and the hasResolvedModels predicate. The degrade
-    // guard reads what the heal returned instead.
-    $this->assertSame(2, $found, 'Every modelIsResolved() call site that reads config must read the same key');
-    $this->assertSame(
-      ['amazee_model', 'amazee_model'],
-      $matches[1],
-      'Every modelIsResolved() caller must read amazee_model, not the operator-facing ai_model'
-    );
-  }
-
-  public function testPredicateExcludesTheDatedDefault(): void {
-    $src = $this->serviceSource();
-    $this->assertStringContainsString('AiClient::DEFAULT_MODEL', $src,
-      'modelIsResolved() must exclude the shipped dated default (AiClient::DEFAULT_MODEL)');
-  }
-
-  public function testCreateClientDegradesWhenUnresolved(): void {
-    $src = $this->serviceSource();
-    $this->assertStringContainsString('createDegradedClient()', $src,
-      'createClient() must degrade (key-less client) when the model is unresolved');
-    $this->assertMatchesRegularExpression(
-      '/\$resolved->isAmazee\(\) && \$resolved->amazeeCredentialsStored\s*\n?\s*&& \$unresolvedModel/',
-      $src,
-      'The heal and its degrade must be gated on the selected provider, a stored connection, and an unresolved model'
-    );
-  }
-
-  /**
-   * The model heal must never run where there is nothing stored to heal.
-   *
-   * The gate is the whole of the opt-in guarantee on the request path: the
-   * library makes no outbound call for a site with no stored connection, and
-   * this keeps the adapter from asking it to in the first place. Previously
-   * this call site fired whenever the key source was 'none', so an ordinary
-   * page load on an unconfigured site reached the gateway.
-   */
-  public function testCreateClientOnlyHealsAnExistingConnection(): void {
-    $src = $this->serviceSource();
-    $start = strpos($src, 'protected function createClient(): AiClient {');
-    $this->assertNotFalse($start, 'ScoltaAiService must override createClient()');
-    $end = strpos($src, "\n  }", $start);
-    $body = substr($src, $start, $end - $start);
-
-    $this->assertStringContainsString('$resolved->amazeeCredentialsStored', $body,
-      'The gateway call must require a connection that is already stored');
-    $this->assertStringNotContainsString('!$resolved->amazeeCredentialsStored', $body,
-      'createClient() must never call the gateway on the strength of nothing being stored');
-  }
-
-  // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
 
@@ -279,10 +199,6 @@ class ModelResolutionSelfHealTest extends TestCase {
     // ReflectionMethod ignores visibility since PHP 8.1 (the package floor).
     $method = new \ReflectionMethod(ScoltaAiService::class, 'modelIsResolved');
     return $method->invoke(NULL, $aiModel);
-  }
-
-  private function serviceSource(): string {
-    return file_get_contents(dirname(__DIR__, 2) . '/src/Service/ScoltaAiService.php');
   }
 
   /**

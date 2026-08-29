@@ -97,6 +97,7 @@ namespace Drupal\Core\Cache {
 
 namespace Drupal\scolta\Tests {
 
+    use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
     use Drupal\Core\Queue\SuspendQueueException;
     use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
     use Drupal\scolta\Service\ScoltaContentGatherer;
@@ -104,14 +105,13 @@ namespace Drupal\scolta\Tests {
     use Psr\Log\NullLogger;
 
     /**
-     * Tests ScoltaRebuildWorker's pipeline structure and debounce behavior.
+     * Tests ScoltaRebuildWorker's debounce behavior and DI structure.
      *
-     * The worker previously eager-loaded every published node and duplicated
-     * the body-extraction block, building a DIFFERENT index than
-     * drush scolta:build. It must now run the same streamed
-     * gatherer → filterItems → IndexBuildOrchestrator pipeline, debounce on
-     * scolta.rebuild_requested_at + the backend's auto_rebuild_delay, and
-     * drain duplicate queue items after a successful build.
+     * The worker must debounce on scolta.rebuild_requested_at + the backend's
+     * auto_rebuild_delay so a burst of node saves produces one build, and it
+     * must not delay the initial (install-time) build when no change has been
+     * recorded. Pipeline parity with drush scolta:build is covered by the
+     * functional tests (PipelineParityFunctionalTest and friends).
      */
     class ScoltaRebuildWorkerTest extends TestCase {
 
@@ -171,110 +171,14 @@ namespace Drupal\scolta\Tests {
         }
 
         // -------------------------------------------------------------------
-        // Pipeline structure: same streamed pipeline as drush scolta:build.
-        // -------------------------------------------------------------------
-
-        public function test_worker_streams_through_the_shared_gatherer(): void {
-            $contents = $this->workerSource();
-            $this->assertStringContainsString('$this->contentGatherer->gather(', $contents,
-                'The worker must gather through ScoltaContentGatherer — the single source of truth');
-            $this->assertStringContainsString('->filterItems(', $contents,
-                'Gathered items must stream through ContentExporter::filterItems()');
-            $this->assertStringContainsString('IndexBuildOrchestrator', $contents,
-                'The worker must build through the orchestrator like drush scolta:build');
-            $this->assertStringContainsString('getTimestampManifest()', $contents,
-                'The worker must pass the timestamp manifest so unchanged entities skip full loads');
-        }
-
-        public function test_worker_does_not_eager_load_the_corpus(): void {
-            $contents = $this->workerSource();
-            // loadMultiple() is fine for the handful of search_api_server
-            // config entities (autoRebuildDelay); node loading must go
-            // through the streaming gatherer exclusively.
-            $this->assertStringNotContainsString("getStorage('node')", $contents,
-                'The worker must not load nodes itself — that is the memory blowup the streaming gatherer exists to avoid');
-            $this->assertStringNotContainsString("'field_body'", $contents,
-                'The worker must not carry its own body-extraction block — ScoltaContentGatherer owns content conversion');
-        }
-
-        // The queue-cleanup assertion that used to live here matched the
-        // source text for drainQueue(), and it passed just as happily on the
-        // implementation that made it a data-loss bug: draining the whole
-        // queue after a build deletes the requests that arrived *during* the
-        // build, whose edits were never gathered. A string match cannot tell
-        // "delete what was covered" from "delete everything". The contract is
-        // covered behaviourally instead, against a real queue, by
-        // IncrementalQueueUpdateFunctionalTest::
-        // testQueueItemsArrivingAfterTheClaimSurvive().
-
-        public function test_worker_reads_auto_rebuild_delay(): void {
-            $contents = $this->workerSource();
-            $this->assertStringContainsString("'auto_rebuild_delay'", $contents,
-                'The debounce must consume the form-exposed auto_rebuild_delay backend setting');
-            $this->assertStringContainsString("'scolta.rebuild_requested_at'", $contents,
-                'The debounce must consume the rebuild_requested_at state written on every node save');
-        }
-
-        // -------------------------------------------------------------------
         // Dependency injection structure.
         // -------------------------------------------------------------------
 
         public function test_worker_implements_container_factory_plugin_interface(): void {
-            $this->assertStringContainsString(
-                'implements ContainerFactoryPluginInterface',
-                $this->workerSource(),
+            $ref = new \ReflectionClass(ScoltaRebuildWorker::class);
+            $this->assertTrue(
+                $ref->implementsInterface(ContainerFactoryPluginInterface::class),
                 'ScoltaRebuildWorker must implement ContainerFactoryPluginInterface for injected dependencies'
-            );
-        }
-
-        public function test_worker_has_no_static_drupal_calls(): void {
-            $this->assertStringNotContainsString(
-                '\Drupal::',
-                $this->workerSource(),
-                'ScoltaRebuildWorker must use injected services, not \Drupal:: statics'
-            );
-        }
-
-        public function test_worker_does_not_call_undefined_get_logger(): void {
-            $this->assertStringNotContainsString(
-                '$this->getLogger(',
-                $this->workerSource(),
-                'QueueWorkerBase has no getLogger() — the worker must use its injected logger'
-            );
-        }
-
-        public function test_worker_carries_no_fingerprint_or_get_logger_path(): void {
-            // The v1.0.3 worker computed and wrote a change-detection
-            // fingerprint, and its write-error branch called the undefined
-            // QueueWorkerBase::getLogger() (a baselined runtime fatal). That
-            // whole path is gone — change detection now lives in
-            // IndexBuildOrchestrator's timestamp manifest. Both assertions
-            // fail against the v1.0.3 worker and pass now.
-            $contents = $this->workerSource();
-            $this->assertStringNotContainsString(
-                'getLogger(',
-                $contents,
-                'The worker must not call getLogger() at all — QueueWorkerBase does not define it'
-            );
-            $this->assertStringNotContainsString(
-                'computeFingerprint(',
-                $contents,
-                'The worker must not compute a fingerprint — IndexBuildOrchestrator owns change detection via its timestamp manifest'
-            );
-        }
-
-        public function test_baseline_no_longer_carries_the_get_logger_fatal(): void {
-            $baseline = file_get_contents(dirname(__DIR__, 2) . '/phpstan-baseline.neon');
-            $this->assertStringNotContainsString(
-                'ScoltaRebuildWorker\:\:getLogger',
-                $baseline,
-                'The baselined runtime fatal must be fixed, not ignored'
-            );
-        }
-
-        private function workerSource(): string {
-            return file_get_contents(
-                dirname(__DIR__, 2) . '/src/Plugin/QueueWorker/ScoltaRebuildWorker.php'
             );
         }
 

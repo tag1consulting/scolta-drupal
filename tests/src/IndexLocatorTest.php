@@ -129,38 +129,31 @@ class IndexLocatorTest extends TestCase {
     $this->assertSame(0, $locator->countFragments($location));
   }
 
-  public function test_health_controller_uses_fragment_files(): void {
-    // The health controller's inline glob is gone — it now resolves the
-    // fragment list (count plus the file it filesize()s) through the shared
-    // method, so the glob pattern lives in exactly one place.
-    $src = file_get_contents(dirname(__DIR__, 2) . '/src/Controller/HealthController.php');
-    $this->assertStringContainsString(
-      '$this->indexLocator->fragmentFiles(',
-      $src,
-      'HealthController must enumerate fragments through IndexLocator::fragmentFiles()'
-    );
-    $this->assertStringNotContainsString(
-      "glob(\$location['fragmentDir']",
-      $src,
-      'HealthController must not re-glob the fragment directory — that glob now lives only in IndexLocator'
-    );
-  }
-
-  public function test_all_call_sites_use_the_locator(): void {
+  public function test_locator_is_wired_into_the_consuming_services(): void {
+    // The locator only removes the disagreement if the services that answer
+    // "is the index built?" actually receive it. HealthController and
+    // ScoltaSearchBlock resolve it in their create() factories (covered by
+    // their own tests); the two YAML-wired consumers are pinned here.
     $root = dirname(__DIR__, 2);
-    $sites = [
-      'src/Service/PagefindBuilder.php' => 'indexLocator',
-      'src/Controller/HealthController.php' => 'indexLocator',
-      'src/Commands/ScoltaCommands.php' => 'indexLocator',
-      'src/Plugin/Block/ScoltaSearchBlock.php' => 'indexLocator',
-    ];
-    foreach ($sites as $file => $needle) {
-      $this->assertStringContainsString(
-        $needle,
-        file_get_contents($root . '/' . $file),
-        "{$file} must resolve index existence through the shared IndexLocator"
-      );
-    }
+
+    $services = \Symfony\Component\Yaml\Yaml::parseFile($root . '/scolta.services.yml')['services'];
+    $this->assertArrayHasKey('scolta.index_locator', $services);
+    $this->assertContains(
+      '@scolta.index_locator',
+      $services['scolta.pagefind_builder']['arguments'],
+      'PagefindBuilder must be handed the shared locator'
+    );
+
+    $drush = \Symfony\Component\Yaml\Yaml::parseFile($root . '/drush.services.yml')['services'];
+    $commandArgs = array_merge(...array_map(
+      static fn (array $definition) => $definition['arguments'] ?? [],
+      array_values($drush)
+    ));
+    $this->assertContains(
+      '@scolta.index_locator',
+      $commandArgs,
+      'The drush commands must be handed the shared locator'
+    );
   }
 
 }

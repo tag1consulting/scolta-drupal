@@ -15,6 +15,7 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 - `hook_cron` also sweeps leftover trash, time-boxed by the new `cleanup.cron_seconds` setting (default 180, `0` disables; on web-triggered cron the budget is additionally capped by remaining `max_execution_time`). An interrupted sweep resumes on the next run, and a cron run with no trash logs nothing.
 
 ### Changed
+- Rewrote or removed tests that asserted on source code or config-file text instead of behavior, per the sharpened testing rule in `CLAUDE.md`. Rewrites construct the real class with stubbed services and assert on behavior (`ScoltaSearchBlockTest`, `DrupalConfigStorageTest`, `PagefindBuilderTest`, a new `AiApiControllerPipelineTest`, and others); a new `tests/src/Functional/ScoltaDrushCommandsTest.php` (Drush Test Traits) smoke-tests the drush command surface and is the intended home for future command coverage.
 - A `CHANGELOG.md` entry is now recommended rather than required, entries are expected to be brief, and the `docs-check` CI job was deleted.
 - A test is recommended but no longer required in new PRs. Trivial PRs may skip the test requirement.
 - `composer.lock` is no longer committed: this is a library, drupal.org ships the git tarball, and every CI job resolves with `composer update`. The release gate moves from `lock-guard` to `constraint-guard`, which verifies the `tag1/scolta-php` floor is a stable caret constraint satisfied by a published release. ([#234](https://github.com/tag1consulting/scolta-drupal/pull/234))

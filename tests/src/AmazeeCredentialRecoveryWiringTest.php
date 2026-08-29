@@ -148,76 +148,23 @@ namespace Drupal\scolta\Tests {
         }
 
         // ---------------------------------------------------------------
-        // Structural: the wiring is present with the correct path gate
+        // Structural: the service definition carries the cache backend
         // ---------------------------------------------------------------
 
-        public function testServiceWiresRecoveryGatedOnAmazeePath(): void {
-            $src = $this->source('src/Service/ScoltaAiService.php');
-
-            $this->assertStringContainsString('use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;', $src);
-            $this->assertStringContainsString('$this->setKeyExpiryRecovery(', $src);
-            // The Amazee-path gate, now stated once rather than enumerated:
-            // recovery is wired only when the shared resolution says Amazee is
-            // the effective source, which is false for an explicit key and
-            // false for the drupal_ai provider (Amazee is ineligible there).
-            $this->assertStringContainsString('if (!$this->resolveApiKey()->isAmazee()) {', $src);
-        }
-
-        public function testServiceExposesReauthMarkerAccessors(): void {
-            $src = $this->source('src/Service/ScoltaAiService.php');
-
-            // The admin notice reads this; AmazeeSettingsForm clears it.
-            $this->assertStringContainsString('public function isAmazeeReauthNeeded(): bool', $src);
-            $this->assertStringContainsString('->isUpgradeNeeded()', $src);
-            $this->assertStringContainsString('public function clearAmazeeReauthNeeded(): void', $src);
-            $this->assertStringContainsString('->clearUpgradeNeeded()', $src);
-        }
-
-        public function testHookRendersReauthNoticeRoutingToAmazeeSettings(): void {
-            $src = $this->source('scolta.module');
-
-            // hook_page_top surfaces the prompt by reading the service marker
-            // and routes the operator to the Amazee.ai settings flow.
-            $this->assertStringContainsString('isAmazeeReauthNeeded()', $src);
-            $this->assertStringContainsString("Url::fromRoute('scolta.settings.amazee')", $src);
-        }
-
-        public function testSettingsFormClearsReauthMarkerOnReconnect(): void {
-            $src = $this->source('src/Form/AmazeeSettingsForm.php');
-
-            $this->assertStringContainsString('use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;', $src);
-            // Completing the reconnect (either entry point) clears it.
-            $this->assertSame(
-                2,
-                substr_count($src, '$this->keyRecovery->clearUpgradeNeeded();'),
-                'Both reconnect paths must clear the re-authentication marker'
-            );
-        }
-
         public function testServicesYamlPassesCacheToAiService(): void {
-            $yaml = $this->source('scolta.services.yml');
-            $this->assertMatchesRegularExpression(
-                '/scolta\.ai_service:.*?arguments:.*?@cache\.default/s',
-                $yaml,
-                'scolta.ai_service must receive @cache.default'
+            $services = \Symfony\Component\Yaml\Yaml::parseFile(
+                dirname(__DIR__, 2) . '/scolta.services.yml'
             );
-        }
-
-        public function testHealthControllerPassesCacheToHealthChecker(): void {
-            $src = $this->source('src/Controller/HealthController.php');
-
-            $this->assertStringContainsString("\$container->get('cache.default')", $src);
-            $this->assertStringContainsString('new DrupalCacheDriver(', $src);
-            $this->assertStringContainsString('cache: $cacheDriver', $src);
+            $this->assertContains(
+                '@cache.default',
+                $services['services']['scolta.ai_service']['arguments'] ?? [],
+                'scolta.ai_service must receive @cache.default so KeyExpiryRecovery markers persist'
+            );
         }
 
         // ---------------------------------------------------------------
         // Helpers
         // ---------------------------------------------------------------
-
-        private function source(string $relativePath): string {
-            return file_get_contents(dirname(__DIR__, 2) . '/' . $relativePath);
-        }
 
         /**
          * Run a HealthChecker for a configured Amazee install with the cache.
