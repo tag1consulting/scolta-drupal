@@ -76,6 +76,13 @@ class BrowserConfigParityFunctionalTest extends BrowserTestBase {
     // the createInstance() public API. Note the snake_case name, unlike every
     // other top-level key.
     'priority_pages',
+    // Per-site label overrides (window.scolta.labels / ScoltaConfig::$labels
+    // in scolta-php). Added to scolta-php after this module's last release
+    // that constraint permitted; ScoltaSearchBlock::build() does not emit it
+    // yet. Not implemented here — tracked as a follow-up, out of scope for
+    // the retired-index-cleanup work that first pulled in a scolta-php
+    // carrying this key.
+    'labels',
   ];
 
   /**
