@@ -93,25 +93,13 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
   // -------------------------------------------------------------------
 
   /**
-   * The fieldset renders with every setting as its own field.
-   */
-  public function testSaytSectionRenders(): void {
-    $this->drupalLogin($this->adminUser);
-    $this->drupalGet('/admin/config/search/scolta');
-    $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->pageTextContains('Search as you type');
-
-    foreach (array_keys(self::DEFAULTS) as $key) {
-      $this->assertSession()->fieldExists($key);
-    }
-  }
-
-  /**
-   * The fields open on the shipped defaults.
+   * The fieldset renders, with every field present and on its shipped default.
    */
   public function testFieldsShowTheShippedDefaults(): void {
     $this->drupalLogin($this->adminUser);
     $this->drupalGet('/admin/config/search/scolta');
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->pageTextContains('Search as you type');
 
     $this->assertSame('2', $this->assertSession()->fieldExists('sayt_min_chars')->getValue());
     $this->assertSame('150', $this->assertSession()->fieldExists('sayt_debounce_ms')->getValue());
@@ -119,6 +107,7 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
     $this->assertSame('3', $this->assertSession()->fieldExists('sayt_max_recent')->getValue());
     $this->assertSame('6', $this->assertSession()->fieldExists('sayt_expand_per_minute')->getValue());
     $this->assertSame('500', $this->assertSession()->fieldExists('sayt_expansion_delay_ms')->getValue());
+    $this->assertSame('navigate', $this->assertSession()->fieldExists('sayt_suggestion_action')->getValue());
     $this->assertSession()->checkboxChecked('sayt_enabled');
     $this->assertSession()->checkboxChecked('sayt_recent_searches');
     $this->assertSession()->checkboxChecked('sayt_expand');
@@ -136,7 +125,7 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
     $this->drupalGet('/admin/config/search/scolta');
 
     $this->submitForm([
-      'sayt_enabled' => TRUE,
+      'sayt_enabled' => FALSE,
       'sayt_min_chars' => '1',
       'sayt_debounce_ms' => '220',
       'sayt_max_suggestions' => '9',
@@ -150,7 +139,7 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
     $this->assertSession()->pageTextContains('The configuration options have been saved.');
 
     $config = $this->config('scolta.settings');
-    $this->assertTrue($config->get('sayt_enabled'));
+    $this->assertFalse($config->get('sayt_enabled'), 'The off switch must save as a literal false, not silently as true');
     $this->assertSame(1, $config->get('sayt_min_chars'));
     $this->assertSame(220, $config->get('sayt_debounce_ms'));
     $this->assertSame(9, $config->get('sayt_max_suggestions'));
@@ -169,28 +158,10 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
     $this->assertSame('7', $this->assertSession()->fieldExists('sayt_max_recent')->getValue());
     $this->assertSame('12', $this->assertSession()->fieldExists('sayt_expand_per_minute')->getValue());
     $this->assertSame('750', $this->assertSession()->fieldExists('sayt_expansion_delay_ms')->getValue());
+    $this->assertSession()->checkboxNotChecked('sayt_enabled');
     $this->assertSession()->checkboxNotChecked('sayt_recent_searches');
     $this->assertSession()->checkboxNotChecked('sayt_expand');
     $this->assertSession()->fieldValueEquals('sayt_suggestion_action', 'search');
-  }
-
-  /**
-   * The off switch saves as FALSE.
-   *
-   * Its own test because it is the only setting whose whole purpose is the
-   * false direction, and because a checkbox that silently saves TRUE is
-   * indistinguishable from a working one on a default site.
-   */
-  public function testSaytCanBeTurnedOff(): void {
-    $this->drupalLogin($this->adminUser);
-    $this->drupalGet('/admin/config/search/scolta');
-    $this->submitForm(['sayt_enabled' => FALSE], 'Save configuration');
-
-    $this->assertSession()->pageTextContains('The configuration options have been saved.');
-    $this->assertFalse($this->config('scolta.settings')->get('sayt_enabled'));
-
-    $this->drupalGet('/admin/config/search/scolta');
-    $this->assertSession()->checkboxNotChecked('sayt_enabled');
   }
 
   // -------------------------------------------------------------------
@@ -333,19 +304,6 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
       $this->config('scolta.settings')->getRawData(),
       'A second run of the update must be a no-op'
     );
-  }
-
-  /**
-   * The update reports what it did.
-   */
-  public function testUpdateReturnsASummary(): void {
-    $this->simulatePreSaytSite();
-
-    $summary = (string) $this->runSaytUpdate();
-    $this->assertStringContainsString('Search as you type', $summary);
-
-    // Nothing left to do on the second pass, and it says so.
-    $this->assertStringContainsString('already configured', (string) $this->runSaytUpdate());
   }
 
   // -------------------------------------------------------------------

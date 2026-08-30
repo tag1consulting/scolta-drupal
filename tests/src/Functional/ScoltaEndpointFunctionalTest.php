@@ -24,39 +24,20 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
   protected $defaultTheme = 'stark';
 
   /**
-   * Creates a minimal fake Pagefind index so the search block renders.
-   *
-   * ScoltaSearchBlock::build() returns empty when the pagefind index is
-   * missing. Tests that place the block and assert on its HTML need a real
-   * (but empty) index file at the configured output location.
-   */
-  protected function createFakeIndex(): void {
-    $settings = \Drupal::config('scolta.settings');
-    $outputUri = $settings->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
-    $wrappers = \Drupal::service('stream_wrapper_manager');
-    $realDir = $wrappers->getViaUri($outputUri)->realpath();
-    if ($realDir !== FALSE) {
-      @mkdir($realDir . '/pagefind', 0777, TRUE);
-      file_put_contents($realDir . '/pagefind/pagefind.js', '// fake index');
-      file_put_contents($realDir . '/pagefind/pagefind-entry.json', '{}');
-    }
-  }
-
-  /**
    * GET requests to POST-only endpoints must return 4xx, not 200 or 500.
    *
    * Verifies method enforcement on the AI API routes. These are POST-only;
    * a GET by any user (anonymous or authenticated) must be rejected with
-   * 403, 404, or 405 — never 200 or 500.
+   * 403, 404, or 405 — never 200 or 500. Bundled with each endpoint's input
+   * validation below in one install, since both are cheap per-endpoint
+   * checks that need only one logged-in user.
    */
-  public function testEndpointsRequirePermission(): void {
-    $endpoints = [
+  public function testEndpointsRejectInvalidRequests(): void {
+    foreach ([
       '/api/scolta/v1/expand-query',
       '/api/scolta/v1/summarize',
       '/api/scolta/v1/followup',
-    ];
-
-    foreach ($endpoints as $endpoint) {
+    ] as $endpoint) {
       $this->drupalGet($endpoint);
       $statusCode = $this->getSession()->getStatusCode();
       $this->assertTrue(
@@ -64,6 +45,29 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
         "GET to POST-only endpoint {$endpoint} should return 4xx, got {$statusCode}"
       );
     }
+
+    $user = $this->drupalCreateUser(['use scolta ai']);
+    $this->drupalLogin($user);
+
+    // Empty query should fail.
+    $response = $this->makeJsonPost('/api/scolta/v1/expand-query', ['query' => '']);
+    $this->assertTrue($response['status'] >= 400, 'Empty query should be rejected');
+
+    // Too-long query should fail.
+    $response = $this->makeJsonPost('/api/scolta/v1/expand-query', [
+      'query' => str_repeat('a', 501),
+    ]);
+    $this->assertTrue($response['status'] >= 400, 'Query over 500 chars should be rejected');
+
+    // A query with no context should fail.
+    $response = $this->makeJsonPost('/api/scolta/v1/summarize', ['query' => 'test']);
+    $this->assertTrue($response['status'] >= 400, 'Summarize with no context should be rejected');
+
+    // A message array missing the expected shape should fail.
+    $response = $this->makeJsonPost('/api/scolta/v1/followup', [
+      'messages' => [['invalid' => 'format']],
+    ]);
+    $this->assertTrue($response['status'] >= 400, 'Malformed follow-up message shape should be rejected');
   }
 
   /**
@@ -120,43 +124,26 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests that the expand endpoint validates input.
+   * The max_follow_ups quota rejects a follow-up once exhausted.
+   *
+   * A quota of 0 means every follow-up is over budget, so this is the
+   * cheapest way to observe the config-driven limit taking effect without
+   * needing to first exhaust a real conversation history.
    */
-  public function testExpandEndpointValidation(): void {
+  public function testFollowUpLimitEnforced(): void {
     $user = $this->drupalCreateUser(['use scolta ai']);
     $this->drupalLogin($user);
 
-    // Empty query should fail.
-    $response = $this->makeJsonPost('/api/scolta/v1/expand-query', ['query' => '']);
-    $this->assertTrue(
-      $response['status'] >= 400,
-      'Empty query should be rejected'
-    );
+    $this->config('scolta.settings')->set('max_follow_ups', 0)->save();
 
-    // Too-long query should fail.
-    $response = $this->makeJsonPost('/api/scolta/v1/expand-query', [
-      'query' => str_repeat('a', 501),
+    $response = $this->makeJsonPost('/api/scolta/v1/followup', [
+      'messages' => [
+        ['role' => 'user', 'content' => 'initial question'],
+        ['role' => 'assistant', 'content' => 'initial answer'],
+        ['role' => 'user', 'content' => 'follow-up'],
+      ],
     ]);
-    $this->assertTrue(
-      $response['status'] >= 400,
-      'Query over 500 chars should be rejected'
-    );
-  }
-
-  /**
-   * Tests that the search block renders on a page.
-   */
-  public function testSearchBlockRenders(): void {
-    $this->createFakeIndex();
-    $this->drupalCreateContentType(['type' => 'page']);
-    $this->drupalCreateNode(['type' => 'page', 'title' => 'Search Page']);
-    $this->drupalPlaceBlock('scolta_search', ['region' => 'content']);
-
-    $this->drupalGet('/node/1');
-    $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->elementExists('css', '#scolta-search');
-    $this->assertSession()->responseContains('scolta.js');
-    $this->assertSession()->responseContains('pagefindPath');
+    $this->assertEquals(429, $response['status']);
   }
 
   /**

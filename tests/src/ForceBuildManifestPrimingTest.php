@@ -21,33 +21,12 @@ use Tag1\Scolta\Storage\FilesystemDriver;
  * gather: a ~55m cold build where a ~10m warm one was expected, with nothing in
  * either build's output to explain it.
  *
- * The same call sites carry the exporter's manifest wiring, which is what lets
- * bodies too short to index be recorded rather than re-gathered every build, so
- * both are asserted here together.
- *
- * gather() cannot be executed without a Drupal bootstrap, which this suite does
- * not have, so the gate structure is asserted by inspection in line with the
- * rest of the suite. The invariant the wiring depends on — that put() is what
- * spares an entry from pruning — is executed for real against scolta-php's
- * TimestampManifest.
+ * The invariant the wiring depends on — that put() is what spares an entry
+ * from pruning — is executed for real against scolta-php's TimestampManifest.
+ * The gather()-side wiring cannot be executed without a Drupal bootstrap and
+ * is covered functionally elsewhere.
  */
 class ForceBuildManifestPrimingTest extends TestCase {
-
-  private string $moduleRoot;
-  private string $gatherer;
-  private string $commands;
-  private string $worker;
-
-  protected function setUp(): void {
-    $this->moduleRoot = dirname(__DIR__, 2);
-    $this->gatherer = file_get_contents($this->moduleRoot . '/src/Service/ScoltaContentGatherer.php');
-    $this->commands = file_get_contents($this->moduleRoot . '/src/Commands/ScoltaCommands.php');
-    $this->worker = file_get_contents($this->moduleRoot . '/src/Plugin/QueueWorker/ScoltaRebuildWorker.php');
-  }
-
-  // -------------------------------------------------------------------
-  // The invariant the wiring rests on — executed, not inspected
-  // -------------------------------------------------------------------
 
   /**
    * put() marks the entity seen, and seen is what survives the prune.
@@ -72,8 +51,8 @@ class ForceBuildManifestPrimingTest extends TestCase {
       $third = new TimestampManifest($dir, new FilesystemDriver());
       $this->assertNull(
         $third->get('recorded'),
-        'A build that records nothing must be shown to empty the manifest — if this '
-        . 'ever stops being true the gates below are guarding nothing.'
+        'A build that records nothing must be shown to empty the manifest — '
+        . 'this is the failure mode the manifest wiring exists to prevent.'
       );
 
       // The same build, recording what it loaded, keeps it.
@@ -94,131 +73,14 @@ class ForceBuildManifestPrimingTest extends TestCase {
     }
   }
 
-  // -------------------------------------------------------------------
-  // The gates: --force suppresses the skip, never the record
-  // -------------------------------------------------------------------
-
-  public function testCommandPassesTheManifestUnderForce(): void {
-    $this->assertStringNotContainsString(
-      '$force ? NULL : $orchestrator->getTimestampManifest()',
-      $this->commands,
-      'scolta:build must hand the gatherer the manifest under --force too. Withholding '
-      . 'it stops the build recording anything, and the end-of-build prune then empties '
-      . 'the manifest, so the NEXT build re-gathers the whole corpus.'
-    );
-    $this->assertStringContainsString(
-      '$tsManifest = $orchestrator->getTimestampManifest();',
-      $this->commands,
-      'scolta:build must take the orchestrator\'s manifest unconditionally.'
-    );
-  }
-
-  public function testTheSkipDecisionIsTheOnlyThingForceGates(): void {
-    $gates = substr_count($this->gatherer, '!$force');
-
-    $this->assertSame(
-      2,
-      $gates,
-      'ScoltaContentGatherer must gate exactly two things on !$force — the skip '
-      . 'decision in gather() and the one in gatherByIds(). A third gate means '
-      . '--force has started suppressing a write again.'
-    );
-  }
-
-  public function testRecordingIsNotGatedOnForce(): void {
-    $this->assertStringNotContainsString(
-      '$manifest !== NULL && !$force && !empty($itemsForManifest)',
-      $this->gatherer,
-      'put() must run whatever --force says: it is also what marks the entity seen.'
-    );
-    $this->assertSame(
-      2,
-      substr_count($this->gatherer, '$manifest !== NULL && !empty($itemsForManifest)'),
-      'Both gather() and gatherByIds() must record every entity they load.'
-    );
-  }
-
-  /**
-   * The stored timestamp and the timestamp a later build compares it against
-   * have to come from the same place.
-   *
-   * getEntityTimestamps() is the source of the value that gets stored, not just
-   * an input to the skip decision. Gated on !$force it returns nothing under
-   * --force, $entityTs falls through to buildContentItems(), and that reads the
-   * changed time off the first translation carrying a body — a different value
-   * on any multilingual entity. The entry a --force build wrote would then
-   * never match on the next build, and the corpus would re-gather forever: the
-   * bug this change is fixing, reintroduced by the obvious version of the fix.
-   */
-  public function testTimestampsAreQueriedWheneverThereIsAManifestToWrite(): void {
-    $this->assertSame(
-      2,
-      substr_count($this->gatherer, '$timestamps = $manifest !== NULL'),
-      'Both walks must query changed timestamps whenever a manifest is present, '
-      . 'independently of --force.'
-    );
-    $this->assertStringNotContainsString(
-      '($manifest !== NULL && !$force)
-        ? $this->getEntityTimestamps',
-      $this->gatherer,
-      'The timestamp query must not be gated on --force.'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // The exporter carries the known-empty record
-  // -------------------------------------------------------------------
-
-  public function testBothBuildPathsHandTheManifestToTheExporter(): void {
-    // scolta:build picks its gather source first (full walk or --entity-ids),
-    // so the shape is filterItems($source, $tsManifest) with both sources
-    // coming from the gatherer and both carrying the manifest.
-    $this->assertMatchesRegularExpression(
-      '/filterItems\(\s*\$source,\s*\$tsManifest\s*\)/s',
-      $this->commands,
-      'scolta:build must pass the manifest to filterItems() — the exporter is where a '
-      . 'body too short to index is dropped, and the only place that can record it.'
-    );
-    $this->assertMatchesRegularExpression(
-      '/\$source = \$this->contentGatherer->gather\([^;]*\$tsManifest,\s*\$force\)/s',
-      $this->commands,
-      'The full-walk source must come from the gatherer with the manifest.'
-    );
-    $this->assertMatchesRegularExpression(
-      '/\$source = \$this->contentGatherer->gatherByIds\([^;]*\$tsManifest,\s*\$force\)/s',
-      $this->commands,
-      'The --entity-ids source must come from the gatherer with the manifest.'
-    );
-    $this->assertMatchesRegularExpression(
-      '/filterItems\(\s*\$this->contentGatherer->gather\([^;]*?\),\s*\$tsManifest\s*\)/s',
-      $this->worker,
-      'The queue worker must pass the manifest to filterItems() as well.'
-    );
-  }
-
-  public function testTheGathererAndTheExporterShareOneManifestInstance(): void {
-    // Two instances would each hold half the state and prune the other's away.
-    $this->assertSame(
-      1,
-      substr_count($this->worker, '$orchestrator->getTimestampManifest()'),
-      'The queue worker must resolve the manifest once and pass the same instance to '
-      . 'both the gatherer and the exporter.'
-    );
-    $this->assertSame(
-      1,
-      substr_count($this->commands, '$orchestrator->getTimestampManifest();'),
-      'scolta:build must resolve the manifest once and share the instance.'
-    );
-  }
-
   /**
    * Turns itself on the moment scolta-php ships the recorder.
    *
-   * The wiring above is inert against a scolta-php whose filterItems() takes no
-   * manifest: the extra argument is accepted and ignored. This is what makes
-   * the wiring real, and it is deliberately a skip rather than a failure so the
-   * branch is honest about its upstream dependency instead of red for a reason
-   * that is not a defect.
+   * The manifest wiring in this module is inert against a scolta-php whose
+   * filterItems() takes no manifest: the extra argument is accepted and
+   * ignored. This is what makes the wiring real, and it is deliberately a
+   * skip rather than a failure so the branch is honest about its upstream
+   * dependency instead of red for a reason that is not a defect.
    */
   public function testExporterAcceptsTheManifestOnceUpstreamShipsIt(): void {
     $params = (new \ReflectionMethod(ContentExporter::class, 'filterItems'))->getParameters();

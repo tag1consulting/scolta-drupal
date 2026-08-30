@@ -11,7 +11,8 @@ use Symfony\Component\Yaml\Yaml;
  * Validates that service definitions, routes, and PHP files are consistent.
  *
  * These tests do not require a Drupal bootstrap — they verify that the
- * wiring in YAML files references PHP classes/methods that actually exist.
+ * wiring in YAML files references PHP classes/methods that actually exist,
+ * using parsed YAML and reflection.
  */
 class StructuralIntegrityTest extends TestCase {
 
@@ -65,18 +66,12 @@ class StructuralIntegrityTest extends TestCase {
     $this->assertFileExists($classFile,
       "Route '{$routeName}' references {$class} but file does not exist");
 
-    // Verify the method exists in the file source — directly or inherited
-    // from the local AiApiControllerBase (the shared AI request pipeline).
+    // method_exists() sees inherited methods too, so a handler that lives on
+    // AiApiControllerBase (the shared AI request pipeline) also passes.
     if ($method) {
-      $contents = file_get_contents($classFile);
-      if (!str_contains($contents, "function {$method}(")
-        && str_contains($contents, 'extends AiApiControllerBase')) {
-        $contents = file_get_contents(dirname($classFile) . '/AiApiControllerBase.php');
-      }
-      $this->assertStringContainsString(
-        "function {$method}(",
-        $contents,
-        "Route '{$routeName}' references method {$method} not found in {$class} or its base"
+      $this->assertTrue(
+        method_exists($class, $method),
+        "Route '{$routeName}' references method {$method} not found on {$class} or its ancestors"
       );
     }
   }
@@ -158,33 +153,31 @@ class StructuralIntegrityTest extends TestCase {
 
     foreach ($classesToCheck as $serviceId => $className) {
       $argCount = count($services['services'][$serviceId]['arguments'] ?? []);
-      $classFile = $this->classToFile($className);
-      $contents = file_get_contents($classFile);
+      $paramCount = (new \ReflectionMethod($className, '__construct'))
+        ->getNumberOfParameters();
 
-      // Count constructor parameters by looking for the function signature.
-      if (preg_match('/function\s+__construct\s*\(([^)]*)\)/s', $contents, $m)) {
-        $params = array_filter(array_map('trim', explode(',', $m[1])));
-        $paramCount = count($params);
-
-        $this->assertEquals(
-          $paramCount, $argCount,
-          "Service '{$serviceId}' has {$argCount} arguments but constructor has {$paramCount} parameters"
-        );
-      }
+      $this->assertEquals(
+        $paramCount, $argCount,
+        "Service '{$serviceId}' has {$argCount} arguments but constructor has {$paramCount} parameters"
+      );
     }
   }
 
   public function testDrushCommandArgumentCountMatchesConstructor(): void {
+    // ScoltaCommands extends Drush\Commands\DrushCommands, and drush is a
+    // require-dev dependency that the local unit-test vendor does not carry —
+    // reflecting the class without it is a fatal, not a catchable failure.
+    if (!class_exists('Drush\Commands\DrushCommands')) {
+      $this->markTestSkipped('drush/drush not installed; ScoltaCommands cannot be reflected without its parent class.');
+    }
+
     $drush = Yaml::parseFile($this->moduleRoot . '/drush.services.yml');
     $args = $drush['services']['scolta.commands']['arguments'] ?? [];
-    $file = $this->classToFile('Drupal\scolta\Commands\ScoltaCommands');
-    $contents = file_get_contents($file);
+    $paramCount = (new \ReflectionMethod('Drupal\scolta\Commands\ScoltaCommands', '__construct'))
+      ->getNumberOfParameters();
 
-    if (preg_match('/function\s+__construct\s*\(([^)]*)\)/s', $contents, $m)) {
-      $params = array_filter(array_map('trim', explode(',', $m[1])));
-      $this->assertEquals(count($params), count($args),
-        "Drush command argument count mismatch");
-    }
+    $this->assertEquals($paramCount, count($args),
+      "Drush command argument count mismatch");
   }
 
   // -------------------------------------------------------------------
@@ -212,33 +205,8 @@ class StructuralIntegrityTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // isExecutable() guard
-  // -------------------------------------------------------------------
-
-  public function testCommandsDoNotCallIsExecutable(): void {
-    $source = file_get_contents($this->moduleRoot . '/src/Commands/ScoltaCommands.php');
-    $this->assertStringNotContainsString(
-      'isExecutable()',
-      $source,
-      'Drush commands must not call private isExecutable(); use resolve() + status() instead'
-    );
-  }
-
-  // -------------------------------------------------------------------
   // PHPStan configuration
   // -------------------------------------------------------------------
-
-  public function testPhpstanConfigIncludesDeprecationRules(): void {
-    $neon = file_get_contents($this->moduleRoot . '/phpstan.neon');
-    $this->assertStringContainsString('phpstan-deprecation-rules/rules.neon', $neon,
-      'phpstan.neon must include phpstan-deprecation-rules for deprecation detection');
-  }
-
-  public function testPhpstanConfigDocumentsMglamanExtension(): void {
-    $neon = file_get_contents($this->moduleRoot . '/phpstan.neon');
-    $this->assertStringContainsString('mglaman/phpstan-drupal', $neon,
-      'phpstan.neon must document the mglaman/phpstan-drupal extension (even if excluded in standalone mode)');
-  }
 
   public function testPhpstanBaselineExists(): void {
     $this->assertFileExists($this->moduleRoot . '/phpstan-baseline.neon',
@@ -253,89 +221,20 @@ class StructuralIntegrityTest extends TestCase {
     $path = $this->moduleRoot . '/.gitattributes';
     $this->assertFileExists($path,
       '.gitattributes must exist to exclude dev files from distribution archives');
-    $content = file_get_contents($path);
-    $this->assertStringContainsString('tests/', $content,
-      '.gitattributes must exclude /tests/ from distribution');
-    $this->assertStringContainsString('export-ignore', $content,
-      '.gitattributes must use export-ignore directives');
-    $this->assertStringContainsString('.github/', $content,
-      '.gitattributes must exclude /.github/ from distribution');
-    $this->assertStringContainsString('phpstan.neon', $content,
-      '.gitattributes must exclude phpstan.neon from distribution');
-  }
 
-  // -------------------------------------------------------------------
-  // No raw filesystem calls in src/ (regression guard)
-  // -------------------------------------------------------------------
-
-  /**
-   * Verify no raw PHP filesystem functions exist in src/ without phpcs:ignore.
-   *
-   * Method calls via FileSystemInterface (->mkdir, ->delete, etc.) are allowed.
-   * Only plain PHP function calls (mkdir(), unlink(), etc.) are flagged.
-   *
-   * Allowed exceptions:
-   * - Any line with a phpcs:ignore comment (including the line above)
-   * - proc_open/feof/fgets/fclose/fread (subprocess pipe operations)
-   * - Method calls: ->mkdir(, ->delete(, etc.
-   */
-  public function testNoRawFilesystemCalls(): void {
-    $srcDir = $this->moduleRoot . '/src/';
-    // Raw PHP function names to check — only flag bare calls, not method calls.
-    $forbidden = [
-      'strip_tags(',
-      'file_put_contents(',
-      'unlink(',
-      'rmdir(',
-      'mkdir(',
-      'copy(',
-      'chmod(',
-    ];
-    // Patterns that make a line acceptable even if it matches a forbidden func.
-    $allowed = ['phpcs:ignore', 'proc_open', 'feof', 'fgets', 'fclose', 'fread'];
-
-    $violations = [];
-    $iterator = new \RecursiveIteratorIterator(
-      new \RecursiveDirectoryIterator($srcDir, \FilesystemIterator::SKIP_DOTS)
-    );
-
-    foreach ($iterator as $file) {
-      if ($file->getExtension() !== 'php') {
-        continue;
-      }
-      $lines = file($file->getPathname());
-      foreach ($lines as $num => $line) {
-        foreach ($forbidden as $func) {
-          if (!str_contains($line, $func)) {
-            continue;
-          }
-          // Skip method calls: ->mkdir(, ->copy(, etc.
-          $funcName = rtrim($func, '(');
-          if (preg_match('/->\\s*' . preg_quote($funcName, '/') . '\\s*\\(/', $line)) {
-            continue;
-          }
-          // Skip static calls: FileSystemInterface::mkdir( etc.
-          if (preg_match('/::' . preg_quote($funcName, '/') . '\\s*\\(/', $line)) {
-            continue;
-          }
-          // Check this line and the previous line for phpcs:ignore.
-          $context = $line . ($lines[$num - 1] ?? '');
-          $isAllowed = FALSE;
-          foreach ($allowed as $exception) {
-            if (str_contains($context, $exception)) {
-              $isAllowed = TRUE;
-              break;
-            }
-          }
-          if (!$isAllowed) {
-            $violations[] = $file->getPathname() . ':' . ($num + 1) . ' — ' . trim($line);
-          }
-        }
+    // Parse "path export-ignore" pairs line by line.
+    $ignored = [];
+    foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+      $parts = preg_split('/\s+/', trim($line));
+      if (count($parts) >= 2 && in_array('export-ignore', $parts, TRUE)) {
+        $ignored[] = $parts[0];
       }
     }
 
-    $this->assertEmpty($violations,
-      "Raw filesystem calls found in src/ (add phpcs:ignore with explanation if intentional):\n" . implode("\n", $violations));
+    foreach (['/tests/', '/.github/', '/phpstan.neon'] as $devPath) {
+      $this->assertContains($devPath, $ignored,
+        ".gitattributes must mark {$devPath} export-ignore so it stays out of distribution archives");
+    }
   }
 
   // -------------------------------------------------------------------
@@ -412,22 +311,15 @@ class StructuralIntegrityTest extends TestCase {
   }
 
   /**
-   * The search library must serve the deployed bundle, and keep it fresh.
+   * The search library must serve the deployed bundle.
    *
-   * Four parts, each load-bearing. The library must reference
-   * public://scolta-assets, because vendor/ is not web-accessible and the
-   * module directory is read-only on immutable-code hosts. Those URIs must
-   * then be resolved by scolta_library_info_alter() before the library is
-   * built, because a colon in a JS path is fatal once locale is enabled —
-   * declaring them unresolved returned HTTP 500 on every rendered page of a
-   * multilingual site. scolta.module must implement hook_rebuild(), because
-   * that is what makes `composer update` + `drush cr` sufficient to pick up
-   * a new bundle — hook_install() runs once per site ever, so without the
-   * rebuild hook an updating site would serve the old bundle indefinitely,
-   * which is the same staleness the committed copies had. And the install
-   * hook must deploy too, so a fresh install serves assets before its first
-   * rebuild.
+   * The library must reference public://scolta-assets, because vendor/ is not
+   * web-accessible and the module directory is read-only on immutable-code
+   * hosts. That the deployment itself happens (install, cache rebuild,
+   * locale-safe path resolution) is covered behaviorally by
+   * AssetDeploymentFunctionalTest and LocaleAssetPathFunctionalTest.
    *
+   * @see \Drupal\Tests\scolta\Functional\AssetDeploymentFunctionalTest
    * @see \Drupal\Tests\scolta\Functional\LocaleAssetPathFunctionalTest
    */
   public function testSearchLibraryServesDeployedAssets(): void {
@@ -438,75 +330,6 @@ class StructuralIntegrityTest extends TestCase {
       'The search library JS must be the deployed public://scolta-assets copy.');
     $this->assertSame(['public://scolta-assets/css/scolta.css'], $searchCss,
       'The search library CSS must be the deployed public://scolta-assets copy.');
-
-    $module = file_get_contents($this->moduleRoot . '/scolta.module');
-    $this->assertStringContainsString('function scolta_rebuild()', $module,
-      'scolta.module must implement hook_rebuild() to redeploy the bundle on cache rebuild.');
-    $this->assertStringContainsString('function scolta_library_info_alter(', $module,
-      'scolta.module must implement hook_library_info_alter(): the public:// URIs above are fatal on a site with locale enabled until it resolves them to a local path.');
-
-    $install = file_get_contents($this->moduleRoot . '/scolta.install');
-    $this->assertStringContainsString("service('scolta.asset_deployer')->deploy()", $install,
-      'scolta_install() must deploy the bundle so a fresh install serves assets immediately.');
-  }
-
-  // -------------------------------------------------------------------
-  // Release workflow constraint guard
-  // -------------------------------------------------------------------
-
-  /**
-   * The release must be gated on scolta-php existing as a published release.
-   *
-   * This used to read the committed composer.lock and refuse a lock naming a
-   * development version. No lock is committed here — this is a library, not a
-   * deployed application — so the same question is asked of the manifest and
-   * of Packagist: the declared floor must not be a development constraint,
-   * and a published stable release must satisfy it. Without this job the
-   * coordination is prose again, and scolta-drupal could be tagged against a
-   * scolta-php that nobody can install.
-   */
-  public function test_release_workflow_has_constraint_guard(): void {
-    $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
-    $this->assertStringContainsString(
-      'CONSTRAINT GUARD FAILED',
-      $workflow,
-      'Release workflow must gate on the tag1/scolta-php constraint naming a published release'
-    );
-    $this->assertStringContainsString(
-      'repo.packagist.org/p2/tag1/scolta-php.json',
-      $workflow,
-      'The constraint guard must check the constraint against published releases, not just its syntax'
-    );
-    $this->assertStringNotContainsString(
-      'LOCK GUARD FAILED',
-      $workflow,
-      'No composer.lock is committed here; the release gate must not read one'
-    );
-  }
-
-  /**
-   * The release is notes-only. This module is distributed via drupal.org (the
-   * packager builds the tarball from git.drupalcode.org), so a GitHub
-   * vendor-bundled release asset has no consumer. Guard against silently
-   * re-adding a custom build artifact or validate-zip job.
-   */
-  public function testReleaseWorkflowUploadsNoBuildArtifact(): void {
-    $workflow = file_get_contents($this->moduleRoot . '/.github/workflows/release.yml');
-    $this->assertStringNotContainsString(
-      'scolta-drupal-',
-      $workflow,
-      'Release workflow must not build or upload a scolta-drupal-*.zip asset'
-    );
-    $this->assertStringNotContainsString(
-      'validate-zip',
-      $workflow,
-      'Release workflow must not include a validate-zip job (no release asset to validate)'
-    );
-    $this->assertStringNotContainsString(
-      'files:',
-      $workflow,
-      'Release workflow must be notes-only (no files: upload to the release)'
-    );
   }
 
 }

@@ -4,27 +4,57 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Tests;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\scolta\Controller\HealthController;
+use Drupal\scolta\Service\IndexLocator;
+use Drupal\scolta\Service\ScoltaAiService;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
+use Tag1\Scolta\Config\ApiKeySource;
+use Tag1\Scolta\Config\ResolvedApiKey;
+use Tag1\Scolta\Config\ScoltaConfig;
 
 /**
- * Tests that the health endpoint trims its payload for anonymous callers.
+ * Behavioral tests for the health endpoint's permission-trimmed payload.
  *
  * Policy: the health route stays reachable anonymously so uptime monitors
  * always work, but the full diagnostic payload (provider, index integrity,
  * fragment counts) requires 'administer scolta'. Anonymous callers receive
  * exactly ['status' => ...].
  *
- * The controller cannot be instantiated without a Drupal bootstrap, so tests
- * use the same two strategies as HealthControllerIndexDetailTest: source
- * analysis plus a functional replication of the trim logic.
+ * The real HealthController is constructed with stubbed services and a real
+ * IndexLocator over a temp directory; currentUser() and config() resolve
+ * through a minimal \Drupal container installed per test.
  */
 class HealthPayloadTrimTest extends TestCase {
 
   private string $moduleRoot;
 
+  /**
+   * Temp directory serving as the pagefind output dir.
+   */
+  private string $dir;
+
   protected function setUp(): void {
     $this->moduleRoot = dirname(__DIR__, 2);
+    $this->dir = sys_get_temp_dir() . '/scolta-health-' . uniqid();
+    mkdir($this->dir, 0777, TRUE);
+  }
+
+  protected function tearDown(): void {
+    \Drupal::unsetContainer();
+    $files = new \RecursiveIteratorIterator(
+      new \RecursiveDirectoryIterator($this->dir, \FilesystemIterator::SKIP_DOTS),
+      \RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ($files as $file) {
+      $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+    }
+    rmdir($this->dir);
   }
 
   // -------------------------------------------------------------------
@@ -47,95 +77,117 @@ class HealthPayloadTrimTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // Source analysis: the controller gates detail on 'administer scolta'.
-  // -------------------------------------------------------------------
-
-  public function testControllerTrimsDetailWithoutAdministerScolta(): void {
-    $src = file_get_contents($this->moduleRoot . '/src/Controller/HealthController.php');
-
-    $this->assertStringContainsString(
-      "hasPermission('administer scolta')",
-      $src,
-      'HealthController must gate the full payload on the administer scolta permission'
-    );
-    $this->assertStringContainsString(
-      "new JsonResponse(['status' => \$result['status']])",
-      $src,
-      'HealthController must return exactly the status key to unauthorized callers'
-    );
-  }
-
-  public function testControllerDoesNotUseFloodControl(): void {
-    $src = file_get_contents($this->moduleRoot . '/src/Controller/HealthController.php');
-
-    // The health endpoint is excluded from AI-endpoint flood limits — a
-    // throttled monitor is worse than no monitor. It must not extend the
-    // flood-aware AI controller base or call the flood service.
-    $this->assertStringNotContainsString('AiApiControllerBase', $src);
-    $this->assertStringNotContainsString('flood', $src);
-  }
-
-  // -------------------------------------------------------------------
-  // Functional: replicate the trim logic and assert payload shapes.
+  // Behavioral: the controller trims by the caller's permission.
   // -------------------------------------------------------------------
 
   /**
-   * Replicates HealthController::handle()'s payload trim.
+   * Build a real HealthController and install its \Drupal container.
    *
-   * @param array<string, mixed> $result
-   *   The fully enriched health report.
-   * @param bool $hasAdminPermission
-   *   Whether the caller has 'administer scolta'.
-   *
-   * @return array<string, mixed>
-   *   The response payload.
+   * @param bool $isAdmin
+   *   Whether the current user has 'administer scolta'.
    */
-  private function shapePayload(array $result, bool $hasAdminPermission): array {
-    if (!$hasAdminPermission) {
-      return ['status' => $result['status']];
+  private function createController(bool $isAdmin): HealthController {
+    $settings = $this->createStub(ImmutableConfig::class);
+    $settings->method('get')->willReturnCallback(fn (string $key) => match ($key) {
+      // A plain filesystem path, so the stream wrapper manager is never
+      // consulted and no bootstrap is needed to resolve it.
+      'pagefind.output_dir' => $this->dir,
+      default => NULL,
+    });
+    $configFactory = $this->createStub(ConfigFactoryInterface::class);
+    $configFactory->method('get')->willReturn($settings);
+
+    $account = $this->createStub(AccountInterface::class);
+    $account->method('hasPermission')->willReturnCallback(
+      fn (string $permission) => $isAdmin && $permission === 'administer scolta'
+    );
+
+    $container = new ContainerBuilder();
+    $container->set('config.factory', $configFactory);
+    $container->set('current_user', $account);
+    \Drupal::setContainer($container);
+
+    $aiService = $this->createStub(ScoltaAiService::class);
+    $aiService->method('getConfig')->willReturn(new ScoltaConfig());
+    $aiService->method('hasDrupalAiModule')->willReturn(FALSE);
+    $aiService->method('resolveApiKey')->willReturn(
+      new ResolvedApiKey('', ApiKeySource::None, '')
+    );
+
+    return new HealthController(
+      $aiService,
+      $this->createStub(StreamWrapperManagerInterface::class),
+      new IndexLocator(),
+      NULL,
+    );
+  }
+
+  /**
+   * Write a valid index (pagefind.js plus fragments) into the temp dir.
+   */
+  private function buildIndex(int $fragments): void {
+    mkdir($this->dir . '/pagefind/fragment', 0777, TRUE);
+    file_put_contents($this->dir . '/pagefind/pagefind.js', 'js');
+    for ($i = 0; $i < $fragments; $i++) {
+      file_put_contents($this->dir . "/pagefind/fragment/en_{$i}.pf_fragment", 'x');
     }
-    return $result;
-  }
-
-  /**
-   * @return array<string, mixed>
-   */
-  private function fullReport(string $status = 'ok'): array {
-    return [
-      'status' => $status,
-      'ai_provider' => 'anthropic',
-      'ai_configured' => TRUE,
-      'index_exists' => TRUE,
-      'index' => [
-        'built' => TRUE,
-        'fragments' => 42,
-        'last_build' => '2026-06-11T00:00:00+00:00',
-        'integrity' => ['valid' => TRUE, 'issues' => []],
-      ],
-    ];
   }
 
   public function testAnonymousPayloadContainsExactlyStatus(): void {
-    $payload = $this->shapePayload($this->fullReport(), FALSE);
+    $this->buildIndex(2);
+    $response = $this->createController(FALSE)->handle();
 
-    $this->assertSame(['status'], array_keys($payload));
-    $this->assertSame('ok', $payload['status']);
+    $payload = json_decode((string) $response->getContent(), TRUE);
+    $this->assertSame(['status'], array_keys($payload), 'Anonymous callers must receive exactly the status key');
+    $this->assertIsString($payload['status']);
   }
 
   public function testAnonymousPayloadStillReflectsDegradedStatus(): void {
-    $payload = $this->shapePayload($this->fullReport('degraded'), FALSE);
+    // An index whose fragment directory is empty is degraded: pagefind.js
+    // exists but there is nothing to search.
+    mkdir($this->dir . '/pagefind', 0777, TRUE);
+    file_put_contents($this->dir . '/pagefind/pagefind.js', 'js');
 
-    $this->assertSame(['status' => 'degraded'], $payload);
+    $response = $this->createController(FALSE)->handle();
+
+    $payload = json_decode((string) $response->getContent(), TRUE);
+    $this->assertSame(['status' => 'degraded'], $payload, 'Integrity degradation must survive the anonymous trim');
   }
 
   public function testAdminPayloadContainsFullDetail(): void {
-    $full = $this->fullReport();
-    $payload = $this->shapePayload($full, TRUE);
+    $this->buildIndex(2);
+    $response = $this->createController(TRUE)->handle();
 
-    $this->assertSame($full, $payload);
-    foreach (['ai_provider', 'ai_configured', 'index_exists', 'index'] as $key) {
-      $this->assertArrayHasKey($key, $payload);
+    $payload = json_decode((string) $response->getContent(), TRUE);
+    foreach (['status', 'ai_provider', 'ai_configured', 'index_exists', 'index'] as $key) {
+      $this->assertArrayHasKey($key, $payload, "Admin payload missing {$key}");
     }
+    $this->assertTrue($payload['index_exists']);
+    $this->assertTrue($payload['index']['built']);
+    $this->assertSame(2, $payload['index']['fragments'], 'Fragment count must come from the real index on disk');
+    $this->assertTrue($payload['index']['integrity']['valid']);
+    $this->assertSame([], $payload['index']['integrity']['issues']);
+    $this->assertNotNull($payload['index']['last_build']);
+  }
+
+  public function testAdminPayloadReportsMissingIndex(): void {
+    $response = $this->createController(TRUE)->handle();
+
+    $payload = json_decode((string) $response->getContent(), TRUE);
+    $this->assertFalse($payload['index_exists']);
+    $this->assertSame(['built' => FALSE], $payload['index']);
+  }
+
+  public function testAdminPayloadFlagsEmptyFragmentDirAsInvalid(): void {
+    mkdir($this->dir . '/pagefind', 0777, TRUE);
+    file_put_contents($this->dir . '/pagefind/pagefind.js', 'js');
+
+    $response = $this->createController(TRUE)->handle();
+
+    $payload = json_decode((string) $response->getContent(), TRUE);
+    $this->assertSame('degraded', $payload['status']);
+    $this->assertFalse($payload['index']['integrity']['valid']);
+    $this->assertContains('No fragment files found', $payload['index']['integrity']['issues']);
   }
 
 }

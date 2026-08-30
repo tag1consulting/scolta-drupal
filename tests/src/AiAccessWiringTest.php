@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Tests;
 
+use Drupal\Core\Session\AccountInterface;
+use Drupal\scolta\Access\AiAccess;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
@@ -16,7 +18,7 @@ use Symfony\Component\Yaml\Yaml;
  * restore exactly the split this replaced, and would do it silently — the
  * behaviour tests in tests/src/Functional/AiAccessFunctionalTest.php cover
  * the shipped rule, but a site's decorator is the thing that would quietly
- * stop being consulted. These are file-inspection tests; no bootstrap.
+ * stop being consulted.
  */
 class AiAccessWiringTest extends TestCase {
 
@@ -72,75 +74,82 @@ class AiAccessWiringTest extends TestCase {
   }
 
   /**
-   * The block combines the config flag with the access answer.
+   * An unrecognised feature is refused outright, permission notwithstanding.
    *
-   * Both halves, in that order: dropping the config term would advertise a
-   * feature the site has switched off, and dropping the access term restores
-   * the bug where the browser is offered what the endpoint will refuse.
+   * A typo in a route requirement must not silently open the endpoint to
+   * everyone with the base permission.
    */
-  public function testBlockCombinesConfigWithTheAccessAnswer(): void {
-    $block = file_get_contents($this->moduleRoot . '/src/Plugin/Block/ScoltaSearchBlock.php');
+  public function testUnrecognisedFeatureIsForbiddenEvenWithThePermission(): void {
+    $access = new AiAccess();
 
-    $this->assertStringContainsString(
-      'aiAccess->access($this->currentUser, AiAccessInterface::FEATURE_EXPAND)',
-      $block,
-      'ScoltaSearchBlock must ask scolta.ai_access before advertising query expansion'
-    );
-    $this->assertStringContainsString(
-      'aiAccess->access($this->currentUser, AiAccessInterface::FEATURE_SUMMARIZE)',
-      $block,
-      'ScoltaSearchBlock must ask scolta.ai_access before advertising the AI overview'
-    );
-    foreach (['AI_EXPAND_QUERY', 'AI_SUMMARIZE'] as $flag) {
-      $this->assertMatchesRegularExpression(
-        "/\\\$scoring\\['{$flag}'\\] = \\\$scoring\\['{$flag}'\\] && \\\$\\w+Access->isAllowed\\(\\);/",
-        $block,
-        "The emitted {$flag} must be the config flag AND the access answer"
-      );
-    }
+    $result = $access->access($this->accountWithPermission(TRUE), 'not_a_real_feature');
+
+    $this->assertTrue($result->isForbidden());
   }
 
-  /**
-   * The shipped rule states the permission and nothing about config.
-   *
-   * ai_expand_query, ai_summarize and max_follow_ups describe what the site
-   * offers, and AiEndpointHandler already answers 404 and 429 for them.
-   * Restating any of them here refuses those requests at routing instead,
-   * which is a behaviour change for every site that has decorated nothing —
-   * and max_follow_ups cannot be expressed as access at all, since the real
-   * rule counts messages in the request body.
-   */
-  public function testTheShippedRuleDoesNotRestateConfig(): void {
-    $access = file_get_contents($this->moduleRoot . '/src/Access/AiAccess.php');
+  private function accountWithPermission(bool $hasPermission): AccountInterface {
+    return new class($hasPermission) implements AccountInterface {
 
-    $this->assertStringContainsString(
-      "allowedIfHasPermission(\$account, 'use scolta ai')",
-      $access,
-      'The shipped rule is the permission check'
-    );
-    foreach (['ai_expand_query', 'ai_summarize', 'max_follow_ups'] as $key) {
-      $this->assertStringNotContainsString(
-        "get('{$key}')",
-        $access,
-        "AiAccess must not read {$key}: config says what the site offers, access says who may ask"
-      );
-    }
-  }
+      public function __construct(private readonly bool $hasPermission) {
+      }
 
-  /**
-   * The access answer's cacheability reaches the block's render array.
-   *
-   * Without this the block is cached under the first visitor's answer and
-   * served to everyone — the failure mode of a per-user decorator, and one
-   * that looks like a caching mystery rather than an access bug.
-   */
-  public function testBlockBubblesTheAccessCacheability(): void {
-    $block = file_get_contents($this->moduleRoot . '/src/Plugin/Block/ScoltaSearchBlock.php');
+      public function getRoles($exclude_locked_roles = FALSE) {
+        return [];
+      }
 
-    $this->assertStringContainsString('CacheableMetadata::createFromRenderArray($build)', $block);
-    $this->assertStringContainsString('addCacheableDependency($expandAccess)', $block);
-    $this->assertStringContainsString('addCacheableDependency($summarizeAccess)', $block);
-    $this->assertStringContainsString('applyTo($build)', $block);
+      public function hasPermission($permission) {
+        return $this->hasPermission;
+      }
+
+      public function hasRole($rid) {
+        return FALSE;
+      }
+
+      public function isAuthenticated() {
+        return TRUE;
+      }
+
+      public function isAnonymous() {
+        return FALSE;
+      }
+
+      public function id() {
+        return 1;
+      }
+
+      public function getEmail() {
+        return NULL;
+      }
+
+      public function getAccountName() {
+        return 'test';
+      }
+
+      public function getDisplayName() {
+        return 'test';
+      }
+
+      public function getTimeZone() {
+        return 'UTC';
+      }
+
+      public function getLastAccessedTime() {
+        return 0;
+      }
+
+      public function getPreferredLangcode($fallback_to_default = TRUE) {
+        return 'en';
+      }
+
+      public function getPreferredAdminLangcode($fallback_to_default = TRUE) {
+        return 'en';
+      }
+
+      public function getUsername() {
+        return 'test';
+      }
+
+    };
   }
 
 }

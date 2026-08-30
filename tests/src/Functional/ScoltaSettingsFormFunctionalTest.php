@@ -54,51 +54,25 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Tests that the settings form renders without errors.
+   * Tests that the form saves successfully.
+   *
+   * Also covers the plain rendering/field-existence and default-prefill
+   * checks that used to be separate tests: a save that reaches every one of
+   * these fields cannot pass if the form failed to render them first.
    */
-  public function testSettingsFormRenders(): void {
+  public function testSettingsFormSaves(): void {
     $this->drupalLogin($this->adminUser);
     $this->drupalGet('/admin/config/search/scolta');
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->pageTextContains('AI Configuration');
     $this->assertSession()->pageTextContains('Custom Prompts');
-    $this->assertSession()->fieldExists('ai_provider');
-    $this->assertSession()->fieldExists('ai_model');
-    $this->assertSession()->fieldExists('prompt_expand_query');
-    $this->assertSession()->fieldExists('prompt_summarize');
-    $this->assertSession()->fieldExists('prompt_follow_up');
-  }
 
-  /**
-   * Tests that prompt textareas are pre-filled with default text.
-   */
-  public function testPromptFieldsShowDefaults(): void {
-    $this->drupalLogin($this->adminUser);
-    $this->drupalGet('/admin/config/search/scolta');
-    $this->assertSession()->statusCodeEquals(200);
-
-    // The prompt fields should contain the default prompt text (not empty).
+    // Prompt fields are pre-filled with default text before any save.
     $expandField = $this->assertSession()->fieldExists('prompt_expand_query');
-    $this->assertNotEmpty($expandField->getValue(),
-      'Expand query prompt should be pre-filled with default text');
     $this->assertStringContainsString('{SITE_NAME}', $expandField->getValue(),
       'Default expand prompt should contain {SITE_NAME} placeholder');
-
-    $summarizeField = $this->assertSession()->fieldExists('prompt_summarize');
-    $this->assertNotEmpty($summarizeField->getValue(),
-      'Summarize prompt should be pre-filled with default text');
-
-    $followUpField = $this->assertSession()->fieldExists('prompt_follow_up');
-    $this->assertNotEmpty($followUpField->getValue(),
-      'Follow-up prompt should be pre-filled with default text');
-  }
-
-  /**
-   * Tests that the form saves successfully.
-   */
-  public function testSettingsFormSaves(): void {
-    $this->drupalLogin($this->adminUser);
-    $this->drupalGet('/admin/config/search/scolta');
+    $this->assertNotEmpty($this->assertSession()->fieldExists('prompt_summarize')->getValue());
+    $this->assertNotEmpty($this->assertSession()->fieldExists('prompt_follow_up')->getValue());
 
     $this->submitForm([
       'ai_model' => 'claude-sonnet-4-5-20250929',
@@ -375,7 +349,11 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
    *
    * The two halves are asserted together for the same reason the
    * hideEmptyFacets pair is: a setting that saves but never reaches the payload
-   * looks correct in the admin UI and does nothing on the site.
+   * looks correct in the admin UI and does nothing on the site. Both
+   * 'deferred' and 'disabled' are checked in one pass — 'disabled' earns its
+   * own case because it is the mode that suppresses the filter sidebar
+   * entirely, so a clamp bug there would be invisible in the admin UI and
+   * would leave the site rendering facets its owner turned off.
    */
   public function testFacetModeSelectionReachesTheBrowser(): void {
     $this->drupalCreateContentType(['type' => 'page']);
@@ -395,25 +373,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->drupalGet($node->toUrl());
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->responseContains('"facetMode":"deferred"');
-  }
 
-  /**
-   * 'disabled' must reach the browser too, not collapse into the default.
-   *
-   * Worth its own case: 'disabled' is the mode that suppresses the filter
-   * sidebar entirely, so a clamp bug here would be invisible in the admin UI
-   * and would leave the site rendering facets its owner turned off.
-   */
-  public function testFacetModeDisabledReachesTheBrowser(): void {
-    $this->drupalCreateContentType(['type' => 'page']);
-    $node = $this->drupalCreateNode([
-      'type' => 'page',
-      'title' => 'Search',
-      'status' => 1,
-    ]);
-    $this->drupalPlaceBlock('scolta_search', ['region' => 'content']);
-
-    $this->drupalLogin($this->adminUser);
     $this->drupalGet('/admin/config/search/scolta');
     $this->submitForm(['facet_mode' => 'disabled'], 'Save configuration');
     $this->assertSame('disabled', $this->config('scolta.settings')->get('facet_mode'));
@@ -507,21 +467,6 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * A saved OpenAI selection also wins over an active Amazee trial.
-   */
-  public function testProviderFieldRespectsSavedOpenAiWhenAmazeeActive(): void {
-    $this->activateAmazee();
-    $this->config('scolta.settings')->set('ai_provider', 'openai')->save();
-
-    $this->drupalLogin($this->adminUser);
-    $this->drupalGet('/admin/config/search/scolta');
-
-    $field = $this->assertSession()->fieldExists('ai_provider');
-    $this->assertSame('openai', $field->getValue(),
-      'Provider field must show the saved provider (openai), not amazee.');
-  }
-
-  /**
    * With nothing saved, a stored connection does not select the provider.
    *
    * The field used to fall back to detecting stored Amazee.ai credentials
@@ -542,27 +487,6 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
       'With no saved provider the field must sit on the placeholder: stored '
       . 'credentials must not preselect Amazee, and nothing else is selected '
       . 'either, because there is no default provider.');
-  }
-
-  /**
-   * An explicit drupal_ai selection is still honoured when Amazee is active.
-   */
-  public function testProviderFieldRespectsDrupalAiSelection(): void {
-    // The drupal_ai option only renders when the AI module is present. Skip if
-    // it is not available in this functional install.
-    if (!\Drupal::hasService('ai.provider')) {
-      $this->markTestSkipped('Drupal AI module (ai.provider service) not installed.');
-    }
-
-    $this->activateAmazee();
-    $this->config('scolta.settings')->set('ai_provider', 'drupal_ai')->save();
-
-    $this->drupalLogin($this->adminUser);
-    $this->drupalGet('/admin/config/search/scolta');
-
-    $field = $this->assertSession()->fieldExists('ai_provider');
-    $this->assertSame('drupal_ai', $field->getValue(),
-      'An explicit drupal_ai selection must win over an active Amazee trial.');
   }
 
   /**

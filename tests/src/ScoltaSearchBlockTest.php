@@ -4,455 +4,299 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Tests;
 
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\File\FileUrlGeneratorInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Routing\UrlGeneratorInterface;
+use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\Core\StringTranslation\TranslationInterface;
+use Drupal\scolta\Access\AiAccessInterface;
+use Drupal\scolta\Plugin\Block\ScoltaSearchBlock;
+use Drupal\scolta\Service\IndexLocator;
+use Drupal\scolta\Service\ScoltaAiService;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\Container;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Tag1\Scolta\Config\ScoltaConfig;
 
 /**
- * Tests the ScoltaSearchBlock plugin via file inspection.
+ * Behavioral tests for ScoltaSearchBlock.
  *
- * Verifies the @Block annotation, build() render array structure,
- * create() factory method, and the container div ID. These tests
- * do not require a Drupal bootstrap.
+ * Constructs the real block with stubbed services and asserts on build()'s
+ * render array: container markup, attached libraries, drupalSettings
+ * payload, cache metadata, and the facet_mode/attribution/language behavior
+ * documented on the class. Url::fromRoute()->toString() requires a service
+ * container even outside a full Drupal bootstrap, so setUp() installs a
+ * minimal one with a stubbed 'url_generator' service; this is the only
+ * container-shaped concession the test makes.
  */
 class ScoltaSearchBlockTest extends TestCase {
 
-  private string $moduleRoot;
-  private string $blockFile;
-  private string $blockContents;
-
   protected function setUp(): void {
-    $this->moduleRoot = dirname(__DIR__, 2);
-    $this->blockFile = $this->moduleRoot . '/src/Plugin/Block/ScoltaSearchBlock.php';
-    $this->blockContents = file_get_contents($this->blockFile);
+    $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+    $urlGenerator->method('generateFromRoute')
+      ->willReturnCallback(fn (string $name): string => '/' . str_replace('.', '/', $name));
+
+    $container = new Container();
+    $container->set('url_generator', $urlGenerator);
+    \Drupal::setContainer($container);
   }
 
-  // -------------------------------------------------------------------
-  // Block annotation / plugin ID.
-  // -------------------------------------------------------------------
-
-  public function testBlockAnnotationExists(): void {
-    $this->assertStringContainsString(
-      '@Block(',
-      $this->blockContents,
-      'ScoltaSearchBlock must have @Block annotation'
-    );
-  }
-
-  public function testBlockIdIsScoltaSearch(): void {
-    $this->assertStringContainsString(
-      'id = "scolta_search"',
-      $this->blockContents,
-      'Block plugin ID must be "scolta_search"'
-    );
-  }
-
-  public function testBlockAdminLabel(): void {
-    $this->assertStringContainsString(
-      'admin_label = @Translation("Scolta Search")',
-      $this->blockContents,
-      'Block admin label should be "Scolta Search"'
-    );
-  }
-
-  public function testBlockCategory(): void {
-    $this->assertStringContainsString(
-      'category = @Translation("Search")',
-      $this->blockContents,
-      'Block category should be "Search"'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // Class structure.
-  // -------------------------------------------------------------------
-
-  public function testExtendsBlockBase(): void {
-    $this->assertStringContainsString(
-      'extends BlockBase',
-      $this->blockContents,
-      'ScoltaSearchBlock must extend BlockBase'
-    );
-  }
-
-  public function testImplementsContainerFactoryPluginInterface(): void {
-    $this->assertStringContainsString(
-      'implements ContainerFactoryPluginInterface',
-      $this->blockContents,
-      'ScoltaSearchBlock must implement ContainerFactoryPluginInterface'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // create() factory method.
-  // -------------------------------------------------------------------
-
-  public function testHasCreateMethod(): void {
-    $this->assertStringContainsString(
-      'public static function create(ContainerInterface $container',
-      $this->blockContents,
-      'ScoltaSearchBlock must have a create() factory method'
-    );
-  }
-
-  public function testCreateMethodAcceptsBlockPluginParams(): void {
-    // Block create() has a different signature from controllers: it gets
-    // $configuration, $plugin_id, $plugin_definition in addition to $container.
-    $this->assertStringContainsString(
-      'array $configuration, $plugin_id, $plugin_definition',
-      $this->blockContents,
-      'create() must accept block plugin parameters'
-    );
-  }
-
-  public function testCreateInjectsScoltaAiService(): void {
-    $this->assertStringContainsString(
-      "'scolta.ai_service'",
-      $this->blockContents,
-      'create() must inject scolta.ai_service'
-    );
-  }
-
-  public function testCreateInjectsFileUrlGenerator(): void {
-    $this->assertStringContainsString(
-      "'file_url_generator'",
-      $this->blockContents,
-      'create() must inject file_url_generator'
-    );
-  }
-
-  public function testCreateInjectsConfigFactory(): void {
-    $this->assertStringContainsString(
-      "'config.factory'",
-      $this->blockContents,
-      'create() must inject config.factory'
-    );
-  }
-
-  public function testCreateInjectsLanguageManager(): void {
-    $this->assertStringContainsString(
-      "'language_manager'",
-      $this->blockContents,
-      'create() must inject language_manager for current content language detection'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // build() method and render array.
-  // -------------------------------------------------------------------
-
-  public function testHasBuildMethod(): void {
-    $this->assertStringContainsString(
-      'function build(): array',
-      $this->blockContents,
-      'ScoltaSearchBlock must have build() returning array'
-    );
-  }
-
-  public function testBuildReturnsMarkupWithScoltaSearchDiv(): void {
-    $this->assertStringContainsString(
-      '<div id="scolta-search"></div>',
-      $this->blockContents,
-      'build() must include a <div id="scolta-search"></div>'
-    );
-  }
-
-  public function testContainerDivIdIsScoltaSearch(): void {
-    $this->assertStringContainsString(
-      "'#scolta-search'",
-      $this->blockContents,
-      'Container selector must be #scolta-search'
-    );
-  }
-
-  public function testBuildAttachesSearchLibrary(): void {
-    $this->assertStringContainsString(
-      "'scolta/search'",
-      $this->blockContents,
-      'build() must attach scolta/search library'
-    );
-  }
-
-  public function testBuildAttachesDrupalBridgeLibrary(): void {
-    $this->assertStringContainsString(
-      "'scolta/drupal_bridge'",
-      $this->blockContents,
-      'build() must attach scolta/drupal_bridge library'
-    );
-  }
-
-  public function testBuildInjectsDrupalSettings(): void {
-    $this->assertStringContainsString(
-      "'drupalSettings'",
-      $this->blockContents,
-      'build() must inject drupalSettings'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // drupalSettings includes expected configuration keys.
-  // -------------------------------------------------------------------
-
-  public function testSettingsIncludesScoringConfig(): void {
-    $this->assertStringContainsString(
-      "'scoring'",
-      $this->blockContents,
-      'drupalSettings should include scoring configuration'
-    );
-  }
-
-  public function testSettingsIncludesEndpoints(): void {
-    $this->assertStringContainsString(
-      "'endpoints'",
-      $this->blockContents,
-      'drupalSettings should include API endpoints'
-    );
-  }
-
-  public function testSettingsIncludesAllEndpoints(): void {
-    $endpoints = ['expand', 'summarize', 'followup'];
-    foreach ($endpoints as $endpoint) {
-      $this->assertStringContainsString(
-        "'{$endpoint}'",
-        $this->blockContents,
-        "drupalSettings endpoints should include '{$endpoint}'"
-      );
-    }
-  }
-
-  public function testSettingsIncludesPagefindPath(): void {
-    $this->assertStringContainsString(
-      "'pagefindPath'",
-      $this->blockContents,
-      'drupalSettings should include pagefindPath'
-    );
-  }
-
-  public function testSettingsIncludesSiteName(): void {
-    $this->assertStringContainsString(
-      "'siteName'",
-      $this->blockContents,
-      'drupalSettings should include siteName'
-    );
-  }
-
-  public function testSettingsIncludesWasmPath(): void {
-    $this->assertStringContainsString(
-      "'wasmPath'",
-      $this->blockContents,
-      'drupalSettings should include wasmPath for client-side WASM scoring'
-    );
+  protected function tearDown(): void {
+    \Drupal::unsetContainer();
   }
 
   /**
-   * The facet-loading mode must reach window.scolta.
+   * A stub TranslationInterface that returns the untranslated string as-is.
    *
-   * Without this key the bundle falls back to 'eager', which is the correct
-   * default but silently ignores an administrator who chose otherwise — the
-   * setting would appear to save and do nothing.
+   * Lets $this->t() run inside build() without a real translation service.
    */
-  public function testSettingsIncludesFacetMode(): void {
-    $this->assertStringContainsString(
-      "'facetMode'",
-      $this->blockContents,
-      'drupalSettings should include facetMode so the setting reaches the bundle'
-    );
+  private function stubTranslation(): TranslationInterface {
+    $translation = $this->createMock(TranslationInterface::class);
+    $translation->method('translateString')
+      ->willReturnCallback(fn (TranslatableMarkup $markup): string => $markup->getUntranslatedString());
+    return $translation;
   }
 
   /**
-   * facetMode must be read from Drupal config, not from ScoltaConfig.
+   * Builds a real ScoltaSearchBlock with stubbed collaborators.
    *
-   * The behavior lives entirely in the vendored js/scolta.js, so the setting has
-   * to work against any scolta-php in the supported range — including one
-   * predating the ScoltaConfig property. This is the same reasoning the SAYT
-   * keys are passed under.
+   * @param array<string, mixed> $scoltaSettings
+   *   Keyed values returned by $configFactory->get('scolta.settings')->get().
+   * @param bool $indexExists
+   *   What IndexLocator::exists() reports.
    */
-  public function testFacetModeIsReadFromDrupalConfig(): void {
-    $this->assertMatchesRegularExpression(
-      "/'facetMode'\s*=>.*\\\$drupalConfig->get\('facet_mode'\)/s",
-      $this->blockContents,
-      'facetMode must come from $drupalConfig->get(\'facet_mode\')'
-    );
-  }
-
-  /**
-   * An unrecognized stored mode must clamp to 'eager', never pass through.
-   *
-   * A typo reaching the bundle would clamp there anyway, but a value the block
-   * refuses to vouch for should not be put in the page payload at all.
-   */
-  public function testFacetModeClampsUnknownValuesToEager(): void {
-    $this->assertMatchesRegularExpression(
-      "/in_array\(\\\$drupalConfig->get\('facet_mode'\), \['eager', 'deferred', 'disabled'\], TRUE\)/",
-      $this->blockContents,
-      'facetMode must be validated against the three supported modes'
-    );
-  }
-
-  public function testSettingsIncludesCurrentLanguage(): void {
-    $this->assertStringContainsString(
-      "'currentLanguage'",
-      $this->blockContents,
-      'drupalSettings should include currentLanguage for JS auto-language filtering'
-    );
-  }
-
-  public function testCurrentLanguageUsesContentLanguageType(): void {
-    $this->assertStringContainsString(
-      'LanguageInterface::TYPE_CONTENT',
-      $this->blockContents,
-      'getCurrentLanguage() must use TYPE_CONTENT so URL-prefix negotiation applies'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // Constructor accepts expected types.
-  // -------------------------------------------------------------------
-
-  public function testConstructorAcceptsExpectedTypes(): void {
-    $expectedTypes = [
-      'ScoltaAiService',
-      'FileUrlGeneratorInterface',
-      'ConfigFactoryInterface',
-      'LanguageManagerInterface',
+  private function createBlock(
+    ScoltaConfig $scoltaConfig,
+    array $scoltaSettings = [],
+    bool $indexExists = TRUE,
+  ): ScoltaSearchBlock {
+    $scoltaSettings += [
+      'pagefind.output_dir' => '/tmp/scolta-pagefind-test',
+      'facet_mode' => 'eager',
     ];
 
-    foreach ($expectedTypes as $type) {
-      $this->assertStringContainsString($type, $this->blockContents,
-        "Constructor should accept {$type}");
-    }
-  }
+    $scoltaSettingsConfig = $this->createMock(ImmutableConfig::class);
+    $scoltaSettingsConfig->method('get')
+      ->willReturnCallback(fn (string $key) => $scoltaSettings[$key] ?? NULL);
 
-  public function testConstructorCallsParentConstructor(): void {
-    $this->assertStringContainsString(
-      'parent::__construct($configuration, $plugin_id, $plugin_definition)',
-      $this->blockContents,
-      'Constructor must call parent::__construct with block params'
+    $systemSiteConfig = $this->createMock(ImmutableConfig::class);
+    $systemSiteConfig->method('get')
+      ->willReturnMap([['name', 'Fallback Site Name']]);
+
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->willReturnMap([
+        ['scolta.settings', $scoltaSettingsConfig],
+        ['system.site', $systemSiteConfig],
+      ]);
+
+    $language = $this->createMock(LanguageInterface::class);
+    $language->method('getId')->willReturn('en');
+
+    $languageManager = $this->createMock(LanguageManagerInterface::class);
+    $languageManager->expects($this->once())
+      ->method('getCurrentLanguage')
+      ->with(LanguageInterface::TYPE_CONTENT)
+      ->willReturn($language);
+
+    $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
+    $fileUrlGenerator->method('generateString')
+      ->willReturnCallback(fn (string $uri): string => '/files/' . ltrim(str_replace('public://', '', $uri), '/'));
+
+    $aiService = $this->createMock(ScoltaAiService::class);
+    $aiService->method('getConfig')->willReturn($scoltaConfig);
+
+    $currentUser = $this->createMock(AccountInterface::class);
+
+    $aiAccess = $this->createMock(AiAccessInterface::class);
+    $aiAccess->method('access')
+      ->willReturnMap([
+        [$currentUser, AiAccessInterface::FEATURE_EXPAND, AccessResult::allowed()],
+        [$currentUser, AiAccessInterface::FEATURE_SUMMARIZE, AccessResult::allowed()],
+      ]);
+
+    $indexLocator = $this->createMock(IndexLocator::class);
+    $indexLocator->method('exists')->willReturn($indexExists);
+
+    $streamWrapperManager = $this->createMock(StreamWrapperManagerInterface::class);
+
+    $block = new ScoltaSearchBlock(
+      [],
+      'scolta_search',
+      ['provider' => 'scolta'],
+      $aiService,
+      $fileUrlGenerator,
+      $configFactory,
+      $languageManager,
+      $currentUser,
+      $streamWrapperManager,
+      $indexLocator,
+      $aiAccess,
     );
-  }
+    $block->setStringTranslation($this->stubTranslation());
 
-  // -------------------------------------------------------------------
-  // resolvePagefindUrl helper.
-  // -------------------------------------------------------------------
-
-  public function testHasResolvePagefindUrlMethod(): void {
-    $this->assertStringContainsString(
-      'function resolvePagefindUrl(',
-      $this->blockContents,
-      'ScoltaSearchBlock should have resolvePagefindUrl helper'
-    );
-  }
-
-  public function testResolvePagefindUrlHandlesStreamWrappers(): void {
-    $this->assertStringContainsString(
-      '://',
-      $this->blockContents,
-      'resolvePagefindUrl should handle stream wrapper URIs'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // WASM path — resolved from the deployed public files copy.
-  // -------------------------------------------------------------------
-
-  public function testWasmPathResolvesDeployedAsset(): void {
-    // The WASM glue is deployed by AssetDeployer, so the block must resolve
-    // its URL from AssetDeployer::DIRECTORY through the file URL generator —
-    // which handles subdirectory installs and non-default public file paths,
-    // where a hand-built module-relative path would not.
-    $this->assertStringContainsString(
-      'generateString(AssetDeployer::DIRECTORY',
-      $this->blockContents,
-      'wasmPath must be generated from the deployed AssetDeployer::DIRECTORY copy via the file URL generator'
-    );
-  }
-
-  public function testWasmPathDoesNotHardcodeModulePath(): void {
-    $this->assertStringNotContainsString(
-      'js/wasm/scolta_core.js',
-      $this->blockContents,
-      'wasmPath must not point into the module directory: the bundle is not shipped there'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // Cache tags — scoring config changes must invalidate cached pages.
-  // -------------------------------------------------------------------
-
-  public function testBuildDeclaresScoringConfigCacheTag(): void {
-    $this->assertStringContainsString(
-      "'config:scolta.settings'",
-      $this->blockContents,
-      "build() must include 'config:scolta.settings' cache tag so Drupal invalidates cached pages when scoring config is saved"
-    );
-  }
-
-  public function testBuildDeclaresSearchIndexCacheTag(): void {
-    $this->assertStringContainsString(
-      "'scolta_search_index'",
-      $this->blockContents,
-      "build() main render path must include 'scolta_search_index' cache tag"
-    );
-  }
-
-  public function testBuildIncludesCacheKey(): void {
-    $this->assertStringContainsString(
-      "'#cache'",
-      $this->blockContents,
-      "build() must declare '#cache' metadata so Drupal knows which tags to track"
-    );
+    return $block;
   }
 
   // -------------------------------------------------------------------
-  // show_attribution — issue scolta-php#102.
+  // build(): render array shape.
   // -------------------------------------------------------------------
 
-  /**
-   * build() must conditionally append the attribution paragraph.
-   *
-   * The attribution HTML must only be emitted when $config->showAttribution
-   * is true — it must not be hardcoded into the default output.
-   */
-  public function testAttributionParagraphIsConditional(): void {
-    // The block must reference the showAttribution property.
-    $this->assertStringContainsString(
-      'showAttribution',
-      $this->blockContents,
-      'build() must check $config->showAttribution before emitting attribution HTML'
-    );
+  public function testBuildRendersContainerDivAndAttachesLibraries(): void {
+    $block = $this->createBlock(new ScoltaConfig());
+    $build = $block->build();
 
-    // The attribution HTML string must be present in the source.
-    $this->assertStringContainsString(
-      'scolta-attribution',
-      $this->blockContents,
-      'build() must contain the scolta-attribution CSS class for the attribution paragraph'
-    );
-
-    $this->assertStringContainsString(
-      'Powered by Scolta',
-      $this->blockContents,
-      'build() must contain "Powered by Scolta" attribution text'
+    $this->assertStringContainsString('<div id="scolta-search"></div>', $build['#markup']);
+    $this->assertSame(
+      ['scolta/search', 'scolta/drupal_bridge'],
+      $build['#attached']['library'],
     );
   }
 
-  /**
-   * The attribution HTML must be inside an if-block, not unconditional markup.
-   */
-  public function testAttributionIsInsideConditionalBlock(): void {
-    // Verify the if($config->showAttribution) guard is present.
-    $this->assertMatchesRegularExpression(
-      '/if\s*\(\s*\$config->showAttribution\s*\)/',
-      $this->blockContents,
-      'Attribution HTML must be guarded by if ($config->showAttribution)'
+  public function testBuildDrupalSettingsIncludesExpectedKeys(): void {
+    $block = $this->createBlock(new ScoltaConfig());
+    $build = $block->build();
+
+    $settings = $build['#attached']['drupalSettings']['scolta'];
+
+    $this->assertArrayHasKey('endpoints', $settings);
+    $this->assertSame(
+      ['expand', 'summarize', 'followup'],
+      array_keys($settings['endpoints']),
     );
+    $this->assertArrayHasKey('scoring', $settings);
+    $this->assertSame('/tmp/scolta-pagefind-test/pagefind/pagefind.js', $settings['pagefindPath']);
+    $this->assertSame('/files/scolta-assets/wasm/scolta_core.js', $settings['wasmPath']);
+    $this->assertSame('en', $settings['currentLanguage']);
   }
 
-  /**
-   * The attribution paragraph must use a <p> tag with the correct class.
-   */
-  public function testAttributionUsesCorrectHtmlStructure(): void {
-    $this->assertStringContainsString(
-      '\'<p class="scolta-attribution">\' . $this->t(\'Powered by Scolta\') . \'</p>\'',
-      $this->blockContents,
-      'Attribution must be a <p> with class "scolta-attribution" and translatable "Powered by Scolta" text'
+  public function testBuildDrupalSettingsSiteNameFallsBackToSystemSite(): void {
+    $config = new ScoltaConfig();
+    $config->siteName = '';
+    $block = $this->createBlock($config);
+    $build = $block->build();
+
+    $this->assertSame('Fallback Site Name', $build['#attached']['drupalSettings']['scolta']['siteName']);
+  }
+
+  public function testBuildDrupalSettingsSiteNamePrefersScoltaConfig(): void {
+    $config = new ScoltaConfig();
+    $config->siteName = 'Configured Site Name';
+    $block = $this->createBlock($config);
+    $build = $block->build();
+
+    $this->assertSame('Configured Site Name', $build['#attached']['drupalSettings']['scolta']['siteName']);
+  }
+
+  public function testBuildDeclaresCacheTagsAndContexts(): void {
+    $block = $this->createBlock(new ScoltaConfig());
+    $build = $block->build();
+
+    $this->assertContains('config:scolta.settings', $build['#cache']['tags']);
+    $this->assertContains('scolta_search_index', $build['#cache']['tags']);
+    $this->assertContains('languages:language_content', $build['#cache']['contexts']);
+  }
+
+  // -------------------------------------------------------------------
+  // facet_mode clamping.
+  // -------------------------------------------------------------------
+
+  public function testFacetModeClampsUnrecognizedValueToEager(): void {
+    $block = $this->createBlock(new ScoltaConfig(), ['facet_mode' => 'bogus']);
+    $build = $block->build();
+
+    $this->assertSame('eager', $build['#attached']['drupalSettings']['scolta']['facetMode']);
+  }
+
+  public function testFacetModePassesThroughDeferred(): void {
+    $block = $this->createBlock(new ScoltaConfig(), ['facet_mode' => 'deferred']);
+    $build = $block->build();
+
+    $this->assertSame('deferred', $build['#attached']['drupalSettings']['scolta']['facetMode']);
+  }
+
+  // -------------------------------------------------------------------
+  // Language: getCurrentLanguage() assertion lives in createBlock()'s
+  // ->expects($this->once())->with(LanguageInterface::TYPE_CONTENT), which
+  // fails the test if build() ever asks for a different language type.
+  // -------------------------------------------------------------------
+
+  public function testCurrentLanguageRequestsContentLanguageType(): void {
+    $block = $this->createBlock(new ScoltaConfig());
+    $block->build();
+    // No additional assertion needed: the mock in createBlock() already
+    // expects exactly one call to getCurrentLanguage(TYPE_CONTENT).
+    $this->addToAssertionCount(1);
+  }
+
+  // -------------------------------------------------------------------
+  // Attribution — issue scolta-php#102.
+  // -------------------------------------------------------------------
+
+  public function testAttributionMarkupPresentWhenEnabled(): void {
+    $config = new ScoltaConfig();
+    $config->showAttribution = TRUE;
+    $block = $this->createBlock($config);
+    $build = $block->build();
+
+    $this->assertStringContainsString('scolta-attribution', $build['#markup']);
+    $this->assertStringContainsString('Powered by Scolta', $build['#markup']);
+  }
+
+  public function testAttributionMarkupAbsentWhenDisabled(): void {
+    $config = new ScoltaConfig();
+    $config->showAttribution = FALSE;
+    $block = $this->createBlock($config);
+    $build = $block->build();
+
+    $this->assertStringNotContainsString('scolta-attribution', $build['#markup']);
+  }
+
+  // -------------------------------------------------------------------
+  // create(): container wiring.
+  // -------------------------------------------------------------------
+
+  public function testCreateRequestsExpectedServices(): void {
+    $requestedIds = [];
+
+    $container = $this->createMock(ContainerInterface::class);
+    $container->method('get')
+      ->willReturnCallback(function (string $id) use (&$requestedIds) {
+        $requestedIds[] = $id;
+        return match ($id) {
+          'scolta.ai_service' => $this->createMock(ScoltaAiService::class),
+          'file_url_generator' => $this->createMock(FileUrlGeneratorInterface::class),
+          'config.factory' => $this->createMock(ConfigFactoryInterface::class),
+          'language_manager' => $this->createMock(LanguageManagerInterface::class),
+          'current_user' => $this->createMock(AccountInterface::class),
+          'stream_wrapper_manager' => $this->createMock(StreamWrapperManagerInterface::class),
+          'scolta.index_locator' => $this->createMock(IndexLocator::class),
+          'scolta.ai_access' => $this->createMock(AiAccessInterface::class),
+          default => NULL,
+        };
+      });
+
+    $block = ScoltaSearchBlock::create($container, [], 'scolta_search', ['provider' => 'scolta']);
+
+    $this->assertInstanceOf(ScoltaSearchBlock::class, $block);
+    $this->assertSame(
+      [
+        'scolta.ai_service',
+        'file_url_generator',
+        'config.factory',
+        'language_manager',
+        'current_user',
+        'stream_wrapper_manager',
+        'scolta.index_locator',
+        'scolta.ai_access',
+      ],
+      $requestedIds,
     );
   }
 
