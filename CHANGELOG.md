@@ -17,6 +17,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 - `drush scolta:cleanup` (`scu`): deletes leftover `.scolta-trash-*` directories (scolta-php ≥ 1.5.0 renames the outgoing index to trash and sweeps it after publishing instead of deleting it inline, which on NFS made a finished build look hung for hours). A backstop for builds that died before their own sweep and for the batch-UI path; `--dry-run` lists without deleting, and a stale `.scolta-old` from an interrupted swap is retired and cleaned too. Raises the `tag1/scolta-php` constraint to `^1.5.0`.
 - `hook_cron` also sweeps leftover trash, time-boxed by the new `cleanup.cron_seconds` setting (default 180, `0` disables; on web-triggered cron the budget is additionally capped by remaining `max_execution_time`). An interrupted sweep resumes on the next run, and a cron run with no trash logs nothing.
 
+### Added
+- A `kernel` test suite (`tests/src/Kernel/`, KernelTestBase): real container and database, no HTTP. First occupant: `ConfigSchemaTest`, which validates the shipped install defaults against the shipped config schema using core's typed-config checker. CI runs it in the `functional` job via `ddev phpunit --testsuite kernel,functional`.
+
 ### Changed
 - The `functional` CI job now runs inside DDEV (`ddev/github-action-setup-ddev` + `ddev poser` + `ddev symlink-project`), the same environment contributors use locally, against mariadb + nginx instead of a hand-built /tmp Drupal on SQLite and `php -S`. CI and a local run share one command: `ddev phpunit --testsuite functional`.
 - `phpunit-functional.xml` is gone: `phpunit.xml` now declares both suites (`unit` stays the default, so bare `phpunit`/`composer test` is unchanged), and the new `tests/bootstrap.php` picks Drupal core's test bootstrap when a docroot is present, the plain Composer autoloader otherwise.

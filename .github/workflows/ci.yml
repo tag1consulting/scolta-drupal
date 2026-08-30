@@ -271,11 +271,11 @@ jobs:
       - name: Symlink the module into the docroot
         run: ddev symlink-project
 
-      # Same command a contributor runs locally. phpunit.xml declares both
+      # Same command a contributor runs locally. phpunit.xml declares the
       # suites; tests/bootstrap.php picks core's test bootstrap because the
       # poser-built docroot is present.
-      - name: Run functional tests
-        run: ddev phpunit --testsuite functional --display-deprecations --testdox
+      - name: Run kernel and functional tests
+        run: ddev phpunit --testsuite kernel,functional --display-deprecations --testdox
 
   playwright:
     runs-on: ubuntu-latest
