@@ -343,8 +343,11 @@ jobs:
       # Same command a contributor runs locally. phpunit.xml declares the
       # suites; tests/bootstrap.php picks core's test bootstrap because the
       # poser-built docroot is present.
+      # --display-deprecations is a PHPUnit 10+-only option; the lowest cell
+      # can run PHPUnit 9.6 (Drupal 10's core-dev floor). --testdox predates
+      # both and stays.
       - name: Run kernel and functional tests
-        run: ddev phpunit --testsuite kernel,functional --display-deprecations --testdox
+        run: ddev phpunit --testsuite kernel,functional --testdox
 
   playwright:
     runs-on: ubuntu-latest
