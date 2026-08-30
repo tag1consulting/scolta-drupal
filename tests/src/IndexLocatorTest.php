@@ -129,6 +129,30 @@ class IndexLocatorTest extends TestCase {
     $this->assertSame(0, $locator->countFragments($location));
   }
 
+  // -------------------------------------------------------------------
+  // pageCount() reads pagefind-entry.json instead of glob()ing fragments.
+  // -------------------------------------------------------------------
+
+  /**
+   * Sums page_count across every language pagefind-entry.json lists.
+   */
+  public function test_page_count_sums_across_languages(): void {
+    mkdir($this->dir . '/pagefind', 0777, TRUE);
+    file_put_contents($this->dir . '/pagefind/pagefind.js', 'js');
+    file_put_contents($this->dir . '/pagefind/pagefind-entry.json', json_encode([
+      'languages' => [
+        'en' => ['page_count' => 40],
+        'de' => ['page_count' => 2],
+      ],
+    ]));
+
+    $locator = new IndexLocator();
+    $location = $locator->locate($this->dir);
+
+    $this->assertNotNull($location);
+    $this->assertSame(42, $locator->pageCount($location));
+  }
+
   public function test_locator_is_wired_into_the_consuming_services(): void {
     // The locator only removes the disagreement if the services that answer
     // "is the index built?" actually receive it. HealthController and

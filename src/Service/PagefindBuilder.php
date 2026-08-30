@@ -157,9 +157,15 @@ class PagefindBuilder {
    * calculateDirectorySize() stat()s every file under the output directory to
    * produce it. On a site with a six-figure fragment count sitting on network
    * storage that is minutes of latency per page load -- measured at ~4 minutes
-   * for 120k files over NFS, enough to hit max_execution_time -- spent on the
-   * least load-bearing line in the status list. build() still reports a size,
-   * where the walk is one-off and the files were just written.
+   * for 120k files over NFS, enough to hit max_execution_time. build() still
+   * reports a size, where the walk is one-off and the files were just written.
+   *
+   * file_count avoids the same class of walk on the common path: it reads
+   * page_count from pagefind-entry.json, which Pagefind already writes at
+   * build time, rather than calling countFragments(), whose glob() of the
+   * fragment directory scales with the corpus the same way
+   * calculateDirectorySize() does. If pagefind-entry.json is missing or
+   * unreadable that fallback still runs, and still pays the same glob().
    *
    * @return array{exists: bool, file_count: int, last_built: ?string}
    *   The index status array.
@@ -175,10 +181,12 @@ class PagefindBuilder {
     }
 
     $mtime = filemtime($location['indexFile']);
+    $fileCount = $this->indexLocator->pageCount($location)
+      ?? $this->indexLocator->countFragments($location);
 
     return [
       'exists' => TRUE,
-      'file_count' => $this->indexLocator->countFragments($location),
+      'file_count' => $fileCount,
       'last_built' => $mtime ? date('Y-m-d H:i:s', $mtime) : NULL,
     ];
   }
