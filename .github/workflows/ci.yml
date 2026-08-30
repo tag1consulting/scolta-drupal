@@ -235,8 +235,29 @@ jobs:
   # composer.json path repository resolves in the web container — the same
   # sibling-checkout layout used locally. Same resolution semantics as
   # before: the path repo supplies scolta-php main.
-  functional:
+  #
+  # Two cells bracket the support surface, mirroring test-lowest/test-highest
+  # above: integration-lowest is the minimum supported PHP on the minimum
+  # supported core with every dependency at its floor; integration-highest
+  # is the newest of everything. Stable version-free names, because branch
+  # protection matches required checks by literal job name. To reproduce a
+  # cell locally: `ddev config --php-version=X`, `ddev core-version Y`, then
+  # `ddev poser [flags]` — the same commands this job runs.
+  integration:
+    name: integration-${{ matrix.cell }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cell: lowest
+            php: '8.3'
+            drupal-core: '~10.3.0'
+            composer-flags: '--prefer-lowest --prefer-stable'
+          - cell: highest
+            php: '8.4'
+            drupal-core: ''
+            composer-flags: ''
     defaults:
       run:
         working-directory: scolta-drupal
@@ -252,10 +273,23 @@ jobs:
           ref: main
           path: scolta-php
 
-      - name: Install and start DDEV
+      # autostart false: the cell's PHP version and core floor must be
+      # configured before the containers first come up.
+      - name: Install DDEV
         uses: ddev/github-action-setup-ddev@v1
         with:
           ddevDir: scolta-drupal
+          autostart: false
+
+      - name: Configure the cell (PHP version, core floor)
+        run: |
+          ddev config --php-version='${{ matrix.php }}'
+          if [ -n '${{ matrix.drupal-core }}' ]; then
+            ddev dotenv set .ddev/.env.web --drupal-core '${{ matrix.drupal-core }}'
+          fi
+
+      - name: Start DDEV
+        run: ddev start
 
       # Same rate-limit fix as the workflow-level COMPOSER_AUTH above, but
       # composer runs inside the web container, which does not inherit the
@@ -266,7 +300,11 @@ jobs:
         run: ddev exec composer config -g github-oauth.github.com "$GH_TOKEN"
 
       - name: Build the Drupal project around the module
-        run: ddev poser
+        run: ddev poser ${{ matrix.composer-flags }}
+
+      # No silent resolutions: what this cell actually tested, in the log.
+      - name: Report resolved versions
+        run: ddev exec composer show drupal/core drupal/search_api drush/drush phpunit/phpunit tag1/scolta-php | grep -E '^(name|versions)'
 
       - name: Symlink the module into the docroot
         run: ddev symlink-project
