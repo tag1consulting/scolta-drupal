@@ -18,18 +18,29 @@ env:
 
 jobs:
   test:
+    # Stable cell names (test-lowest / test-highest): branch protection matches
+    # required checks by literal job name, so a matrix keyed on PHP versions
+    # broke protection every time a version rotated. These names never change;
+    # what they mean is defined here.
+    name: test-${{ matrix.cell }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          # Static analysis (phpcs here, the phpstan job below) runs only on
-          # the highest PHP with the newest dependency resolution: one
-          # canonical analysis environment. The lowest cell is tests-only —
-          # analysing against older core/tooling resolutions just produces
+          # Highest+lowest bracketing: lowest = minimum supported PHP with
+          # --prefer-lowest (proves the composer.json floors are real, not
+          # fiction); highest = newest supported PHP with the newest
+          # resolution. Static analysis (phpcs here, the phpstan job below)
+          # runs only in the highest cell: one canonical analysis
+          # environment. Analysing against older resolutions just produces
           # version-skew findings to chase.
-          - php: '8.3'
+          - cell: lowest
+            php: '8.3'
+            composer-flags: '--prefer-lowest --prefer-stable'
             lint: false
-          - php: '8.4'
+          - cell: highest
+            php: '8.4'
+            composer-flags: ''
             lint: true
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +77,7 @@ jobs:
           '
 
       - name: Install dependencies
-        run: composer update --no-interaction --prefer-dist --ignore-platform-req=php
+        run: composer update --no-interaction --prefer-dist --ignore-platform-req=php ${{ matrix.composer-flags }}
 
       - name: Lint (Drupal coding standards)
         if: matrix.lint

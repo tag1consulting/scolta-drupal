@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\scolta\Unit;
 
 use Drupal\scolta\Batch\ScoltaBatchOperations;
-use PHPUnit\Framework\Attributes\CoversMethod;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -16,7 +16,7 @@ use PHPUnit\Framework\TestCase;
  *
  * Post-fix: all assertions pass.
  */
-#[CoversMethod(ScoltaBatchOperations::class, 'buildNoticeData')]
+#[CoversClass(ScoltaBatchOperations::class)]
 class RebuildNoticeStateTest extends TestCase {
 
   /**
