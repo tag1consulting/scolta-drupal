@@ -7,10 +7,10 @@
 
   The `functional` CI job and a local run use the same invocation, from the
   project root of a `ddev poser`-built environment (SIMPLETEST_DB and
-  SIMPLETEST_BASE_URL come from .ddev/config.contrib.yaml):
-
-    ddev exec "vendor/bin/phpunit -c phpunit-functional.xml
-      --bootstrap web/core/tests/bootstrap.php"
+  SIMPLETEST_BASE_URL come from .ddev/config.contrib.yaml): run phpunit
+  with `-c phpunit-functional.xml` and pass the bootstrap option pointing
+  at web/core/tests/bootstrap.php. See the `functional` job in
+  .github/workflows/ci.yml for the exact command.
 
   The bootstrap is given on the command line, not in this file, because it
   differs by layout: phpunit canonicalizes this file's path, so the relative
@@ -20,9 +20,10 @@
   above web/core/. The bootstrap attribute below serves the consuming-site
   layout; the ddev invocation overrides it.
 
-  (`-c` is phpunit's short form for the configuration option. The long form
-  cannot appear in this comment: XML forbids a double hyphen inside one, and
-  writing it here is what made this file unparseable until 2026-08-24.)
+  (`-c` is phpunit's short form for the configuration option. Long-form
+  options cannot be spelled out in this comment: XML forbids a double
+  hyphen inside one, and writing one here is what made this file
+  unparseable until 2026-08-24 — and again, briefly, today.)
 -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.5/phpunit.xsd"
