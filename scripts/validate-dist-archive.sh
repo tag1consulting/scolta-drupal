@@ -50,7 +50,6 @@ EXCLUDED_PATHS=(
   "phpstan.neon"
   "phpstan-baseline.neon"
   "phpunit.xml"
-  "phpunit-functional.xml"
   "phpcs.xml.dist"
   ".gitattributes"
   ".gitignore"

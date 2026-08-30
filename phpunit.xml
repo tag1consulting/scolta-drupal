@@ -1,23 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Unit test suite — runs without a Drupal bootstrap.
-  Fast; safe to run anywhere with `composer test`.
+  One configuration for both suites.
 
-  Functional (BrowserTestBase) tests live in tests/src/Functional/ and are
-  run by the `functional` CI job via phpunit-functional.xml, which boots a
-  real Drupal 11 installation. They are excluded here because BrowserTestBase
-  requires SIMPLETEST_DB, SIMPLETEST_BASE_URL, and a running web server that
-  are not available in the plain `composer test` context.
+  unit is the default: `phpunit` (and `composer test`) runs it alone, fast,
+  with no Drupal installation. The functional (BrowserTestBase) suite is
+  opt-in because it needs a real Drupal codebase, a database, and a running
+  web server: from a `ddev poser`-built project, run `ddev phpunit` passing
+  the testsuite long option with the value "functional". (XML forbids a
+  double hyphen inside a comment, so the option cannot be spelled out here;
+  see the `functional` job in .github/workflows/ci.yml for the exact
+  command.) SIMPLETEST_DB and SIMPLETEST_BASE_URL come from
+  .ddev/config.contrib.yaml.
+
+  tests/bootstrap.php picks the right bootstrap for the layout: Drupal
+  core's test bootstrap when a docroot is present (ddev project or consuming
+  site), the plain Composer autoloader otherwise.
 -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
-         bootstrap="vendor/autoload.php"
+         bootstrap="tests/bootstrap.php"
+         defaultTestSuite="unit"
          colors="true"
-         cacheDirectory=".phpunit.cache">
+         cacheDirectory=".phpunit.cache"
+         beStrictAboutTestsThatDoNotTestAnything="true">
   <testsuites>
-    <testsuite name="scolta-drupal">
+    <testsuite name="unit">
       <directory>tests/src</directory>
       <exclude>tests/src/Functional</exclude>
     </testsuite>
+    <testsuite name="functional">
+      <directory>tests/src/Functional</directory>
+    </testsuite>
   </testsuites>
+  <php>
+    <ini name="error_reporting" value="32767"/>
+    <ini name="memory_limit" value="512M"/>
+    <env name="SYMFONY_DEPRECATIONS_HELPER" value="disabled"/>
+    <env name="BROWSERTEST_OUTPUT_DIRECTORY" value="/tmp"/>
+  </php>
 </phpunit>
