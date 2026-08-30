@@ -144,6 +144,61 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * Tests that the summarize endpoint validates input.
+   */
+  public function testSummarizeEndpointValidation(): void {
+    $user = $this->drupalCreateUser(['use scolta ai']);
+    $this->drupalLogin($user);
+
+    // A query with no context should fail.
+    $response = $this->makeJsonPost('/api/scolta/v1/summarize', ['query' => 'test']);
+    $this->assertTrue(
+      $response['status'] >= 400,
+      'Summarize with no context should be rejected'
+    );
+  }
+
+  /**
+   * Tests that the follow-up endpoint validates input.
+   */
+  public function testFollowUpEndpointValidation(): void {
+    $user = $this->drupalCreateUser(['use scolta ai']);
+    $this->drupalLogin($user);
+
+    // A message array missing the expected shape should fail.
+    $response = $this->makeJsonPost('/api/scolta/v1/followup', [
+      'messages' => [['invalid' => 'format']],
+    ]);
+    $this->assertTrue(
+      $response['status'] >= 400,
+      'Malformed follow-up message shape should be rejected'
+    );
+  }
+
+  /**
+   * The max_follow_ups quota rejects a follow-up once exhausted.
+   *
+   * A quota of 0 means every follow-up is over budget, so this is the
+   * cheapest way to observe the config-driven limit taking effect without
+   * needing to first exhaust a real conversation history.
+   */
+  public function testFollowUpLimitEnforced(): void {
+    $user = $this->drupalCreateUser(['use scolta ai']);
+    $this->drupalLogin($user);
+
+    $this->config('scolta.settings')->set('max_follow_ups', 0)->save();
+
+    $response = $this->makeJsonPost('/api/scolta/v1/followup', [
+      'messages' => [
+        ['role' => 'user', 'content' => 'initial question'],
+        ['role' => 'assistant', 'content' => 'initial answer'],
+        ['role' => 'user', 'content' => 'follow-up'],
+      ],
+    ]);
+    $this->assertEquals(429, $response['status']);
+  }
+
+  /**
    * Tests that the search block renders on a page.
    */
   public function testSearchBlockRenders(): void {
