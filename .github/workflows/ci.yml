@@ -22,12 +22,15 @@ jobs:
     strategy:
       matrix:
         include:
-          - php: '8.2'
-            lint: false
+          # Static analysis (phpcs here, the phpstan job below) runs only on
+          # the highest PHP with the newest dependency resolution: one
+          # canonical analysis environment. The lowest cell is tests-only —
+          # analysing against older core/tooling resolutions just produces
+          # version-skew findings to chase.
           - php: '8.3'
-            lint: true
-          - php: '8.4'
             lint: false
+          - php: '8.4'
+            lint: true
     steps:
       - uses: actions/checkout@v4
 
@@ -156,7 +159,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          # Highest PHP, matching the lint cell above: static analysis runs
+          # against one canonical (newest) environment only.
+          php-version: '8.4'
           extensions: intl
           coverage: none
       - name: Replace path repo with GitHub VCS repo
