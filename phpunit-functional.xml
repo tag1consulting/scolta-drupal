@@ -5,25 +5,24 @@
   These tests need a full Drupal installation and a running web server, so
   `composer test` (the fast unit suite) does not run them.
 
-  This file is for running them locally. The `functional` GitHub Actions job
-  does not read it: that job builds a throwaway Drupal project, exports
-  SIMPLETEST_DB, SIMPLETEST_BASE_URL, BROWSERTEST_OUTPUT_DIRECTORY and
-  SYMFONY_DEPRECATIONS_HELPER into the environment, and points phpunit
-  straight at modules/contrib/scolta/tests/src/Functional/ with core's
-  bootstrap. Read .github/workflows/ci.yml for what CI actually runs; the
-  settings below reproduce the same environment for a local run.
+  The `functional` CI job and a local run use the same invocation, from the
+  project root of a `ddev poser`-built environment (SIMPLETEST_DB and
+  SIMPLETEST_BASE_URL come from .ddev/config.contrib.yaml):
 
-  From inside a DDEV Drupal environment, with the module installed at
-  web/modules/contrib/scolta and SIMPLETEST_DB and SIMPLETEST_BASE_URL set:
+    ddev exec "vendor/bin/phpunit -c phpunit-functional.xml
+      --bootstrap web/core/tests/bootstrap.php"
 
-    ddev exec vendor/bin/phpunit -c web/modules/contrib/scolta/phpunit-functional.xml
+  The bootstrap is given on the command line, not in this file, because it
+  differs by layout: phpunit canonicalizes this file's path, so the relative
+  form written here resolves from wherever the file really lives. In the
+  ddev project that is the project root (web/core/... below); in a consuming
+  site with the module at web/modules/contrib/scolta it is three levels
+  above web/core/. The bootstrap attribute below serves the consuming-site
+  layout; the ddev invocation overrides it.
 
   (`-c` is phpunit's short form for the configuration option. The long form
   cannot appear in this comment: XML forbids a double hyphen inside one, and
   writing it here is what made this file unparseable until 2026-08-24.)
-
-  The bootstrap path is relative to this file's own location in the installed
-  Drupal project (web/modules/contrib/scolta/), three levels above web/core/.
 -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.5/phpunit.xsd"
