@@ -135,7 +135,7 @@ class PagefindBuilderTest extends TestCase {
   }
 
   /**
-   * file_count reads pagefind-entry.json's page_count, not a fragment glob.
+   * The file_count getStatus() returns comes from pagefind-entry.json's page_count, not a fragment glob.
    *
    * On a corpus with a six-figure fragment count on NFS, counting fragment
    * files by glob() is minutes-slow — getStatus() runs on every settings-form
@@ -162,9 +162,9 @@ class PagefindBuilderTest extends TestCase {
   }
 
   /**
-   * file_count falls back to the fragment glob when pagefind-entry.json is
-   * missing or unreadable -- an index built by a Pagefind version, or a
-   * broken build, that never wrote the entry file.
+   * The file_count getStatus() returns falls back to the fragment glob when pagefind-entry.json is missing or unreadable.
+   *
+   * A broken build that never wrote the entry file, for example.
    */
   public function testGetStatusFallsBackToFragmentGlobWithoutEntryJson(): void {
     mkdir($this->tmpDir . '/pagefind/fragment', 0755, TRUE);

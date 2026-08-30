@@ -133,6 +133,9 @@ class IndexLocatorTest extends TestCase {
   // pageCount() reads pagefind-entry.json instead of glob()ing fragments.
   // -------------------------------------------------------------------
 
+  /**
+   * Sums page_count across every language pagefind-entry.json lists.
+   */
   public function test_page_count_sums_across_languages(): void {
     mkdir($this->dir . '/pagefind', 0777, TRUE);
     file_put_contents($this->dir . '/pagefind/pagefind.js', 'js');
