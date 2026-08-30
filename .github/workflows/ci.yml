@@ -291,6 +291,24 @@ jobs:
       - name: Start DDEV
         run: ddev start
 
+      # drupal/core-dev on the 10.x line pins mglaman/phpstan-drupal
+      # ^1.2.10, which conflicts with our root ^2.0 — a real conflict, not a
+      # version-floor bug, and not one the lowest cell needs to solve:
+      # static analysis runs only in the highest cell (see the phpcs/phpstan
+      # policy above), so this cell doesn't need our phpstan constraints at
+      # all. Dropping them here lets core-dev's own (older) pin resolve on
+      # its own, whatever it happens to be on any given 10.x point release.
+      - name: Drop our phpstan constraints for the lowest cell
+        if: matrix.cell == 'lowest'
+        run: |
+          php -r '
+            $j = json_decode(file_get_contents("composer.json"), true);
+            foreach (["mglaman/phpstan-drupal", "phpstan/phpstan", "phpstan/phpstan-deprecation-rules"] as $pkg) {
+              unset($j["require-dev"][$pkg]);
+            }
+            file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+          '
+
       # Same rate-limit fix as the workflow-level COMPOSER_AUTH above, but
       # composer runs inside the web container, which does not inherit the
       # runner's environment.
