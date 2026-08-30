@@ -27,6 +27,10 @@
     <testsuite name="unit">
       <directory>tests/src</directory>
       <exclude>tests/src/Functional</exclude>
+      <exclude>tests/src/Kernel</exclude>
+    </testsuite>
+    <testsuite name="kernel">
+      <directory>tests/src/Kernel</directory>
     </testsuite>
     <testsuite name="functional">
       <directory>tests/src/Functional</directory>
