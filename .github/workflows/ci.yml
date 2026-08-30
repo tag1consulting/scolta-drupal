@@ -299,12 +299,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ddev exec composer config -g github-oauth.github.com "$GH_TOKEN"
 
+      # This is a throwaway test project, not a shipped artifact. Composer
+      # 2.9+ excludes advisory-flagged releases from the solver, and every
+      # Drupal 10.3.x has published SAs, so the lowest cell can resolve
+      # nothing without this. The real audit gate belongs on the shipped
+      # module, not on this scratch site. (The old hand-built functional job
+      # carried the same setting under its previous name,
+      # audit.block-insecure.)
+      - name: Allow advisory-flagged releases in this scratch project
+        run: ddev exec composer config -g policy.advisories.block false
+
       - name: Build the Drupal project around the module
         run: ddev poser ${{ matrix.composer-flags }}
 
       # No silent resolutions: what this cell actually tested, in the log.
       - name: Report resolved versions
-        run: ddev exec composer show drupal/core drupal/search_api drush/drush phpunit/phpunit tag1/scolta-php | grep -E '^(name|versions)'
+        run: |
+          for p in drupal/core drupal/search_api drush/drush phpunit/phpunit tag1/scolta-php; do
+            echo "$p: $(ddev exec composer show "$p" 2>/dev/null | awk '/^versions/ {print $NF}')"
+          done
 
       - name: Symlink the module into the docroot
         run: ddev symlink-project
