@@ -1081,20 +1081,16 @@ class ScoltaCommands extends DrushCommands {
 
     // Indexer selection and active state.
     $this->logger()->notice('--- Indexer ---');
+    $resolver = new PagefindBinary(
+      configuredPath: $config->get('pagefind.binary'),
+      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
+    );
+    $binaryStatus = $resolver->status();
     $indexerSetting = $config->get('indexer') ?: 'auto';
-    if ($indexerSetting === 'binary') {
-      // Only probe the binary when it's actually the active indexer:
-      // PagefindBinary::status() runs up to five blocking exec() calls with
-      // no timeout (configured path, project-local, `npx pagefind
-      // --version`, bare `pagefind`, then a version() call), and on a
-      // network-restricted host an npx resolution attempt can hang
-      // indefinitely. When the indexer is php/auto that status is never
-      // even displayed, so it isn't worth the risk.
-      $resolver = new PagefindBinary(
-        configuredPath: $config->get('pagefind.binary'),
-        projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
-      );
-      $binaryStatus = $resolver->status();
+    if ($indexerSetting === 'php' || $indexerSetting === 'auto') {
+      $activeIndexer = 'php';
+    }
+    elseif ($indexerSetting === 'binary') {
       $activeIndexer = $binaryStatus['available'] ? 'binary' : 'binary (not found — check path)';
     }
     else {
