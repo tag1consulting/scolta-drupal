@@ -35,7 +35,10 @@ namespace Drupal\Core\Form {
 
 namespace Drupal\Core\StringTranslation {
     if (!interface_exists(TranslationInterface::class)) {
-        interface TranslationInterface {}
+        interface TranslationInterface {
+            public function translate($string, array $args = [], array $options = []);
+            public function translateString(TranslatableMarkup $translated_string);
+        }
     }
 }
 // phpcs:enable
