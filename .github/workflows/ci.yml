@@ -22,8 +22,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - php: '8.2'
-            lint: false
           - php: '8.3'
             lint: true
           - php: '8.4'
