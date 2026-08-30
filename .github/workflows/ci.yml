@@ -252,7 +252,7 @@ jobs:
         include:
           - cell: lowest
             php: '8.3'
-            drupal-core: '~10.3.0'
+            drupal-core: '~10.5.0'
             composer-flags: '--prefer-lowest --prefer-stable'
           - cell: highest
             php: '8.4'
@@ -301,7 +301,7 @@ jobs:
 
       # This is a throwaway test project, not a shipped artifact. Composer
       # 2.9+ excludes advisory-flagged releases from the solver, and every
-      # Drupal 10.3.x has published SAs, so the lowest cell can resolve
+      # older Drupal 10.5.x patch releases have published SAs, so the lowest cell can resolve
       # nothing without this. The real audit gate belongs on the shipped
       # module, not on this scratch site. (The old hand-built functional job
       # carried the same setting under its previous name,

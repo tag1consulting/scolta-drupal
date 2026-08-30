@@ -20,7 +20,7 @@ The LLM tier — query expansion, result summarization, follow-up questions — 
 
 ## Requirements
 
-- Drupal 10.3+ or Drupal 11
+- Drupal 10.5+ or Drupal 11
 - PHP 8.3+
 - `drupal/search_api` ^1.0
 
