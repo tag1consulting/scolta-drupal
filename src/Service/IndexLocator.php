@@ -90,4 +90,36 @@ class IndexLocator {
     return count($this->fragmentFiles($location));
   }
 
+  /**
+   * Read the indexed page count from pagefind-entry.json.
+   *
+   * Pagefind records "page_count" per language in this file at build time,
+   * so it answers the same question as countFragments() with a single small
+   * JSON read instead of a glob() of the fragment directory -- minutes-slow
+   * once a corpus reaches six figures on NFS (see
+   * PagefindBuilder::getStatus()).
+   *
+   * @param array{indexFile: string, fragmentDir: string, entryFile: string} $location
+   *   A location returned by locate().
+   *
+   * @return int|null
+   *   The total page count across languages, or NULL if the entry file is
+   *   missing or unreadable.
+   */
+  public function pageCount(array $location): ?int {
+    $contents = @file_get_contents($location['entryFile']);
+    if ($contents === FALSE) {
+      return NULL;
+    }
+    $data = json_decode($contents, TRUE);
+    if (!is_array($data['languages'] ?? NULL)) {
+      return NULL;
+    }
+    $total = 0;
+    foreach ($data['languages'] as $language) {
+      $total += (int) ($language['page_count'] ?? 0);
+    }
+    return $total;
+  }
+
 }

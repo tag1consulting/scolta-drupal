@@ -1143,10 +1143,16 @@ class ScoltaCommands extends DrushCommands {
     }
     $location = $this->indexLocator->locate($resolvedDir);
     if ($location !== NULL) {
-      $fragmentCount = $this->indexLocator->countFragments($location);
       $mtime = filemtime($location['indexFile']);
       $this->logger()->notice("  Path:       {$outputDir}");
-      $this->logger()->notice("  Fragments:  {$fragmentCount}");
+      // Read the count from pagefind-entry.json rather than counting fragment
+      // files: on NFS with a six-figure corpus that glob() is minutes-slow
+      // (see PagefindBuilder::getStatus()), and status only needs a number.
+      $pageCount = $this->indexLocator->pageCount($location);
+      if ($pageCount === NULL) {
+        $pageCount = $this->indexLocator->countFragments($location);
+      }
+      $this->logger()->notice("  Pages:      {$pageCount}");
       $this->logger()->notice("  Last built: " . ($mtime ? date('Y-m-d H:i:s', $mtime) : 'unknown'));
     }
     else {

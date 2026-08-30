@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ## [Unreleased]
 
+### Fixed
+- `drush scolta:status` and the settings form's `getStatus()` no longer glob() the fragment directory to report a page count: on a six-figure corpus over NFS that directory listing was slow enough that `status` itself became the complaint. Both now read `page_count` from `pagefind-entry.json`, which Pagefind already writes at build time, falling back to the glob only if that file is missing or unreadable.
+
 ### Added
 - Added `recipes/scolta_umami/`, a recipe that configures Scolta against Drupal's Umami demo profile — presets, facet/sort field mappings, both languages, and the search block — so a demo site can be stood up with `drush recipe`. Development and demo aid, not for production. ([#232](https://github.com/tag1consulting/scolta-drupal/pull/232))
 - `recipes/scolta_umami/` now also creates the Search API server (`scolta_pagefind`) and index (`scolta_umami`) that Scolta's status output expects, so a recipe-built demo site tracks content changes instead of reporting "No Scolta index configured".

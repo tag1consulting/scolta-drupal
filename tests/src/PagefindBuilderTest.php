@@ -134,11 +134,21 @@ class PagefindBuilderTest extends TestCase {
     $this->assertNull($status['last_built']);
   }
 
+  /**
+   * file_count reads pagefind-entry.json's page_count, not a fragment glob.
+   *
+   * On a corpus with a six-figure fragment count on NFS, counting fragment
+   * files by glob() is minutes-slow — getStatus() runs on every settings-form
+   * GET, so it must read the count Pagefind already wrote instead.
+   */
   public function testGetStatusWithIndex(): void {
     mkdir($this->tmpDir . '/pagefind/fragment', 0755, TRUE);
     file_put_contents($this->tmpDir . '/pagefind/pagefind.js', '// pagefind');
     file_put_contents($this->tmpDir . '/pagefind/fragment/en_a.pf_fragment', 'data');
     file_put_contents($this->tmpDir . '/pagefind/fragment/en_b.pf_fragment', 'data');
+    file_put_contents($this->tmpDir . '/pagefind/pagefind-entry.json', json_encode([
+      'languages' => ['en' => ['page_count' => 2]],
+    ]));
 
     $status = $this->createBuilder()->getStatus($this->tmpDir);
 
@@ -149,6 +159,23 @@ class PagefindBuilderTest extends TestCase {
       $status['last_built'],
       'last_built must be the index file mtime formatted as Y-m-d H:i:s'
     );
+  }
+
+  /**
+   * file_count falls back to the fragment glob when pagefind-entry.json is
+   * missing or unreadable -- an index built by a Pagefind version, or a
+   * broken build, that never wrote the entry file.
+   */
+  public function testGetStatusFallsBackToFragmentGlobWithoutEntryJson(): void {
+    mkdir($this->tmpDir . '/pagefind/fragment', 0755, TRUE);
+    file_put_contents($this->tmpDir . '/pagefind/pagefind.js', '// pagefind');
+    file_put_contents($this->tmpDir . '/pagefind/fragment/en_a.pf_fragment', 'data');
+    file_put_contents($this->tmpDir . '/pagefind/fragment/en_b.pf_fragment', 'data');
+    file_put_contents($this->tmpDir . '/pagefind/fragment/en_c.pf_fragment', 'data');
+
+    $status = $this->createBuilder()->getStatus($this->tmpDir);
+
+    $this->assertSame(3, $status['file_count']);
   }
 
   // -------------------------------------------------------------------
