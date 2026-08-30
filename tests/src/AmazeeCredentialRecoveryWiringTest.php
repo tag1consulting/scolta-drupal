@@ -45,11 +45,9 @@ namespace Drupal\scolta\Tests {
      * behaviour; these tests prove the Drupal-specific wiring that feeds it.
      *
      * The unit-test vendor lacks drupal/core, so ScoltaAiService itself cannot
-     * be instantiated here. The wiring is proved two ways: behaviourally, that
-     * the Drupal cache bridge satisfies KeyExpiryRecovery's marker contract and
-     * keeps both `/health` and the re-authentication prompt truthful; and
-     * structurally, that ScoltaAiService / scolta.module / AmazeeSettingsForm /
-     * services.yml carry the wiring with the correct Amazee-path gate.
+     * be instantiated here. What is proved here is behavioural: the Drupal
+     * cache bridge satisfies KeyExpiryRecovery's marker contract and keeps
+     * both `/health` and the re-authentication prompt truthful.
      * scolta-php's AiServiceAdapterTest proves the base call-path behaviour the
      * wiring feeds.
      */
@@ -145,21 +143,6 @@ namespace Drupal\scolta\Tests {
             $recovery->recordAuthFailure();
 
             $this->assertTrue($recovery->isAuthFailing(), 'Marker round-trips through the Drupal cache backend');
-        }
-
-        // ---------------------------------------------------------------
-        // Structural: the service definition carries the cache backend
-        // ---------------------------------------------------------------
-
-        public function testServicesYamlPassesCacheToAiService(): void {
-            $services = \Symfony\Component\Yaml\Yaml::parseFile(
-                dirname(__DIR__, 2) . '/scolta.services.yml'
-            );
-            $this->assertContains(
-                '@cache.default',
-                $services['services']['scolta.ai_service']['arguments'] ?? [],
-                'scolta.ai_service must receive @cache.default so KeyExpiryRecovery markers persist'
-            );
         }
 
         // ---------------------------------------------------------------

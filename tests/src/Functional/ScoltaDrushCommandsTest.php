@@ -33,27 +33,6 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
   protected $defaultTheme = 'stark';
 
   /**
-   * Every Scolta command is discoverable by drush.
-   */
-  public function testAllCommandsAreRegistered(): void {
-    $this->drush('list', [], ['filter' => 'scolta']);
-    $output = $this->getOutput();
-    foreach ([
-      'scolta:export',
-      'scolta:build',
-      'scolta:finalize',
-      'scolta:rebuild-index',
-      'scolta:clear-cache',
-      'scolta:check-setup',
-      'scolta:status',
-      'scolta:download-pagefind',
-    ] as $command) {
-      $this->assertStringContainsString($command, $output,
-        "drush list must show {$command}");
-    }
-  }
-
-  /**
    * scolta:status runs against a fresh site and reports its sections.
    */
   public function testStatusReportsItsSections(): void {

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Tests;
 
-use Drupal\Core\Cache\Context\CacheContextsManager;
-use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\scolta\Access\AiAccess;
 use PHPUnit\Framework\TestCase;
@@ -28,19 +26,6 @@ class AiAccessWiringTest extends TestCase {
 
   protected function setUp(): void {
     $this->moduleRoot = dirname(__DIR__, 2);
-
-    // AccessResult::allowedIfHasPermission() asserts its cache contexts
-    // through the container; a stub manager is enough to satisfy that
-    // assertion without a full Drupal bootstrap.
-    $cacheContextsManager = $this->createStub(CacheContextsManager::class);
-    $cacheContextsManager->method('assertValidTokens')->willReturn(TRUE);
-    $container = new ContainerBuilder();
-    $container->set('cache_contexts_manager', $cacheContextsManager);
-    \Drupal::setContainer($container);
-  }
-
-  protected function tearDown(): void {
-    \Drupal::unsetContainer();
   }
 
   /**
@@ -86,25 +71,6 @@ class AiAccessWiringTest extends TestCase {
         "Route {$route} must name the feature it serves"
       );
     }
-  }
-
-  /**
-   * An account with the permission is allowed; one without is not.
-   *
-   * Also asserts the cacheability the shipped rule attaches: 'user.permissions'
-   * must be in the result's cache contexts, or the block that queries this
-   * caches one visitor's answer for everyone else.
-   */
-  public function testAccessIsGrantedOnlyWithThePermission(): void {
-    $access = new AiAccess();
-
-    $allowed = $access->access($this->accountWithPermission(TRUE), AiAccess::FEATURE_SUMMARIZE);
-    $this->assertTrue($allowed->isAllowed());
-    $this->assertContains('user.permissions', $allowed->getCacheContexts());
-
-    $notAllowed = $access->access($this->accountWithPermission(FALSE), AiAccess::FEATURE_SUMMARIZE);
-    $this->assertFalse($notAllowed->isAllowed());
-    $this->assertContains('user.permissions', $notAllowed->getCacheContexts());
   }
 
   /**

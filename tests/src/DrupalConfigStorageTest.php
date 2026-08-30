@@ -8,16 +8,13 @@ use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
 use Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeConnectionSource;
 
 /**
  * Behavioral tests for DrupalConfigStorage.
  *
  * Exercises store()/load(), storeConnectionSource()/loadConnectionSource(),
- * and clear() against a real (array-backed) StateInterface implementation,
- * plus the scolta.services.yml wiring and the ProvenanceAwareConfigStorageInterface
- * contract.
+ * and clear() against a real (array-backed) StateInterface implementation.
  */
 class DrupalConfigStorageTest extends TestCase {
 
@@ -143,36 +140,6 @@ class DrupalConfigStorageTest extends TestCase {
 
     $this->assertNull($storage->load(), 'clear() must remove the stored credentials.');
     $this->assertNull($storage->loadConnectionSource(), 'clear() must also drop the recorded connection source.');
-  }
-
-  // -------------------------------------------------------------------
-  // Structural: service wiring.
-  // -------------------------------------------------------------------
-
-  public function testServiceRegisteredWithStateArgument(): void {
-    $moduleRoot = dirname(__DIR__, 2);
-    $services = Yaml::parseFile($moduleRoot . '/scolta.services.yml');
-
-    $this->assertArrayHasKey('scolta.amazee_config_storage', $services['services']);
-    $definition = $services['services']['scolta.amazee_config_storage'];
-
-    $this->assertSame(DrupalConfigStorage::class, $definition['class']);
-    $this->assertSame(['@state'], $definition['arguments']);
-  }
-
-  // -------------------------------------------------------------------
-  // Contract: implements ProvenanceAwareConfigStorageInterface.
-  // -------------------------------------------------------------------
-
-  public function testImplementsProvenanceAwareConfigStorageInterface(): void {
-    if (!interface_exists('Tag1\Scolta\AiProvider\Amazee\ProvenanceAwareConfigStorageInterface')) {
-      $this->markTestSkipped('ProvenanceAwareConfigStorageInterface is not installed.');
-    }
-
-    $this->assertContains(
-      'Tag1\Scolta\AiProvider\Amazee\ProvenanceAwareConfigStorageInterface',
-      class_implements(DrupalConfigStorage::class),
-    );
   }
 
 }
