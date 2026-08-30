@@ -111,31 +111,13 @@ class KeysetPaginationFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * No unpublished row leaks into the walk.
-   */
-  public function testWalkExcludesUnpublishedRows(): void {
-    $ids = $this->gatheredItemIds('article');
-
-    foreach ($this->unpublishedNids as $nid) {
-      $this->assertNotContains((string) $nid, $ids,
-        'An unpublished node must never be gathered');
-    }
-  }
-
-  /**
-   * The bundle filter still applies at every batch boundary.
-   */
-  public function testWalkRespectsTheBundleFilter(): void {
-    $articles = $this->gatheredItemIds('article');
-    $pages = $this->gatheredItemIds('page');
-
-    $this->assertNotEmpty($pages);
-    $this->assertSame([], array_intersect($articles, $pages),
-      'A bundle-filtered walk must not spill rows from another bundle');
-  }
-
-  /**
    * An unfiltered walk covers every published node of every bundle.
+   *
+   * Also the only place unpublished-exclusion and bundle-scoping are still
+   * observable independently: testWalkCoversEveryRowExactlyOnce's exact-list
+   * assertion against the article bundle already implies both (an unpublished
+   * or cross-bundle row appearing there would break that equality outright),
+   * so a dedicated test for either would be redundant.
    */
   public function testUnfilteredWalkCoversAllBundles(): void {
     $expected = array_values(

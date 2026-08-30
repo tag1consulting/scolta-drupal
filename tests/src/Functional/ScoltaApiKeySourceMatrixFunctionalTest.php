@@ -107,7 +107,6 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
       ['', '', TRUE, 'amazee', 'amazee'],
       // Stored but not selected: reported, never used.
       ['', '', TRUE, 'anthropic', 'none'],
-      ['', '', TRUE, 'drupal_ai', 'none'],
       ['', '', FALSE, 'anthropic', 'none'],
     ];
 

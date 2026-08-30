@@ -87,6 +87,11 @@ class ScoltaApiKeyTypeFunctionalTest extends BrowserTestBase {
 
   /**
    * A FALSE key degrades to unconfigured instead of throwing a TypeError.
+   *
+   * Also covers that the two readers agree: pre-fix, getApiKey() threw a
+   * TypeError on this value (PHPUnit reports that as an error) while
+   * getApiKeySource() had no equivalent guard, so the two could disagree
+   * about whether a key was configured at all.
    */
   public function testFalseApiKeySettingReturnsEmptyString(): void {
     $this->writeApiKeySetting(FALSE);
@@ -95,23 +100,11 @@ class ScoltaApiKeyTypeFunctionalTest extends BrowserTestBase {
     $this->assertFalse(Settings::get('scolta.api_key'),
       'The test fixture must actually store boolean FALSE in settings.php');
 
-    // Pre-fix this line threw TypeError, which PHPUnit reports as an error.
-    $key = $this->container->get('scolta.ai_service')->getApiKey();
-    $this->assertSame('', $key,
-      'getApiKey() must return an empty string for a FALSE settings.php value');
-  }
-
-  /**
-   * The two readers agree about a FALSE value rather than disagreeing.
-   */
-  public function testFalseApiKeySettingReportsNoSource(): void {
-    $this->writeApiKeySetting(FALSE);
-
     $service = $this->container->get('scolta.ai_service');
+    $this->assertSame('', $service->getApiKey(),
+      'getApiKey() must return an empty string for a FALSE settings.php value');
     $this->assertSame('none', $service->getApiKeySource(),
       'A FALSE settings.php value must not count as a configured key source');
-    $this->assertSame('', $service->getApiKey(),
-      'getApiKeySource() and getApiKey() must agree about the same value');
   }
 
   /**

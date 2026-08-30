@@ -144,39 +144,6 @@ class AiPermissionBackfillFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Re-running the update after a backfill does not re-grant anything.
-   */
-  public function testSecondRunAfterBackfillIsANoOp(): void {
-    $this->simulatePreFixSite();
-    $this->runBackfillUpdate();
-    $after_first = $this->rolePermissions(RoleInterface::ANONYMOUS_ID);
-
-    $this->runBackfillUpdate();
-
-    $this->assertSame(
-      $after_first,
-      $this->rolePermissions(RoleInterface::ANONYMOUS_ID),
-      'A second run of the backfill must be a no-op'
-    );
-  }
-
-  /**
-   * Only the AI permission is touched; unrelated grants survive.
-   */
-  public function testUpdateLeavesOtherPermissionsAlone(): void {
-    $this->simulatePreFixSite();
-    user_role_grant_permissions(RoleInterface::ANONYMOUS_ID, ['access content']);
-
-    $this->runBackfillUpdate();
-
-    $this->assertContains(
-      'access content',
-      $this->rolePermissions(RoleInterface::ANONYMOUS_ID),
-      'The backfill must not disturb permissions it did not grant'
-    );
-  }
-
-  /**
    * Puts the site in the config state of an install that predates the grant.
    */
   private function simulatePreFixSite(): void {

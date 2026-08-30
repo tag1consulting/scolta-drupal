@@ -82,19 +82,13 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * The front page renders for anonymous, with no locale exception logged.
-   *
-   * The front page is called out because it is where the outage was visible:
-   * a site whose every page 500s is down, not degraded.
-   */
-  public function testFrontPageRendersWithLocaleEnabled(): void {
-    $this->drupalGet('<front>');
-    $this->assertSession()->statusCodeEquals(200);
-    $this->assertNoLocaleParseException('front page');
-  }
-
-  /**
    * A page carrying the search block renders, with no locale exception.
+   *
+   * Also checks the front page: it is where the outage was visible (a site
+   * whose every page 500s is down, not degraded), and the underlying bug —
+   * locale's own hook_library_info_alter() adding locale/translations to
+   * every page unconditionally — reproduces there independent of whether the
+   * search block is attached.
    */
   public function testSearchPageRendersWithLocaleEnabled(): void {
     $node = $this->drupalCreateNode([
@@ -108,6 +102,10 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
       'The page must actually render the search block — a page that does not attach scolta/search cannot fail this test, so it would prove nothing.');
     $this->assertSession()->responseContains('scolta.js');
     $this->assertNoLocaleParseException('a page rendering the search block');
+
+    $this->drupalGet('<front>');
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertNoLocaleParseException('front page');
   }
 
   /**
