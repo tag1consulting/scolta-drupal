@@ -18,10 +18,6 @@ env:
 
 jobs:
   test:
-    # Stable cell names (test-lowest / test-highest): branch protection matches
-    # required checks by literal job name, so a matrix keyed on PHP versions
-    # broke protection every time a version rotated. These names never change;
-    # what they mean is defined here.
     name: test-${{ matrix.cell }}
     runs-on: ubuntu-latest
     strategy:
