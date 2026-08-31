@@ -8,6 +8,7 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ### Changed
 - `drush scolta:status` now emits YAML on stdout instead of logger lines on stderr, preserving the section groupings (`search_api`, `indexer`, `build_directory`, `pagefind_index`, `ai_provider`, `cache`) as nested maps that scripts can parse.
+- `CronCleanupFunctionalTest` demoted to `CronCleanupKernelTest`: `scolta_cron()` needs a real container but no HTTP request. The obvious in-process approach — `Drupal\Tests\Traits\Core\CronRunTrait`'s `cronRun()` — turned out not to be core-version-safe for kernel tests: it always calls `drupalGet()`, which needs `HttpKernelUiHelperTrait`, a trait `KernelTestBase` only pulls in as of Drupal 11. `integration-lowest` (Drupal 10.5) caught this; the test now calls `\Drupal::service('cron')->run()` directly, which works identically on every supported core version.
 
 ### Fixed
 - `drush scolta:status` and the settings form's `getStatus()` no longer glob() the fragment directory to report a page count: on a six-figure corpus over NFS that directory listing was slow enough that `status` itself became the complaint. Both now read `page_count` from `pagefind-entry.json`, which Pagefind already writes at build time, falling back to the glob only if that file is missing or unreadable.

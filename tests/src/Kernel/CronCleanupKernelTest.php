@@ -6,7 +6,6 @@ namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\Tests\Traits\Core\CronRunTrait;
 
 /**
  * The scolta_cron() hook sweeps leftover retired-index trash.
@@ -14,16 +13,17 @@ use Drupal\Tests\Traits\Core\CronRunTrait;
  * Publishing a new index parks the previous one in a `.scolta-trash-*`
  * directory and sweeps it after publishing (scolta-php's RetiredIndexTrash);
  * cron is the backstop for builds that died before their own sweep and for
- * the batch-UI path, which never sweeps. cronRun() (Drupal\Tests\Traits\
- * Core\CronRunTrait) calls \Drupal::service('cron')->run() in-process — no
- * HTTP request is involved, so this needs only a real container and a real
- * public:// filesystem, both of which KernelTestBase provides.
+ * the batch-UI path, which never sweeps. Cron runs by calling the 'cron'
+ * service directly, in-process — no HTTP request is involved, so this needs
+ * only a real container and a real public:// filesystem, both of which
+ * KernelTestBase provides. (Not CronRunTrait's cronRun(): that always calls
+ * drupalGet(), which needs the HttpKernelUiHelperTrait KernelTestBase only
+ * pulls in as of Drupal 11 — calling the service directly works identically
+ * on Drupal 10, our lowest-supported core.)
  *
  * @group scolta
  */
 class CronCleanupKernelTest extends KernelTestBase {
-
-  use CronRunTrait;
 
   /**
    * {@inheritdoc}
@@ -44,6 +44,13 @@ class CronCleanupKernelTest extends KernelTestBase {
       $dir,
       FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS
     );
+  }
+
+  /**
+   * Runs cron in-process, the way every supported Drupal core version can.
+   */
+  private function cronRun(): void {
+    \Drupal::service('cron')->run();
   }
 
   /**
