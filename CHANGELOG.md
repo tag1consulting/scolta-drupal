@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ## [Unreleased]
 
+### Added
+- `BodyFieldsKernelTest`: the configurable `body_fields` setting (which field's text gets indexed) had zero test coverage despite a documented incident — a bundle whose prose lives outside the configured list silently drops out of the index, with no error and no log. Covers: default fallback list, a configured non-standard field being used when the default is empty, first-non-empty-field-wins ordering, and the silent-skip case itself.
+
 ### Changed
 - `drush scolta:status` now emits YAML on stdout instead of logger lines on stderr, preserving the section groupings (`search_api`, `indexer`, `build_directory`, `pagefind_index`, `ai_provider`, `cache`) as nested maps that scripts can parse.
 - `CronCleanupFunctionalTest` demoted to `CronCleanupKernelTest`: `scolta_cron()` needs a real container but no HTTP request. The obvious in-process approach — `Drupal\Tests\Traits\Core\CronRunTrait`'s `cronRun()` — turned out not to be core-version-safe for kernel tests: it always calls `drupalGet()`, which needs `HttpKernelUiHelperTrait`, a trait `KernelTestBase` only pulls in as of Drupal 11. `integration-lowest` (Drupal 10.5) caught this; the test now calls `\Drupal::service('cron')->run()` directly, which works identically on every supported core version.
