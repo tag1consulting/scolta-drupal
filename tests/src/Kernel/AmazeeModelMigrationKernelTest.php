@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Drupal\Tests\scolta\Functional;
+namespace Drupal\Tests\scolta\Kernel;
 
+use Drupal\KernelTests\KernelTestBase;
 use Drupal\scolta\Form\ScoltaSettingsForm;
-use Drupal\Tests\BrowserTestBase;
 
 /**
  * Functional coverage for scolta_update_10003().
@@ -23,19 +23,25 @@ use Drupal\Tests\BrowserTestBase;
  * administrator choice, and resetting that would recreate the very bug being
  * fixed.
  *
+ * No HTTP request is involved — config reads/writes and a directly-invoked
+ * update hook — so this needs only a real container, not BrowserTestBase.
+ *
  * @group scolta
  */
-class AmazeeModelMigrationTest extends BrowserTestBase {
+class AmazeeModelMigrationKernelTest extends KernelTestBase {
 
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta'];
+  protected static $modules = ['system', 'user', 'search_api', 'scolta'];
 
   /**
    * {@inheritdoc}
    */
-  protected $defaultTheme = 'stark';
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installConfig(['scolta']);
+  }
 
   private const GATEWAY_ALIAS = 'claude-4-5-sonnet';
   private const GATEWAY_EXPANSION_ALIAS = 'claude-3-5-haiku';
