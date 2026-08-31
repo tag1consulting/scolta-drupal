@@ -13,7 +13,6 @@ use Drupal\scolta\Service\ScoltaAiService;
 use GuzzleHttp\ClientInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
-use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeBudgetExceededException;
 use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
 
@@ -35,31 +34,6 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
 
   protected function tearDown(): void {
     putenv('SCOLTA_API_KEY');
-  }
-
-  // -------------------------------------------------------------------
-  // Constructor contract (reflection).
-  // -------------------------------------------------------------------
-
-  public function testConstructorAcceptsTheAmazeeCredentialStoreAsOptional(): void {
-    $param = $this->constructorParam('amazeeConfigStorage');
-    $type = $param->getType();
-
-    $this->assertSame(ConfigStorageInterface::class, $type->getName(),
-      'Amazee credentials reach this service through the store that decrypts them');
-    $this->assertTrue($type->allowsNull(), 'The credential store must be optional');
-    $this->assertTrue($param->isDefaultValueAvailable() && $param->getDefaultValue() === NULL,
-      'The credential store must default to NULL');
-  }
-
-  public function testConstructorAcceptsBudgetHandlerAsOptional(): void {
-    $param = $this->constructorParam('budgetHandler');
-    $type = $param->getType();
-
-    $this->assertSame(BudgetExceededHandler::class, $type->getName());
-    $this->assertTrue($type->allowsNull(), 'BudgetExceededHandler must be optional');
-    $this->assertTrue($param->isDefaultValueAvailable() && $param->getDefaultValue() === NULL,
-      'BudgetExceededHandler must default to NULL');
   }
 
   // -------------------------------------------------------------------
@@ -169,48 +143,8 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // Service wiring (parsed YAML).
-  // -------------------------------------------------------------------
-
-  public function testServicesYamlHasAmazeeServices(): void {
-    $services = Yaml::parseFile(dirname(__DIR__, 2) . '/scolta.services.yml')['services'];
-
-    $this->assertArrayHasKey('scolta.amazee_config_storage', $services);
-    $this->assertSame(
-      'Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage',
-      $services['scolta.amazee_config_storage']['class'],
-    );
-    $this->assertArrayHasKey('scolta.amazee_budget_handler', $services);
-    $this->assertSame(
-      'Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler',
-      $services['scolta.amazee_budget_handler']['class'],
-    );
-  }
-
-  public function testAiServiceArgumentsWireTheAmazeeServices(): void {
-    $services = Yaml::parseFile(dirname(__DIR__, 2) . '/scolta.services.yml')['services'];
-    $arguments = $services['scolta.ai_service']['arguments'];
-
-    $this->assertContains('@scolta.amazee_budget_handler', $arguments);
-    $this->assertContains('@scolta.amazee_config_storage', $arguments);
-  }
-
-  // -------------------------------------------------------------------
   // Helpers.
   // -------------------------------------------------------------------
-
-  /**
-   * Get a constructor parameter by name.
-   */
-  private function constructorParam(string $name): \ReflectionParameter {
-    $constructor = new \ReflectionMethod(ScoltaAiService::class, '__construct');
-    foreach ($constructor->getParameters() as $param) {
-      if ($param->getName() === $name) {
-        return $param;
-      }
-    }
-    $this->fail("Constructor has no \$$name parameter");
-  }
 
   /**
    * Invoke a protected method on the service.

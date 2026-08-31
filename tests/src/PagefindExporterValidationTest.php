@@ -34,7 +34,6 @@ namespace Drupal\scolta\Tests {
   use Drupal\search_api\Item\ItemInterface;
   use PHPUnit\Framework\TestCase;
   use Psr\Log\NullLogger;
-  use Symfony\Component\Yaml\Yaml;
 
   /**
    * Behavioral tests for the real PagefindExporter.
@@ -128,40 +127,6 @@ namespace Drupal\scolta\Tests {
       $item->method('getId')->willReturn($id);
       $item->method('getOriginalObject')->willReturn($original);
       return $item;
-    }
-
-    // -------------------------------------------------------------------
-    // Constructor matches scolta.services.yml.
-    // -------------------------------------------------------------------
-
-    public function testConstructorParameterCountMatchesServices(): void {
-      $services = Yaml::parseFile(dirname(__DIR__, 2) . '/scolta.services.yml');
-      $args = $services['services']['scolta.pagefind_exporter']['arguments'] ?? [];
-
-      $constructor = new \ReflectionMethod(PagefindExporter::class, '__construct');
-      $this->assertSame(
-        count($args),
-        $constructor->getNumberOfParameters(),
-        'PagefindExporter constructor params must match service arguments count'
-      );
-    }
-
-    public function testConstructorAcceptsExpectedTypes(): void {
-      $constructor = new \ReflectionMethod(PagefindExporter::class, '__construct');
-      $types = array_map(
-        static fn (\ReflectionParameter $p): string => (string) $p->getType(),
-        $constructor->getParameters()
-      );
-
-      $this->assertSame(
-        [
-          EntityTypeManagerInterface::class,
-          RendererInterface::class,
-          FileSystemInterface::class,
-          'Psr\Log\LoggerInterface',
-        ],
-        $types
-      );
     }
 
     // -------------------------------------------------------------------

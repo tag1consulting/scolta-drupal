@@ -62,24 +62,6 @@ class ScoltaAiServiceGatewayClientTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // Structural: the overrides createClient() relies on.
-  // -------------------------------------------------------------------
-
-  public function testCreateClientIsOverriddenByTheAdapter(): void {
-    $method = new \ReflectionMethod(ScoltaAiService::class, 'createClient');
-
-    $this->assertSame(ScoltaAiService::class, $method->getDeclaringClass()->getName(),
-      'ScoltaAiService must override createClient() to carry the model self-heal');
-  }
-
-  public function testBuildConfigIsProtected(): void {
-    $method = new \ReflectionMethod(ScoltaAiService::class, 'buildConfig');
-
-    $this->assertTrue($method->isProtected(),
-      'buildConfig() must be protected so createClient() can rebuild config after a heal');
-  }
-
-  // -------------------------------------------------------------------
   // Helpers.
   // -------------------------------------------------------------------
 

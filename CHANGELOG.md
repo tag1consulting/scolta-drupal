@@ -8,6 +8,11 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ### Added
 - `BodyFieldsKernelTest`: the configurable `body_fields` setting (which field's text gets indexed) had zero test coverage despite a documented incident — a bundle whose prose lives outside the configured list silently drops out of the index, with no error and no log. Covers: default fallback list, a configured non-standard field being used when the default is empty, first-non-empty-field-wins ordering, and the silent-skip case itself.
+- `ComposerDependencyParityTest`: the two composer.json/`.info.yml` dependency-parity checks from the deleted `RenameIntegrityTest` (the only coverage for issue #41 — `drush en scolta` failing right after `composer require`) relocated here rather than lost.
+
+### Removed
+- Deleted `QuickWinsRegressionTest`, `InstallPathTest`, the unit-suite `AmazeeModelKeySeparationTest` (its own docblock deferred to the Functional/Kernel twin), and `RenameIntegrityTest` (its two valuable tests moved to `ComposerDependencyParityTest`) — every remaining method in each was a YAML-text assertion, a dead-code pin, or a fact a passing build already guarantees.
+- Trimmed ~90 low-value test methods (source-text/config-text assertions, bare `method_exists`/reflection-arity checks, and duplicated coverage) from `ScoltaContentGathererTest`, `YamlIntegrityTest`, `StructuralIntegrityTest`, `ScoltaCommandsValidationTest`, `ScoltaBatchOperationsTest`, `ScoltaAiServiceValidationTest`, `ScoltaAiServiceAmazeeTest`, `ControllerHandlerTest`, `ScoltaAiServiceGatewayClientTest`, `ScoltaSettingsFormTest`, `PagefindExporterValidationTest`, `IndexLocatorTest`, `ForceBuildManifestPrimingTest`, `ManualProviderAndTwoActionConnectTest`, and `SaytSettingsTest`. What survives in each file is a schema/install-defaults parity check with no other coverage, or a test that actually executes behavior (constructs the real class, drives a real method, asserts a return value) rather than reflecting on its shape.
 
 ### Changed
 - `drush scolta:status` now emits YAML on stdout instead of logger lines on stderr, preserving the section groupings (`search_api`, `indexer`, `build_directory`, `pagefind_index`, `ai_provider`, `cache`) as nested maps that scripts can parse.

@@ -70,35 +70,6 @@ class ScoltaSettingsFormTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
-  // 1. Form class structural compatibility.
-  // -------------------------------------------------------------------
-
-  /**
-   * Verifies the constructor accepts TypedConfigManagerInterface (Drupal 11).
-   *
-   * This catches the exact bug where ConfigFormBase::__construct() was called
-   * with only one argument instead of two.
-   */
-  public function testConstructorAcceptsTypedConfigManager(): void {
-    $params = (new \ReflectionMethod(ScoltaSettingsForm::class, '__construct'))->getParameters();
-    $types = array_map(
-      static fn (\ReflectionParameter $p): string => $p->getType() instanceof \ReflectionNamedType ? $p->getType()->getName() : '',
-      $params,
-    );
-
-    $this->assertContains(
-      'Drupal\Core\Config\TypedConfigManagerInterface',
-      $types,
-      'Constructor must accept a TypedConfigManagerInterface parameter for Drupal 11 compatibility'
-    );
-    $this->assertSame(
-      'Drupal\Core\Config\TypedConfigManagerInterface',
-      $types[1],
-      'The typed config manager must be the second constructor parameter, matching ConfigFormBase'
-    );
-  }
-
-  // -------------------------------------------------------------------
   // 2. Config values reach ScoltaConfig and affect its properties.
   // -------------------------------------------------------------------
 
@@ -536,41 +507,6 @@ class ScoltaSettingsFormTest extends TestCase {
       $config->showAttribution,
       'ScoltaConfig::$showAttribution must be true when show_attribution is true in Drupal config'
     );
-  }
-
-  // -------------------------------------------------------------------
-  // facet_mode — when the browser loads the facet index.
-  // -------------------------------------------------------------------
-
-  /**
-   * The install default must be 'eager' — the behavior every site already has.
-   */
-  public function testFacetModeInstallDefaultIsEager(): void {
-    $defaults = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-
-    $this->assertArrayHasKey(
-      'facet_mode',
-      $defaults,
-      'facet_mode must be present in config/install/scolta.settings.yml'
-    );
-    $this->assertSame(
-      'eager',
-      $defaults['facet_mode'],
-      'facet_mode must default to eager so existing sites are unaffected'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // Field mapping install defaults.
-  // -------------------------------------------------------------------
-
-  public function testFieldMappingsInInstallDefaults(): void {
-    $defaults = $this->getInstallDefaults();
-    $this->assertArrayHasKey('field_mappings', $defaults, 'Install defaults must include field_mappings');
-    $this->assertArrayHasKey('sortable', $defaults['field_mappings'], 'field_mappings must have sortable key');
-    $this->assertArrayHasKey('filters', $defaults['field_mappings'], 'field_mappings must have filters key');
-    $this->assertEmpty($defaults['field_mappings']['sortable'], 'Default field_mappings.sortable must be empty');
-    $this->assertEmpty($defaults['field_mappings']['filters'], 'Default field_mappings.filters must be empty');
   }
 
 }

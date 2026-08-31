@@ -153,31 +153,4 @@ class IndexLocatorTest extends TestCase {
     $this->assertSame(42, $locator->pageCount($location));
   }
 
-  public function test_locator_is_wired_into_the_consuming_services(): void {
-    // The locator only removes the disagreement if the services that answer
-    // "is the index built?" actually receive it. HealthController and
-    // ScoltaSearchBlock resolve it in their create() factories (covered by
-    // their own tests); the two YAML-wired consumers are pinned here.
-    $root = dirname(__DIR__, 2);
-
-    $services = \Symfony\Component\Yaml\Yaml::parseFile($root . '/scolta.services.yml')['services'];
-    $this->assertArrayHasKey('scolta.index_locator', $services);
-    $this->assertContains(
-      '@scolta.index_locator',
-      $services['scolta.pagefind_builder']['arguments'],
-      'PagefindBuilder must be handed the shared locator'
-    );
-
-    $drush = \Symfony\Component\Yaml\Yaml::parseFile($root . '/drush.services.yml')['services'];
-    $commandArgs = array_merge(...array_map(
-      static fn (array $definition) => $definition['arguments'] ?? [],
-      array_values($drush)
-    ));
-    $this->assertContains(
-      '@scolta.index_locator',
-      $commandArgs,
-      'The drush commands must be handed the shared locator'
-    );
-  }
-
 }

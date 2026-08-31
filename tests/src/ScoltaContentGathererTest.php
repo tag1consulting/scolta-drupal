@@ -6,34 +6,15 @@ namespace Drupal\scolta\Tests;
 
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
- * Structural tests for ScoltaContentGatherer.
+ * Structural test for ScoltaContentGatherer's streaming resume contract.
  *
- * Verifies the service API surface via reflection and the container wiring
- * via parsed YAML. The gatherer's behavior (entity queries, translations,
- * field mappings, the manifest round-trip) is exercised functionally by the
- * pipeline tests under tests/src/Functional/.
+ * The gatherer's behavior (entity queries, translations, field mappings, the
+ * manifest round-trip) is exercised functionally by the pipeline tests under
+ * tests/src/Functional/.
  */
 class ScoltaContentGathererTest extends TestCase {
-
-  private string $moduleRoot;
-
-  protected function setUp(): void {
-    $this->moduleRoot = dirname(__DIR__, 2);
-  }
-
-  // -------------------------------------------------------------------
-  // Class structure.
-  // -------------------------------------------------------------------
-
-  public function testGathererFileExists(): void {
-    $this->assertFileExists(
-      $this->moduleRoot . '/src/Service/ScoltaContentGatherer.php',
-      'ScoltaContentGatherer.php must exist in src/Service/'
-    );
-  }
 
   /**
    * gather() streams and resumes by entity ID.
@@ -63,74 +44,6 @@ class ScoltaContentGathererTest extends TestCase {
       'The resume boundary is an entity ID, nullable when starting from the top');
     $this->assertSame('?Tag1\Scolta\Index\TimestampManifest', (string) $params[4]->getType(),
       'gather() must accept an optional TimestampManifest for incremental builds');
-  }
-
-  public function testGatherCountMethodExists(): void {
-    $ref = new \ReflectionMethod(ScoltaContentGatherer::class, 'gatherCount');
-    $this->assertTrue($ref->isPublic());
-    $this->assertSame('int', (string) $ref->getReturnType());
-  }
-
-  public function testGetEntityTimestampsMethodExists(): void {
-    $this->assertTrue(
-      method_exists(ScoltaContentGatherer::class, 'getEntityTimestamps'),
-      'ScoltaContentGatherer must have getEntityTimestamps() for lightweight timestamp queries'
-    );
-  }
-
-  public function testGatherByIdsMethodExists(): void {
-    $this->assertTrue(
-      method_exists(ScoltaContentGatherer::class, 'gatherByIds'),
-      'ScoltaContentGatherer must have gatherByIds() — the shared ID-scoped pipeline'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // Service container registration.
-  // -------------------------------------------------------------------
-
-  public function testServiceIsRegisteredInServicesYml(): void {
-    $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml');
-    $this->assertArrayHasKey('scolta.content_gatherer', $services['services'] ?? [],
-      'scolta.content_gatherer service must be defined in scolta.services.yml');
-  }
-
-  public function testServiceClassInServicesYml(): void {
-    $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml');
-    $this->assertSame(
-      ScoltaContentGatherer::class,
-      $services['services']['scolta.content_gatherer']['class'] ?? NULL,
-      'scolta.content_gatherer must reference ScoltaContentGatherer class'
-    );
-  }
-
-  public function testServiceArgumentIsEntityTypeManager(): void {
-    $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml');
-    $arguments = $services['services']['scolta.content_gatherer']['arguments'] ?? [];
-    $this->assertContains('@entity_type.manager', $arguments,
-      'scolta.content_gatherer must inject @entity_type.manager');
-  }
-
-  // -------------------------------------------------------------------
-  // Injection into ScoltaCommands.
-  // -------------------------------------------------------------------
-
-  public function testDrushServicesYmlInjectsGathererIntoCommands(): void {
-    $drush = Yaml::parseFile($this->moduleRoot . '/drush.services.yml');
-    $arguments = $drush['services']['scolta.commands']['arguments'] ?? [];
-    $this->assertContains('@scolta.content_gatherer', $arguments,
-      'drush.services.yml must pass @scolta.content_gatherer to ScoltaCommands');
-  }
-
-  // -------------------------------------------------------------------
-  // Hook API documentation (scolta.api.php).
-  // -------------------------------------------------------------------
-
-  public function testScoltaApiPhpExists(): void {
-    $this->assertFileExists(
-      $this->moduleRoot . '/scolta.api.php',
-      'scolta.api.php must exist for hook discoverability (standard Drupal practice)'
-    );
   }
 
 }
