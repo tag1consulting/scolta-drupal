@@ -104,8 +104,9 @@ class ScoltaSettingsFormTest extends TestCase {
 
   /**
    * Changing scoring config values produces different ScoltaConfig properties.
+   *
+   * @dataProvider scoringOverrideProvider
    */
-  #[\PHPUnit\Framework\Attributes\DataProvider('scoringOverrideProvider')]
   public function testScoringConfigOverridesAffectScoltaConfig(
     string $configKey,
     mixed $customValue,
@@ -158,8 +159,9 @@ class ScoltaSettingsFormTest extends TestCase {
 
   /**
    * Display config overrides affect ScoltaConfig.
+   *
+   * @dataProvider displayOverrideProvider
    */
-  #[\PHPUnit\Framework\Attributes\DataProvider('displayOverrideProvider')]
   public function testDisplayConfigOverridesAffectScoltaConfig(
     string $configKey,
     mixed $customValue,
@@ -359,8 +361,9 @@ class ScoltaSettingsFormTest extends TestCase {
    * the candidate URL and setErrorByName() records what the form flags. The
    * form object is built without its constructor — validateForm() touches no
    * injected service, only the form state and string translation.
+   *
+   * @dataProvider urlValidationProvider
    */
-  #[\PHPUnit\Framework\Attributes\DataProvider('urlValidationProvider')]
   public function testValidateFormBaseUrlValidation(string $url, bool $shouldBeValid): void {
     /** @var \Drupal\scolta\Form\ScoltaSettingsForm $formObject */
     $formObject = (new \ReflectionClass(ScoltaSettingsForm::class))->newInstanceWithoutConstructor();
@@ -467,8 +470,9 @@ class ScoltaSettingsFormTest extends TestCase {
   /**
    * The resolved default for each prompt key matches what DefaultPrompts
    * produces, so Drupal and WordPress are guaranteed to show identical text.
+   *
+   * @dataProvider allPromptNamesProvider
    */
-  #[\PHPUnit\Framework\Attributes\DataProvider('allPromptNamesProvider')]
   public function testDefaultPromptMatchesDefaultPromptsResolve(string $name): void {
     $template = \Tag1\Scolta\Prompt\DefaultPrompts::getTemplate($name);
     $resolved = \Tag1\Scolta\Prompt\DefaultPrompts::resolve($name, 'Acme', 'tech company');

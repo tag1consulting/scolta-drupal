@@ -17,8 +17,8 @@ env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
 
 jobs:
-  test:
-    name: test-${{ matrix.cell }}
+  unit:
+    name: unit-${{ matrix.cell }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -236,7 +236,7 @@ jobs:
   # sibling-checkout layout used locally. Same resolution semantics as
   # before: the path repo supplies scolta-php main.
   #
-  # Two cells bracket the support surface, mirroring test-lowest/test-highest
+  # Two cells bracket the support surface, mirroring unit-lowest/unit-highest
   # above: integration-lowest is the minimum supported PHP on the minimum
   # supported core with every dependency at its floor; integration-highest
   # is the newest of everything. Stable version-free names, because branch

@@ -242,7 +242,9 @@ namespace Drupal\scolta\Tests {
     // itemIdToFilename() — the real protected method via reflection.
     // -------------------------------------------------------------------
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('itemIdToFilenameProvider')]
+    /**
+     * @dataProvider itemIdToFilenameProvider
+     */
     public function testItemIdToFilename(string $input, string $expected): void {
       $method = new \ReflectionMethod(PagefindExporter::class, 'itemIdToFilename');
 

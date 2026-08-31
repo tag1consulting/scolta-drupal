@@ -22,7 +22,9 @@ class YamlIntegrityTest extends TestCase {
   // Basic YAML parsing — every .yml file must parse without error.
   // -------------------------------------------------------------------
 
-  #[\PHPUnit\Framework\Attributes\DataProvider('ymlFileProvider')]
+  /**
+   * @dataProvider ymlFileProvider
+   */
   public function testYamlFilesAreValid(string $file): void {
     $content = file_get_contents($file);
     $this->assertNotFalse($content, "Could not read {$file}");
