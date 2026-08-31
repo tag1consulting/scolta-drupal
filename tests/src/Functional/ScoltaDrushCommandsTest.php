@@ -6,6 +6,7 @@ namespace Drupal\Tests\scolta\Functional;
 
 use Drupal\Tests\BrowserTestBase;
 use Drush\TestTraits\DrushTestTrait;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Proves the Scolta drush command surface is registered and wired.
@@ -33,22 +34,27 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
   protected $defaultTheme = 'stark';
 
   /**
-   * scolta:status runs against a fresh site and reports its sections.
+   * scolta:status emits parseable YAML on stdout with all its sections.
    */
   public function testStatusReportsItsSections(): void {
     $this->drush('scolta:status');
-    // Drush logger output goes to stderr.
-    $output = $this->getErrorOutput();
+    $status = Yaml::parse($this->getOutput());
+    $this->assertIsArray($status, 'scolta:status must emit parseable YAML');
     foreach ([
-      '--- Search API ---',
-      '--- Indexer ---',
-      '--- Build Directory ---',
-      '--- Pagefind Index ---',
-      '--- AI Provider ---',
+      'search_api',
+      'indexer',
+      'build_directory',
+      'pagefind_index',
+      'ai_provider',
+      'cache',
     ] as $section) {
-      $this->assertStringContainsString($section, $output,
+      $this->assertArrayHasKey($section, $status,
         "scolta:status must report the {$section} section");
     }
+    // Groupings are nested maps, not flattened lines.
+    $this->assertSame('php', $status['indexer']['active']);
+    $this->assertFalse($status['pagefind_index']['built']);
+    $this->assertIsInt($status['cache']['generation']);
   }
 
   /**
@@ -77,7 +83,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
    */
   public function testStatusAliasResolves(): void {
     $this->drush('sst');
-    $this->assertStringContainsString('--- AI Provider ---', $this->getErrorOutput(),
+    $this->assertStringContainsString('ai_provider:', $this->getOutput(),
       'The sst alias must invoke scolta:status');
   }
 

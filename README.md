@@ -71,7 +71,7 @@ drush scolta:build
 | `drush scolta:rebuild-index` (`sri`) | Rebuild index from existing exported HTML files |
 | `drush scolta:clear-cache` (`scc`) | Clear expansion and summary caches |
 | `drush scolta:check-setup` (`scs`) | Verify dependencies and configuration |
-| `drush scolta:status` (`sst`) | Show current index, indexer, and AI provider status |
+| `drush scolta:status` (`sst`) | Show current index, indexer, and AI provider status as YAML |
 | `drush scolta:download-pagefind` (`sdp`) | Download the Pagefind binary for the current platform |
 
 ## Large Corpora and Shared Hosting
