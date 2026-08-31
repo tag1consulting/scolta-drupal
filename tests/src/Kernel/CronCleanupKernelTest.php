@@ -2,37 +2,49 @@
 
 declare(strict_types=1);
 
-namespace Drupal\Tests\scolta\Functional;
+namespace Drupal\Tests\scolta\Kernel;
 
-use Drupal\Tests\BrowserTestBase;
+use Drupal\Core\File\FileSystemInterface;
+use Drupal\KernelTests\KernelTestBase;
 use Drupal\Tests\Traits\Core\CronRunTrait;
 
 /**
- * hook_cron() sweeps leftover retired-index trash.
+ * The scolta_cron() hook sweeps leftover retired-index trash.
  *
  * Publishing a new index parks the previous one in a `.scolta-trash-*`
  * directory and sweeps it after publishing (scolta-php's RetiredIndexTrash);
  * cron is the backstop for builds that died before their own sweep and for
- * the batch-UI path, which never sweeps. scolta_cron() needs a real
- * \Drupal::config()/service() container, which the plain-unit-test job does
- * not provide (no real drupal/core installed there) — a real installed site
- * is what a hook implementation needs to be tested against.
+ * the batch-UI path, which never sweeps. cronRun() (Drupal\Tests\Traits\
+ * Core\CronRunTrait) calls \Drupal::service('cron')->run() in-process — no
+ * HTTP request is involved, so this needs only a real container and a real
+ * public:// filesystem, both of which KernelTestBase provides.
  *
  * @group scolta
  */
-class CronCleanupFunctionalTest extends BrowserTestBase {
+class CronCleanupKernelTest extends KernelTestBase {
 
   use CronRunTrait;
 
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api'];
+  protected static $modules = ['system', 'user', 'search_api', 'scolta'];
 
   /**
    * {@inheritdoc}
    */
-  protected $defaultTheme = 'stark';
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installConfig(['scolta']);
+    // public:// needs a real writable directory; KernelTestBase points it at
+    // a directory under the test's own site path. prepareDirectory() takes
+    // its path argument by reference.
+    $dir = $this->outputDir();
+    \Drupal::service('file_system')->prepareDirectory(
+      $dir,
+      FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS
+    );
+  }
 
   /**
    * The default pagefind.output_dir, resolved to a real path.
@@ -41,6 +53,9 @@ class CronCleanupFunctionalTest extends BrowserTestBase {
     return \Drupal::config('scolta.settings')->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
   }
 
+  /**
+   * Creates a leftover trash directory with one stale fragment inside.
+   */
   private function makeTrashDir(string $suffix = 'crashed'): string {
     $dir = $this->outputDir() . '/.scolta-trash-' . $suffix;
     mkdir($dir . '/fragment', 0755, TRUE);
@@ -48,6 +63,9 @@ class CronCleanupFunctionalTest extends BrowserTestBase {
     return $dir;
   }
 
+  /**
+   * Every leftover `.scolta-trash-*` directory under the output dir.
+   */
   private function trashDirs(): array {
     return glob($this->outputDir() . '/.scolta-trash-*') ?: [];
   }
@@ -67,9 +85,9 @@ class CronCleanupFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * cleanup.cron_seconds = 0 disables the cron sweep entirely.
+   * Cleanup.cron_seconds = 0 disables the cron sweep entirely.
    */
-  public function testCronCleanupIsDisabledByAZeroBudget(): void {
+  public function testCronCleanupDisabledWithZeroBudget(): void {
     $this->config('scolta.settings')->set('cleanup.cron_seconds', 0)->save();
     $trashDir = $this->makeTrashDir();
 
