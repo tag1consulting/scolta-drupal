@@ -585,7 +585,7 @@ class ScoltaCommands extends DrushCommands {
    * Run a command in the foreground, streaming its output, and return its code.
    */
   private function runForeground(string $cmd): int {
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required to stream a child build's output while waiting for it.
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required to stream a child build's output while waiting for it. Arguments are escapeshellarg-quoted. nosemgrep: php.lang.security.exec-use.exec-use
     $handle = proc_open($cmd . ' 2>&1', [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes);
     if ($handle === FALSE) {
       throw new \RuntimeException('Failed to start the resume segment: ' . $cmd);
@@ -687,7 +687,7 @@ class ScoltaCommands extends DrushCommands {
 
     $this->logger()->notice('Running: {cmd}', ['cmd' => $cmd]);
 
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required for pagefind subprocess execution with real-time output streaming.
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required for pagefind subprocess execution with real-time output streaming. Arguments are escapeshellarg-quoted. nosemgrep: php.lang.security.exec-use.exec-use
     $handle = proc_open($cmd, [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes);
     if ($handle === FALSE) {
       $this->logger()->error('proc_open() failed. Run manually: drush scolta:finalize');
@@ -874,6 +874,7 @@ class ScoltaCommands extends DrushCommands {
       . ' 2>&1';
     $result = NULL;
     $output = [];
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- exec runs the Pagefind CLI; paths are escapeshellarg-quoted and the binary comes from admin config. nosemgrep: php.lang.security.exec-use.exec-use
     exec($cmd, $output, $result);
     foreach ($output as $line) {
       $this->logger()->notice($line);

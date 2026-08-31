@@ -473,4 +473,4 @@ Tag1 offers [AI strategy, architecture, and implementation consulting](https://t
 
 ## License
 
-GPL-2.0-or-later. See [LICENSE.txt](LICENSE.txt).
+GPL-2.0-or-later. See [LICENSE](LICENSE).

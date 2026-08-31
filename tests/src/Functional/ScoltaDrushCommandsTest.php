@@ -58,7 +58,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
   }
 
   /**
-   * scolta:check-setup runs and reports its verdict on a fresh site.
+   * The scolta:check-setup command reports its verdict on a fresh site.
    *
    * checkSetup() logs each check and a summary line but never throws, so
    * drush exits 0 even when a critical check fails on a fresh site; the
@@ -71,7 +71,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
   }
 
   /**
-   * scolta:clear-cache runs the full wiring: state, cache, logger.
+   * The scolta:clear-cache command runs the full wiring: state, cache, logger.
    */
   public function testClearCacheSucceeds(): void {
     $this->drush('scolta:clear-cache');
