@@ -130,7 +130,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
    * an unexpanded, unsummarized HTTP 200. Reaching past that guard to the
    * factory would test a path no request can take.
    */
-  public function testBuildingAClientStoresNothingWhenNothingIsStored(): void {
+  public function testBuildingClientStoresNothingWhenNothingIsStored(): void {
     $service = $this->service();
 
     try {
@@ -215,7 +215,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
   /**
    * A legacy connected site keeps the gateway it was already using.
    */
-  public function testUpdateSelectsTheGatewayForALegacyConnectedSite(): void {
+  public function testUpdateSelectsTheGatewayForLegacyConnectedSite(): void {
     $this->storeConnection();
     $this->selectProvider('anthropic');
 
@@ -231,7 +231,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
   /**
    * A site with an explicit key keeps the provider it chose.
    */
-  public function testUpdateLeavesAProviderAloneWhenAnExplicitKeyIsConfigured(): void {
+  public function testUpdateLeavesProviderAloneWhenExplicitKeyIsConfigured(): void {
     $this->storeConnection();
     $this->selectProvider('anthropic');
     // The update hook runs in this process, so an environment variable set
@@ -250,7 +250,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
   /**
    * A site with nothing stored keeps the provider it chose.
    */
-  public function testUpdateLeavesAProviderAloneWithNoStoredConnection(): void {
+  public function testUpdateLeavesProviderAloneWithNoStoredConnection(): void {
     $this->selectProvider('openai');
 
     $this->runUpdate();
