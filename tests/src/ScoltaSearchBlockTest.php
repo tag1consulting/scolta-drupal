@@ -227,14 +227,6 @@ class ScoltaSearchBlockTest extends TestCase {
   // fails the test if build() ever asks for a different language type.
   // -------------------------------------------------------------------
 
-  public function testCurrentLanguageRequestsContentLanguageType(): void {
-    $block = $this->createBlock(new ScoltaConfig());
-    $block->build();
-    // No additional assertion needed: the mock in createBlock() already
-    // expects exactly one call to getCurrentLanguage(TYPE_CONTENT).
-    $this->addToAssertionCount(1);
-  }
-
   // -------------------------------------------------------------------
   // Attribution — issue scolta-php#102.
   // -------------------------------------------------------------------

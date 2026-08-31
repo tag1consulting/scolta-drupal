@@ -2,53 +2,13 @@
 
 declare(strict_types=1);
 
-// The unit-test environment runs without drupal/core (CI "provides" it), so
-// the form's base class and the interfaces validateForm() touches are stubbed
-// when absent — the same pattern ScoltaCacheBehaviorTest uses. Locally (and in
-// the phpstan job) the real core classes exist and the stubs are skipped.
-// phpcs:disable
-namespace Drupal\Core\Form {
-    if (!class_exists(ConfigFormBase::class)) {
-        abstract class ConfigFormBase {
-            protected $stringTranslation;
-
-            public function setStringTranslation($translation) {
-                $this->stringTranslation = $translation;
-                return $this;
-            }
-
-            protected function t($string, array $args = [], array $options = []) {
-                return $string;
-            }
-
-            public function validateForm(array &$form, FormStateInterface $form_state) {}
-        }
-    }
-    if (!interface_exists(FormStateInterface::class)) {
-        interface FormStateInterface {
-            public function getValue($key, $default = NULL);
-            public function get($property);
-            public function setErrorByName($name, $message = '');
-        }
-    }
-}
-
-namespace Drupal\Core\StringTranslation {
-    if (!interface_exists(TranslationInterface::class)) {
-        interface TranslationInterface {
-            public function translate($string, array $args = [], array $options = []);
-            public function translateString(TranslatableMarkup $translated_string);
-        }
-    }
-}
-// phpcs:enable
-
-namespace Drupal\scolta\Tests {
+namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\StringTranslation\TranslationInterface;
+use Drupal\KernelTests\KernelTestBase;
 use Drupal\scolta\Form\ScoltaSettingsForm;
-use PHPUnit\Framework\TestCase;
+use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\Config\ScoltaConfig;
 
@@ -60,13 +20,46 @@ use Tag1\Scolta\Config\ScoltaConfig;
  * 2. The JS scoring output changes when config values change.
  * 3. AI feature toggles flow through to ScoltaConfig correctly.
  * 4. validateForm() accepts and rejects AI base URLs behaviorally.
+ *
+ * Kernel rather than unit: realGetConfig() builds a real ScoltaAiService over
+ * a real container and calls its public getConfig(), which runs the real
+ * buildConfig() once, in the constructor — not a hand-copied reimplementation
+ * of the flattening logic (see ScoltaAiServiceConfigMappingKernelTest for
+ * the history of why that duplication was worth fixing). No HTTP request is
+ * involved anywhere in this file.
+ *
+ * @group scolta
  */
-class ScoltaSettingsFormTest extends TestCase {
+class ScoltaSettingsFormKernelTest extends KernelTestBase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected static $modules = ['system', 'user', 'search_api', 'scolta'];
+
+  /**
+   * {@inheritdoc}
+   *
+   * The top-level-key-precedence style writes below (setNestedValue() on a
+   * copy of the install defaults, then realGetConfig()) can produce
+   * scolta.settings states the schema does not declare — see
+   * ScoltaAiServiceConfigMappingKernelTest for why that state is real
+   * (drush config:set bypasses schema enforcement) and needs to be
+   * constructible here too.
+   */
+  protected $strictConfigSchema = FALSE;
 
   private string $moduleRoot;
 
   protected function setUp(): void {
-    $this->moduleRoot = dirname(__DIR__, 2);
+    parent::setUp();
+    $this->installConfig(['scolta']);
+    $this->moduleRoot = dirname(__DIR__, 3);
+  }
+
+  protected function tearDown(): void {
+    putenv('SCOLTA_API_KEY');
+    parent::tearDown();
   }
 
   // -------------------------------------------------------------------
@@ -84,13 +77,13 @@ class ScoltaSettingsFormTest extends TestCase {
     string $propertyName,
   ): void {
     $defaults = $this->getInstallDefaults();
-    $defaultConfig = $this->simulateGetConfig($defaults);
+    $defaultConfig = $this->realGetConfig($defaults);
     $defaultValue = $defaultConfig->$propertyName;
 
     // Apply the override.
     $modified = $defaults;
     $this->setNestedValue($modified, $configKey, $customValue);
-    $modifiedConfig = $this->simulateGetConfig($modified);
+    $modifiedConfig = $this->realGetConfig($modified);
 
     $displayValue = is_array($customValue) ? json_encode($customValue) : (string) $customValue;
     $this->assertNotEquals(
@@ -142,7 +135,7 @@ class ScoltaSettingsFormTest extends TestCase {
 
     $modified = $defaults;
     $this->setNestedValue($modified, $configKey, $customValue);
-    $modifiedConfig = $this->simulateGetConfig($modified);
+    $modifiedConfig = $this->realGetConfig($modified);
 
     $this->assertEquals(
       $customValue,
@@ -174,7 +167,7 @@ class ScoltaSettingsFormTest extends TestCase {
     $defaults = $this->getInstallDefaults();
 
     // Default config.
-    $defaultConfig = $this->simulateGetConfig($defaults);
+    $defaultConfig = $this->realGetConfig($defaults);
     $defaultJs = $defaultConfig->toJsScoringConfig();
 
     // Modified config: bump title boost and change results per page.
@@ -185,7 +178,7 @@ class ScoltaSettingsFormTest extends TestCase {
     $modified['ai_expand_query'] = false;
     $modified['max_follow_ups'] = 7;
 
-    $modifiedConfig = $this->simulateGetConfig($modified);
+    $modifiedConfig = $this->realGetConfig($modified);
     $modifiedJs = $modifiedConfig->toJsScoringConfig();
 
     // JS output should reflect the changes.
@@ -210,49 +203,49 @@ class ScoltaSettingsFormTest extends TestCase {
     $defaults = $this->getInstallDefaults();
 
     // Default: enabled.
-    $defaultConfig = $this->simulateGetConfig($defaults);
+    $defaultConfig = $this->realGetConfig($defaults);
     $this->assertTrue($defaultConfig->aiExpandQuery);
 
     // Disabled.
     $modified = $defaults;
     $modified['ai_expand_query'] = false;
-    $modifiedConfig = $this->simulateGetConfig($modified);
+    $modifiedConfig = $this->realGetConfig($modified);
     $this->assertFalse($modifiedConfig->aiExpandQuery);
   }
 
   public function testDisablingAiSummarizeAffectsConfig(): void {
     $defaults = $this->getInstallDefaults();
 
-    $defaultConfig = $this->simulateGetConfig($defaults);
+    $defaultConfig = $this->realGetConfig($defaults);
     $this->assertTrue($defaultConfig->aiSummarize);
 
     $modified = $defaults;
     $modified['ai_summarize'] = false;
-    $modifiedConfig = $this->simulateGetConfig($modified);
+    $modifiedConfig = $this->realGetConfig($modified);
     $this->assertFalse($modifiedConfig->aiSummarize);
   }
 
   public function testMaxFollowUpsAffectsConfig(): void {
     $defaults = $this->getInstallDefaults();
 
-    $defaultConfig = $this->simulateGetConfig($defaults);
+    $defaultConfig = $this->realGetConfig($defaults);
     $this->assertEquals(3, $defaultConfig->maxFollowUps);
 
     $modified = $defaults;
     $modified['max_follow_ups'] = 0;
-    $modifiedConfig = $this->simulateGetConfig($modified);
+    $modifiedConfig = $this->realGetConfig($modified);
     $this->assertEquals(0, $modifiedConfig->maxFollowUps);
   }
 
   public function testCacheTtlOverride(): void {
     $defaults = $this->getInstallDefaults();
 
-    $defaultConfig = $this->simulateGetConfig($defaults);
+    $defaultConfig = $this->realGetConfig($defaults);
     $this->assertEquals(2592000, $defaultConfig->cacheTtl);
 
     $modified = $defaults;
     $modified['cache_ttl'] = 0;
-    $modifiedConfig = $this->simulateGetConfig($modified);
+    $modifiedConfig = $this->realGetConfig($modified);
     $this->assertEquals(0, $modifiedConfig->cacheTtl);
   }
 
@@ -260,7 +253,7 @@ class ScoltaSettingsFormTest extends TestCase {
     $defaults = $this->getInstallDefaults();
 
     // Defaults: empty prompts.
-    $defaultConfig = $this->simulateGetConfig($defaults);
+    $defaultConfig = $this->realGetConfig($defaults);
     $this->assertEmpty($defaultConfig->promptExpandQuery);
     $this->assertEmpty($defaultConfig->promptSummarize);
     $this->assertEmpty($defaultConfig->promptFollowUp);
@@ -271,7 +264,7 @@ class ScoltaSettingsFormTest extends TestCase {
     $modified['prompt_summarize'] = 'Summarize results for {SITE_NAME}.';
     $modified['prompt_follow_up'] = 'Answer follow-ups about {SITE_NAME}.';
 
-    $modifiedConfig = $this->simulateGetConfig($modified);
+    $modifiedConfig = $this->realGetConfig($modified);
     $this->assertEquals('You are a search assistant for {SITE_NAME}.', $modifiedConfig->promptExpandQuery);
     $this->assertEquals('Summarize results for {SITE_NAME}.', $modifiedConfig->promptSummarize);
     $this->assertEquals('Answer follow-ups about {SITE_NAME}.', $modifiedConfig->promptFollowUp);
@@ -285,7 +278,7 @@ class ScoltaSettingsFormTest extends TestCase {
     $modified['ai_model'] = 'gpt-4o';
     $modified['ai_base_url'] = 'https://proxy.example.com';
 
-    $modifiedConfig = $this->simulateGetConfig($modified);
+    $modifiedConfig = $this->realGetConfig($modified);
     $clientConfig = $modifiedConfig->toAiClientConfig();
 
     $this->assertEquals('openai', $clientConfig['provider']);
@@ -300,7 +293,7 @@ class ScoltaSettingsFormTest extends TestCase {
     $modified['site_name'] = 'Acme Corp';
     $modified['site_description'] = 'corporate intranet';
 
-    $modifiedConfig = $this->simulateGetConfig($modified);
+    $modifiedConfig = $this->realGetConfig($modified);
     $this->assertEquals('Acme Corp', $modifiedConfig->siteName);
     $this->assertEquals('corporate intranet', $modifiedConfig->siteDescription);
   }
@@ -314,7 +307,7 @@ class ScoltaSettingsFormTest extends TestCase {
     $modified = $defaults;
     $modified['ai_languages'] = ['en', 'fr', 'de'];
 
-    $config = $this->simulateGetConfig($modified);
+    $config = $this->realGetConfig($modified);
 
     $this->assertEquals(['en', 'fr', 'de'], $config->aiLanguages);
     $js = $config->toJsScoringConfig();
@@ -394,29 +387,21 @@ class ScoltaSettingsFormTest extends TestCase {
   }
 
   /**
-   * Simulate ScoltaAiService::getConfig() — flatten nested Drupal config.
+   * Build a real ScoltaAiService over the given full scolta.settings state
+   * and return its real getConfig() — see ScoltaAiServiceConfigMappingKernelTest
+   * for why this replaced a hand-copied flattening reimplementation.
    */
-  private function simulateGetConfig(array $drupalConfig, string $apiKey = 'test-key'): ScoltaConfig {
-    $values = $drupalConfig;
+  private function realGetConfig(array $drupalConfig, string $apiKey = 'test-key'): ScoltaConfig {
+    $this->config('scolta.settings')->setData($drupalConfig)->save();
+    putenv('SCOLTA_API_KEY=' . $apiKey);
 
-    if (isset($values['scoring']) && is_array($values['scoring'])) {
-      foreach ($values['scoring'] as $key => $value) {
-        $values[$key] = $value;
-      }
-      unset($values['scoring']);
-    }
+    $service = new ScoltaAiService(
+      \Drupal::httpClient(),
+      \Drupal::configFactory(),
+      \Drupal::logger('scolta'),
+    );
 
-    if (isset($values['display']) && is_array($values['display'])) {
-      foreach ($values['display'] as $key => $value) {
-        $values[$key] = $value;
-      }
-      unset($values['display']);
-    }
-
-    unset($values['pagefind']);
-    $values['ai_api_key'] = $apiKey;
-
-    return ScoltaConfig::fromArray($values);
+    return $service->getConfig();
   }
 
   /**
@@ -488,7 +473,7 @@ class ScoltaSettingsFormTest extends TestCase {
    */
   public function testShowAttributionFalseFlowsToScoltaConfig(): void {
     $defaults = $this->getInstallDefaults();
-    $config = $this->simulateGetConfig($defaults);
+    $config = $this->realGetConfig($defaults);
     $this->assertFalse(
       $config->showAttribution,
       'ScoltaConfig::$showAttribution must be false when show_attribution is false in Drupal config'
@@ -502,13 +487,11 @@ class ScoltaSettingsFormTest extends TestCase {
     $defaults = $this->getInstallDefaults();
     $modified = $defaults;
     $modified['show_attribution'] = true;
-    $config = $this->simulateGetConfig($modified);
+    $config = $this->realGetConfig($modified);
     $this->assertTrue(
       $config->showAttribution,
       'ScoltaConfig::$showAttribution must be true when show_attribution is true in Drupal config'
     );
   }
-
-}
 
 }

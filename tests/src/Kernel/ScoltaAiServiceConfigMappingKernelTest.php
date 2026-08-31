@@ -2,65 +2,100 @@
 
 declare(strict_types=1);
 
-namespace Drupal\scolta\Tests;
+namespace Drupal\Tests\scolta\Kernel;
 
-use PHPUnit\Framework\TestCase;
+use Drupal\KernelTests\KernelTestBase;
+use Drupal\scolta\Service\ScoltaAiService;
+use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\Config\ScoltaConfig;
 
 /**
  * Tests config mapping between Drupal's nested config and ScoltaConfig.
  *
- * ScoltaAiService.getConfig() flattens Drupal's nested config (scoring.*,
+ * ScoltaAiService::buildConfig() flattens Drupal's nested config (scoring.*,
  * display.*, pagefind.*) into a flat array and passes it to
- * ScoltaConfig::fromArray(). These tests verify that mapping is correct
- * without needing a Drupal bootstrap.
+ * ScoltaConfig::fromArray(). These tests build a real ScoltaAiService over a
+ * real container and call the public getConfig() — which runs the real
+ * buildConfig() once, in the constructor — rather than a hand-copied
+ * reimplementation of the flattening logic. An earlier version of this file
+ * carried its own simulateGetConfig() that duplicated buildConfig() by hand;
+ * the two happened to agree, but nothing would have caught it if a change to
+ * buildConfig() (e.g. its Amazee/explicit-key resolution, which the copy
+ * skipped entirely by just injecting a literal string) had drifted from the
+ * copy.
+ *
+ * No HTTP request is involved, so this needs only a real container —
+ * KernelTestBase, not BrowserTestBase.
+ *
+ * @group scolta
  */
-class ScoltaAiServiceTest extends TestCase {
+class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
 
   /**
-   * Simulate what ScoltaAiService::getConfig() does: flatten nested Drupal
-   * config, remove pagefind keys, inject API key, then create ScoltaConfig.
+   * {@inheritdoc}
    */
-  private function simulateGetConfig(array $drupalConfig, string $apiKey = 'test-key'): ScoltaConfig {
-    $values = $drupalConfig;
+  protected static $modules = ['system', 'user', 'search_api', 'scolta'];
 
-    // Flatten scoring; top-level keys take precedence over nested values.
-    if (isset($values['scoring']) && is_array($values['scoring'])) {
-      $scoring = $values['scoring'];
-      unset($values['scoring']);
-      foreach ($scoring as $key => $value) {
-        if (!array_key_exists($key, $values)) {
-          $values[$key] = $value;
-        }
-      }
-    }
+  /**
+   * {@inheritdoc}
+   *
+   * The top-level-key-precedence tests below write keys like
+   * title_match_boost directly onto scolta.settings, which the schema only
+   * declares nested under scoring.* and display.* — exactly the state
+   * `drush config:set scolta.settings title_match_boost 3.0` produces on a
+   * real site, since Drupal does not enforce config schema on save outside
+   * a checked test environment. buildConfig()'s precedence logic exists
+   * specifically to handle that state, so this test needs to be able to
+   * create it.
+   */
+  protected $strictConfigSchema = FALSE;
 
-    // Flatten display; top-level keys take precedence over nested values.
-    if (isset($values['display']) && is_array($values['display'])) {
-      $display = $values['display'];
-      unset($values['display']);
-      foreach ($display as $key => $value) {
-        if (!array_key_exists($key, $values)) {
-          $values[$key] = $value;
-        }
-      }
-    }
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installConfig(['scolta']);
+  }
 
-    // Remove pagefind.
-    unset($values['pagefind']);
+  /**
+   * {@inheritdoc}
+   */
+  protected function tearDown(): void {
+    putenv('SCOLTA_API_KEY');
+    parent::tearDown();
+  }
 
-    // Inject API key.
-    $values['ai_api_key'] = $apiKey;
+  /**
+   * Build a real ScoltaAiService over the given full scolta.settings state.
+   *
+   * $drupalConfig is the array a test built by copying and mutating the
+   * install defaults, exactly as a real scolta.settings config object would
+   * hold it — Config::setData() replaces the whole config with it in one
+   * call. The API key reaches the client through SCOLTA_API_KEY, the highest
+   * -precedence explicit-key source resolveApiKey() reads (see
+   * ScoltaAiService::explicitKeyCandidates()) — this is real key resolution,
+   * not injection into the config array the way the old simulation did it.
+   */
+  private function realGetConfig(array $drupalConfig, string $apiKey = 'test-key'): ScoltaConfig {
+    $this->config('scolta.settings')->setData($drupalConfig)->save();
+    putenv('SCOLTA_API_KEY=' . $apiKey);
 
-    return ScoltaConfig::fromArray($values);
+    $service = new ScoltaAiService(
+      \Drupal::httpClient(),
+      \Drupal::configFactory(),
+      \Drupal::logger('scolta'),
+    );
+
+    return $service->getConfig();
   }
 
   /**
    * Load the install defaults as if they came from Drupal config.
    */
   private function getInstallDefaults(): array {
-    $file = dirname(__DIR__, 2) . '/config/install/scolta.settings.yml';
-    return \Symfony\Component\Yaml\Yaml::parseFile($file);
+    $file = dirname(__DIR__, 3) . '/config/install/scolta.settings.yml';
+    return Yaml::parseFile($file);
   }
 
   // -------------------------------------------------------------------
@@ -69,7 +104,7 @@ class ScoltaAiServiceTest extends TestCase {
 
   public function testDefaultConfigMapsCorrectly(): void {
     $drupalConfig = $this->getInstallDefaults();
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
 
     // The shipped install defaults select no provider. AI is off on a fresh
     // install until an operator picks one, and in particular is not Anthropic.
@@ -84,7 +119,7 @@ class ScoltaAiServiceTest extends TestCase {
 
   public function testScoringConfigFlattensCorrectly(): void {
     $drupalConfig = $this->getInstallDefaults();
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
 
     $this->assertEquals(2.0, $config->titleMatchBoost);
     $this->assertEquals(1.5, $config->titleAllTermsMultiplier);
@@ -121,7 +156,7 @@ class ScoltaAiServiceTest extends TestCase {
 
   public function testDisplayConfigFlattensCorrectly(): void {
     $drupalConfig = $this->getInstallDefaults();
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
 
     $this->assertEquals(300, $config->excerptLength);
     $this->assertEquals(10, $config->resultsPerPage);
@@ -132,7 +167,7 @@ class ScoltaAiServiceTest extends TestCase {
 
   public function testPagefindConfigIsStripped(): void {
     $drupalConfig = $this->getInstallDefaults();
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
 
     // pagefind.* config should not leak into ScoltaConfig properties.
     // ScoltaConfig doesn't have build_dir, output_dir, binary, etc.
@@ -143,7 +178,7 @@ class ScoltaAiServiceTest extends TestCase {
 
   public function testApiKeyInjection(): void {
     $drupalConfig = $this->getInstallDefaults();
-    $config = $this->simulateGetConfig($drupalConfig, 'sk-ant-1234');
+    $config = $this->realGetConfig($drupalConfig, 'sk-ant-1234');
 
     $this->assertEquals('sk-ant-1234', $config->aiApiKey);
   }
@@ -153,7 +188,7 @@ class ScoltaAiServiceTest extends TestCase {
     $drupalConfig['scoring']['title_match_boost'] = 2.5;
     $drupalConfig['scoring']['recency_half_life_days'] = 180;
 
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
 
     $this->assertEquals(2.5, $config->titleMatchBoost);
     $this->assertEquals(180, $config->recencyHalfLifeDays);
@@ -165,7 +200,7 @@ class ScoltaAiServiceTest extends TestCase {
     $drupalConfig = $this->getInstallDefaults();
     $drupalConfig['prompt_expand_query'] = 'Custom expand prompt for {SITE_NAME}';
 
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
 
     $this->assertEquals('Custom expand prompt for {SITE_NAME}', $config->promptExpandQuery);
     $this->assertEmpty($config->promptSummarize); // Not overridden.
@@ -173,7 +208,7 @@ class ScoltaAiServiceTest extends TestCase {
 
   public function testToAiClientConfigStructure(): void {
     $drupalConfig = $this->getInstallDefaults();
-    $config = $this->simulateGetConfig($drupalConfig, 'my-api-key');
+    $config = $this->realGetConfig($drupalConfig, 'my-api-key');
 
     $clientConfig = $config->toAiClientConfig();
 
@@ -190,7 +225,7 @@ class ScoltaAiServiceTest extends TestCase {
     $drupalConfig = $this->getInstallDefaults();
     $drupalConfig['ai_base_url'] = 'https://custom.proxy.example.com';
 
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
     $clientConfig = $config->toAiClientConfig();
 
     $this->assertArrayHasKey('base_url', $clientConfig);
@@ -203,7 +238,7 @@ class ScoltaAiServiceTest extends TestCase {
 
   public function testInstallConfigCoversAllScoltaConfigScoringProperties(): void {
     $drupalConfig = $this->getInstallDefaults();
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
 
     // Core scoring properties should all have non-default-looking values
     // (i.e., the install config actually sets them).
@@ -221,7 +256,7 @@ class ScoltaAiServiceTest extends TestCase {
 
   public function testCacheTtlDefault(): void {
     $drupalConfig = $this->getInstallDefaults();
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
 
     $this->assertEquals(2592000, $config->cacheTtl); // 30 days.
   }
@@ -243,7 +278,7 @@ class ScoltaAiServiceTest extends TestCase {
     $drupalConfig['max_pagefind_results'] = 10;
     // display.max_pagefind_results defaults to 50 from install config.
 
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
 
     $this->assertEquals(10, $config->maxPagefindResults,
       'Top-level max_pagefind_results must override display.max_pagefind_results');
@@ -255,7 +290,7 @@ class ScoltaAiServiceTest extends TestCase {
     $drupalConfig['title_match_boost'] = 3.0;
     // scoring.title_match_boost defaults to 2.0.
 
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
 
     $this->assertEquals(3.0, $config->titleMatchBoost,
       'Top-level title_match_boost must override scoring.title_match_boost');
@@ -266,7 +301,7 @@ class ScoltaAiServiceTest extends TestCase {
     // No top-level max_pagefind_results; display.max_pagefind_results = 50.
     $this->assertArrayNotHasKey('max_pagefind_results', $drupalConfig);
 
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
 
     $this->assertEquals(50, $config->maxPagefindResults,
       'display.max_pagefind_results must be used when no top-level key is present');
@@ -277,7 +312,7 @@ class ScoltaAiServiceTest extends TestCase {
     unset($drupalConfig['display']['max_pagefind_results']);
     $drupalConfig['max_pagefind_results'] = 25;
 
-    $config = $this->simulateGetConfig($drupalConfig);
+    $config = $this->realGetConfig($drupalConfig);
 
     $this->assertEquals(25, $config->maxPagefindResults,
       'Top-level max_pagefind_results must be used when display.* key is absent');
