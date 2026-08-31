@@ -321,9 +321,9 @@ class StructuralIntegrityTest extends TestCase {
    * web-accessible and the module directory is read-only on immutable-code
    * hosts. That the deployment itself happens (install, cache rebuild,
    * locale-safe path resolution) is covered behaviorally by
-   * AssetDeploymentFunctionalTest and LocaleAssetPathFunctionalTest.
+   * AssetDeploymentKernelTest and LocaleAssetPathFunctionalTest.
    *
-   * @see \Drupal\Tests\scolta\Functional\AssetDeploymentFunctionalTest
+   * @see \Drupal\Tests\scolta\Kernel\AssetDeploymentKernelTest
    * @see \Drupal\Tests\scolta\Functional\LocaleAssetPathFunctionalTest
    */
   public function testSearchLibraryServesDeployedAssets(): void {

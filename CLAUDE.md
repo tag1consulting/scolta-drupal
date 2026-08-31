@@ -59,7 +59,7 @@ Rules that follow:
 
 - **Never commit a copy of the bundle here** (`StructuralIntegrityTest::testNoBrowserBundleFilesAreCommitted` enforces this). All bundle changes go to scolta-php; this repo picks them up from whatever `composer update` resolves the caret constraint to.
 - **Never remove `hook_rebuild()` or the install-time deploy** — `hook_install()` runs once per site ever, so the rebuild hook is the only thing keeping updating sites current.
-- `AssetDeploymentFunctionalTest` is the behavioral guard: install deploys byte-identical copies, a cache rebuild repairs a stale one, uninstall removes the directory.
+- `AssetDeploymentKernelTest` is the behavioral guard: install deploys byte-identical copies, a cache rebuild repairs a stale one, uninstall removes the directory.
 
 ## Testing
 
