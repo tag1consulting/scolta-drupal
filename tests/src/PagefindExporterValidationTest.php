@@ -6,7 +6,7 @@ declare(strict_types=1);
 // classes are autoloadable from vendor, but drupal/search_api's are not (it
 // is a module, not a composer library with a registered namespace), so the
 // one search_api interface the exporter's signature needs is stubbed when
-// absent — the same pattern ScoltaRebuildWorkerTest uses. The stub carries
+// absent — the same pattern ScoltaCacheBehaviorTest uses. The stub carries
 // the minimal method signatures the exporter calls.
 // phpcs:disable
 namespace Drupal\search_api\Item {

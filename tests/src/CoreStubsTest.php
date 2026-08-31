@@ -3,11 +3,28 @@
 declare(strict_types=1);
 
 // The unit-test environment runs without drupal/core (CI "provides" it), so
-// the queue-worker base class and the injected service interfaces are stubbed
-// when absent — the same pattern ScoltaCacheBehaviorTest uses for the cache
-// backend interface. Locally (and in the phpstan job) the real core classes
-// exist and the stubs are skipped. Stubs carry the minimal method signatures
-// the worker calls so PHPUnit can stub them in both environments.
+// several core interfaces and classes referenced across this suite's test
+// files -- but not owned by any single one of them -- are stubbed here when
+// absent. Locally (and in the phpstan job) the real core classes exist and
+// the stubs are skipped.
+//
+// This file's declarations used to live inside ScoltaRebuildWorkerTest.php,
+// which many other test files silently depended on without knowing it:
+// PHPUnit's default <directory> test-suite collection requires every file
+// matching its "Test.php" suffix before running anything, so any such
+// file's top-level conditional stub declarations become available to the
+// whole suite regardless of which file needed them first. Deleting that
+// file (moving its own coverage to a kernel test,
+// tests/src/Kernel/ScoltaRebuildWorkerKernelTest.php) broke a long tail of
+// other files that relied on it for one of these classes without stubbing
+// them itself -- discovered incrementally, since fixing one masked the
+// next. Kept as the original file's full verbatim stub set rather than
+// pared down: paring it to only what's provably used today risks repeating
+// the same incremental discovery the next time a test is added.
+//
+// This file must keep the "Test.php" suffix to be collected by PHPUnit's
+// default directory scan -- hence the name and the (empty, by design) test
+// class at the bottom.
 // phpcs:disable
 namespace Drupal\Core\Queue {
     if (!class_exists(QueueWorkerBase::class)) {
@@ -457,91 +474,30 @@ namespace Drupal\Core\Cache {
 }
 // phpcs:enable
 
+
 namespace Drupal\scolta\Tests {
 
-    use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
-    use Drupal\Core\Queue\SuspendQueueException;
-    use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
-    use Drupal\scolta\Service\ScoltaContentGatherer;
     use PHPUnit\Framework\TestCase;
-    use Psr\Log\NullLogger;
 
     /**
-     * Tests ScoltaRebuildWorker's debounce behavior and DI structure.
+     * This file's real job is the stub declarations above; this asserts it.
      *
-     * The worker must debounce on scolta.rebuild_requested_at + the backend's
-     * auto_rebuild_delay so a burst of node saves produces one build, and it
-     * must not delay the initial (install-time) build when no change has been
-     * recorded. Pipeline parity with drush scolta:build is covered by the
-     * functional tests (PipelineParityFunctionalTest and friends).
+     * PHPUnit's default `<directory>` suite collection only requires files
+     * matching the "Test.php" suffix, so the shared stubs need one here to be
+     * loaded before any test that needs them runs. The assertion below is a
+     * canary: if it ever fails, something upstream (a real drupal/core now
+     * being present, or a stub definition removed) changed the assumption
+     * every other test file in this suite relies on.
      */
-    class ScoltaRebuildWorkerTest extends TestCase {
+    class CoreStubsTest extends TestCase {
 
-        private function createWorker(object $state): ScoltaRebuildWorker {
-            return new ScoltaRebuildWorker(
-                [],
-                'scolta_rebuild',
-                [],
-                $this->createStub(\Drupal\Core\Lock\LockBackendInterface::class),
-                $this->createStub(\Drupal\Core\Config\ConfigFactoryInterface::class),
-                $this->createStub(\Drupal\Core\File\FileSystemInterface::class),
-                $this->createStub(\Drupal\Core\StreamWrapper\StreamWrapperManagerInterface::class),
-                $this->createStub(\Drupal\Core\Entity\EntityTypeManagerInterface::class),
-                $state,
-                $this->createStub(\Drupal\Core\Cache\CacheTagsInvalidatorInterface::class),
-                new NullLogger(),
-                $this->createStub(ScoltaContentGatherer::class),
-                $this->createStub(\Drupal\Core\Queue\QueueFactory::class),
-            );
-        }
-
-        // -------------------------------------------------------------------
-        // Debounce behavior.
-        // -------------------------------------------------------------------
-
-        public function test_fresh_content_change_suspends_the_queue(): void {
-            $state = $this->createStub(\Drupal\Core\State\StateInterface::class);
-            // The last content change was 1 second ago — well inside any
-            // configured delay (the floor is 60s, fallback 300s).
-            $state->method('get')->willReturn(time() - 1);
-
-            $worker = $this->createWorker($state);
-
-            $this->expectException(SuspendQueueException::class);
-            $this->expectExceptionMessageMatches('/Debouncing/');
-            $worker->processItem(['type' => 'auto']);
-        }
-
-        public function test_debounce_skipped_when_no_change_recorded(): void {
-            $state = $this->createStub(\Drupal\Core\State\StateInterface::class);
-            // No recorded change (e.g. the install-time queue item): the
-            // debounce must not delay the initial build. The build then
-            // fails to acquire the (stub, falsy) lock — which proves the
-            // code got PAST the debounce.
-            $state->method('get')->willReturn(0);
-
-            $worker = $this->createWorker($state);
-
-            try {
-                $worker->processItem(['type' => 'install']);
-                $this->fail('Expected SuspendQueueException from the stub lock');
-            }
-            catch (SuspendQueueException $e) {
-                $this->assertStringContainsString('lock', $e->getMessage(),
-                    'With no recorded change the worker must reach the lock acquisition, not the debounce');
-            }
-        }
-
-        // -------------------------------------------------------------------
-        // Dependency injection structure.
-        // -------------------------------------------------------------------
-
-        public function test_worker_implements_container_factory_plugin_interface(): void {
-            $ref = new \ReflectionClass(ScoltaRebuildWorker::class);
-            $this->assertTrue(
-                $ref->implementsInterface(ContainerFactoryPluginInterface::class),
-                'ScoltaRebuildWorker must implement ContainerFactoryPluginInterface for injected dependencies'
-            );
+        public function testStubbedClassesResolve(): void {
+            $this->assertTrue(interface_exists(\Drupal\Core\Config\ConfigFactoryInterface::class));
+            $this->assertTrue(interface_exists(\Drupal\Core\Entity\EntityTypeManagerInterface::class));
+            $this->assertTrue(interface_exists(\Drupal\Core\Routing\UrlGeneratorInterface::class));
+            $this->assertTrue(interface_exists(\Drupal\Core\State\StateInterface::class));
+            $this->assertTrue(class_exists(\Drupal\Core\Block\BlockBase::class));
+            $this->assertTrue(class_exists(\Drupal\Core\Access\AccessResult::class));
         }
 
     }

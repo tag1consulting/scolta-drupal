@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 // The unit-test environment runs without drupal/core (CI "provides" it), so
 // the form's base class and the interfaces validateForm() touches are stubbed
-// when absent — the same pattern ScoltaRebuildWorkerTest uses. Locally (and in
+// when absent — the same pattern ScoltaCacheBehaviorTest uses. Locally (and in
 // the phpstan job) the real core classes exist and the stubs are skipped.
 // phpcs:disable
 namespace Drupal\Core\Form {
