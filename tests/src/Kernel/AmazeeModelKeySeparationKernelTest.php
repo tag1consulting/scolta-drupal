@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Drupal\Tests\scolta\Functional;
+namespace Drupal\Tests\scolta\Kernel;
 
+use Drupal\KernelTests\KernelTestBase;
 use Drupal\scolta\Service\ScoltaAiService;
-use Drupal\Tests\BrowserTestBase;
 use Tag1\Scolta\AiClient;
 
 /**
@@ -22,23 +22,27 @@ use Tag1\Scolta\AiClient;
  *
  * These tests build a real ScoltaAiService over the site's own config and
  * state, so they assert the model that would actually be sent rather than the
- * shape of the source. Functional rather than unit: the unit job declares
+ * shape of the source. Kernel rather than unit: the unit job declares
  * `provide: {drupal/core: ...}`, so no part of the framework — and therefore no
- * config factory or state service — exists there.
+ * config factory or state service — exists there. No HTTP request is
+ * involved, so KernelTestBase is enough — no need for BrowserTestBase.
  *
  * @group scolta
  */
-class AmazeeModelKeySeparationTest extends BrowserTestBase {
+class AmazeeModelKeySeparationKernelTest extends KernelTestBase {
 
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta'];
+  protected static $modules = ['system', 'user', 'search_api', 'scolta'];
 
   /**
    * {@inheritdoc}
    */
-  protected $defaultTheme = 'stark';
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installConfig(['scolta']);
+  }
 
   private const GATEWAY_ALIAS = 'claude-4-5-sonnet';
   private const GATEWAY_EXPANSION_ALIAS = 'claude-3-5-haiku';
