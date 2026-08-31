@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 // The unit-test environment runs without drupal/core (CI "provides" it), so
 // symbols AiApiControllerBase extends/implements at class-definition time are
-// stubbed when absent — the same pattern ScoltaRebuildWorkerTest.php uses for
-// QueueWorkerBase. Locally the real core classes exist and the stubs are
+// stubbed when absent — the same pattern ScoltaCacheBehaviorTest.php uses for
+// CacheBackendInterface. Locally the real core classes exist and the stubs are
 // skipped. \Drupal itself is stubbed too, since the class hierarchy pulls it
 // in transitively (ControllerBase::config()/getLogger() resolve services
 // through it) and nothing else in the suite defines it yet.
