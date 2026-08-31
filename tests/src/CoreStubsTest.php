@@ -173,6 +173,12 @@ namespace Drupal\Core\StringTranslation {
             }
         }
     }
+    if (!interface_exists(TranslationInterface::class)) {
+        interface TranslationInterface {
+            public function translate($string, array $args = [], array $options = []);
+            public function translateString(TranslatableMarkup $translated_string);
+        }
+    }
 }
 
 namespace Drupal\Core\Messenger {
