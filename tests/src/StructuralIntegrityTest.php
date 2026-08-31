@@ -53,7 +53,9 @@ class StructuralIntegrityTest extends TestCase {
   // Routing controller classes and methods exist.
   // -------------------------------------------------------------------
 
-  #[\PHPUnit\Framework\Attributes\DataProvider('routeProvider')]
+  /**
+   * @dataProvider routeProvider
+   */
   public function testRouteControllerFileExists(string $routeName, string $controllerSpec): void {
     if (str_contains($controllerSpec, '::')) {
       [$class, $method] = explode('::', $controllerSpec);
@@ -109,7 +111,9 @@ class StructuralIntegrityTest extends TestCase {
     }
   }
 
-  #[\PHPUnit\Framework\Attributes\DataProvider('phpFileProvider')]
+  /**
+   * @dataProvider phpFileProvider
+   */
   public function testScoltaPhpImportsReferenceRealClasses(string $file): void {
     $scoltaPhpSrc = $this->resolveScoltaPhpSrc();
     if ($scoltaPhpSrc === null) {

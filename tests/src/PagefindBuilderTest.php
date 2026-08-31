@@ -182,7 +182,9 @@ class PagefindBuilderTest extends TestCase {
   // formatBytes() — the real protected method via reflection.
   // -------------------------------------------------------------------
 
-  #[\PHPUnit\Framework\Attributes\DataProvider('formatBytesProvider')]
+  /**
+   * @dataProvider formatBytesProvider
+   */
   public function testFormatBytes(int $bytes, string $expected): void {
     $method = new \ReflectionMethod(PagefindBuilder::class, 'formatBytes');
 

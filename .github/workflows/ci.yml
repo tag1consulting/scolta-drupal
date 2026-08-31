@@ -17,8 +17,8 @@ env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
 
 jobs:
-  test:
-    name: test-${{ matrix.cell }}
+  unit:
+    name: unit-${{ matrix.cell }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -235,8 +235,29 @@ jobs:
   # composer.json path repository resolves in the web container — the same
   # sibling-checkout layout used locally. Same resolution semantics as
   # before: the path repo supplies scolta-php main.
-  functional:
+  #
+  # Two cells bracket the support surface, mirroring unit-lowest/unit-highest
+  # above: integration-lowest is the minimum supported PHP on the minimum
+  # supported core with every dependency at its floor; integration-highest
+  # is the newest of everything. Stable version-free names, because branch
+  # protection matches required checks by literal job name. To reproduce a
+  # cell locally: `ddev config --php-version=X`, `ddev core-version Y`, then
+  # `ddev poser [flags]` — the same commands this job runs.
+  integration:
+    name: integration-${{ matrix.cell }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cell: lowest
+            php: '8.3'
+            drupal-core: '~10.5.0'
+            composer-flags: '--prefer-lowest --prefer-stable'
+          - cell: highest
+            php: '8.4'
+            drupal-core: ''
+            composer-flags: ''
     defaults:
       run:
         working-directory: scolta-drupal
@@ -252,10 +273,41 @@ jobs:
           ref: main
           path: scolta-php
 
-      - name: Install and start DDEV
+      # autostart false: the cell's PHP version and core floor must be
+      # configured before the containers first come up.
+      - name: Install DDEV
         uses: ddev/github-action-setup-ddev@v1
         with:
           ddevDir: scolta-drupal
+          autostart: false
+
+      - name: Configure the cell (PHP version, core floor)
+        run: |
+          ddev config --php-version='${{ matrix.php }}'
+          if [ -n '${{ matrix.drupal-core }}' ]; then
+            ddev dotenv set .ddev/.env.web --drupal-core '${{ matrix.drupal-core }}'
+          fi
+
+      - name: Start DDEV
+        run: ddev start
+
+      # drupal/core-dev on the 10.x line pins mglaman/phpstan-drupal
+      # ^1.2.10, which conflicts with our root ^2.0 — a real conflict, not a
+      # version-floor bug, and not one the lowest cell needs to solve:
+      # static analysis runs only in the highest cell (see the phpcs/phpstan
+      # policy above), so this cell doesn't need our phpstan constraints at
+      # all. Dropping them here lets core-dev's own (older) pin resolve on
+      # its own, whatever it happens to be on any given 10.x point release.
+      - name: Drop our phpstan constraints for the lowest cell
+        if: matrix.cell == 'lowest'
+        run: |
+          php -r '
+            $j = json_decode(file_get_contents("composer.json"), true);
+            foreach (["mglaman/phpstan-drupal", "phpstan/phpstan", "phpstan/phpstan-deprecation-rules"] as $pkg) {
+              unset($j["require-dev"][$pkg]);
+            }
+            file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+          '
 
       # Same rate-limit fix as the workflow-level COMPOSER_AUTH above, but
       # composer runs inside the web container, which does not inherit the
@@ -265,8 +317,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ddev exec composer config -g github-oauth.github.com "$GH_TOKEN"
 
+      # This is a throwaway test project, not a shipped artifact. Composer
+      # 2.9+ excludes advisory-flagged releases from the solver, and every
+      # older Drupal 10.5.x patch releases have published SAs, so the lowest cell can resolve
+      # nothing without this. The real audit gate belongs on the shipped
+      # module, not on this scratch site. (The old hand-built functional job
+      # carried the same setting under its previous name,
+      # audit.block-insecure.)
+      - name: Allow advisory-flagged releases in this scratch project
+        run: ddev exec composer config -g policy.advisories.block false
+
       - name: Build the Drupal project around the module
-        run: ddev poser
+        run: ddev poser ${{ matrix.composer-flags }}
+
+      # No silent resolutions: what this cell actually tested, in the log.
+      - name: Report resolved versions
+        run: |
+          for p in drupal/core drupal/search_api drush/drush phpunit/phpunit tag1/scolta-php; do
+            echo "$p: $(ddev exec composer show "$p" 2>/dev/null | awk '/^versions/ {print $NF}')"
+          done
 
       - name: Symlink the module into the docroot
         run: ddev symlink-project
@@ -274,8 +343,11 @@ jobs:
       # Same command a contributor runs locally. phpunit.xml declares the
       # suites; tests/bootstrap.php picks core's test bootstrap because the
       # poser-built docroot is present.
+      # --display-deprecations is a PHPUnit 10+-only option; the lowest cell
+      # can run PHPUnit 9.6 (Drupal 10's core-dev floor). --testdox predates
+      # both and stays.
       - name: Run kernel and functional tests
-        run: ddev phpunit --testsuite kernel,functional --display-deprecations --testdox
+        run: ddev phpunit --testsuite kernel,functional --testdox
 
   playwright:
     runs-on: ubuntu-latest

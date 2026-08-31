@@ -11,7 +11,7 @@
     ],
     "require": {
         "php": ">=8.3",
-        "drupal/search_api": "^1.0",
+        "drupal/search_api": "^1.36",
         "tag1/scolta-php": "^1.5.0@dev"
     },
     "suggest": {
@@ -24,7 +24,7 @@
         "mglaman/phpstan-drupal": "^2.0",
         "phpstan/phpstan": "^2.1",
         "phpstan/phpstan-deprecation-rules": "^2.0",
-        "phpunit/phpunit": "^10.0|^11.0",
+        "phpunit/phpunit": "^9.6.13|^10.0|^11.0",
         "symfony/http-foundation": "^6.0|^7.0",
         "symfony/yaml": "^6.0|^7.0"
     },
@@ -91,7 +91,8 @@
             "composer/installers": true,
             "dealerdirect/phpcodesniffer-composer-installer": true,
             "drupal/core-composer-scaffold": true,
-            "symfony/runtime": true
+            "symfony/runtime": true,
+            "php-http/discovery": false
         },
         "audit": {
             "ignore": [
