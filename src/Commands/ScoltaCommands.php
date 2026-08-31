@@ -18,6 +18,7 @@ use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 use GuzzleHttp\ClientInterface;
+use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Export\ContentExporter;
@@ -584,7 +585,7 @@ class ScoltaCommands extends DrushCommands {
    * Run a command in the foreground, streaming its output, and return its code.
    */
   private function runForeground(string $cmd): int {
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required to stream a child build's output while waiting for it.
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required to stream a child build's output while waiting for it. Arguments are escapeshellarg-quoted. nosemgrep: php.lang.security.exec-use.exec-use
     $handle = proc_open($cmd . ' 2>&1', [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes);
     if ($handle === FALSE) {
       throw new \RuntimeException('Failed to start the resume segment: ' . $cmd);
@@ -686,7 +687,7 @@ class ScoltaCommands extends DrushCommands {
 
     $this->logger()->notice('Running: {cmd}', ['cmd' => $cmd]);
 
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required for pagefind subprocess execution with real-time output streaming.
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required for pagefind subprocess execution with real-time output streaming. Arguments are escapeshellarg-quoted. nosemgrep: php.lang.security.exec-use.exec-use
     $handle = proc_open($cmd, [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes);
     if ($handle === FALSE) {
       $this->logger()->error('proc_open() failed. Run manually: drush scolta:finalize');
@@ -873,6 +874,7 @@ class ScoltaCommands extends DrushCommands {
       . ' 2>&1';
     $result = NULL;
     $output = [];
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- exec runs the Pagefind CLI; paths are escapeshellarg-quoted and the binary comes from admin config. nosemgrep: php.lang.security.exec-use.exec-use
     exec($cmd, $output, $result);
     foreach ($output as $line) {
       $this->logger()->notice($line);
@@ -1048,40 +1050,44 @@ class ScoltaCommands extends DrushCommands {
 
   /**
    * Show Scolta status: tracker, index, binary, AI provider.
+   *
+   * Emits YAML on stdout so the section groupings survive machine
+   * consumption — logger lines flattened the structure and went to stderr.
    */
   #[CLI\Command(name: 'scolta:status', aliases: ['sst'])]
   public function status(): void {
     $config = $this->configFactory->get('scolta.settings');
+    $status = [];
 
     // Search API index status.
-    $this->logger()->notice('--- Search API ---');
     try {
       $indexes = $this->entityTypeManager
         ->getStorage('search_api_index')
         ->loadMultiple();
-      $found = FALSE;
+      $rows = [];
       foreach ($indexes as $index) {
         if ($index->getServerId() && str_contains($index->getServerId(), 'scolta')) {
           $tracker = $index->getTrackerInstance();
-          $indexed = $tracker->getIndexedItemsCount();
-          $total = $tracker->getTotalItemsCount();
-          $statusLabel = $index->status() ? 'enabled' : 'disabled';
-          $this->logger()->notice("  Index: {$index->label()} ({$statusLabel})");
-          $this->logger()->notice("  Indexed: {$indexed}/{$total}");
-          $found = TRUE;
+          $rows[] = [
+            'label' => $index->label(),
+            'status' => $index->status() ? 'enabled' : 'disabled',
+            'indexed' => $tracker->getIndexedItemsCount(),
+            'total' => $tracker->getTotalItemsCount(),
+          ];
         }
       }
-      if (!$found) {
-        $this->logger()->warning('  No Scolta index configured.');
+      $status['search_api'] = ['indexes' => $rows];
+      if ($rows === []) {
+        $status['search_api']['note'] = 'No Scolta index configured.';
       }
     }
     catch (\Exception $e) {
-      $this->logger()->warning('  Could not query Search API: ' . $e->getMessage());
+      $status['search_api'] = ['error' => 'Could not query Search API: ' . $e->getMessage()];
     }
 
     // Indexer selection and active state.
-    $this->logger()->notice('--- Indexer ---');
     $indexerSetting = $config->get('indexer') ?: 'auto';
+    $status['indexer'] = ['configured' => $indexerSetting];
     if ($indexerSetting === 'binary') {
       // Only probe the binary when it's actually the active indexer:
       // PagefindBinary::status() runs up to five blocking exec() calls with
@@ -1095,60 +1101,34 @@ class ScoltaCommands extends DrushCommands {
         projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
       );
       $binaryStatus = $resolver->status();
-      $activeIndexer = $binaryStatus['available'] ? 'binary' : 'binary (not found — check path)';
+      $status['indexer']['active'] = 'binary';
+      $status['indexer']['binary'] = [
+        'available' => $binaryStatus['available'],
+        'message' => $binaryStatus['message'],
+      ];
+      if (!$binaryStatus['available']) {
+        $status['indexer']['binary']['hint'] = 'To install: npm install -g pagefind  OR  drush scolta:download-pagefind';
+      }
     }
     else {
-      $activeIndexer = 'php';
-    }
-    $this->logger()->notice("  Active indexer: {$activeIndexer}");
-    if ($indexerSetting === 'binary') {
-      if ($binaryStatus['available']) {
-        $this->logger()->notice("  Binary:         {$binaryStatus['message']}");
-      }
-      else {
-        $this->logger()->warning('  Binary:         NOT AVAILABLE');
-        $this->logger()->notice("  {$binaryStatus['message']}");
-        $this->logger()->notice('  To upgrade: npm install -g pagefind  OR  drush scolta:download-pagefind');
-      }
+      $status['indexer']['active'] = 'php';
     }
 
     // Build directory.
-    $this->logger()->notice('--- Build Directory ---');
     $buildDirConfig = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
     $resolvedBuildDir = $this->resolveBuildDir($buildDirConfig);
-    if ($resolvedBuildDir !== $buildDirConfig) {
-      $this->logger()->notice("  Configured: {$buildDirConfig}");
-      $this->logger()->notice("  Resolved:   {$resolvedBuildDir}");
-    }
-    else {
-      $this->logger()->notice("  Path: {$resolvedBuildDir}");
-    }
-    if (is_dir($resolvedBuildDir)) {
-      $this->logger()->notice('  Status:     exists');
-    }
-    else {
-      $this->logger()->notice('  Status:     not created yet (created on first build)');
-    }
+    $status['build_directory'] = [
+      'configured' => $buildDirConfig,
+      'resolved' => $resolvedBuildDir,
+      'exists' => is_dir($resolvedBuildDir),
+    ];
 
     // Pagefind index.
-    $this->logger()->notice('--- Pagefind Index ---');
     $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
-    if (str_contains($outputDir, '://')) {
-      try {
-        $resolvedDir = $this->streamWrapperManager
-          ->getViaUri($outputDir)->realpath() ?: $outputDir;
-      }
-      catch (\Exception $e) {
-        $resolvedDir = $outputDir;
-      }
-    }
-    else {
-      $resolvedDir = $outputDir;
-    }
+    $resolvedDir = $this->resolvePath($outputDir);
     $location = $this->indexLocator->locate($resolvedDir);
+    $status['pagefind_index'] = ['path' => $outputDir];
     if ($location !== NULL) {
-      $mtime = filemtime($location['indexFile']);
-      $this->logger()->notice("  Path:       {$outputDir}");
       // Read the count from pagefind-entry.json rather than counting fragment
       // files: on NFS with a six-figure corpus that glob() is minutes-slow
       // (see PagefindBuilder::getStatus()), and status only needs a number.
@@ -1156,42 +1136,57 @@ class ScoltaCommands extends DrushCommands {
       if ($pageCount === NULL) {
         $pageCount = $this->indexLocator->countFragments($location);
       }
-      $this->logger()->notice("  Pages:      {$pageCount}");
-      $this->logger()->notice("  Last built: " . ($mtime ? date('Y-m-d H:i:s', $mtime) : 'unknown'));
+      $mtime = filemtime($location['indexFile']);
+      $status['pagefind_index']['built'] = TRUE;
+      $status['pagefind_index']['pages'] = $pageCount;
+      $status['pagefind_index']['last_built'] = $mtime ? date('Y-m-d H:i:s', $mtime) : NULL;
     }
     else {
-      $this->logger()->notice("  Path: {$outputDir} (no index built yet)");
+      $status['pagefind_index']['built'] = FALSE;
     }
 
     // AI provider. Routing only goes through the Drupal AI module when the
     // admin explicitly selected 'drupal_ai' AND the module is installed —
     // mirror that here instead of reporting on module presence alone.
-    $this->logger()->notice('--- AI Provider ---');
-    // No coalescing to a provider nobody chose: an empty value means AI is off,
-    // and a status command has to report that rather than name Anthropic.
+    //
+    // No coalescing to a provider nobody chose: an empty value means AI is
+    // off, and a status command has to report that rather than name Anthropic.
     $provider = $config->get('ai_provider') ?? '';
     if ($provider === '') {
-      $this->logger()->notice('  Provider: none selected — AI features are off (search is unaffected)');
+      $providerRow = [
+        'provider' => NULL,
+        'note' => 'None selected — AI features are off (search is unaffected).',
+      ];
     }
     elseif ($provider === 'drupal_ai' && $this->aiService->hasDrupalAiModule()) {
-      $this->logger()->notice('  Provider: Drupal AI module');
+      $providerRow = ['provider' => 'drupal_ai', 'routing' => 'Drupal AI module'];
     }
     elseif ($provider === 'drupal_ai') {
-      $this->logger()->notice('  Provider: drupal_ai selected but AI module not installed — falling back to built-in client');
+      $providerRow = [
+        'provider' => 'drupal_ai',
+        'routing' => 'built-in client',
+        'note' => 'drupal_ai selected but AI module not installed — falling back to built-in client.',
+      ];
     }
     else {
-      $this->logger()->notice("  Provider: {$provider} (built-in)");
+      $providerRow = ['provider' => $provider, 'routing' => 'built-in client'];
     }
     // The source and the description come from the same resolution the client
     // uses, so `status` cannot claim Amazee.ai while an explicit key serves
     // every request (scolta-php#252).
     $resolvedKey = $this->aiService->resolveApiKey();
-    $this->logger()->notice("  API key:  {$resolvedKey->source->value}");
-    $this->logger()->notice('  ' . $resolvedKey->describe());
+    $providerRow['api_key'] = [
+      'source' => $resolvedKey->source->value,
+      'description' => $resolvedKey->describe(),
+    ];
+    $status['ai_provider'] = $providerRow;
 
     // Generation counter.
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->logger()->notice("  Cache generation: {$generation}");
+    $status['cache'] = [
+      'generation' => $this->state->get('scolta.generation', 0),
+    ];
+
+    $this->output()->writeln(Yaml::dump($status, 4, 2));
   }
 
   /**

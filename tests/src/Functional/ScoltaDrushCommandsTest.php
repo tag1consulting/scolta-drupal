@@ -6,6 +6,7 @@ namespace Drupal\Tests\scolta\Functional;
 
 use Drupal\Tests\BrowserTestBase;
 use Drush\TestTraits\DrushTestTrait;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Proves the Scolta drush command surface is registered and wired.
@@ -33,26 +34,31 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
   protected $defaultTheme = 'stark';
 
   /**
-   * scolta:status runs against a fresh site and reports its sections.
+   * The scolta:status command emits YAML on stdout with all its sections.
    */
   public function testStatusReportsItsSections(): void {
     $this->drush('scolta:status');
-    // Drush logger output goes to stderr.
-    $output = $this->getErrorOutput();
+    $status = Yaml::parse($this->getOutput());
+    $this->assertIsArray($status, 'scolta:status must emit parseable YAML');
     foreach ([
-      '--- Search API ---',
-      '--- Indexer ---',
-      '--- Build Directory ---',
-      '--- Pagefind Index ---',
-      '--- AI Provider ---',
+      'search_api',
+      'indexer',
+      'build_directory',
+      'pagefind_index',
+      'ai_provider',
+      'cache',
     ] as $section) {
-      $this->assertStringContainsString($section, $output,
+      $this->assertArrayHasKey($section, $status,
         "scolta:status must report the {$section} section");
     }
+    // Groupings are nested maps, not flattened lines.
+    $this->assertSame('php', $status['indexer']['active']);
+    $this->assertFalse($status['pagefind_index']['built']);
+    $this->assertIsInt($status['cache']['generation']);
   }
 
   /**
-   * scolta:check-setup runs and reports its verdict on a fresh site.
+   * The scolta:check-setup command reports its verdict on a fresh site.
    *
    * checkSetup() logs each check and a summary line but never throws, so
    * drush exits 0 even when a critical check fails on a fresh site; the
@@ -65,7 +71,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
   }
 
   /**
-   * scolta:clear-cache runs the full wiring: state, cache, logger.
+   * The scolta:clear-cache command runs the full wiring: state, cache, logger.
    */
   public function testClearCacheSucceeds(): void {
     $this->drush('scolta:clear-cache');
@@ -77,7 +83,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
    */
   public function testStatusAliasResolves(): void {
     $this->drush('sst');
-    $this->assertStringContainsString('--- AI Provider ---', $this->getErrorOutput(),
+    $this->assertStringContainsString('ai_provider:', $this->getOutput(),
       'The sst alias must invoke scolta:status');
   }
 

@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ## [Unreleased]
 
+### Changed
+- `drush scolta:status` now emits YAML on stdout instead of logger lines on stderr, preserving the section groupings (`search_api`, `indexer`, `build_directory`, `pagefind_index`, `ai_provider`, `cache`) as nested maps that scripts can parse.
+
 ### Fixed
 - `drush scolta:status` and the settings form's `getStatus()` no longer glob() the fragment directory to report a page count: on a six-figure corpus over NFS that directory listing was slow enough that `status` itself became the complaint. Both now read `page_count` from `pagefind-entry.json`, which Pagefind already writes at build time, falling back to the glob only if that file is missing or unreadable.
 
