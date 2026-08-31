@@ -34,7 +34,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
   protected $defaultTheme = 'stark';
 
   /**
-   * scolta:status emits parseable YAML on stdout with all its sections.
+   * The scolta:status command emits YAML on stdout with all its sections.
    */
   public function testStatusReportsItsSections(): void {
     $this->drush('scolta:status');
