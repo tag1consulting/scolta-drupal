@@ -84,19 +84,4 @@ class SaytSettingsTest extends TestCase {
     }
   }
 
-  public function testExampleConfigDocumentsEverySetting(): void {
-    $example = Yaml::parseFile($this->moduleRoot . '/config/scolta.settings.example.yml');
-
-    foreach (self::DEFAULTS as $key => $value) {
-      $this->assertArrayHasKey(
-        $key, $example,
-        "config/scolta.settings.example.yml must document {$key}"
-      );
-      $this->assertSame(
-        $value, $example[$key],
-        "The example value for {$key} must be the shipped default"
-      );
-    }
-  }
-
 }

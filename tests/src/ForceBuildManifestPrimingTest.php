@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\scolta\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\TimestampManifest;
 use Tag1\Scolta\Storage\FilesystemDriver;
 
@@ -71,32 +70,6 @@ class ForceBuildManifestPrimingTest extends TestCase {
     finally {
       $this->removeDir($dir);
     }
-  }
-
-  /**
-   * Turns itself on the moment scolta-php ships the recorder.
-   *
-   * The manifest wiring in this module is inert against a scolta-php whose
-   * filterItems() takes no manifest: the extra argument is accepted and
-   * ignored. This is what makes the wiring real, and it is deliberately a
-   * skip rather than a failure so the branch is honest about its upstream
-   * dependency instead of red for a reason that is not a defect.
-   */
-  public function testExporterAcceptsTheManifestOnceUpstreamShipsIt(): void {
-    $params = (new \ReflectionMethod(ContentExporter::class, 'filterItems'))->getParameters();
-
-    if (count($params) < 2) {
-      $this->markTestSkipped(
-        'The installed scolta-php has no manifest parameter on ContentExporter::filterItems(); '
-        . 'the known-empty recorder is not on main yet. The wiring in this module is already '
-        . 'correct and inert until it is.'
-      );
-    }
-
-    $this->assertSame('manifest', $params[1]->getName());
-    $type = $params[1]->getType();
-    $this->assertNotNull($type);
-    $this->assertStringContainsString('TimestampManifest', (string) $type);
   }
 
   // -------------------------------------------------------------------

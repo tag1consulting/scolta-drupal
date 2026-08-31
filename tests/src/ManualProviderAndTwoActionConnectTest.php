@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\scolta\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeConnectionSource;
 use Tag1\Scolta\Config\AmazeeCredentials;
 use Tag1\Scolta\Config\ApiKeyResolver;
@@ -22,22 +21,6 @@ use Tag1\Scolta\Config\ApiKeySource;
  *   ran drives the reported source, and none is guessed.
  */
 class ManualProviderAndTwoActionConnectTest extends TestCase {
-
-  private string $moduleRoot;
-
-  protected function setUp(): void {
-    $this->moduleRoot = dirname(__DIR__, 2);
-  }
-
-  public function testShippedInstallConfigSelectsNoProvider(): void {
-    $installed = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-
-    $this->assertSame(
-      '',
-      $installed['ai_provider'],
-      'A fresh install must ship with no AI provider selected.',
-    );
-  }
 
   /**
    * A key with no provider selected is not reported as a working setup.

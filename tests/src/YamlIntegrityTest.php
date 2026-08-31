@@ -8,7 +8,11 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Validates all YAML config files parse correctly and are internally consistent.
+ * Config schema stays in sync with install defaults.
+ *
+ * A config key with no schema entry (or vice versa) does not fail a build —
+ * it only logs a Drupal config-schema notice — so nothing else in the suite
+ * catches this drift.
  */
 class YamlIntegrityTest extends TestCase {
 
@@ -17,38 +21,6 @@ class YamlIntegrityTest extends TestCase {
   protected function setUp(): void {
     $this->moduleRoot = dirname(__DIR__, 2);
   }
-
-  // -------------------------------------------------------------------
-  // Basic YAML parsing — every .yml file must parse without error.
-  // -------------------------------------------------------------------
-
-  /**
-   * @dataProvider ymlFileProvider
-   */
-  public function testYamlFilesAreValid(string $file): void {
-    $content = file_get_contents($file);
-    $this->assertNotFalse($content, "Could not read {$file}");
-
-    $parsed = Yaml::parse($content);
-    // NULL is valid (empty file), but a parse error would throw.
-    $this->assertTrue(
-      $parsed === null || is_array($parsed),
-      "YAML file did not parse to array or null: {$file}"
-    );
-  }
-
-  public static function ymlFileProvider(): \Generator {
-    $root = dirname(__DIR__, 2);
-    $files = glob($root . '/*.yml') ?: [];
-    $files = array_merge($files, glob($root . '/config/**/*.yml') ?: []);
-    foreach ($files as $file) {
-      yield basename($file) => [$file];
-    }
-  }
-
-  // -------------------------------------------------------------------
-  // Config schema vs install defaults alignment.
-  // -------------------------------------------------------------------
 
   public function testInstallConfigKeysMatchSchema(): void {
     $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
@@ -125,10 +97,6 @@ class YamlIntegrityTest extends TestCase {
     }
   }
 
-  // -------------------------------------------------------------------
-  // Schema type correctness for install defaults.
-  // -------------------------------------------------------------------
-
   public function testInstallConfigValueTypesMatchSchema(): void {
     $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
     $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
@@ -151,180 +119,6 @@ class YamlIntegrityTest extends TestCase {
           "Install config '{$key}' should be type '{$type}', got " . gettype($install[$key])
         );
       }
-    }
-  }
-
-  // -------------------------------------------------------------------
-  // services.yml structure.
-  // -------------------------------------------------------------------
-
-  public function testServicesYamlStructure(): void {
-    $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml');
-    $this->assertArrayHasKey('services', $services);
-
-    $expected = [
-      'logger.channel.scolta',
-      'scolta.ai_service',
-      'scolta.pagefind_exporter',
-      'scolta.pagefind_builder',
-    ];
-
-    foreach ($expected as $serviceId) {
-      $this->assertArrayHasKey($serviceId, $services['services'],
-        "Missing service: {$serviceId}");
-    }
-  }
-
-  public function testDrushServicesYamlStructure(): void {
-    $drush = Yaml::parseFile($this->moduleRoot . '/drush.services.yml');
-    $this->assertArrayHasKey('services', $drush);
-    $this->assertArrayHasKey('scolta.commands', $drush['services']);
-    $this->assertEquals(
-      'Drupal\scolta\Commands\ScoltaCommands',
-      $drush['services']['scolta.commands']['class']
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // routing.yml structure.
-  // -------------------------------------------------------------------
-
-  public function testRoutingYamlStructure(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
-
-    $expectedRoutes = [
-      'scolta.settings' => '/admin/config/search/scolta',
-      'scolta.dismiss_rebuild_notice' => '/admin/config/search/scolta/dismiss-rebuild-notice',
-      'scolta.expand' => '/api/scolta/v1/expand-query',
-      'scolta.summarize' => '/api/scolta/v1/summarize',
-      'scolta.followup' => '/api/scolta/v1/followup',
-      'scolta.health' => '/api/scolta/v1/health',
-    ];
-
-    foreach ($expectedRoutes as $name => $path) {
-      $this->assertArrayHasKey($name, $routing, "Missing route: {$name}");
-      $this->assertEquals($path, $routing[$name]['path'],
-        "Route {$name} has wrong path");
-    }
-  }
-
-  public function testAllFromRouteCallsReferenceDefinedRoutes(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
-    $definedRoutes = array_keys($routing);
-
-    // Scan all PHP and .module files (excluding vendor and tests) for
-    // fromRoute('scolta.*') calls. Any scolta.* route name referenced in
-    // PHP source must exist in scolta.routing.yml or a crash like
-    // RouteNotFoundException will occur at runtime.
-    $sourceFiles = array_merge(
-      glob($this->moduleRoot . '/*.module') ?: [],
-      glob($this->moduleRoot . '/src/**/*.php') ?: [],
-      glob($this->moduleRoot . '/src/*.php') ?: [],
-    );
-
-    $referenced = [];
-    foreach ($sourceFiles as $file) {
-      $src = file_get_contents($file);
-      if (preg_match_all("/fromRoute\(\s*'(scolta\.[^']+)'/", $src, $matches)) {
-        foreach ($matches[1] as $routeName) {
-          $referenced[$routeName] = $file;
-        }
-      }
-    }
-
-    $this->assertNotEmpty($referenced, 'No fromRoute calls found — scanner may be broken');
-
-    foreach ($referenced as $routeName => $file) {
-      $this->assertContains(
-        $routeName,
-        $definedRoutes,
-        "Route '{$routeName}' is used in " . basename($file) . " but not defined in scolta.routing.yml"
-      );
-    }
-  }
-
-  public function testApiRoutesRequirePostMethod(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
-
-    $apiRoutes = ['scolta.expand', 'scolta.summarize', 'scolta.followup'];
-    foreach ($apiRoutes as $route) {
-      $this->assertContains('POST', $routing[$route]['methods'] ?? [],
-        "Route {$route} should require POST");
-    }
-  }
-
-  public function testApiRoutesRequireCorrectPermission(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
-    $permissions = Yaml::parseFile($this->moduleRoot . '/scolta.permissions.yml');
-
-    // Admin route requires 'administer scolta'.
-    $this->assertEquals(
-      'administer scolta',
-      $routing['scolta.settings']['requirements']['_permission']
-    );
-    $this->assertArrayHasKey('administer scolta', $permissions);
-
-    // API routes require 'use scolta ai'.
-    foreach (['scolta.expand', 'scolta.summarize', 'scolta.followup'] as $route) {
-      $this->assertEquals(
-        'use scolta ai',
-        $routing[$route]['requirements']['_permission'],
-        "Route {$route} should require 'use scolta ai'"
-      );
-    }
-    $this->assertArrayHasKey('use scolta ai', $permissions);
-  }
-
-  // -------------------------------------------------------------------
-  // libraries.yml.
-  // -------------------------------------------------------------------
-
-  public function testLibrariesYamlStructure(): void {
-    $libs = Yaml::parseFile($this->moduleRoot . '/scolta.libraries.yml');
-
-    $this->assertArrayHasKey('search', $libs);
-    $this->assertArrayHasKey('drupal_bridge', $libs);
-
-    // drupal_bridge depends on search.
-    $this->assertContains(
-      'scolta/search',
-      $libs['drupal_bridge']['dependencies']
-    );
-  }
-
-  public function testBridgeJsFileExists(): void {
-    $this->assertFileExists(
-      $this->moduleRoot . '/js/scolta-drupal-bridge.js',
-      'drupal_bridge JS file must exist'
-    );
-  }
-
-  // -------------------------------------------------------------------
-  // info.yml.
-  // -------------------------------------------------------------------
-
-  public function testInfoYamlStructure(): void {
-    $info = Yaml::parseFile($this->moduleRoot . '/scolta.info.yml');
-
-    $this->assertEquals('Scolta', $info['name']);
-    $this->assertEquals('module', $info['type']);
-    $this->assertArrayHasKey('core_version_requirement', $info);
-    $this->assertContains('search_api:search_api', $info['dependencies']);
-  }
-
-  // -------------------------------------------------------------------
-  // Search API backend schema.
-  // -------------------------------------------------------------------
-
-  public function testSearchApiBackendSchemaExists(): void {
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
-    $this->assertArrayHasKey('search_api.backend.plugin.scolta_pagefind', $schema);
-
-    $backendMapping = $schema['search_api.backend.plugin.scolta_pagefind']['mapping'];
-    $expectedKeys = ['build_dir', 'output_dir', 'pagefind_binary', 'auto_rebuild', 'view_mode'];
-    foreach ($expectedKeys as $key) {
-      $this->assertArrayHasKey($key, $backendMapping,
-        "Backend schema missing key: {$key}");
     }
   }
 

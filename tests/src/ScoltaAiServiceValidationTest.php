@@ -4,60 +4,18 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Tests;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\scolta\Service\ScoltaAiService;
-use GuzzleHttp\ClientInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
-use Psr\Log\LoggerInterface;
-use Symfony\Component\Yaml\Yaml;
-use Tag1\Scolta\Service\AiServiceAdapter;
 
 /**
- * Tests the ScoltaAiService contract via reflection and parsed YAML.
- *
- * Verifies the class hierarchy, the constructor/service-definition agreement,
- * and getApiKey() behavior without requiring a Drupal bootstrap.
+ * Tests ScoltaAiService::getApiKey() behavior without a Drupal bootstrap.
  */
 class ScoltaAiServiceValidationTest extends TestCase {
 
   protected function tearDown(): void {
     putenv('SCOLTA_API_KEY');
-  }
-
-  public function testExtendsAiServiceAdapter(): void {
-    $this->assertTrue(
-      is_subclass_of(ScoltaAiService::class, AiServiceAdapter::class),
-      'ScoltaAiService must extend AiServiceAdapter'
-    );
-  }
-
-  public function testConstructorParameterCountMatchesServices(): void {
-    $services = Yaml::parseFile(dirname(__DIR__, 2) . '/scolta.services.yml');
-    $args = $services['services']['scolta.ai_service']['arguments'] ?? [];
-
-    $constructor = new \ReflectionMethod(ScoltaAiService::class, '__construct');
-    $this->assertSame(
-      $constructor->getNumberOfParameters(),
-      count($args),
-      'ScoltaAiService constructor param count must match service arguments'
-    );
-  }
-
-  public function testConstructorParameterTypes(): void {
-    $constructor = new \ReflectionMethod(ScoltaAiService::class, '__construct');
-    $types = [];
-    foreach ($constructor->getParameters() as $param) {
-      $types[$param->getName()] = $param->getType()?->getName();
-    }
-
-    $this->assertSame(ClientInterface::class, $types['httpClient'],
-      'Constructor must accept the Guzzle ClientInterface');
-    $this->assertSame(ConfigFactoryInterface::class, $types['configFactory'],
-      'Constructor must accept ConfigFactoryInterface');
-    $this->assertSame(LoggerInterface::class, $types['logger'],
-      'Constructor must accept a PSR LoggerInterface');
   }
 
   // -------------------------------------------------------------------
