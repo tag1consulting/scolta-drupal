@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Drupal\Tests\scolta\Functional;
+namespace Drupal\Tests\scolta\Kernel;
 
-use Drupal\Tests\BrowserTestBase;
+use Drupal\KernelTests\KernelTestBase;
 use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\node\Entity\Node;
+use Drupal\Tests\node\Traits\ContentTypeCreationTrait;
 
 /**
  * End-to-end coverage of the queue worker's incremental update path.
@@ -22,21 +23,23 @@ use Drupal\node\Entity\Node;
  *    without ever being indexed.
  *
  * The corpus is deliberately larger than one gather batch so an edit has to
- * be found rather than stumbled over.
+ * be found rather than stumbled over. No HTTP request is involved anywhere
+ * — content is created and edited through the entity API and the queue
+ * worker is invoked directly — so this needs only a real container, not
+ * BrowserTestBase.
  *
  * @group scolta
  */
-class IncrementalQueueUpdateFunctionalTest extends BrowserTestBase {
+class IncrementalQueueUpdateKernelTest extends KernelTestBase {
+
+  use ContentTypeCreationTrait;
 
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api', 'node', 'filter', 'field', 'dblog', 'language'];
-
-  /**
-   * {@inheritdoc}
-   */
-  protected $defaultTheme = 'stark';
+  protected static $modules = [
+    'system', 'user', 'scolta', 'search_api', 'node', 'filter', 'field', 'text', 'dblog', 'language',
+  ];
 
   /**
    * Node IDs of the seeded corpus, in creation order.
@@ -51,7 +54,28 @@ class IncrementalQueueUpdateFunctionalTest extends BrowserTestBase {
   protected function setUp(): void {
     parent::setUp();
 
-    $this->drupalCreateContentType(['type' => 'article', 'name' => 'Article']);
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('user');
+    $this->installSchema('node', ['node_access']);
+    $this->installSchema('dblog', ['watchdog']);
+    $this->installConfig(['scolta', 'field', 'node', 'filter']);
+
+    // KernelTestBase mounts public:// on a vfsStream virtual filesystem, and
+    // its own realpath() is a vfs:// URI — still stream-wrapper syntax, which
+    // scolta-php's FilesystemDriver rejects outright (it needs a real file
+    // system for the index it builds and reads back). Pointing the index at
+    // a real temp directory instead sidesteps vfsStream entirely; the
+    // production resolveDir() already treats any path with no "://" as
+    // already-resolved, so this is the same path plain-path config a real
+    // site can use.
+    $realDir = sys_get_temp_dir() . '/scolta-kernel-test-' . uniqid();
+    mkdir($realDir, 0755, TRUE);
+    $this->config('scolta.settings')
+      ->set('pagefind.output_dir', $realDir . '/output')
+      ->set('pagefind.build_dir', $realDir . '/build')
+      ->save();
+
+    $this->createContentType(['type' => 'article']);
 
     // 25 nodes: more than two gather batches of 10, so pagination is exercised
     // rather than short-circuited.
@@ -373,7 +397,12 @@ class IncrementalQueueUpdateFunctionalTest extends BrowserTestBase {
   protected function fragments(): array {
     $locator = $this->container->get('scolta.index_locator');
     $uri = $this->config('scolta.settings')->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
-    $dir = $this->container->get('stream_wrapper_manager')->getViaUri($uri)->realpath();
+    // setUp() configures a real path with no stream-wrapper prefix (see the
+    // comment there); resolve through the stream wrapper manager only if the
+    // configured value actually looks like a stream URI.
+    $dir = str_contains($uri, '://')
+      ? $this->container->get('stream_wrapper_manager')->getViaUri($uri)->realpath()
+      : $uri;
     $location = $locator->locate($dir);
     $this->assertNotNull($location, 'An index must exist');
 
