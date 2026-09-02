@@ -135,7 +135,10 @@ class ScopedBuildKernelTest extends KernelTestBase {
   }
 
   /**
+   * Run scolta:build with the PHP indexer against the test's index directory.
+   *
    * @param array<string, mixed> $overrides
+   *   Option values to override on top of the command's own defaults.
    */
   protected function runBuild(array $overrides = []): void {
     $this->commands()->build($overrides + [
@@ -162,6 +165,10 @@ class ScopedBuildKernelTest extends KernelTestBase {
    * and the test would pass whatever happened. The assertion goes outside.
    *
    * @param array<string, mixed> $overrides
+   *   Option values to override, including whichever scopes the build.
+   *
+   * @return string
+   *   The refusal message the command threw.
    */
   protected function runBuildExpectingRefusal(array $overrides): string {
     $message = NULL;
@@ -177,12 +184,21 @@ class ScopedBuildKernelTest extends KernelTestBase {
     return $message;
   }
 
+  /**
+   * The page-table ledger the build under test wrote.
+   *
+   * @return \Tag1\Scolta\Index\PageTableLedger
+   *   Ledger read from the build directory.
+   */
   protected function ledger(): PageTableLedger {
     return new PageTableLedger($this->indexRoot . '/build', new FilesystemDriver());
   }
 
   /**
-   * @return array<string, string> Relative path => sha256 of the bytes.
+   * Fingerprint every file in the published index.
+   *
+   * @return array<string, string>
+   *   Relative path => sha256 of the bytes, so two indexes compare by content.
    */
   protected function publishedIndex(): array {
     $base = $this->indexRoot . '/output/pagefind';
@@ -205,7 +221,7 @@ class ScopedBuildKernelTest extends KernelTestBase {
   }
 
   /**
-   * --bundle after a full build: the pages of the other bundle stay live.
+   * The --bundle regression: pages of the other bundle stay live.
    */
   public function testABundleScopedBuildLeavesTheOtherBundleLive(): void {
     $this->runBuild();
@@ -233,7 +249,7 @@ class ScopedBuildKernelTest extends KernelTestBase {
   }
 
   /**
-   * --entity-ids is the same scoping and gets the same refusal.
+   * The --entity-ids scoping gets the same refusal as --bundle.
    */
   public function testAnEntityIdScopedBuildLeavesTheRestLive(): void {
     $this->runBuild();
@@ -251,9 +267,10 @@ class ScopedBuildKernelTest extends KernelTestBase {
   }
 
   /**
-   * A site whose index only holds one bundle passes --bundle on every build.
-   * Its scope covers the whole ledger, so the build publishes as it always did
-   * — the guard must not break that workflow.
+   * A bundle-only site keeps building, because its scope covers the ledger.
+   *
+   * Such a site passes --bundle on every build, so nothing is ever out of
+   * scope and the guard must not stand in its way.
    */
   public function testABundleScopedBuildIsFineWhenTheIndexHoldsOnlyThatBundle(): void {
     $this->runBuild(['bundle' => 'article']);
