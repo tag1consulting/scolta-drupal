@@ -6,6 +6,7 @@
   <arg value="sp"/>
 
   <file>src</file>
+  <file>tests</file>
   <file>scolta.module</file>
   <file>scolta.install</file>
 
@@ -15,5 +16,66 @@
   <!-- Allow long lines in tests -->
   <rule ref="Drupal.Files.LineLength">
     <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+
+  <!--
+    What tests/ is held to.
+
+    Everything structural applies as it does to src: indentation, bracket and
+    array spacing, function spacing, uppercase constants, statement alignment.
+    That is the part that makes a test file read like the rest of the codebase,
+    and phpcbf fixes all of it correctly.
+
+    The comment-completeness sniffs are excluded below. Two reasons, in order:
+    running phpcbf over the suite with them enabled DELETED real class
+    docblocks and left a row of dashes in their place, having promoted 40
+    section-divider comments into docblocks of their own; and the 211 test
+    methods it wanted a docblock for would have received an empty one, because
+    test_set_then_get_returns_value already says what the docblock would.
+    Documentation the tool writes for us is worth less than none. A helper's
+    or a class's docblock is still worth writing by hand — nothing here stops
+    that, it just stops the standard demanding boilerplate.
+  -->
+  <rule ref="Drupal.Commenting">
+    <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+  <rule ref="DrupalPractice.Commenting">
+    <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+
+  <!-- Descriptive test names trip the consecutive-capitals rule
+       (testABundleScopedBuildLeavesTheOtherBundleLive), and the older unit
+       tests use snake_case. Both read better here than camelCase. -->
+  <rule ref="Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps">
+    <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+
+  <!-- Several unit tests declare their fakes beside the test case, inside
+       bracketed namespace blocks in one file. That trips two sniffs, and
+       phpcbf's fix for the first hoists a use statement to file scope, which
+       lands it outside every namespace block and changes what the file means.
+       Keeping a fake next to its only consumer is worth more than the
+       one-class-per-file rule buys in a test. -->
+  <rule ref="Drupal.Classes.FullyQualifiedNamespace.UseStatementMissing">
+    <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+  <rule ref="Drupal.Classes.ClassFileName.NoMatch">
+    <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+
+  <!-- The sniff itself throws on two of these files ("The error originated in
+       the DrupalPractice.Objects.GlobalDrupal sniff on line 102"), which phpcs
+       reports as an Internal.Exception error against the file. -->
+  <rule ref="DrupalPractice.Objects.GlobalDrupal">
+    <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+
+  <!-- A real finding rather than a convention: both of these disable strict
+       config schema instead of declaring the schema. Scoped to the two
+       existing offenders rather than to tests/*, so a new test that disables
+       it still fails. -->
+  <rule ref="DrupalPractice.Objects.StrictSchemaDisabled.StrictConfigSchema">
+    <exclude-pattern>tests/src/Kernel/ScoltaSettingsFormKernelTest.php</exclude-pattern>
+    <exclude-pattern>tests/src/Kernel/ScoltaAiServiceConfigMappingKernelTest.php</exclude-pattern>
   </rule>
 </ruleset>
