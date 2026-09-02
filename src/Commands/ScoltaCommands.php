@@ -26,6 +26,7 @@ use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
 use Tag1\Scolta\Index\RetiredIndexTrash;
+use Tag1\Scolta\Index\StatusReport;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 use Tag1\Scolta\SetupCheck;
 use Tag1\Scolta\Storage\FilesystemDriver;
@@ -503,7 +504,7 @@ class ScoltaCommands extends DrushCommands {
    * @throws \RuntimeException
    *   When the chain stalls, exceeds its segment budget, or fails.
    */
-  private function runResumeChain(array $options, int $budgetBytes, $firstReport, string $stateDir, string $outputDir): void {
+  protected function runResumeChain(array $options, int $budgetBytes, $firstReport, string $stateDir, string $outputDir): void {
     $drushBin = $this->findDrushBin();
     if ($drushBin === NULL) {
       throw new \RuntimeException(sprintf(
@@ -548,15 +549,32 @@ class ScoltaCommands extends DrushCommands {
         ['pages' => $pagesBefore, 'n' => $segment],
       );
 
+      $this->clearSegmentOutcome($stateDir);
       $exitCode = $this->runForeground($cmd);
       if ($exitCode === 0) {
         $this->confirmChainComplete($outputDir, $segment);
         return;
       }
 
-      // A non-zero segment either failed outright or hit the limit again. The
-      // difference is whether it committed anything, and the manifest is the
-      // only witness both processes share.
+      // Every failure exits non-zero, so exit status alone cannot say whether
+      // the segment yielded on memory pressure and wants another one or found
+      // the build broken and wants the chain to stop. The segment records
+      // which it was; this reads that rather than guessing from progress.
+      $outcome = $this->segmentOutcome($stateDir);
+      if ($outcome !== NULL && $outcome['error'] !== StatusReport::MEMORY_ABORT) {
+        throw new \RuntimeException(sprintf(
+          'The build failed in segment %d and the index has not been republished: %s',
+          $segment,
+          // A segment that recorded success and still exited non-zero failed
+          // after its build returned — publishing, verifying, shutting down.
+          $outcome['error'] ?? 'the segment reported a successful build and then exited '
+            . 'non-zero; see its output above.',
+        ));
+      }
+
+      // No outcome on disk: the segment died without reporting — an OOM kill,
+      // a fatal, a signal. Progress is the only evidence left, so fall back to
+      // the manifest, which is the one witness both processes share.
       $pagesNow = $this->pagesCommitted($stateDir);
       if ($pagesNow <= $pagesBefore) {
         throw new \RuntimeException(sprintf(
@@ -584,7 +602,7 @@ class ScoltaCommands extends DrushCommands {
   /**
    * Run a command in the foreground, streaming its output, and return its code.
    */
-  private function runForeground(string $cmd): int {
+  protected function runForeground(string $cmd): int {
     // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required to stream a child build's output while waiting for it. Arguments are escapeshellarg-quoted. nosemgrep: php.lang.security.exec-use.exec-use
     $handle = proc_open($cmd . ' 2>&1', [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes);
     if ($handle === FALSE) {
@@ -602,6 +620,33 @@ class ScoltaCommands extends DrushCommands {
     fclose($pipes[2]);
 
     return proc_close($handle);
+  }
+
+  /**
+   * How the last segment reported it ended, or NULL if it never reported.
+   *
+   * @return array|null
+   *   The outcome BuildState recorded, or NULL when none is readable.
+   */
+  private function segmentOutcome(string $stateDir): ?array {
+    try {
+      return (new BuildState($stateDir))->readOutcome();
+    }
+    catch (\Throwable) {
+      return NULL;
+    }
+  }
+
+  /**
+   * Drop any outcome on disk so the next segment's silence reads as silence.
+   */
+  private function clearSegmentOutcome(string $stateDir): void {
+    try {
+      (new BuildState($stateDir))->clearOutcome();
+    }
+    catch (\Throwable) {
+      // A state dir this cannot open is one the segment will fail on anyway.
+    }
   }
 
   /**
@@ -634,7 +679,7 @@ class ScoltaCommands extends DrushCommands {
    * published rather than repeating its own partial figure as if it were the
    * total.
    */
-  private function confirmChainComplete(string $outputDir, int $segments): void {
+  protected function confirmChainComplete(string $outputDir, int $segments): void {
     $this->assertIndexUsable($outputDir);
 
     $fragments = glob($outputDir . '/pagefind/fragment/*.pf_fragment') ?: [];
@@ -717,7 +762,7 @@ class ScoltaCommands extends DrushCommands {
   /**
    * Locate the drush binary.
    */
-  private function findDrushBin(): ?string {
+  protected function findDrushBin(): ?string {
     // Vendor bin is the most reliable location in a Composer project.
     $root = defined('DRUPAL_ROOT') ? dirname(DRUPAL_ROOT) : getcwd();
     $vendorBin = $root . '/vendor/bin/drush';
