@@ -43,10 +43,16 @@
     <exclude-pattern>tests/*</exclude-pattern>
   </rule>
 
+  <!-- These four reference the sniff rather than one of its message codes
+       (…ValidFunctionName, not …ValidFunctionName.ScopeNotCamelCaps). A
+       message code is only referenceable in some Coder versions, and CI
+       resolves a newer one than a local vendor/ may hold: phpcs there exits
+       16 with 'Referenced sniff does not exist' and checks nothing. -->
+
   <!-- Descriptive test names trip the consecutive-capitals rule
        (testABundleScopedBuildLeavesTheOtherBundleLive), and the older unit
        tests use snake_case. Both read better here than camelCase. -->
-  <rule ref="Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps">
+  <rule ref="Drupal.NamingConventions.ValidFunctionName">
     <exclude-pattern>tests/*</exclude-pattern>
   </rule>
 
@@ -56,10 +62,10 @@
        lands it outside every namespace block and changes what the file means.
        Keeping a fake next to its only consumer is worth more than the
        one-class-per-file rule buys in a test. -->
-  <rule ref="Drupal.Classes.FullyQualifiedNamespace.UseStatementMissing">
+  <rule ref="Drupal.Classes.FullyQualifiedNamespace">
     <exclude-pattern>tests/*</exclude-pattern>
   </rule>
-  <rule ref="Drupal.Classes.ClassFileName.NoMatch">
+  <rule ref="Drupal.Classes.ClassFileName">
     <exclude-pattern>tests/*</exclude-pattern>
   </rule>
 
@@ -74,7 +80,7 @@
        config schema instead of declaring the schema. Scoped to the two
        existing offenders rather than to tests/*, so a new test that disables
        it still fails. -->
-  <rule ref="DrupalPractice.Objects.StrictSchemaDisabled.StrictConfigSchema">
+  <rule ref="DrupalPractice.Objects.StrictSchemaDisabled">
     <exclude-pattern>tests/src/Kernel/ScoltaSettingsFormKernelTest.php</exclude-pattern>
     <exclude-pattern>tests/src/Kernel/ScoltaAiServiceConfigMappingKernelTest.php</exclude-pattern>
   </rule>
