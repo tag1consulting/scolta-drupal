@@ -144,8 +144,8 @@ class ScoltaCommands extends DrushCommands {
    */
   #[CLI\Command(name: 'scolta:build', aliases: ['sb'])]
   #[CLI\Option(name: 'entity-type', description: 'Entity type to export')]
-  #[CLI\Option(name: 'bundle', description: 'Bundle to export')]
-  #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build to exactly these entities — the published index contains only them, like --bundle scopes it to a bundle. IDs that cannot be loaded are logged and skipped. PHP indexer only; --bundle is ignored.')]
+  #[CLI\Option(name: 'bundle', description: 'Bundle to index. Scopes the build: it gathers only this bundle. A build cannot republish pages it did not gather, so if the index already holds pages outside the scope the build refuses rather than dropping them — use this only on a site whose index is meant to hold this bundle alone.')]
+  #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build to exactly these entities, the same way --bundle scopes it to a bundle, so the same refusal applies: on a site whose index holds anything else, the build stops and leaves the published index in place. To reindex a few entities on a full site, queue them instead — the queue applies small changes incrementally. IDs that cannot be loaded are logged and skipped. PHP indexer only; --bundle is ignored.')]
   #[CLI\Option(name: 'output-dir', description: 'Export directory')]
   #[CLI\Option(name: 'docroot', description: 'Docroot path')]
   #[CLI\Option(name: 'skip-pagefind', description: 'Export content only, skip Pagefind build')]
@@ -313,7 +313,19 @@ class ScoltaCommands extends DrushCommands {
     $resume = (bool) ($options['resume'] ?? FALSE);
     $restart = (bool) ($options['restart'] ?? FALSE);
 
-    $intent = BuildIntentFactory::fromFlags($resume, $restart, $totalCount, $budget);
+    // Anything that narrows the gather makes this a partial build, and the
+    // orchestrator has to be told: several of its stages read "this build
+    // never yielded that page" as "that page was deleted at the source". On
+    // production a `--bundle=tntl` build gathered 1,518 pages and released the
+    // other ~14,600 ledger rows on exactly that inference, publishing an index
+    // of 16,166 fragments with 1,518 live pages. See
+    // BuildIntent::withPartialScope().
+    //
+    // --resume is not passed through: a resumed segment inherits the scope the
+    // manifest recorded when the build was started.
+    $scoped = $entityIds !== NULL || $bundle !== '';
+
+    $intent = BuildIntentFactory::fromFlags($resume, $restart, $totalCount, $budget, partial: $scoped);
 
     $reporter = new DrushProgressReporter($this->output());
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
@@ -366,6 +378,18 @@ class ScoltaCommands extends DrushCommands {
     if ($report->success) {
       $this->reportBuildSuccess($report, $resolvedOutputDir);
       return;
+    }
+
+    // A refusal is not a failure of the indexer; it is the guard working. The
+    // published index is untouched, so say what happened and what to do rather
+    // than reporting a broken build.
+    if (str_starts_with((string) $report->error, 'scoped build refused')) {
+      throw new \RuntimeException(sprintf(
+        "This build was scoped%s, and %s\n"
+        . 'Run `drush scolta:build` with no scoping options to rebuild the whole index.',
+        $entityIds !== NULL ? ' with --entity-ids' : ' with --bundle=' . $bundle,
+        $report->error,
+      ));
     }
 
     if ($report->error === 'index_only_complete') {
