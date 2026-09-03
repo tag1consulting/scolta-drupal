@@ -175,7 +175,7 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
     $modified['scoring']['title_match_boost'] = 5.0;
     $modified['display']['results_per_page'] = 42;
     $modified['display']['excerpt_length'] = 999;
-    $modified['ai_expand_query'] = false;
+    $modified['ai_expand_query'] = FALSE;
     $modified['max_follow_ups'] = 7;
 
     $modifiedConfig = $this->realGetConfig($modified);
@@ -208,7 +208,7 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
 
     // Disabled.
     $modified = $defaults;
-    $modified['ai_expand_query'] = false;
+    $modified['ai_expand_query'] = FALSE;
     $modifiedConfig = $this->realGetConfig($modified);
     $this->assertFalse($modifiedConfig->aiExpandQuery);
   }
@@ -220,7 +220,7 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
     $this->assertTrue($defaultConfig->aiSummarize);
 
     $modified = $defaults;
-    $modified['ai_summarize'] = false;
+    $modified['ai_summarize'] = FALSE;
     $modifiedConfig = $this->realGetConfig($modified);
     $this->assertFalse($modifiedConfig->aiSummarize);
   }
@@ -486,7 +486,7 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
   public function testShowAttributionTrueFlowsToScoltaConfig(): void {
     $defaults = $this->getInstallDefaults();
     $modified = $defaults;
-    $modified['show_attribution'] = true;
+    $modified['show_attribution'] = TRUE;
     $config = $this->realGetConfig($modified);
     $this->assertTrue(
       $config->showAttribution,

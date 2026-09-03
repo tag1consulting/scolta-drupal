@@ -30,20 +30,20 @@ namespace Drupal\Core\Queue {
     if (!class_exists(QueueWorkerBase::class)) {
         abstract class QueueWorkerBase {
             public function __construct(
-                protected array $configuration,
-                protected $pluginId,
-                protected $pluginDefinition,
-            ) {}
+    protected array $configuration,
+    protected $pluginId,
+    protected $pluginDefinition,
+    ) {}
         }
     }
     if (!class_exists(SuspendQueueException::class)) {
         class SuspendQueueException extends \RuntimeException {
             public function __construct(
-                string $message = '',
-                int $code = 0,
-                ?\Throwable $previous = null,
-                public readonly float $delay = 0.0,
-            ) {
+    string $message = '',
+    int $code = 0,
+    ?\Throwable $previous = null,
+    public readonly float $delay = 0.0,
+    ) {
                 parent::__construct($message, $code, $previous);
             }
         }
@@ -483,29 +483,29 @@ namespace Drupal\Core\Cache {
 
 namespace Drupal\scolta\Tests {
 
-    use PHPUnit\Framework\TestCase;
+  use PHPUnit\Framework\TestCase;
 
-    /**
-     * This file's real job is the stub declarations above; this asserts it.
-     *
-     * PHPUnit's default `<directory>` suite collection only requires files
-     * matching the "Test.php" suffix, so the shared stubs need one here to be
-     * loaded before any test that needs them runs. The assertion below is a
-     * canary: if it ever fails, something upstream (a real drupal/core now
-     * being present, or a stub definition removed) changed the assumption
-     * every other test file in this suite relies on.
-     */
-    class CoreStubsTest extends TestCase {
+  /**
+   * This file's real job is the stub declarations above; this asserts it.
+   *
+   * PHPUnit's default `<directory>` suite collection only requires files
+   * matching the "Test.php" suffix, so the shared stubs need one here to be
+   * loaded before any test that needs them runs. The assertion below is a
+   * canary: if it ever fails, something upstream (a real drupal/core now
+   * being present, or a stub definition removed) changed the assumption
+   * every other test file in this suite relies on.
+   */
+  class CoreStubsTest extends TestCase {
 
-        public function testStubbedClassesResolve(): void {
-            $this->assertTrue(interface_exists(\Drupal\Core\Config\ConfigFactoryInterface::class));
-            $this->assertTrue(interface_exists(\Drupal\Core\Entity\EntityTypeManagerInterface::class));
-            $this->assertTrue(interface_exists(\Drupal\Core\Routing\UrlGeneratorInterface::class));
-            $this->assertTrue(interface_exists(\Drupal\Core\State\StateInterface::class));
-            $this->assertTrue(class_exists(\Drupal\Core\Block\BlockBase::class));
-            $this->assertTrue(class_exists(\Drupal\Core\Access\AccessResult::class));
-        }
-
+    public function testStubbedClassesResolve(): void {
+      $this->assertTrue(interface_exists(\Drupal\Core\Config\ConfigFactoryInterface::class));
+      $this->assertTrue(interface_exists(\Drupal\Core\Entity\EntityTypeManagerInterface::class));
+      $this->assertTrue(interface_exists(\Drupal\Core\Routing\UrlGeneratorInterface::class));
+      $this->assertTrue(interface_exists(\Drupal\Core\State\StateInterface::class));
+      $this->assertTrue(class_exists(\Drupal\Core\Block\BlockBase::class));
+      $this->assertTrue(class_exists(\Drupal\Core\Access\AccessResult::class));
     }
+
+  }
 
 }

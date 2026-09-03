@@ -256,7 +256,10 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
 
     // Two edits enqueue two requests.
     $first = Node::load($this->nids[1]);
-    $first->set('body', ['value' => 'First edit about narwhals, written at length so the exporter minimum content length is comfortably cleared.', 'format' => 'plain_text']);
+    $first->set('body', [
+      'value' => 'First edit about narwhals, written at length so the exporter minimum content length is comfortably cleared.',
+      'format' => 'plain_text',
+    ]);
     $first->save();
 
     $covered = $queue->numberOfItems();
@@ -266,8 +269,11 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
 
     // Claim and fold everything currently queued, exactly as processItem does.
     $claimed = [];
-    $changeSet = $worker->exposedCollectChangeSet(['type' => 'auto', 'op' => 'update',
-      'entity_type' => 'node', 'entity_id' => $this->nids[1],
+    $changeSet = $worker->exposedCollectChangeSet([
+      'type' => 'auto',
+      'op' => 'update',
+      'entity_type' => 'node',
+      'entity_id' => $this->nids[1],
       'item_ids' => [(string) $this->nids[1]],
     ], $claimed);
     $this->assertTrue($changeSet['targeted']);
@@ -275,7 +281,10 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
 
     // An edit lands *after* the claim — this is the mid-build edit.
     $second = Node::load($this->nids[2]);
-    $second->set('body', ['value' => 'Second edit about quokkas, written at length so the exporter minimum content length is comfortably cleared.', 'format' => 'plain_text']);
+    $second->set('body', [
+      'value' => 'Second edit about quokkas, written at length so the exporter minimum content length is comfortably cleared.',
+      'format' => 'plain_text',
+    ]);
     $second->save();
 
     // The run completes and deletes only what it claimed.
@@ -299,7 +308,10 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
    */
   public function testTargetedEditUsesTheIncrementalPath(): void {
     $node = Node::load($this->nids[9]);
-    $node->set('body', ['value' => 'Body rewritten for the routing check, mentioning tapirs, and long enough to clear the exporter minimum content length.', 'format' => 'plain_text']);
+    $node->set('body', [
+      'value' => 'Body rewritten for the routing check, mentioning tapirs, and long enough to clear the exporter minimum content length.',
+      'format' => 'plain_text',
+    ]);
     $node->save();
 
     $this->drainOneQueueItem();
@@ -318,7 +330,10 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
 
     foreach ([13, 14, 15, 16] as $index) {
       $node = Node::load($this->nids[$index]);
-      $node->set('body', ['value' => 'Bulk edit ' . $index . ' about lemurs, written at length so the exporter minimum content length is comfortably cleared.', 'format' => 'plain_text']);
+      $node->set('body', [
+        'value' => 'Bulk edit ' . $index . ' about lemurs, written at length so the exporter minimum content length is comfortably cleared.',
+        'format' => 'plain_text',
+      ]);
       // The full-build path asks the timestamp manifest what to re-read, and
       // the whole test process shares one frozen REQUEST_TIME, so setUp()'s
       // build and these edits would record the identical `changed` value and
@@ -374,6 +389,7 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
       ->createInstance('scolta_rebuild');
 
     return new class($worker) {
+
       public function __construct(private readonly object $worker) {}
 
       public function exposedCollectChangeSet($data, array &$claimed): array {
@@ -386,6 +402,7 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
         $method = new \ReflectionMethod($this->worker, 'deleteClaimed');
         $method->invoke($this->worker, $claimed);
       }
+
     };
   }
 

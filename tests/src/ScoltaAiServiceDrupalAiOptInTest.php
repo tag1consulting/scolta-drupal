@@ -191,7 +191,11 @@ namespace Drupal\scolta\Tests {
         $logger = $this->spyLogger();
         $service = $this->service($provider, $manager, $logger);
 
-        $result = $this->invoke($service, 'tryFrameworkConversation', ['system', [['role' => 'user', 'content' => 'hi']], 512]);
+        $result = $this->invoke($service, 'tryFrameworkConversation', [
+          'system',
+          [['role' => 'user', 'content' => 'hi']],
+          512,
+        ]);
 
         $this->assertNull($result, "Provider '$provider' must not route through Drupal AI");
         $this->assertSame([], $manager->calls, "Provider '$provider' must never touch the plugin manager");
@@ -248,7 +252,11 @@ namespace Drupal\scolta\Tests {
       $logger = $this->spyLogger();
       $service = $this->service('drupal_ai', $manager, $logger);
 
-      $result = $this->invoke($service, 'tryFrameworkConversation', ['system', [['role' => 'user', 'content' => 'hi']], 512]);
+      $result = $this->invoke($service, 'tryFrameworkConversation', [
+        'system',
+        [['role' => 'user', 'content' => 'hi']],
+        512,
+      ]);
 
       $this->assertSame('GENERATED_TEXT', $result);
       $this->assertContains('createInstance', $manager->calls);
