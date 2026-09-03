@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ## [Unreleased]
 
+### Fixed
+- **`drush scolta:build --bundle=…` and `--entity-ids=…` no longer delete everything outside their scope.** On production a `--bundle=tntl` build gathered 1,518 pages and the orchestrator then released the other ~14,600 rows of the page-table ledger, on the assumption that a page the build did not yield is a page deleted at the source — sound for a build that walks the whole corpus, false for every scoped one. The published index held 16,166 fragments of which 1,518 were live: the site minus one bundle had left the index. The command now declares the scope on the `BuildIntent` (`partial: true` whenever `--bundle` or `--entity-ids` narrows the gather), which stops the release and the manifest pruning; a scoped build whose scope does not cover the whole index refuses with a message naming how many pages were out of scope, and the previously published index keeps serving. A site whose index is meant to hold one bundle alone is unaffected — its scope covers the ledger, so it publishes as before. Covered by `ScopedBuildKernelTest`. Needs scolta-php ≥ 1.5.0.
+
 ### Added
 - `BodyFieldsKernelTest`: the configurable `body_fields` setting (which field's text gets indexed) had zero test coverage despite a documented incident — a bundle whose prose lives outside the configured list silently drops out of the index, with no error and no log. Covers: default fallback list, a configured non-standard field being used when the default is empty, first-non-empty-field-wins ordering, and the silent-skip case itself.
 
