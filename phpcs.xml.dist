@@ -10,7 +10,20 @@
   <file>scolta.module</file>
   <file>scolta.install</file>
 
-  <rule ref="Drupal"/>
+  <rule ref="Drupal">
+    <!--
+      composer.json allows drupal/coder ^8.3.30 || ^9.0, and Coder 9 deleted
+      this sniff, so a <rule ref> naming it makes phpcs exit 16 with
+      "Referenced sniff does not exist" and check NOTHING on the 9 side. An
+      <exclude name> is ignored when the name is unknown, so it is the form
+      that works across both. What it turns off: two unit tests declare fakes
+      for classes the test environment lacks, in bracketed namespace blocks
+      ahead of the test case that uses them, so the first class in the file is
+      not the one the filename names. Keeping a fake next to its only consumer
+      is worth more than the rule buys, and under Coder 9 there is no rule.
+    -->
+    <exclude name="Drupal.Classes.ClassFileName.NoMatch"/>
+  </rule>
   <rule ref="DrupalPractice"/>
 
   <!-- Allow long lines in tests -->
@@ -57,15 +70,11 @@
   </rule>
 
   <!-- Several unit tests declare their fakes beside the test case, inside
-       bracketed namespace blocks in one file. That trips two sniffs, and
-       phpcbf's fix for the first hoists a use statement to file scope, which
-       lands it outside every namespace block and changes what the file means.
-       Keeping a fake next to its only consumer is worth more than the
-       one-class-per-file rule buys in a test. -->
+       bracketed namespace blocks in one file. phpcbf's fix hoists a use
+       statement to file scope, which lands it outside every namespace block
+       and changes what the file means. Keeping a fake next to its only
+       consumer is worth more than the rule buys in a test. -->
   <rule ref="Drupal.Classes.FullyQualifiedNamespace">
-    <exclude-pattern>tests/*</exclude-pattern>
-  </rule>
-  <rule ref="Drupal.Classes.ClassFileName">
     <exclude-pattern>tests/*</exclude-pattern>
   </rule>
 

@@ -193,7 +193,7 @@ namespace Drupal\scolta\Tests {
 
         $result = $this->invoke($service, 'tryFrameworkConversation', [
           'system',
-        [['role' => 'user', 'content' => 'hi']],
+          [['role' => 'user', 'content' => 'hi']],
           512,
         ]);
 
