@@ -6,14 +6,91 @@
   <arg value="sp"/>
 
   <file>src</file>
+  <file>tests</file>
   <file>scolta.module</file>
   <file>scolta.install</file>
 
-  <rule ref="Drupal"/>
+  <rule ref="Drupal">
+    <!--
+      composer.json allows drupal/coder ^8.3.30 || ^9.0, and Coder 9 deleted
+      this sniff, so a <rule ref> naming it makes phpcs exit 16 with
+      "Referenced sniff does not exist" and check NOTHING on the 9 side. An
+      <exclude name> is ignored when the name is unknown, so it is the form
+      that works across both. What it turns off: two unit tests declare fakes
+      for classes the test environment lacks, in bracketed namespace blocks
+      ahead of the test case that uses them, so the first class in the file is
+      not the one the filename names. Keeping a fake next to its only consumer
+      is worth more than the rule buys, and under Coder 9 there is no rule.
+    -->
+    <exclude name="Drupal.Classes.ClassFileName.NoMatch"/>
+  </rule>
   <rule ref="DrupalPractice"/>
 
   <!-- Allow long lines in tests -->
   <rule ref="Drupal.Files.LineLength">
     <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+
+  <!--
+    What tests/ is held to.
+
+    Everything structural applies as it does to src: indentation, bracket and
+    array spacing, function spacing, uppercase constants, statement alignment.
+    That is the part that makes a test file read like the rest of the codebase,
+    and phpcbf fixes all of it correctly.
+
+    The comment-completeness sniffs are excluded below. Two reasons, in order:
+    running phpcbf over the suite with them enabled DELETED real class
+    docblocks and left a row of dashes in their place, having promoted 40
+    section-divider comments into docblocks of their own; and the 211 test
+    methods it wanted a docblock for would have received an empty one, because
+    test_set_then_get_returns_value already says what the docblock would.
+    Documentation the tool writes for us is worth less than none. A helper's
+    or a class's docblock is still worth writing by hand — nothing here stops
+    that, it just stops the standard demanding boilerplate.
+  -->
+  <rule ref="Drupal.Commenting">
+    <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+  <rule ref="DrupalPractice.Commenting">
+    <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+
+  <!-- These four reference the sniff rather than one of its message codes
+       (…ValidFunctionName, not …ValidFunctionName.ScopeNotCamelCaps). A
+       message code is only referenceable in some Coder versions, and CI
+       resolves a newer one than a local vendor/ may hold: phpcs there exits
+       16 with 'Referenced sniff does not exist' and checks nothing. -->
+
+  <!-- Descriptive test names trip the consecutive-capitals rule
+       (testABundleScopedBuildLeavesTheOtherBundleLive), and the older unit
+       tests use snake_case. Both read better here than camelCase. -->
+  <rule ref="Drupal.NamingConventions.ValidFunctionName">
+    <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+
+  <!-- Several unit tests declare their fakes beside the test case, inside
+       bracketed namespace blocks in one file. phpcbf's fix hoists a use
+       statement to file scope, which lands it outside every namespace block
+       and changes what the file means. Keeping a fake next to its only
+       consumer is worth more than the rule buys in a test. -->
+  <rule ref="Drupal.Classes.FullyQualifiedNamespace">
+    <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+
+  <!-- The sniff itself throws on two of these files ("The error originated in
+       the DrupalPractice.Objects.GlobalDrupal sniff on line 102"), which phpcs
+       reports as an Internal.Exception error against the file. -->
+  <rule ref="DrupalPractice.Objects.GlobalDrupal">
+    <exclude-pattern>tests/*</exclude-pattern>
+  </rule>
+
+  <!-- A real finding rather than a convention: both of these disable strict
+       config schema instead of declaring the schema. Scoped to the two
+       existing offenders rather than to tests/*, so a new test that disables
+       it still fails. -->
+  <rule ref="DrupalPractice.Objects.StrictSchemaDisabled">
+    <exclude-pattern>tests/src/Kernel/ScoltaSettingsFormKernelTest.php</exclude-pattern>
+    <exclude-pattern>tests/src/Kernel/ScoltaAiServiceConfigMappingKernelTest.php</exclude-pattern>
   </rule>
 </ruleset>

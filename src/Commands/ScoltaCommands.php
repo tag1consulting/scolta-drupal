@@ -26,6 +26,7 @@ use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
+use Tag1\Scolta\Index\PageTableLedger;
 use Tag1\Scolta\Index\RetiredIndexTrash;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 use Tag1\Scolta\SetupCheck;
@@ -142,11 +143,20 @@ class ScoltaCommands extends DrushCommands {
    * Runs export -> pagefind CLI -> copies search page to docroot.
    * When using the PHP indexer, content is processed in-memory without
    * exporting HTML files or invoking the Pagefind binary.
+   *
+   * Scoped builds: --bundle and --entity-ids narrow what the build gathers,
+   * not what it publishes. A build merges the pages it gathered into a whole
+   * new index and cannot carry over a page it never looked at, so a scoped
+   * build is a way to build an index holding only that scope — not a way to
+   * refresh part of a larger one. If the index already holds pages outside
+   * the scope, the build stops before publishing and the index that was
+   * already serving stays in place. To reflect an edit to a few nodes, save
+   * them and let cron apply the change incrementally.
    */
   #[CLI\Command(name: 'scolta:build', aliases: ['sb'])]
   #[CLI\Option(name: 'entity-type', description: 'Entity type to export')]
-  #[CLI\Option(name: 'bundle', description: 'Bundle to export')]
-  #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build to exactly these entities — the published index contains only them, like --bundle scopes it to a bundle. IDs that cannot be loaded are logged and skipped. PHP indexer only; --bundle is ignored.')]
+  #[CLI\Option(name: 'bundle', description: 'Bundle to index. Scopes the build; see the help text above')]
+  #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build; see the help text above. Unloadable IDs are logged and skipped. PHP indexer only; --bundle is ignored')]
   #[CLI\Option(name: 'output-dir', description: 'Export directory')]
   #[CLI\Option(name: 'docroot', description: 'Docroot path')]
   #[CLI\Option(name: 'skip-pagefind', description: 'Export content only, skip Pagefind build')]
@@ -314,7 +324,19 @@ class ScoltaCommands extends DrushCommands {
     $resume = (bool) ($options['resume'] ?? FALSE);
     $restart = (bool) ($options['restart'] ?? FALSE);
 
-    $intent = BuildIntentFactory::fromFlags($resume, $restart, $totalCount, $budget);
+    // Anything that narrows the gather makes this a partial build, and the
+    // orchestrator has to be told: several of its stages read "this build
+    // never yielded that page" as "that page was deleted at the source". On
+    // production a `--bundle=tntl` build gathered 1,518 pages and released the
+    // other ~14,600 ledger rows on exactly that inference, publishing an index
+    // of 16,166 fragments with 1,518 live pages. See
+    // BuildIntent::withPartialScope().
+    //
+    // --resume is not passed through: a resumed segment inherits the scope the
+    // manifest recorded when the build was started.
+    $scoped = $entityIds !== NULL || $bundle !== '';
+
+    $intent = BuildIntentFactory::fromFlags($resume, $restart, $totalCount, $budget, partial: $scoped);
 
     $reporter = new DrushProgressReporter($this->output());
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
@@ -367,6 +389,31 @@ class ScoltaCommands extends DrushCommands {
     if ($report->success) {
       $this->reportBuildSuccess($report, $resolvedOutputDir);
       return;
+    }
+
+    // A refusal is not a failure of the indexer; it is the guard working. The
+    // published index is untouched, so say what happened and what to do rather
+    // than reporting a broken build.
+    //
+    // Deliberately does not offer --force: that governs what a build READS
+    // (reload every entity, trust nothing cached) and not what it gathers, so
+    // a scoped --force build gathers the same subset and is refused the same
+    // way. Suggesting it would send an operator round the loop again.
+    if (str_starts_with((string) $report->error, 'scoped build refused')) {
+      throw new \RuntimeException(sprintf(
+        "This build was scoped%s, and %s\n\n"
+        . "To refresh the whole index, re-run with no scoping options:\n"
+        . "  drush scolta:build\n\n"
+        . "To reflect an edit to a few entities, no command is needed — saving an\n"
+        . "entity queues it and cron applies the change to the published index.\n\n"
+        . "To narrow the index to this scope for good, the page-table ledger has to\n"
+        . "go first, because it is what still holds the out-of-scope pages. Delete\n"
+        . "%s and re-run the scoped build; it will renumber every page, so every\n"
+        . 'fragment URL changes and visitors refetch the index.',
+        $entityIds !== NULL ? ' with --entity-ids' : ' with --bundle=' . $bundle,
+        $report->error,
+        $resolvedStateDir . '/' . PageTableLedger::FILENAME,
+      ));
     }
 
     if ($report->error === 'index_only_complete') {

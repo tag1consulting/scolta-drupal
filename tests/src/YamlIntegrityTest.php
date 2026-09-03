@@ -111,7 +111,7 @@ class YamlIntegrityTest extends TestCase {
     ];
 
     foreach ($mapping as $key => $schemaDef) {
-      $type = $schemaDef['type'] ?? null;
+      $type = $schemaDef['type'] ?? NULL;
       if ($type && isset($typeChecks[$type]) && array_key_exists($key, $install)) {
         $check = $typeChecks[$type];
         $this->assertTrue(

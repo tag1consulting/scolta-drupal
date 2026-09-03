@@ -110,7 +110,7 @@ class AiEndpointFloodFunctionalTest extends BrowserTestBase {
       ->set('flood.ai_global_limit', 0)
       ->save();
 
-    foreach (range(1, 4) as $i) {
+    for ($attempt = 0; $attempt < 4; $attempt++) {
       $response = $this->makeJsonPost('/api/scolta/v1/followup', ['messages' => []]);
       $this->assertNotEquals(429, $response['status'],
         'With both layers disabled no request may be throttled');

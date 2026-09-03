@@ -66,13 +66,36 @@ drush scolta:build
 | `drush scolta:build --indexer=php` | Use a specific indexer mode (`php`, `binary`, or `auto`) |
 | `drush scolta:build --memory-budget=256M` | Set memory budget (profile name or byte value) |
 | `drush scolta:build --chunk-size=N` | Process N pages per chunk (overrides config) |
-| `drush scolta:build --entity-ids=12,34` | Build an index of only these entities; IDs that cannot be loaded are logged and skipped. `--bundle` is ignored (PHP indexer only) |
+| `drush scolta:build --bundle=article` | Scope the build to one bundle. See **Scoped builds** below — this is not a way to reindex part of a larger index |
+| `drush scolta:build --entity-ids=12,34` | Scope the build to these entities; IDs that cannot be loaded are logged and skipped. `--bundle` is ignored (PHP indexer only). See **Scoped builds** below |
 | `drush scolta:finalize` (`sf`) | Merge chunks into the final search index |
 | `drush scolta:rebuild-index` (`sri`) | Rebuild index from existing exported HTML files |
 | `drush scolta:clear-cache` (`scc`) | Clear expansion and summary caches |
 | `drush scolta:check-setup` (`scs`) | Verify dependencies and configuration |
 | `drush scolta:status` (`sst`) | Show current index, indexer, and AI provider status as YAML |
 | `drush scolta:download-pagefind` (`sdp`) | Download the Pagefind binary for the current platform |
+
+### Scoped builds
+
+`--bundle` and `--entity-ids` narrow what a build *gathers*. They do not narrow
+what it *publishes*: a build merges the pages it gathered into a whole new
+index, and it cannot carry over a page it never looked at — the posting lists
+come from that run alone, and so does every fragment.
+
+So a scoped build is a way to build an index that holds only that scope. It is
+not a way to refresh part of a larger index. If the index already holds pages
+outside the scope, the build stops before publishing and says how many pages
+were out of scope; the index that was already serving stays in place. (Before
+this check existed, such a build published and the out-of-scope pages were
+dropped from the index.)
+
+What to use instead:
+
+| Goal | Command |
+| --- | --- |
+| Refresh the whole index | `drush scolta:build` |
+| Reflect an edit to a few nodes | Nothing — saving a node queues it, and cron applies the change to the published index in place |
+| Build an index of one bundle only | `drush scolta:build --bundle=article`, every time, so the scope and the index agree |
 
 ## Large Corpora and Shared Hosting
 

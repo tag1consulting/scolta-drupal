@@ -35,7 +35,7 @@ class DrupalConfigStorageTest extends TestCase {
    * A minimal array-backed StateInterface, standing in for KeyValue storage.
    */
   private function fakeState(): StateInterface {
-    return new class implements StateInterface {
+    return new class() implements StateInterface {
       private array $data = [];
 
       public function get($key, $default = NULL) {
@@ -71,6 +71,7 @@ class DrupalConfigStorageTest extends TestCase {
       public function getValuesSetDuringRequest(string $key): ?array {
         return NULL;
       }
+
     };
   }
 
