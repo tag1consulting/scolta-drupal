@@ -107,6 +107,7 @@ namespace Drupal\scolta\Tests {
           $this->createInstanceArgs[] = $pluginId;
           $recorder = $this;
           return new class($recorder) {
+
             public function __construct(private object $recorder) {}
 
             public function setConfiguration(array $configuration): void {
@@ -117,17 +118,23 @@ namespace Drupal\scolta\Tests {
             public function chat(object $input, mixed $model, array $tags): object {
               $this->recorder->chatCalls[] = ['model' => $model, 'tags' => $tags];
               return new class {
+
                 public function getNormalized(): object {
                   return new class {
+
                     public function getText(): string {
                       return 'GENERATED_TEXT';
                     }
+
                   };
                 }
+
               };
             }
+
           };
         }
+
       };
     }
 
