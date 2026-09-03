@@ -13,6 +13,7 @@ use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Progress\DrushProgressReporter;
 use Drupal\scolta\Service\IndexLocator;
+use Drupal\scolta\Service\ResumeChainPolicy;
 use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
@@ -587,6 +588,7 @@ class ScoltaCommands extends DrushCommands {
 
     $pagesBefore = $firstReport->pagesProcessed;
     $segment = 0;
+    $policy = new ResumeChainPolicy(ini_get('memory_limit') ?: NULL);
 
     while ($segment < self::MAX_RESUME_SEGMENTS) {
       $segment++;
@@ -595,25 +597,21 @@ class ScoltaCommands extends DrushCommands {
         ['pages' => $pagesBefore, 'n' => $segment],
       );
 
+      $this->clearSegmentOutcome($stateDir);
       $exitCode = $this->runForeground($cmd);
       if ($exitCode === 0) {
         $this->confirmChainComplete($outputDir, $segment);
         return;
       }
 
-      // A non-zero segment either failed outright or hit the limit again. The
-      // difference is whether it committed anything, and the manifest is the
-      // only witness both processes share.
+      // Every failure exits non-zero, so exit status alone cannot say whether
+      // the segment yielded on memory pressure and wants another one or found
+      // the build broken and wants the chain to stop. The segment records
+      // which it was; ResumeChainPolicy turns that record into the decision.
       $pagesNow = $this->pagesCommitted($stateDir);
-      if ($pagesNow <= $pagesBefore) {
-        throw new \RuntimeException(sprintf(
-          'The build stalled at %d pages: segment %d committed nothing before hitting the memory limit again. '
-          . 'The index has not been republished. Raise PHP memory_limit (currently %s) or lower --chunk-size, '
-          . 'then re-run with --restart.',
-          $pagesNow,
-          $segment,
-          ini_get('memory_limit') ?: 'unknown',
-        ));
+      $reason = $policy->failureReason($this->segmentOutcome($stateDir), $pagesNow, $pagesBefore, $segment);
+      if ($reason !== NULL) {
+        throw new \RuntimeException($reason);
       }
       $pagesBefore = $pagesNow;
     }
@@ -649,6 +647,33 @@ class ScoltaCommands extends DrushCommands {
     fclose($pipes[2]);
 
     return proc_close($handle);
+  }
+
+  /**
+   * How the last segment reported it ended, or NULL if it never reported.
+   *
+   * @return array|null
+   *   The outcome BuildState recorded, or NULL when none is readable.
+   */
+  private function segmentOutcome(string $stateDir): ?array {
+    try {
+      return (new BuildState($stateDir))->readOutcome();
+    }
+    catch (\Throwable) {
+      return NULL;
+    }
+  }
+
+  /**
+   * Drop any outcome on disk so the next segment's silence reads as silence.
+   */
+  private function clearSegmentOutcome(string $stateDir): void {
+    try {
+      (new BuildState($stateDir))->clearOutcome();
+    }
+    catch (\Throwable) {
+      // A state dir this cannot open is one the segment will fail on anyway.
+    }
   }
 
   /**
