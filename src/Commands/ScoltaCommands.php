@@ -1012,9 +1012,26 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Usage(name: 'scolta:cleanup --dry-run', description: 'Show what would be deleted')]
   public function cleanup(array $options = ['dry-run' => FALSE]): void {
     $config = $this->configFactory->get('scolta.settings');
-    $outputDir = rtrim($this->resolvePath(
-      $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind'
-    ), '/');
+    $configuredDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
+    $outputDir = $this->resolvePath($configuredDir);
+    // resolvePath() hands back the URI it was given when the wrapper is
+    // missing or has no real path — a private:// output dir on a site with no
+    // private file system, say. Handing that to RetiredIndexTrash gets an
+    // `InvalidArgumentException: Stream wrappers are not allowed in file paths`
+    // out of scolta-php's FilesystemDriver, which names neither the setting at
+    // fault nor its value. hook_cron() already refuses to run on a directory it
+    // could not resolve; this is the same refusal, said out loud.
+    //
+    // The test is "resolution changed nothing", not "the result has a
+    // scheme": a wrapper may resolve to another stream (KernelTestBase's
+    // public:// resolves to vfs://). Only the unresolved value is a problem.
+    if ($outputDir === $configuredDir && str_contains($configuredDir, '://')) {
+      throw new \RuntimeException(sprintf(
+        'Could not resolve pagefind.output_dir (%s) to a filesystem path, so no retired index directory can be found or deleted. Check that the stream wrapper it names is available on this site.',
+        $configuredDir
+      ));
+    }
+    $outputDir = rtrim($outputDir, '/');
     // The orchestrator publishes to <output_dir>/pagefind and normalizes a
     // config value that already carries the suffix; trash sits beside the
     // published directory, so mirror that normalization here.
