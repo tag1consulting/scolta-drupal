@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Kernel;
 
-use Drupal\Core\File\FileSystemInterface;
 use Drupal\KernelTests\KernelTestBase;
 
 /**
@@ -15,11 +14,19 @@ use Drupal\KernelTests\KernelTestBase;
  * cron is the backstop for builds that died before their own sweep and for
  * the batch-UI path, which never sweeps. Cron runs by calling the 'cron'
  * service directly, in-process — no HTTP request is involved, so this needs
- * only a real container and a real public:// filesystem, both of which
- * KernelTestBase provides. (Not CronRunTrait's cronRun(): that always calls
- * drupalGet(), which needs the HttpKernelUiHelperTrait KernelTestBase only
- * pulls in as of Drupal 11 — calling the service directly works identically
- * on Drupal 10, our lowest-supported core.)
+ * only a real container and a writable directory. (Not CronRunTrait's
+ * cronRun(): that always calls drupalGet(), which needs the
+ * HttpKernelUiHelperTrait KernelTestBase only pulls in as of Drupal 11 —
+ * calling the service directly works identically on Drupal 10, our
+ * lowest-supported core.)
+ *
+ * The output dir is a real temp path, not public://. Under public:// neither
+ * half of this test could fail: KernelTestBase mounts it on vfsStream, so
+ * scolta_cron() resolved it to a vfs:// URI that scolta-php's FilesystemDriver
+ * rejects outright (`Stream wrappers are not allowed in file paths`) — cron
+ * swallowed that exception and swept nothing — while glob(), which does not
+ * work through stream wrappers, reported no trash whether or not any existed.
+ * Both assertions passed with the sweep deleted from scolta.module entirely.
  *
  * @group scolta
  */
@@ -31,19 +38,24 @@ class CronCleanupKernelTest extends KernelTestBase {
   protected static $modules = ['system', 'user', 'search_api', 'scolta'];
 
   /**
+   * A real filesystem directory standing in for the published index location.
+   *
+   * @var string
+   */
+  private string $outputDir;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
     $this->installConfig(['scolta']);
-    // public:// needs a real writable directory; KernelTestBase points it at
-    // a directory under the test's own site path. prepareDirectory() takes
-    // its path argument by reference.
-    $dir = $this->outputDir();
-    \Drupal::service('file_system')->prepareDirectory(
-      $dir,
-      FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS
-    );
+
+    $this->outputDir = sys_get_temp_dir() . '/scolta-cron-cleanup-test-' . uniqid();
+    mkdir($this->outputDir, 0755, TRUE);
+    $this->config('scolta.settings')
+      ->set('pagefind.output_dir', $this->outputDir)
+      ->save();
   }
 
   /**
@@ -54,10 +66,10 @@ class CronCleanupKernelTest extends KernelTestBase {
   }
 
   /**
-   * The default pagefind.output_dir, resolved to a real path.
+   * The directory cron sweeps trash from.
    */
   private function outputDir(): string {
-    return \Drupal::config('scolta.settings')->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
+    return $this->outputDir;
   }
 
   /**
