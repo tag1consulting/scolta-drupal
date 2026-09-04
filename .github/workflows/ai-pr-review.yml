@@ -252,8 +252,22 @@ jobs:
           # --- Analyzer / agent filtering (Python engine) ---
           # These are forwarded to rescan and review-full via the slash-commands job below
           # so both paths honor the same filtering without manual duplication.
+          #
+          # phpcs and phpstan are off by default here because ci.yml already runs
+          # both properly: `./vendor/bin/phpcs` in the lint cell of the unit
+          # matrix, and `./vendor/bin/phpstan analyse` in the phpstan job, each
+          # after a real composer install and against this repo's own config.
+          # The reviewer's copies have neither. Its phpstan sees no Drupal
+          # autoloader, so every kernel test yields "extends unknown class
+          # Drupal\KernelTests\KernelTestBase"; its phpcs ignores
+          # phpcs.xml.dist and grades against bare Drupal+DrupalPractice, so it
+          # reports rules the ruleset deliberately excludes — Drupal.Commenting
+          # is off for tests/*, and a test docblock tripped ShortNotCapital at
+          # High severity while `./vendor/bin/phpcs` was clean. On #274 that was
+          # 12 in-diff findings, all of them artifacts, plus 69 out-of-diff.
+          # Override with the AI_REVIEW_EXCLUDE_ANALYZERS repo variable.
           analyzers: ${{ vars.AI_REVIEW_ANALYZERS || '' }}
-          exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || '' }}
+          exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || 'phpcs,phpstan' }}
           agents: ${{ vars.AI_REVIEW_AGENTS || '' }}
           exclude-agents: ${{ vars.AI_REVIEW_EXCLUDE_AGENTS || '' }}
 
@@ -308,8 +322,10 @@ jobs:
       # --- Analyzer / agent filtering (Python engine) ---
       # Forwarded to rescan and review-full to keep them in sync with the
       # main review above. Set the repo variables once, both paths stay aligned.
+      # The phpcs/phpstan default matches the review job above; see the comment
+      # there for why. A rescan must not resurrect what the review job skips.
       analyzers: ${{ vars.AI_REVIEW_ANALYZERS || '' }}
-      exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || '' }}
+      exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || 'phpcs,phpstan' }}
       agents: ${{ vars.AI_REVIEW_AGENTS || '' }}
       exclude-agents: ${{ vars.AI_REVIEW_EXCLUDE_AGENTS || '' }}
     secrets:
