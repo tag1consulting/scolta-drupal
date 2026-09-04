@@ -1027,12 +1027,21 @@ class ScoltaCommands extends DrushCommands {
     // A `.scolta-old` corpse from an interrupted swap becomes trash too. If a
     // swap is retiring the previous index this very moment, taking the
     // directory out from under it is harmless — it was headed to trash anyway.
+    //
+    // Not under --dry-run: retire() renames the directory, and an operator
+    // running a dry run to decide whether to run the real thing has been told
+    // the option deletes nothing. It is reported as pending instead.
     $oldDir = $outputDir . '/.scolta-old';
-    if (file_exists($oldDir)) {
+    $oldDirPending = file_exists($oldDir);
+    if ($oldDirPending && !$options['dry-run']) {
       $trash->retire($oldDir);
     }
 
     $dirs = $trash->trashDirs();
+    if ($oldDirPending && $options['dry-run']) {
+      $dirs[] = $oldDir;
+    }
+
     if ($dirs === []) {
       $this->logger()->success('No retired index directories to delete.');
       return;
