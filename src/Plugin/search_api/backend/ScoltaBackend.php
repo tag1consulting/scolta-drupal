@@ -307,7 +307,12 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
     }
 
     if (!empty($missing)) {
-      $this->scoltaLogger->warning('No exported file found for @missing of @total item(s) removed from index @index. They were either never exported, or their file sits under a path the export manifest in @dir does not record — in which case it is still there for Pagefind to index. Item IDs: @ids', [
+      // Two states produce a miss and the delete path cannot tell them
+      // apart: the item was never exported (exportItem() skips entities that
+      // render to empty content, and indexItems() still reports them indexed
+      // so Search API does not retry them forever), or it was exported before
+      // the manifest existed and its HTML is still on disk unrecorded.
+      $this->scoltaLogger->warning('No exported file found for @missing of @total item(s) removed from index @index. Either the item was never exported because it had no renderable content at index time, or it was exported before the export manifest in @dir existed — in which case its HTML is still there for Pagefind to index until the index is rebuilt. Item IDs: @ids', [
         '@missing' => count($missing),
         '@total' => count($item_ids),
         '@index' => $index->id(),

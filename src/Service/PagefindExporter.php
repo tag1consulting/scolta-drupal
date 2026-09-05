@@ -132,7 +132,7 @@ class PagefindExporter {
    * @throws \RuntimeException
    *   If the manifest cannot be written.
    *
-   * @since 1.4.0
+   * @since 1.4.1
    * @stability experimental
    */
   public function writeManifest(string $buildDir): void {
