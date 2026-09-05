@@ -273,6 +273,13 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
       }
     }
 
+    if (!empty($indexed)) {
+      // Record where the batch landed before anything else can fail. Without
+      // the manifest the nested export paths cannot be recovered from an item
+      // ID, and deleting these items later would leave their HTML in place.
+      $this->writeExportManifest($buildDir);
+    }
+
     if (!empty($indexed) && $this->configuration['auto_rebuild']) {
       if (!$this->triggerRebuild()) {
         throw new \RuntimeException('Pagefind binary build failed after indexing items. The HTML files were exported but the search index was not updated. Check the Scolta logs for details.');
@@ -287,13 +294,52 @@ class ScoltaBackend extends BackendPluginBase implements PluginFormInterface {
    */
   public function deleteItems(IndexInterface $index, array $item_ids): void {
     $buildDir = $this->getResolvedBuildDir();
+    $missing = [];
 
     foreach ($item_ids as $id) {
-      $this->exporter->deleteItem($id, $buildDir);
+      if (!$this->exporter->deleteItem($id, $buildDir)) {
+        $missing[] = $id;
+      }
+    }
+
+    if (!empty($item_ids)) {
+      $this->writeExportManifest($buildDir);
+    }
+
+    if (!empty($missing)) {
+      $this->scoltaLogger->warning('No exported file found for @missing of @total item(s) removed from index @index. They were either never exported, or their file sits under a path the export manifest in @dir does not record — in which case it is still there for Pagefind to index. Item IDs: @ids', [
+        '@missing' => count($missing),
+        '@total' => count($item_ids),
+        '@index' => $index->id(),
+        '@dir' => $buildDir,
+        '@ids' => implode(', ', $missing),
+      ]);
     }
 
     if ($this->configuration['auto_rebuild']) {
       $this->triggerRebuild();
+    }
+  }
+
+  /**
+   * Persist the exporter's item ID → export path map, logging any failure.
+   *
+   * A manifest that cannot be written is not worth failing an index or delete
+   * operation over — the HTML is already correct on disk — but it does leave
+   * later deletes unable to find their files, so it is logged as an error.
+   *
+   * @param string $buildDir
+   *   The resolved build directory.
+   */
+  protected function writeExportManifest(string $buildDir): void {
+    try {
+      $this->exporter->writeManifest($buildDir);
+    }
+    catch (\Exception $e) {
+      $this->scoltaLogger->error('Failed to write the export manifest in @dir: @message. Deleting indexed items will not remove their exported HTML until a manifest is written.', [
+        '@dir' => $buildDir,
+        '@message' => $e->getMessage(),
+      ]);
     }
   }
 

@@ -30,6 +30,7 @@ namespace Drupal\scolta\Tests {
   use Drupal\Core\Language\LanguageInterface;
   use Drupal\Core\Render\RendererInterface;
   use Drupal\Core\TypedData\ComplexDataInterface;
+  use Drupal\Core\Url;
   use Drupal\scolta\Service\PagefindExporter;
   use Drupal\search_api\Item\ItemInterface;
   use PHPUnit\Framework\TestCase;
@@ -93,6 +94,9 @@ namespace Drupal\scolta\Tests {
       $fileSystem->method('delete')->willReturnCallback(
         static fn (string $path): bool => unlink($path)
       );
+      $fileSystem->method('mkdir')->willReturnCallback(
+        static fn (string $uri, $mode = NULL, $recursive = FALSE, $context = NULL): bool => mkdir($uri, 0755, TRUE)
+      );
 
       return new PagefindExporter($entityTypeManager, $renderer, $fileSystem, new NullLogger());
     }
@@ -110,6 +114,29 @@ namespace Drupal\scolta\Tests {
       $entity = $this->createStub(EntityInterface::class);
       $entity->method('label')->willReturn($label);
       $entity->method('hasLinkTemplate')->willReturn(FALSE);
+      $entity->method('getEntityType')->willReturn($entityType);
+      $entity->method('language')->willReturn($language);
+      $entity->method('getEntityTypeId')->willReturn('node');
+      return $entity;
+    }
+
+    /**
+     * A stub entity with a canonical URL, so exports use the nested layout.
+     */
+    private function createEntityWithUrl(string $url, string $label = 'Hello World'): EntityInterface {
+      $entityType = $this->createStub(EntityTypeInterface::class);
+      $entityType->method('getKey')->willReturn(FALSE);
+
+      $language = $this->createStub(LanguageInterface::class);
+      $language->method('getId')->willReturn('en');
+
+      $urlObject = $this->createStub(Url::class);
+      $urlObject->method('toString')->willReturn($url);
+
+      $entity = $this->createStub(EntityInterface::class);
+      $entity->method('label')->willReturn($label);
+      $entity->method('hasLinkTemplate')->willReturn(TRUE);
+      $entity->method('toUrl')->willReturn($urlObject);
       $entity->method('getEntityType')->willReturn($entityType);
       $entity->method('language')->willReturn($language);
       $entity->method('getEntityTypeId')->willReturn('node');
@@ -278,6 +305,88 @@ namespace Drupal\scolta\Tests {
 
       // No exception is the assertion; the directory is still absent.
       $this->assertDirectoryDoesNotExist($this->tmpDir . '/no-such-dir');
+    }
+
+    // -------------------------------------------------------------------
+    // The export manifest: what makes a nested export deletable at all.
+    // -------------------------------------------------------------------
+
+    public function testAnExportedItemIsDeletableAfterTheManifestIsWritten(): void {
+      $exporter = $this->createExporter();
+      $item = $this->createItem($this->createEntityWithUrl('/node/42'));
+
+      $exporter->exportItem($item, $this->tmpDir);
+      $exporter->writeManifest($this->tmpDir);
+
+      $filepath = $this->tmpDir . '/node/42/index.html';
+      $this->assertFileExists($filepath);
+
+      // A second exporter, holding none of the first one's state, is what a
+      // later request deleting the node actually has: only the manifest on
+      // disk can tell it where the file went.
+      $deleted = $this->createExporter()->deleteItem('entity:node/42:en', $this->tmpDir);
+
+      $this->assertTrue($deleted);
+      $this->assertFileDoesNotExist($filepath);
+    }
+
+    public function testWritingTheManifestKeepsEntriesFromEarlierBatches(): void {
+      // The state an earlier Search API batch left behind: one exported file
+      // and a manifest entry for it.
+      mkdir($this->tmpDir . '/node/7', 0755, TRUE);
+      file_put_contents($this->tmpDir . '/node/7/index.html', '<html></html>');
+      file_put_contents(
+        $this->tmpDir . '/.scolta-export-manifest.json',
+        json_encode(['entity:node/7:en' => 'node/7/index.html'])
+      );
+
+      // This batch exports one more item and writes the manifest again.
+      $exporter = $this->createExporter();
+      $exporter->exportItem($this->createItem($this->createEntityWithUrl('/node/42')), $this->tmpDir);
+      $exporter->writeManifest($this->tmpDir);
+
+      // Both are now deletable. A manifest holding only what this batch
+      // exported would leave node 7's file behind for Pagefind to index.
+      $later = $this->createExporter();
+
+      $this->assertTrue($later->deleteItem('entity:node/42:en', $this->tmpDir));
+      $this->assertTrue($later->deleteItem('entity:node/7:en', $this->tmpDir));
+      $this->assertFileDoesNotExist($this->tmpDir . '/node/42/index.html');
+      $this->assertFileDoesNotExist($this->tmpDir . '/node/7/index.html');
+    }
+
+    public function testDeletingAnItemDropsItFromTheManifest(): void {
+      $exporter = $this->createExporter();
+      $exporter->exportItem($this->createItem($this->createEntityWithUrl('/node/42')), $this->tmpDir);
+      $exporter->writeManifest($this->tmpDir);
+
+      $exporter->deleteItem('entity:node/42:en', $this->tmpDir);
+      $exporter->writeManifest($this->tmpDir);
+
+      $this->assertSame(
+        [],
+        json_decode(file_get_contents($this->tmpDir . '/.scolta-export-manifest.json'), TRUE)
+      );
+    }
+
+    public function testDeleteItemReportsWhenItRemovedNothing(): void {
+      $this->assertFalse(
+        $this->createExporter()->deleteItem('entity:node/42:en', $this->tmpDir),
+        'An item with no exported file must report that nothing was deleted'
+      );
+    }
+
+    public function testDeleteAllRemovesTheManifest(): void {
+      mkdir($this->tmpDir . '/node/1', 0755, TRUE);
+      file_put_contents($this->tmpDir . '/node/1/index.html', '<html></html>');
+      file_put_contents(
+        $this->tmpDir . '/.scolta-export-manifest.json',
+        json_encode(['entity:node/1:en' => 'node/1/index.html'])
+      );
+
+      $this->createExporter()->deleteAll($this->tmpDir);
+
+      $this->assertFileDoesNotExist($this->tmpDir . '/.scolta-export-manifest.json');
     }
 
   }

@@ -1851,6 +1851,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
     foreach ($items as $item) {
       $exporter->export($item);
     }
+    // Safe to replace the manifest wholesale: prepareOutputDir() emptied the
+    // directory, so this run's exports are all of it.
+    $exporter->writeManifest();
 
     // Run Pagefind binary.
     $resolver = new PagefindBinary(

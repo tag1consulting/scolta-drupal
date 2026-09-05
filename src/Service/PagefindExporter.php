@@ -27,6 +27,31 @@ use Tag1\Scolta\Export\ContentExporter;
  */
 class PagefindExporter {
 
+  /**
+   * Name of the export manifest file, as read by ContentExporter.
+   *
+   * ContentExporter::readManifest() looks for this file; its writer is an
+   * instance method that serialises only the paths that one ContentExporter
+   * object exported, and this adapter renders through Drupal rather than
+   * through ContentExporter::export(). So the name is repeated here and the
+   * file is written by writeManifest() below. Keep the two in step.
+   */
+  protected const MANIFEST_FILENAME = '.scolta-export-manifest.json';
+
+  /**
+   * Manifest entries, keyed by build directory then by Search API item ID.
+   *
+   * Seeded from the manifest already on disk the first time a build directory
+   * is touched, then updated by exportItem() and deleteItem(). Search API
+   * hands the backend a batch at a time, so a manifest built only from what
+   * one request exported would drop every item the request did not touch and
+   * leave those pages undeletable; merging into what is already there keeps
+   * the map covering the whole directory.
+   *
+   * @var array<string, array<string, string>>
+   */
+  protected array $manifests = [];
+
   public function __construct(
     protected readonly EntityTypeManagerInterface $entityTypeManager,
     protected readonly RendererInterface $renderer,
@@ -78,35 +103,109 @@ class PagefindExporter {
     if (file_put_contents($filepath, $html) === FALSE) {
       throw new \RuntimeException("Failed to write export file: {$filepath}");
     }
+
+    // Record where this item landed, under the same ID the metadata carries.
+    // Only writeManifest() persists it, so a caller that exports a batch pays
+    // one manifest write for the batch.
+    $dir = rtrim($buildDir, '/');
+    $this->loadManifest($dir);
+    $this->manifests[$dir][$meta['item_id']] = $relativePath;
+  }
+
+  /**
+   * Write the export manifest for a build directory.
+   *
+   * Persists the item ID → export path map that deleteItem() reads. Call it
+   * once after a run of exportItem() or deleteItem() calls; without it the
+   * nested export paths are unrecoverable and deleted content keeps its HTML
+   * file, and so keeps being indexed.
+   *
+   * Entries already on disk are preserved, so this is safe to call after a
+   * partial export. It is not the same contract as
+   * ContentExporter::writeManifest(), which replaces the file with the paths
+   * of one exporter instance and is therefore only correct after a run that
+   * exported the whole directory.
+   *
+   * @param string $buildDir
+   *   Absolute path to the build directory.
+   *
+   * @throws \RuntimeException
+   *   If the manifest cannot be written.
+   *
+   * @since 1.4.0
+   * @stability experimental
+   */
+  public function writeManifest(string $buildDir): void {
+    $dir = rtrim($buildDir, '/');
+    $this->loadManifest($dir);
+    $this->ensureDirectory($dir);
+
+    $manifestPath = $dir . '/' . self::MANIFEST_FILENAME;
+    $json = json_encode($this->manifests[$dir], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- absolute path outside Drupal stream wrappers; saveData() requires a URI scheme.
+    if ($json === FALSE || file_put_contents($manifestPath, $json) === FALSE) {
+      throw new \RuntimeException("Failed to write export manifest: {$manifestPath}");
+    }
+  }
+
+  /**
+   * Seed the in-memory manifest for a build directory from disk, once.
+   *
+   * @param string $dir
+   *   The build directory, without a trailing slash.
+   */
+  protected function loadManifest(string $dir): void {
+    if (!isset($this->manifests[$dir])) {
+      $this->manifests[$dir] = ContentExporter::readManifest($dir);
+    }
   }
 
   /**
    * Delete the HTML file for a given item ID.
    *
-   * Looks up the ID in the export manifest to find the nested path.
-   * Falls back to flat {id}.html for backward compatibility with indexes
-   * built before path-mirroring export.
+   * Looks up the ID in the export manifest to find the nested path. Falls
+   * back to flat {id}.html, the layout exports used before 1.1.0; a directory
+   * exported since then has no such file, so the fallback only ever fires for
+   * an index that has not been rebuilt since.
+   *
+   * The manifest entry is dropped either way. Call writeManifest() afterwards
+   * to persist that.
+   *
+   * @param string $itemId
+   *   The Search API item ID.
+   * @param string $buildDir
+   *   Absolute path to the build directory.
+   *
+   * @return bool
+   *   TRUE if a file was deleted. FALSE means nothing was found to delete:
+   *   the item was never exported, or its file is on disk under a path no
+   *   manifest records, in which case it stays indexable.
    *
    * @since 1.1.0
    * @stability experimental
    */
-  public function deleteItem(string $itemId, string $buildDir): void {
+  public function deleteItem(string $itemId, string $buildDir): bool {
+    $dir = rtrim($buildDir, '/');
+
     // Try manifest-based lookup first (nested directory layout).
-    $manifest = ContentExporter::readManifest($buildDir);
-    if (isset($manifest[$itemId])) {
-      $filepath = rtrim($buildDir, '/') . '/' . $manifest[$itemId];
+    $this->loadManifest($dir);
+    if (isset($this->manifests[$dir][$itemId])) {
+      $filepath = $dir . '/' . $this->manifests[$dir][$itemId];
+      unset($this->manifests[$dir][$itemId]);
       if (file_exists($filepath)) {
         $this->fileSystem->delete($filepath);
-        return;
+        return TRUE;
       }
     }
 
     // Fall back to flat filename for backward compatibility.
-    $filename = $this->itemIdToFilename($itemId);
-    $filepath = rtrim($buildDir, '/') . '/' . $filename;
+    $filepath = $dir . '/' . $this->itemIdToFilename($itemId);
     if (file_exists($filepath)) {
       $this->fileSystem->delete($filepath);
+      return TRUE;
     }
+
+    return FALSE;
   }
 
   /**
@@ -139,6 +238,15 @@ class PagefindExporter {
         $this->fileSystem->delete($file->getPathname());
       }
     }
+
+    // The manifest described the files just removed. Leaving it would have
+    // deleteItem() resolve IDs to paths that no longer exist.
+    $dir = rtrim($buildDir, '/');
+    $manifestPath = $dir . '/' . self::MANIFEST_FILENAME;
+    if (file_exists($manifestPath)) {
+      $this->fileSystem->delete($manifestPath);
+    }
+    $this->manifests[$dir] = [];
   }
 
   /**
