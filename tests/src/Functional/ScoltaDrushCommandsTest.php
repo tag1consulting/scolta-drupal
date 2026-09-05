@@ -55,6 +55,30 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
     $this->assertSame('php', $status['indexer']['active']);
     $this->assertFalse($status['pagefind_index']['built']);
     $this->assertIsInt($status['cache']['generation']);
+    // A fresh site has no recorded Amazee auth failure, but the field must be
+    // reported so an operator does not have to check /health separately to
+    // learn a provider's stored credentials are being rejected.
+    $this->assertArrayHasKey('auth_failing', $status['ai_provider']);
+    $this->assertFalse($status['ai_provider']['auth_failing']);
+    $this->assertNull($status['ai_provider']['auth_failing_since']);
+  }
+
+  /**
+   * scolta:status reports a recorded Amazee auth failure.
+   *
+   * Writes the same cache marker KeyExpiryRecovery records on an
+   * authentication rejection, under the bare key documented in
+   * scolta-php's docs/HEALTH_REFERENCE.md, and confirms status surfaces it
+   * without requiring a separate /health request.
+   */
+  public function testStatusReportsARecordedAuthFailure(): void {
+    $this->container->get('cache.default')->set('scolta_amazee_auth_failure', time());
+
+    $this->drush('scolta:status');
+    $status = Yaml::parse($this->getOutput());
+
+    $this->assertTrue($status['ai_provider']['auth_failing']);
+    $this->assertNotNull($status['ai_provider']['auth_failing_since']);
   }
 
   /**

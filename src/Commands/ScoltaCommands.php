@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\scolta\Cache\DrupalCacheDriver;
 use Drupal\scolta\Progress\DrushProgressReporter;
 use Drupal\scolta\Service\IndexLocator;
 use Drupal\scolta\Service\ResumeChainPolicy;
@@ -20,6 +21,7 @@ use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 use GuzzleHttp\ClientInterface;
 use Symfony\Component\Yaml\Yaml;
+use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Export\ContentExporter;
@@ -1277,6 +1279,19 @@ class ScoltaCommands extends DrushCommands {
       'source' => $resolvedKey->source->value,
       'description' => $resolvedKey->describe(),
     ];
+
+    // The same cache marker /health reads via HealthChecker, so a provider
+    // whose stored credentials are being rejected is reported here too rather
+    // than only surfacing once someone happens to check /health. A cached
+    // marker, not a live probe — see KeyExpiryRecovery and
+    // docs/HEALTH_REFERENCE.md in scolta-php.
+    $cacheDriver = new DrupalCacheDriver($this->cache);
+    $authFailing = (bool) $cacheDriver->get(KeyExpiryRecovery::CACHE_KEY_AUTH_FAILURE);
+    $providerRow['auth_failing'] = $authFailing;
+    $providerRow['auth_failing_since'] = $authFailing
+      ? (($since = KeyExpiryRecovery::readFailureTimestamp($cacheDriver)) !== NULL ? date('c', $since) : NULL)
+      : NULL;
+
     $status['ai_provider'] = $providerRow;
 
     // Generation counter.

@@ -309,6 +309,8 @@ A site installed before this change may already hold the anonymous grant, which 
 
 The health endpoint (`GET /api/scolta/v1/health`) is reachable without any permission so uptime monitors always work, but callers without **Administer Scolta** (`administer scolta`) receive only `{"status": "ok"|"degraded"}`. The full diagnostic payload (AI provider, index integrity, fragment counts) requires `administer scolta`.
 
+The detail payload comes from scolta-php's `HealthChecker::check()`, with Drupal-specific `ai_provider`/`ai_configured` overrides and the `index` field merged on top. This module adds one fault of its own: an index that exists but fails the integrity spot check (`index.integrity.valid: false`, with the specifics in `index.integrity.issues`) reports `status: degraded`. Against a scolta-php that reports `status_reasons` — the list of machine-readable fault keys, empty exactly when the status is `ok`, added in scolta-php 1.5.0 — that failure also appends `index_integrity_invalid` to the list, so the reasons never contradict the status. An older scolta-php produces no `status_reasons` key and the module adds none.
+
 #### Narrowing AI access beyond the permission
 
 A role-level permission cannot express every rule a site needs — a per-user preference, a quota, an entitlement that arrives with a subscription. The `scolta.ai_access` service is the one decision point for all three AI features, and both gates ask it: `ScoltaSearchBlock` before it tells the browser a feature exists, and the endpoint routes before they serve the request the browser then makes. Decorate it to narrow the rule, and the search UI stops offering what the endpoint would refuse.

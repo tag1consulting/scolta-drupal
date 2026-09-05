@@ -151,7 +151,8 @@ class HealthPayloadTrimTest extends TestCase {
     $response = $this->createController(FALSE)->handle();
 
     $payload = json_decode((string) $response->getContent(), TRUE);
-    $this->assertSame(['status' => 'degraded'], $payload, 'Integrity degradation must survive the anonymous trim');
+    $this->assertSame('degraded', $payload['status'] ?? NULL, 'Integrity degradation must survive the anonymous trim');
+    $this->assertArrayHasKey('status', $payload, 'Anonymous payload must contain status');
   }
 
   public function testAdminPayloadContainsFullDetail(): void {
@@ -168,6 +169,7 @@ class HealthPayloadTrimTest extends TestCase {
     $this->assertTrue($payload['index']['integrity']['valid']);
     $this->assertSame([], $payload['index']['integrity']['issues']);
     $this->assertNotNull($payload['index']['last_build']);
+    $this->assertSame([], $payload['status_reasons'], 'A healthy index must leave status_reasons empty');
   }
 
   public function testAdminPayloadReportsMissingIndex(): void {
@@ -188,6 +190,8 @@ class HealthPayloadTrimTest extends TestCase {
     $this->assertSame('degraded', $payload['status']);
     $this->assertFalse($payload['index']['integrity']['valid']);
     $this->assertContains('No fragment files found', $payload['index']['integrity']['issues']);
+    $this->assertArrayHasKey('status_reasons', $payload);
+    $this->assertContains(HealthController::REASON_INDEX_INTEGRITY_INVALID, $payload['status_reasons']);
   }
 
 }
