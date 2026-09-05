@@ -36,6 +36,8 @@ We use DDEV and [a few custom commands](.ddev/commands/web) from the https://git
 
   `ddev poser` should be run instead of `composer install`. `ddev symlink-project` should always follow `ddev poser`.
 
+  Claude Code worktrees are provisioned by `.claude/hooks/worktree-create.sh` (a `WorktreeCreate` hook, registered in `.claude/settings.json`): each new session worktree gets its own DDEV project with `ddev start && ddev poser && ddev symlink-project`, and `.claude/hooks/worktree-remove.sh` runs `ddev delete --omit-snapshot` on removal. Short-lived subagent worktrees (named `agent-*`) skip the DDEV setup.
+
 ### Local cross-package development
 
 To test against un-released scolta-php locally, run `composer config minimum-stability dev && composer require tag1/scolta-php:@dev` (the path repo then supplies the dev build). Both edits are local-only: `minimum-stability` must stay `stable` in the committed `composer.json`, and there is no lock to accidentally commit.

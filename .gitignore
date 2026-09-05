@@ -15,3 +15,8 @@
 # Composer
 /composer.lock
 /.phpunit.result.cache
+
+# Claude Code: track only the shared hooks and settings.
+/.claude/*
+!/.claude/settings.json
+!/.claude/hooks/
