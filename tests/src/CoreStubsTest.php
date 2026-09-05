@@ -243,6 +243,7 @@ namespace Drupal\Core\Entity {
         interface EntityInterface {
             public function label();
             public function hasLinkTemplate($rel);
+            public function toUrl($rel = 'canonical', array $options = []);
             public function getEntityType();
             public function language();
             public function getEntityTypeId();
