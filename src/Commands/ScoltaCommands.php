@@ -130,12 +130,6 @@ class ScoltaCommands extends DrushCommands {
       $exporter->export($item);
     }
 
-    // prepareOutputDir() emptied the directory above, so what this run
-    // exported is the whole of it — the one condition under which
-    // ContentExporter::writeManifest(), which replaces the file rather than
-    // merging into it, describes the complete export.
-    $exporter->writeManifest();
-
     $stats = $exporter->getStats();
     $this->logger()->success("Exported {$stats['exported']} entities to {$outputDir}/");
     if ($stats['skipped'] > 0) {
