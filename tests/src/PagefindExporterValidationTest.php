@@ -355,6 +355,43 @@ namespace Drupal\scolta\Tests {
       $this->assertFileDoesNotExist($this->tmpDir . '/node/7/index.html');
     }
 
+    public function testConcurrentWritersKeepEachOthersEntries(): void {
+      // Two processes share one build directory: a drush indexing run and a
+      // web request indexing a saved node. Each exports, then writes the
+      // manifest; neither may drop what the other recorded.
+      $drush = $this->createExporter();
+      $web = $this->createExporter();
+
+      $drush->exportItem($this->createItem($this->createEntityWithUrl('/node/42')), $this->tmpDir);
+      $web->exportItem($this->createItem($this->createEntityWithUrl('/node/7'), 'entity:node/7:en'), $this->tmpDir);
+      $web->writeManifest($this->tmpDir);
+      $drush->writeManifest($this->tmpDir);
+
+      $later = $this->createExporter();
+      $this->assertTrue($later->deleteItem('entity:node/42:en', $this->tmpDir));
+      $this->assertTrue($later->deleteItem('entity:node/7:en', $this->tmpDir));
+    }
+
+    public function testDeleteItemSeesAnEntryAnotherProcessWroteLater(): void {
+      // A long-running process touched the directory before another process
+      // exported node 7. Its lookup must not be pinned to that earlier view.
+      $longRunning = $this->createExporter();
+      $this->assertFalse($longRunning->deleteItem('entity:node/7:en', $this->tmpDir));
+
+      $other = $this->createExporter();
+      $other->exportItem($this->createItem($this->createEntityWithUrl('/node/7'), 'entity:node/7:en'), $this->tmpDir);
+      $other->writeManifest($this->tmpDir);
+
+      $this->assertTrue($longRunning->deleteItem('entity:node/7:en', $this->tmpDir));
+      $this->assertFileDoesNotExist($this->tmpDir . '/node/7/index.html');
+    }
+
+    public function testWritingTheManifestWithNoChangesWritesNothing(): void {
+      $this->createExporter()->writeManifest($this->tmpDir . '/never-touched');
+
+      $this->assertDirectoryDoesNotExist($this->tmpDir . '/never-touched');
+    }
+
     public function testDeletingAnItemDropsItFromTheManifest(): void {
       $exporter = $this->createExporter();
       $exporter->exportItem($this->createItem($this->createEntityWithUrl('/node/42')), $this->tmpDir);

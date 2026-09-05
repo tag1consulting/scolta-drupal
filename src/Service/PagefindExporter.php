@@ -39,18 +39,29 @@ class PagefindExporter {
   protected const MANIFEST_FILENAME = '.scolta-export-manifest.json';
 
   /**
-   * Manifest entries, keyed by build directory then by Search API item ID.
+   * Manifest entries this process has added and not yet written.
    *
-   * Seeded from the manifest already on disk the first time a build directory
-   * is touched, then updated by exportItem() and deleteItem(). Search API
-   * hands the backend a batch at a time, so a manifest built only from what
-   * one request exported would drop every item the request did not touch and
-   * leave those pages undeletable; merging into what is already there keeps
-   * the map covering the whole directory.
+   * Keyed by build directory, then by Search API item ID, to the export path
+   * relative to that directory. Only the changes are held, never a copy of
+   * the whole manifest: the file is shared between processes (a drush
+   * indexing run and the web requests that index on node save both write
+   * it), so writeManifest() applies these on top of whatever is on disk at
+   * the moment of writing, under a lock, rather than replacing the file with
+   * a view that could be stale.
    *
    * @var array<string, array<string, string>>
    */
-  protected array $manifests = [];
+  protected array $pendingAdds = [];
+
+  /**
+   * Manifest entries this process has removed and not yet written.
+   *
+   * Same shape as $pendingAdds, keyed by build directory then item ID, with
+   * TRUE as the value.
+   *
+   * @var array<string, array<string, true>>
+   */
+  protected array $pendingRemoves = [];
 
   public function __construct(
     protected readonly EntityTypeManagerInterface $entityTypeManager,
@@ -108,8 +119,8 @@ class PagefindExporter {
     // Only writeManifest() persists it, so a caller that exports a batch pays
     // one manifest write for the batch.
     $dir = rtrim($buildDir, '/');
-    $this->loadManifest($dir);
-    $this->manifests[$dir][$meta['item_id']] = $relativePath;
+    $this->pendingAdds[$dir][$meta['item_id']] = $relativePath;
+    unset($this->pendingRemoves[$dir][$meta['item_id']]);
   }
 
   /**
@@ -120,11 +131,17 @@ class PagefindExporter {
    * nested export paths are unrecoverable and deleted content keeps its HTML
    * file, and so keeps being indexed.
    *
-   * Entries already on disk are preserved, so this is safe to call after a
-   * partial export. It is not the same contract as
-   * ContentExporter::writeManifest(), which replaces the file with the paths
-   * of one exporter instance and is therefore only correct after a run that
-   * exported the whole directory.
+   * Only this process's additions and removals are applied, on top of the
+   * file as it is at the moment of writing and under an exclusive lock, so
+   * two processes writing the same directory (a drush indexing run and a web
+   * request indexing a saved node) each keep the other's entries. This is
+   * safe after a partial export, which is what Search API hands the backend.
+   * It is not the same contract as ContentExporter::writeManifest(), which
+   * replaces the file with the paths of one exporter instance and is
+   * therefore only correct after a run that exported the whole directory.
+   *
+   * Nothing is written when this process has no unpersisted changes for the
+   * directory.
    *
    * @param string $buildDir
    *   Absolute path to the build directory.
@@ -137,27 +154,90 @@ class PagefindExporter {
    */
   public function writeManifest(string $buildDir): void {
     $dir = rtrim($buildDir, '/');
-    $this->loadManifest($dir);
-    $this->ensureDirectory($dir);
-
-    $manifestPath = $dir . '/' . self::MANIFEST_FILENAME;
-    $json = json_encode($this->manifests[$dir], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- absolute path outside Drupal stream wrappers; saveData() requires a URI scheme.
-    if ($json === FALSE || file_put_contents($manifestPath, $json) === FALSE) {
-      throw new \RuntimeException("Failed to write export manifest: {$manifestPath}");
+    $adds = $this->pendingAdds[$dir] ?? [];
+    $removes = $this->pendingRemoves[$dir] ?? [];
+    if (!$adds && !$removes) {
+      return;
     }
+
+    $this->ensureDirectory($dir);
+    $manifestPath = $dir . '/' . self::MANIFEST_FILENAME;
+    // 'c+' opens for read and write without truncating, creating the file if
+    // needed, so the lock can be taken before the current contents are read.
+    $handle = fopen($manifestPath, 'c+');
+    if ($handle === FALSE || !flock($handle, LOCK_EX)) {
+      throw new \RuntimeException("Failed to lock export manifest: {$manifestPath}");
+    }
+    try {
+      $manifest = self::decodeManifest(stream_get_contents($handle));
+      foreach ($removes as $id => $unused) {
+        unset($manifest[$id]);
+      }
+      foreach ($adds as $id => $path) {
+        $manifest[$id] = $path;
+      }
+      // Cast so an empty map is written as {} rather than [].
+      $json = json_encode((object) $manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+      if ($json === FALSE || !rewind($handle) || !ftruncate($handle, 0) || fwrite($handle, $json) === FALSE || !fflush($handle)) {
+        throw new \RuntimeException("Failed to write export manifest: {$manifestPath}");
+      }
+    }
+    finally {
+      flock($handle, LOCK_UN);
+      fclose($handle);
+    }
+
+    unset($this->pendingAdds[$dir], $this->pendingRemoves[$dir]);
   }
 
   /**
-   * Seed the in-memory manifest for a build directory from disk, once.
+   * The manifest as this process currently sees it.
+   *
+   * The file on disk, read under a shared lock so a writer mid-rewrite is
+   * waited for rather than read half-way, with this process's unpersisted
+   * changes applied on top.
    *
    * @param string $dir
    *   The build directory, without a trailing slash.
+   *
+   * @return array<string, string>
+   *   Map of Search API item ID to export path relative to $dir.
    */
-  protected function loadManifest(string $dir): void {
-    if (!isset($this->manifests[$dir])) {
-      $this->manifests[$dir] = ContentExporter::readManifest($dir);
+  protected function currentManifest(string $dir): array {
+    $manifest = [];
+    $manifestPath = $dir . '/' . self::MANIFEST_FILENAME;
+    if (file_exists($manifestPath)) {
+      $handle = fopen($manifestPath, 'r');
+      if ($handle !== FALSE) {
+        flock($handle, LOCK_SH);
+        $manifest = self::decodeManifest(stream_get_contents($handle));
+        flock($handle, LOCK_UN);
+        fclose($handle);
+      }
     }
+    foreach ($this->pendingRemoves[$dir] ?? [] as $id => $unused) {
+      unset($manifest[$id]);
+    }
+    return ($this->pendingAdds[$dir] ?? []) + $manifest;
+  }
+
+  /**
+   * Decode manifest file contents, treating anything malformed as empty.
+   *
+   * Same tolerance as ContentExporter::readManifest().
+   *
+   * @param string|false $contents
+   *   Raw file contents.
+   *
+   * @return array<string, string>
+   *   The decoded map.
+   */
+  protected static function decodeManifest(string|false $contents): array {
+    if ($contents === FALSE || $contents === '') {
+      return [];
+    }
+    $data = json_decode($contents, TRUE);
+    return is_array($data) ? $data : [];
   }
 
   /**
@@ -168,8 +248,9 @@ class PagefindExporter {
    * exported since then has no such file, so the fallback only ever fires for
    * an index that has not been rebuilt since.
    *
-   * The manifest entry is dropped either way. Call writeManifest() afterwards
-   * to persist that.
+   * The manifest entry is dropped either way, and the manifest is read from
+   * disk on each call so an entry another process wrote since this one
+   * started is found. Call writeManifest() afterwards to persist the drop.
    *
    * @param string $itemId
    *   The Search API item ID.
@@ -188,10 +269,11 @@ class PagefindExporter {
     $dir = rtrim($buildDir, '/');
 
     // Try manifest-based lookup first (nested directory layout).
-    $this->loadManifest($dir);
-    if (isset($this->manifests[$dir][$itemId])) {
-      $filepath = $dir . '/' . $this->manifests[$dir][$itemId];
-      unset($this->manifests[$dir][$itemId]);
+    $manifest = $this->currentManifest($dir);
+    if (isset($manifest[$itemId])) {
+      $filepath = $dir . '/' . $manifest[$itemId];
+      $this->pendingRemoves[$dir][$itemId] = TRUE;
+      unset($this->pendingAdds[$dir][$itemId]);
       if (file_exists($filepath)) {
         $this->fileSystem->delete($filepath);
         return TRUE;
@@ -246,7 +328,7 @@ class PagefindExporter {
     if (file_exists($manifestPath)) {
       $this->fileSystem->delete($manifestPath);
     }
-    $this->manifests[$dir] = [];
+    unset($this->pendingAdds[$dir], $this->pendingRemoves[$dir]);
   }
 
   /**
