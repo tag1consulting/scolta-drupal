@@ -27,6 +27,42 @@ use Tag1\Scolta\Export\ContentExporter;
  */
 class PagefindExporter {
 
+  /**
+   * Name of the export manifest file, as read by ContentExporter.
+   *
+   * ContentExporter::readManifest() looks for this file; its writer is an
+   * instance method that serialises only the paths that one ContentExporter
+   * object exported, and this adapter renders through Drupal rather than
+   * through ContentExporter::export(). So the name is repeated here and the
+   * file is written by writeManifest() below. Keep the two in step.
+   */
+  protected const MANIFEST_FILENAME = '.scolta-export-manifest.json';
+
+  /**
+   * Manifest entries this process has added and not yet written.
+   *
+   * Keyed by build directory, then by Search API item ID, to the export path
+   * relative to that directory. Only the changes are held, never a copy of
+   * the whole manifest: the file is shared between processes (a drush
+   * indexing run and the web requests that index on node save both write
+   * it), so writeManifest() applies these on top of whatever is on disk at
+   * the moment of writing, under a lock, rather than replacing the file with
+   * a view that could be stale.
+   *
+   * @var array<string, array<string, string>>
+   */
+  protected array $pendingAdds = [];
+
+  /**
+   * Manifest entries this process has removed and not yet written.
+   *
+   * Same shape as $pendingAdds, keyed by build directory then item ID, with
+   * TRUE as the value.
+   *
+   * @var array<string, array<string, true>>
+   */
+  protected array $pendingRemoves = [];
+
   public function __construct(
     protected readonly EntityTypeManagerInterface $entityTypeManager,
     protected readonly RendererInterface $renderer,
@@ -78,35 +114,180 @@ class PagefindExporter {
     if (file_put_contents($filepath, $html) === FALSE) {
       throw new \RuntimeException("Failed to write export file: {$filepath}");
     }
+
+    // Record where this item landed, under the same ID the metadata carries.
+    // Only writeManifest() persists it, so a caller that exports a batch pays
+    // one manifest write for the batch.
+    $dir = rtrim($buildDir, '/');
+    $this->pendingAdds[$dir][$meta['item_id']] = $relativePath;
+    unset($this->pendingRemoves[$dir][$meta['item_id']]);
+  }
+
+  /**
+   * Write the export manifest for a build directory.
+   *
+   * Persists the item ID → export path map that deleteItem() reads. Call it
+   * once after a run of exportItem() or deleteItem() calls; without it the
+   * nested export paths are unrecoverable and deleted content keeps its HTML
+   * file, and so keeps being indexed.
+   *
+   * Only this process's additions and removals are applied, on top of the
+   * file as it is at the moment of writing and under an exclusive lock, so
+   * two processes writing the same directory (a drush indexing run and a web
+   * request indexing a saved node) each keep the other's entries. This is
+   * safe after a partial export, which is what Search API hands the backend.
+   * It is not the same contract as ContentExporter::writeManifest(), which
+   * replaces the file with the paths of one exporter instance and is
+   * therefore only correct after a run that exported the whole directory.
+   *
+   * Nothing is written when this process has no unpersisted changes for the
+   * directory.
+   *
+   * @param string $buildDir
+   *   Absolute path to the build directory.
+   *
+   * @throws \RuntimeException
+   *   If the manifest cannot be written.
+   *
+   * @since 1.4.1
+   * @stability experimental
+   */
+  public function writeManifest(string $buildDir): void {
+    $dir = rtrim($buildDir, '/');
+    $adds = $this->pendingAdds[$dir] ?? [];
+    $removes = $this->pendingRemoves[$dir] ?? [];
+    if (!$adds && !$removes) {
+      return;
+    }
+
+    $this->ensureDirectory($dir);
+    $manifestPath = $dir . '/' . self::MANIFEST_FILENAME;
+    // 'c+' opens for read and write without truncating, creating the file if
+    // needed, so the lock can be taken before the current contents are read.
+    $handle = fopen($manifestPath, 'c+');
+    if ($handle === FALSE || !flock($handle, LOCK_EX)) {
+      throw new \RuntimeException("Failed to lock export manifest: {$manifestPath}");
+    }
+    try {
+      $manifest = self::decodeManifest(stream_get_contents($handle));
+      foreach ($removes as $id => $unused) {
+        unset($manifest[$id]);
+      }
+      foreach ($adds as $id => $path) {
+        $manifest[$id] = $path;
+      }
+      // Cast so an empty map is written as {} rather than [].
+      $json = json_encode((object) $manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+      if ($json === FALSE || !rewind($handle) || !ftruncate($handle, 0) || fwrite($handle, $json) === FALSE || !fflush($handle)) {
+        throw new \RuntimeException("Failed to write export manifest: {$manifestPath}");
+      }
+    }
+    finally {
+      flock($handle, LOCK_UN);
+      fclose($handle);
+    }
+
+    unset($this->pendingAdds[$dir], $this->pendingRemoves[$dir]);
+  }
+
+  /**
+   * The manifest as this process currently sees it.
+   *
+   * The file on disk, read under a shared lock so a writer mid-rewrite is
+   * waited for rather than read half-way, with this process's unpersisted
+   * changes applied on top.
+   *
+   * @param string $dir
+   *   The build directory, without a trailing slash.
+   *
+   * @return array<string, string>
+   *   Map of Search API item ID to export path relative to $dir.
+   */
+  protected function currentManifest(string $dir): array {
+    $manifest = [];
+    $manifestPath = $dir . '/' . self::MANIFEST_FILENAME;
+    if (file_exists($manifestPath)) {
+      $handle = fopen($manifestPath, 'r');
+      if ($handle !== FALSE) {
+        flock($handle, LOCK_SH);
+        $manifest = self::decodeManifest(stream_get_contents($handle));
+        flock($handle, LOCK_UN);
+        fclose($handle);
+      }
+    }
+    foreach ($this->pendingRemoves[$dir] ?? [] as $id => $unused) {
+      unset($manifest[$id]);
+    }
+    return ($this->pendingAdds[$dir] ?? []) + $manifest;
+  }
+
+  /**
+   * Decode manifest file contents, treating anything malformed as empty.
+   *
+   * Same tolerance as ContentExporter::readManifest().
+   *
+   * @param string|false $contents
+   *   Raw file contents.
+   *
+   * @return array<string, string>
+   *   The decoded map.
+   */
+  protected static function decodeManifest(string|false $contents): array {
+    if ($contents === FALSE || $contents === '') {
+      return [];
+    }
+    $data = json_decode($contents, TRUE);
+    return is_array($data) ? $data : [];
   }
 
   /**
    * Delete the HTML file for a given item ID.
    *
-   * Looks up the ID in the export manifest to find the nested path.
-   * Falls back to flat {id}.html for backward compatibility with indexes
-   * built before path-mirroring export.
+   * Looks up the ID in the export manifest to find the nested path. Falls
+   * back to flat {id}.html, the layout exports used before 1.1.0; a directory
+   * exported since then has no such file, so the fallback only ever fires for
+   * an index that has not been rebuilt since.
+   *
+   * The manifest entry is dropped either way, and the manifest is read from
+   * disk on each call so an entry another process wrote since this one
+   * started is found. Call writeManifest() afterwards to persist the drop.
+   *
+   * @param string $itemId
+   *   The Search API item ID.
+   * @param string $buildDir
+   *   Absolute path to the build directory.
+   *
+   * @return bool
+   *   TRUE if a file was deleted. FALSE means nothing was found to delete:
+   *   the item was never exported, or its file is on disk under a path no
+   *   manifest records, in which case it stays indexable.
    *
    * @since 1.1.0
    * @stability experimental
    */
-  public function deleteItem(string $itemId, string $buildDir): void {
+  public function deleteItem(string $itemId, string $buildDir): bool {
+    $dir = rtrim($buildDir, '/');
+
     // Try manifest-based lookup first (nested directory layout).
-    $manifest = ContentExporter::readManifest($buildDir);
+    $manifest = $this->currentManifest($dir);
     if (isset($manifest[$itemId])) {
-      $filepath = rtrim($buildDir, '/') . '/' . $manifest[$itemId];
+      $filepath = $dir . '/' . $manifest[$itemId];
+      $this->pendingRemoves[$dir][$itemId] = TRUE;
+      unset($this->pendingAdds[$dir][$itemId]);
       if (file_exists($filepath)) {
         $this->fileSystem->delete($filepath);
-        return;
+        return TRUE;
       }
     }
 
     // Fall back to flat filename for backward compatibility.
-    $filename = $this->itemIdToFilename($itemId);
-    $filepath = rtrim($buildDir, '/') . '/' . $filename;
+    $filepath = $dir . '/' . $this->itemIdToFilename($itemId);
     if (file_exists($filepath)) {
       $this->fileSystem->delete($filepath);
+      return TRUE;
     }
+
+    return FALSE;
   }
 
   /**
@@ -139,6 +320,15 @@ class PagefindExporter {
         $this->fileSystem->delete($file->getPathname());
       }
     }
+
+    // The manifest described the files just removed. Leaving it would have
+    // deleteItem() resolve IDs to paths that no longer exist.
+    $dir = rtrim($buildDir, '/');
+    $manifestPath = $dir . '/' . self::MANIFEST_FILENAME;
+    if (file_exists($manifestPath)) {
+      $this->fileSystem->delete($manifestPath);
+    }
+    unset($this->pendingAdds[$dir], $this->pendingRemoves[$dir]);
   }
 
   /**
