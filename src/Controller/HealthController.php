@@ -26,6 +26,19 @@ use Tag1\Scolta\Health\HealthChecker;
 class HealthController extends ControllerBase {
 
   /**
+   * Fault key for an index that fails this adapter's integrity spot check.
+   *
+   * Covers an index that exists but is empty/corrupt (empty pagefind.js,
+   * empty/corrupt or absent fragment). Named for the `index.integrity.valid`
+   * field it derives from, in scolta-php's `index_*` namespace for index
+   * faults, alongside `index_missing` and `index_stale_artifact_urls`.
+   *
+   * @since 1.4.1
+   * @stability experimental
+   */
+  const REASON_INDEX_INTEGRITY_INVALID = 'index_integrity_invalid';
+
+  /**
    * The AI service.
    *
    * @var \Drupal\scolta\Service\ScoltaAiService
@@ -163,7 +176,7 @@ class HealthController extends ControllerBase {
       $result['index']['integrity'] = $integrity;
 
       if (!$integrity['valid']) {
-        $result['status'] = 'degraded';
+        $result = self::degradeFor($result, self::REASON_INDEX_INTEGRITY_INVALID);
       }
     }
     else {
@@ -179,6 +192,46 @@ class HealthController extends ControllerBase {
     }
 
     return new JsonResponse($result);
+  }
+
+  /**
+   * Record an adapter-detected fault on a payload from HealthChecker::check().
+   *
+   * `status_reasons` — the checker's list of fault keys, empty exactly when
+   * the status is 'ok', from scolta-php 1.5.0 — is appended to, never
+   * created: the adapter cannot invent a reason vocabulary for a library that
+   * reports none, so against an older scolta-php this sets the status and
+   * nothing else, exactly as the flat assignment it replaces did.
+   *
+   * The status is raised only from 'ok'. Assigning 'degraded' outright reads
+   * as a raise only while 'degraded' is the worst value there is; the moment
+   * the checker gains a more severe one, that assignment demotes it and the
+   * endpoint reports a healthier site than the check found. Any other value
+   * is left standing, with the reason still recorded.
+   *
+   * @param array<string, mixed> $result
+   *   Payload from HealthChecker::check(), possibly already enriched.
+   * @param string $reason
+   *   Machine-readable fault key, e.g. self::REASON_INDEX_INTEGRITY_INVALID.
+   *
+   * @return array<string, mixed>
+   *   The payload with the fault recorded.
+   *
+   * @since 1.4.1
+   * @stability experimental
+   */
+  public static function degradeFor(array $result, string $reason): array {
+    if (array_key_exists('status_reasons', $result) && is_array($result['status_reasons'])) {
+      if (!in_array($reason, $result['status_reasons'], TRUE)) {
+        $result['status_reasons'][] = $reason;
+      }
+    }
+
+    if (($result['status'] ?? NULL) === 'ok') {
+      $result['status'] = 'degraded';
+    }
+
+    return $result;
   }
 
 }
