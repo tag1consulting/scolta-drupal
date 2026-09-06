@@ -87,6 +87,9 @@
     },
     "config": {
         "sort-packages": true,
+        "preferred-install": {
+            "tag1/scolta-php": "source"
+        },
         "allow-plugins": {
             "composer/installers": true,
             "dealerdirect/phpcodesniffer-composer-installer": true,
