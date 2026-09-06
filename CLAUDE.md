@@ -40,6 +40,8 @@ We use DDEV and [a few custom commands](.ddev/commands/web) from the https://git
 
 To test against un-released scolta-php locally, run `composer config minimum-stability dev && composer require tag1/scolta-php:@dev` (the path repo then supplies the dev build). Both edits are local-only: `minimum-stability` must stay `stable` in the committed `composer.json`, and there is no lock to accidentally commit.
 
+Which source supplies scolta-php is deterministic, decided by the committed constraint, not the machine: the path-repo symlink is in effect exactly while the constraint carries `@dev` (no published stable release satisfies it); once the release ships and the suffix drops, `prefer-stable` picks the Packagist release even with the sibling checkout present. `preferred-install` makes a Packagist-resolved scolta-php a git clone in vendor rather than a dist zip, for debuggability — it is never the sibling checkout.
+
 The constraint is the coordination gate. While the adapter needs an unreleased scolta-php the floor carries a `@dev` suffix (e.g. `^1.5@dev`), which reaches the development branch from a root that asks for it; `release.yml`'s `constraint-guard` refuses to publish while the floor is a development constraint or while no published stable release satisfies it. So scolta-drupal 1.5.0 cannot ship before scolta-php 1.5.0 exists. Drop the `@dev` suffix when it does.
 
 ### Drupal conventions
