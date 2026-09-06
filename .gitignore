@@ -1,5 +1,7 @@
 /vendor/
 /.phpunit.cache/
+/.phpunit.result.cache
+/.claude/
 
 # Playwright
 /tests/playwright/node_modules/
@@ -14,4 +16,3 @@
 
 # Composer
 /composer.lock
-/.phpunit.result.cache
