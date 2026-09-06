@@ -43,6 +43,7 @@
             "url": "https://packages.drupal.org/8"
         },
         {
+            "_comment": "Development only — symlinks the sibling checkout. In effect exactly while the scolta-php constraint carries @dev (no stable release satisfies it); once the release exists and the suffix drops, prefer-stable picks Packagist instead.",
             "type": "path",
             "url": "../scolta-php",
             "canonical": false
