@@ -6,17 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-# COMPOSER_AUTH on the `composer update` steps: Composer resolves the
-# tag1consulting/scolta-php VCS repo and every packagist dist through
-# api.github.com. Unauthenticated that is 60 req/hour/IP, and when it runs dry
-# composer cannot prompt under no-interaction and dies with "Could not
-# authenticate against github.com" (AuthHelper.php:152, exit 100). The run's
-# own token raises it to 1,000 req/hour/repo. Read-only is enough: scolta-php
-# is public, so GITHUB_TOKEN can read it even though the token is scoped to
-# this repository. It is set per step rather than for the whole workflow so
-# the secret is in scope only where composer runs (semgrep's
-# gha-workflow-env-secret rule).
-
 jobs:
   unit:
     name: unit-${{ matrix.cell }}
@@ -73,6 +62,17 @@ jobs:
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
+      # COMPOSER_AUTH here and on every other `composer update` step below:
+      # Composer resolves the tag1consulting/scolta-php VCS repo and every
+      # packagist dist through api.github.com. Unauthenticated that is 60
+      # req/hour/IP, and when it runs dry composer cannot prompt under
+      # no-interaction and dies with "Could not authenticate against
+      # github.com" (AuthHelper.php:152, exit 100). The run's own token raises
+      # it to 1,000 req/hour/repo. Read-only is enough: scolta-php is public,
+      # so GITHUB_TOKEN can read it even though the token is scoped to this
+      # repository. Set per step rather than for the whole workflow so the
+      # secret is in scope only where composer runs (semgrep's
+      # gha-workflow-env-secret rule).
       - name: Install dependencies
         env:
           COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
@@ -335,7 +335,7 @@ jobs:
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
-      # Same rate-limit fix as the COMPOSER_AUTH on the composer steps above, but
+      # Same rate-limit fix as COMPOSER_AUTH on the unit job's install step, but
       # composer runs inside the web container, which does not inherit the
       # runner's environment.
       - name: Authenticate composer against api.github.com in the container
