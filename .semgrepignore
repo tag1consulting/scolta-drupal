@@ -1,0 +1,8 @@
+# Providing this file replaces semgrep's built-in ignore list, but semgrep
+# still respects .gitignore (so vendor/ stays excluded).
+.git/
+
+# Semgrep's own default ignore list excludes tests: security rules assume
+# attacker-reachable input, and test code deleting its own fixtures
+# (unlink-use etc.) is noise, not signal.
+tests/

@@ -115,7 +115,7 @@
 # Note for anyone copying the upstream template: its hardened variant also
 # restores container-action/ from the base SHA.  That step belongs to the
 # action's own repository, which vendors that directory.  Here the action is
-# referenced as tag1consulting/ai-pr-review/container-action@main, which Actions
+# referenced as tag1consulting/ai-pr-review/container-action@b284d67887a444b8b2da893f6b6635757f821a4e # main, which Actions
 # resolves from the action repository and not from this checkout, so the step
 # has nothing to restore and would fail on the missing pathspec.
 # ----------------------------------------------------------------------------
@@ -151,7 +151,11 @@ jobs:
       group: ai-review-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v4
+      # The checkout below is the shape semgrep's pull-request-target rule
+      # flags. It is deliberate and justified line by line in the `with:`
+      # comments; the suppression is for the rule, not the reasoning.
+      # nosemgrep: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           # Pin to the SHA the event reported, and keep the base-repo token out
@@ -172,7 +176,7 @@ jobs:
           allow-unsafe-pr-checkout: true
 
       - name: Run AI review
-        uses: tag1consulting/ai-pr-review/container-action@main
+        uses: tag1consulting/ai-pr-review/container-action@b284d67887a444b8b2da893f6b6635757f821a4e # main
         env:
           FORCE_FULL_DIFF: ${{ contains(github.event.pull_request.labels.*.name, 'ai-review-rescan') }}
         with:
@@ -265,9 +269,15 @@ jobs:
           # is off for tests/*, and a test docblock tripped ShortNotCapital at
           # High severity while `./vendor/bin/phpcs` was clean. On #274 that was
           # 12 in-diff findings, all of them artifacts, plus 69 out-of-diff.
+          #
+          # semgrep moved to a real, blocking `semgrep` job in ci.yml, following
+          # phpstan and phpcs out of the reviewer: a deterministic scanner
+          # belongs in CI where its findings gate the merge, not in an advisory
+          # review that only sees changed files.
+          #
           # Override with the AI_REVIEW_EXCLUDE_ANALYZERS repo variable.
           analyzers: ${{ vars.AI_REVIEW_ANALYZERS || '' }}
-          exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || 'phpcs,phpstan' }}
+          exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || 'phpcs,phpstan,semgrep' }}
           agents: ${{ vars.AI_REVIEW_AGENTS || '' }}
           exclude-agents: ${{ vars.AI_REVIEW_EXCLUDE_AGENTS || '' }}
 
@@ -294,7 +304,7 @@ jobs:
       ) &&
       (github.event_name == 'pull_request_review_comment' ||
        (github.event_name == 'issue_comment' && github.event.issue.pull_request))
-    uses: tag1consulting/ai-pr-review/.github/workflows/slash-commands.yml@main
+    uses: tag1consulting/ai-pr-review/.github/workflows/slash-commands.yml@b284d67887a444b8b2da893f6b6635757f821a4e # main
     with:
       event-name: ${{ github.event_name }}
       comment-body: ${{ github.event.comment.body }}
@@ -322,10 +332,10 @@ jobs:
       # --- Analyzer / agent filtering (Python engine) ---
       # Forwarded to rescan and review-full to keep them in sync with the
       # main review above. Set the repo variables once, both paths stay aligned.
-      # The phpcs/phpstan default matches the review job above; see the comment
-      # there for why. A rescan must not resurrect what the review job skips.
+      # The phpcs/phpstan/semgrep default matches the review job above; see the
+      # comment there for why. A rescan must not resurrect what the review job skips.
       analyzers: ${{ vars.AI_REVIEW_ANALYZERS || '' }}
-      exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || 'phpcs,phpstan' }}
+      exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || 'phpcs,phpstan,semgrep' }}
       agents: ${{ vars.AI_REVIEW_AGENTS || '' }}
       exclude-agents: ${{ vars.AI_REVIEW_EXCLUDE_AGENTS || '' }}
     secrets:
