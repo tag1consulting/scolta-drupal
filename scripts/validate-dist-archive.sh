@@ -53,6 +53,7 @@ EXCLUDED_PATHS=(
   "phpcs.xml.dist"
   ".gitattributes"
   ".gitignore"
+  ".semgrepignore"
   ".editorconfig"
   "CLAUDE.md"
   "MAINTAINING.md"

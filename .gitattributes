@@ -12,3 +12,4 @@
 /scripts/              export-ignore
 /recipes/              export-ignore
 /MAINTAINING.md        export-ignore
+/.semgrepignore        export-ignore
