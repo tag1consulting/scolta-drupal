@@ -6,6 +6,14 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ## [Unreleased]
 
+### Added
+- `drush scolta:build --reset-ledger`: discards the page-table ledger under a plain build, renumbering every page from zero. The escape hatch for a corrupt page table (a duplicate page ordinal at the merge) that does not need a full `--restart`. Refused with `--resume`, with `--bundle`/`--entity-ids` (the library's `BuildIntent::withPageTableReset()` explains why), and under the binary indexer. Brings the command in line with `php artisan scolta:build`.
+
+### Changed
+- `drush scolta:build --indexer=<value>` now rejects anything but `auto`, `php`, or `binary`. An unknown value used to fall through silently to the binary pipeline.
+- `drush scolta:build`, `scolta:export`, and `scolta:rebuild-index` no longer default their HTML export directory to the hardcoded `/var/www/html/pagefind-site`; it is now `export/` under the configured `pagefind.build_dir`, and `scolta:rebuild-index --output-dir` defaults to `pagefind/` under `pagefind.output_dir`, the same place `scolta:build` publishes. The options remain as overrides. The unused `--docroot` option on `scolta:build` is gone.
+- `--restart` help and the scoped-build refusal message now say what the shared library does: a restart also discards the page-table ledger, and neither `--restart` nor `--reset-ledger` will narrow an index to a scope.
+
 ### Fixed
 - **`HealthController` no longer overwrites `status` wholesale when its own index-integrity spot check fails.** It previously assigned `$result['status'] = 'degraded'` over whatever `HealthChecker::check()` returned, which — against a scolta-php reporting `status_reasons` (the list of machine-readable fault keys, empty exactly when the status is `ok`, added in scolta-php 1.5.0) — produced `status: degraded` beside a reasons list that never mentioned the integrity failure, and would silently demote a more severe status if the checker ever adds one. `HealthController::degradeFor()` now appends `index_integrity_invalid` to `status_reasons` and raises the status only from `ok`, so a more severe value (should one ever exist) survives. The key is appended, never created, so behavior against an older scolta-php is unchanged.
 - **`drush scolta:status` now reports a recorded Amazee.ai authentication failure.** The `ai_provider` section previously said nothing about whether the stored credentials were being rejected, so an operator had to separately check `/health` (or wait for the admin-notice surface) to learn that the same failure `HealthChecker` already tracks. `status` now reads the same `KeyExpiryRecovery::CACHE_KEY_AUTH_FAILURE` cache marker and reports `auth_failing` and `auth_failing_since`.

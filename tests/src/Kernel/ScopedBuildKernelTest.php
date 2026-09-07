@@ -146,7 +146,6 @@ class ScopedBuildKernelTest extends KernelTestBase {
       'bundle' => '',
       'entity-ids' => '',
       'output-dir' => $this->indexRoot . '/export',
-      'docroot' => 'docroot',
       'skip-pagefind' => FALSE,
       'indexer' => 'php',
       'force' => FALSE,
@@ -154,6 +153,7 @@ class ScopedBuildKernelTest extends KernelTestBase {
       'chunk-size' => NULL,
       'resume' => FALSE,
       'restart' => FALSE,
+      'reset-ledger' => FALSE,
     ]);
   }
 
@@ -284,6 +284,47 @@ class ScopedBuildKernelTest extends KernelTestBase {
 
     $this->assertSame(6, $this->ledger()->liveCount());
     $this->assertSame($first, $this->publishedIndex());
+  }
+
+  /**
+   * --reset-ledger is refused on a scoped build, before anything is gathered.
+   *
+   * An empty ledger is exactly what would let a scoped build delete the rest
+   * of the site, so the library refuses the combination and the command must
+   * surface that refusal rather than the generic "PHP indexer failed".
+   */
+  public function testResetLedgerIsRefusedOnAScopedBuild(): void {
+    $this->runBuild();
+    $published = $this->publishedIndex();
+
+    $message = $this->runBuildExpectingRefusal(['bundle' => 'article', 'reset-ledger' => TRUE]);
+    $this->assertStringContainsString('Cannot discard the page-table ledger on a scope-limited build', $message);
+
+    $this->assertSame(11, $this->ledger()->liveCount());
+    $this->assertSame($published, $this->publishedIndex());
+  }
+
+  /**
+   * --reset-ledger on a plain build renumbers from zero and republishes.
+   */
+  public function testResetLedgerOnAPlainBuildRepublishesEveryPage(): void {
+    $this->runBuild();
+    $this->assertSame(11, $this->ledger()->liveCount());
+
+    $this->runBuild(['reset-ledger' => TRUE]);
+
+    $this->assertSame(11, $this->ledger()->liveCount());
+    $this->assertSame([], $this->ledger()->tombstones());
+    $this->assertNotSame([], $this->publishedIndex());
+  }
+
+  /**
+   * An unknown --indexer value is an error, not a silent binary build.
+   */
+  public function testAnUnknownIndexerIsRejected(): void {
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('Invalid indexer "rust". Must be one of: auto, php, binary.');
+    $this->runBuild(['indexer' => 'rust']);
   }
 
 }

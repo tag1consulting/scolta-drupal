@@ -62,8 +62,9 @@ drush scolta:build
 | `drush scolta:build` (`sb`) | Build the search index (export + index + deploy) |
 | `drush scolta:build --force` | Force rebuild even if content has not changed |
 | `drush scolta:build --resume` | Resume a previously interrupted build |
-| `drush scolta:build --restart` | Discard interrupted state and start fresh |
-| `drush scolta:build --indexer=php` | Use a specific indexer mode (`php`, `binary`, or `auto`) |
+| `drush scolta:build --restart` | Discard interrupted state and start fresh. Also discards the page-table ledger, renumbering every page from zero |
+| `drush scolta:build --reset-ledger` | Discard the page-table ledger under a plain build, renumbering every page from zero. Escape hatch for a corrupt page table (a duplicate page ordinal at the merge) without a full `--restart`. Cannot be combined with `--resume` or a scoped build |
+| `drush scolta:build --indexer=php` | Use a specific indexer mode (`php`, `binary`, or `auto`); any other value is rejected |
 | `drush scolta:build --memory-budget=256M` | Set memory budget (profile name or byte value) |
 | `drush scolta:build --chunk-size=N` | Process N pages per chunk (overrides config) |
 | `drush scolta:build --bundle=article` | Scope the build to one bundle. See **Scoped builds** below — this is not a way to reindex part of a larger index |
@@ -130,10 +131,21 @@ If the build is interrupted (timeout, disconnect, memory limit), resume from whe
 drush scolta:build --resume
 ```
 
-Use `--restart` to discard the interrupted state and start the build fresh:
+Use `--restart` to discard the interrupted state and start the build fresh.
+It also discards the page-table ledger, so every page is renumbered from zero
+and every fragment URL changes:
 
 ```bash
 drush scolta:build --restart
+```
+
+If a build fails at the merge with a duplicate page ordinal, the ledger itself
+is corrupt. `--reset-ledger` discards just the ledger under an otherwise plain
+build, without a `--restart`. It cannot be combined with `--resume` or with
+`--bundle`/`--entity-ids`:
+
+```bash
+drush scolta:build --reset-ledger
 ```
 
 ### Deferred finalization on very large corpora
