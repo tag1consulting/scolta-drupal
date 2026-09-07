@@ -106,7 +106,7 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Command(name: 'scolta:export', aliases: ['se'])]
   #[CLI\Argument(name: 'entity_type', description: 'Entity type to export (default: node)')]
   #[CLI\Option(name: 'bundle', description: 'Bundle/content type to export (default: all)')]
-  #[CLI\Option(name: 'output-dir', description: 'Output directory for HTML files')]
+  #[CLI\Option(name: 'output-dir', description: 'Output directory for HTML files (default: export/ under pagefind.build_dir)')]
   #[CLI\Usage(name: 'scolta:export node --bundle=article', description: 'Export all published articles')]
   #[CLI\Usage(name: 'scolta:export node --bundle=page --output-dir=/var/www/html/pagefind-site', description: 'Export pages to specific directory')]
   public function export(
@@ -114,7 +114,7 @@ class ScoltaCommands extends DrushCommands {
     array $options = ['bundle' => '', 'output-dir' => ''],
   ): void {
     $config = $this->configFactory->get('scolta.settings');
-    $outputDir = $options['output-dir'] ?: '/var/www/html/pagefind-site';
+    $outputDir = $options['output-dir'] ?: $this->defaultExportDir();
     $bundle = $options['bundle'] ?: '';
     $siteName = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
 
@@ -159,22 +159,21 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Option(name: 'entity-type', description: 'Entity type to export')]
   #[CLI\Option(name: 'bundle', description: 'Bundle to index. Scopes the build; see the help text above')]
   #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build; see the help text above. Unloadable IDs are logged and skipped. PHP indexer only; --bundle is ignored')]
-  #[CLI\Option(name: 'output-dir', description: 'Export directory')]
-  #[CLI\Option(name: 'docroot', description: 'Docroot path')]
+  #[CLI\Option(name: 'output-dir', description: 'Export directory for the binary indexer (default: export/ under pagefind.build_dir)')]
   #[CLI\Option(name: 'skip-pagefind', description: 'Export content only, skip Pagefind build')]
   #[CLI\Option(name: 'indexer', description: 'Indexer mode: php, binary, or auto (default: from config)')]
-  #[CLI\Option(name: 'force', description: 'Force rebuild even if content has not changed')]
+  #[CLI\Option(name: 'force', description: 'Skip fingerprint check and force a full rebuild')]
   #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value for the PHP indexer (e.g. conservative, 256M). Default: from config.')]
   #[CLI\Option(name: 'chunk-size', description: 'Pages per chunk during a PHP index build. Overrides the profile default and config setting.')]
   #[CLI\Option(name: 'resume', description: 'Resume a previously interrupted PHP index build')]
-  #[CLI\Option(name: 'restart', description: 'Discard interrupted state and restart the PHP index build')]
+  #[CLI\Option(name: 'restart', description: 'Discard interrupted state and restart the PHP index build. Also discards the page-table ledger, renumbering every page from zero')]
+  #[CLI\Option(name: 'reset-ledger', description: 'Discard the page-table ledger under a plain build, renumbering every page from zero. Escape hatch for a corrupt page table (a duplicate page ordinal at the merge) without a full --restart. Cannot be combined with --resume')]
   public function build(
     array $options = [
       'entity-type' => 'node',
       'bundle' => '',
       'entity-ids' => '',
-      'output-dir' => '/var/www/html/pagefind-site',
-      'docroot' => 'docroot',
+      'output-dir' => '',
       'skip-pagefind' => FALSE,
       'indexer' => '',
       'force' => FALSE,
@@ -182,12 +181,16 @@ class ScoltaCommands extends DrushCommands {
       'chunk-size' => NULL,
       'resume' => FALSE,
       'restart' => FALSE,
+      'reset-ledger' => FALSE,
     ],
   ): void {
     $config = $this->configFactory->get('scolta.settings');
 
     // Resolve indexer mode: CLI option overrides config.
     $indexerMode = $options['indexer'] ?: ($config->get('indexer') ?: 'auto');
+    if (!in_array($indexerMode, ['auto', 'php', 'binary'], TRUE)) {
+      throw new \RuntimeException(sprintf('Invalid indexer "%s". Must be one of: auto, php, binary.', $indexerMode));
+    }
 
     if ($indexerMode === 'auto') {
       $indexerMode = $this->resolveAutoIndexer($config);
@@ -201,6 +204,9 @@ class ScoltaCommands extends DrushCommands {
       // has no ID-scoped entry point.
       if (!empty($options['entity-ids'])) {
         throw new \RuntimeException('--entity-ids is only supported by the PHP indexer. Re-run with --indexer=php.');
+      }
+      if (!empty($options['reset-ledger'])) {
+        throw new \RuntimeException('--reset-ledger is only supported by the PHP indexer. Re-run with --indexer=php.');
       }
       $this->buildWithBinary($options);
     }
@@ -234,9 +240,10 @@ class ScoltaCommands extends DrushCommands {
    */
   private function buildWithBinary(array $options): void {
     $this->logger()->notice('Step 1: Exporting content...');
+    $exportDir = $options['output-dir'] ?: $this->defaultExportDir();
     $this->export($options['entity-type'], [
       'bundle' => $options['bundle'],
-      'output-dir' => $options['output-dir'],
+      'output-dir' => $exportDir,
     ]);
 
     if ($options['skip-pagefind']) {
@@ -259,7 +266,18 @@ class ScoltaCommands extends DrushCommands {
     else {
       $resolvedOutputDir = $outputDir;
     }
-    $this->runPagefind($options['output-dir'], $resolvedOutputDir . '/pagefind');
+    $this->runPagefind($exportDir, $resolvedOutputDir . '/pagefind');
+  }
+
+  /**
+   * Where the binary pipeline exports HTML when no --output-dir is given.
+   *
+   * A scratch directory under the configured build dir, so it lands beside
+   * the rest of the build state instead of at a path hardcoded for one host.
+   */
+  private function defaultExportDir(): string {
+    $config = $this->configFactory->get('scolta.settings');
+    return $this->resolveBuildDir($config->get('pagefind.build_dir') ?? 'public://scolta-build') . '/export';
   }
 
   /**
@@ -338,7 +356,21 @@ class ScoltaCommands extends DrushCommands {
     // manifest recorded when the build was started.
     $scoped = $entityIds !== NULL || $bundle !== '';
 
-    $intent = BuildIntentFactory::fromFlags($resume, $restart, $totalCount, $budget, partial: $scoped);
+    try {
+      $intent = BuildIntentFactory::fromFlags(
+        $resume,
+        $restart,
+        $totalCount,
+        $budget,
+        partial: $scoped,
+        resetLedger: (bool) ($options['reset-ledger'] ?? FALSE),
+      );
+    }
+    catch (\LogicException $e) {
+      // The library's message explains the refusal (--reset-ledger with
+      // --resume, or with a partial scope) and what to run instead.
+      throw new \RuntimeException($e->getMessage(), 0, $e);
+    }
 
     $reporter = new DrushProgressReporter($this->output());
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
@@ -409,12 +441,15 @@ class ScoltaCommands extends DrushCommands {
         . "To reflect an edit to a few entities, no command is needed — saving an\n"
         . "entity queues it and cron applies the change to the published index.\n\n"
         . "To narrow the index to this scope for good, the page-table ledger has to\n"
-        . "go first, because it is what still holds the out-of-scope pages. Delete\n"
-        . "%s and re-run the scoped build; it will renumber every page, so every\n"
-        . 'fragment URL changes and visitors refetch the index.',
+        . "go first, because it is what still holds the out-of-scope pages. Neither\n"
+        . "--restart nor --reset-ledger will do it: both refuse a scoped build, since\n"
+        . "an empty ledger is what lets a scoped build delete the rest of the site.\n"
+        . "Delete %s and %s and re-run the scoped build; it will renumber every page,\n"
+        . 'so every fragment URL changes and visitors refetch the index.',
         $entityIds !== NULL ? ' with --entity-ids' : ' with --bundle=' . $bundle,
         $report->error,
         $resolvedStateDir . '/' . PageTableLedger::FILENAME,
+        $resolvedStateDir . '/' . PageTableLedger::JOURNAL_FILENAME,
       ));
     }
 
@@ -632,8 +667,8 @@ class ScoltaCommands extends DrushCommands {
    * Run a command in the foreground, streaming its output, and return its code.
    */
   private function runForeground(string $cmd): int {
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required to stream a child build's output while waiting for it. Arguments are escapeshellarg-quoted. nosemgrep: php.lang.security.exec-use.exec-use
-    $handle = proc_open($cmd . ' 2>&1', [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes);
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions,Drupal.Commenting.PostStatementComment,Drupal.Commenting.InlineComment,Drupal.Files.LineLength -- nosemgrep trails the call because semgrep reads it only there. proc_open required to stream a child build's output while waiting for it. Arguments are escapeshellarg-quoted.
+    $handle = proc_open($cmd . ' 2>&1', [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes); // nosemgrep: php.lang.security.exec-use.exec-use
     if ($handle === FALSE) {
       throw new \RuntimeException('Failed to start the resume segment: ' . $cmd);
     }
@@ -761,8 +796,8 @@ class ScoltaCommands extends DrushCommands {
 
     $this->logger()->notice('Running: {cmd}', ['cmd' => $cmd]);
 
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- proc_open required for pagefind subprocess execution with real-time output streaming. Arguments are escapeshellarg-quoted. nosemgrep: php.lang.security.exec-use.exec-use
-    $handle = proc_open($cmd, [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes);
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions,Drupal.Commenting.PostStatementComment,Drupal.Commenting.InlineComment,Drupal.Files.LineLength -- nosemgrep trails the call because semgrep reads it only there. proc_open required for pagefind subprocess execution with real-time output streaming. Arguments are escapeshellarg-quoted.
+    $handle = proc_open($cmd, [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes); // nosemgrep: php.lang.security.exec-use.exec-use
     if ($handle === FALSE) {
       $this->logger()->error('proc_open() failed. Run manually: drush scolta:finalize');
       return;
@@ -906,16 +941,17 @@ class ScoltaCommands extends DrushCommands {
    * Useful after config changes or Pagefind upgrades.
    */
   #[CLI\Command(name: 'scolta:rebuild-index', aliases: ['sri'])]
-  #[CLI\Option(name: 'source-dir', description: 'Source directory with exported HTML files')]
-  #[CLI\Option(name: 'output-dir', description: 'Pagefind output directory')]
+  #[CLI\Option(name: 'source-dir', description: 'Source directory with exported HTML files (default: export/ under pagefind.build_dir)')]
+  #[CLI\Option(name: 'output-dir', description: 'Pagefind output directory (default: pagefind/ under pagefind.output_dir)')]
   public function rebuildIndex(
     array $options = [
-      'source-dir' => '/var/www/html/pagefind-site',
+      'source-dir' => '',
       'output-dir' => '',
     ],
   ): void {
-    $sourceDir = $options['source-dir'];
-    $outputDir = $options['output-dir'] ?: dirname($sourceDir) . '/pagefind';
+    $config = $this->configFactory->get('scolta.settings');
+    $sourceDir = $options['source-dir'] ?: $this->defaultExportDir();
+    $outputDir = $options['output-dir'] ?: $this->resolvePath($config->get('pagefind.output_dir') ?? 'public://scolta-pagefind') . '/pagefind';
     $this->logger()->notice('Rebuilding Pagefind index from existing HTML files...');
     $this->runPagefind($sourceDir, $outputDir);
   }
@@ -948,8 +984,8 @@ class ScoltaCommands extends DrushCommands {
       . ' 2>&1';
     $result = NULL;
     $output = [];
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- exec runs the Pagefind CLI; paths are escapeshellarg-quoted and the binary comes from admin config. nosemgrep: php.lang.security.exec-use.exec-use
-    exec($cmd, $output, $result);
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions,Drupal.Commenting.PostStatementComment,Drupal.Commenting.InlineComment,Drupal.Files.LineLength -- nosemgrep trails the call because semgrep reads it only there. exec runs the Pagefind CLI; paths are escapeshellarg-quoted and the binary comes from admin config.
+    exec($cmd, $output, $result); // nosemgrep: php.lang.security.exec-use.exec-use
     foreach ($output as $line) {
       $this->logger()->notice($line);
     }
@@ -1456,7 +1492,8 @@ class ScoltaCommands extends DrushCommands {
     // Verify the binary works.
     $output = [];
     $exitCode = NULL;
-    exec("{$binaryPath} --version 2>&1", $output, $exitCode);
+    // phpcs:ignore Drupal.Functions.DiscouragedFunctions,Drupal.Commenting.PostStatementComment,Drupal.Commenting.InlineComment,Drupal.Files.LineLength -- nosemgrep trails the call because semgrep reads it only there. exec runs the binary this command just downloaded; the path is escapeshellarg-quoted.
+    exec(escapeshellarg($binaryPath) . ' --version 2>&1', $output, $exitCode); // nosemgrep: php.lang.security.exec-use.exec-use
     if ($exitCode === 0) {
       $this->logger()->notice('Verified: ' . implode(' ', $output));
     }
