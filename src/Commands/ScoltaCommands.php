@@ -19,6 +19,7 @@ use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
+use Drush\Utils\StringUtils;
 use GuzzleHttp\ClientInterface;
 use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
@@ -583,8 +584,7 @@ class ScoltaCommands extends DrushCommands {
    *   At least one entity type ID.
    */
   private function entityTypes(string $option): array {
-    $types = array_values(array_filter(array_map('trim', explode(',', $option))));
-    return $types ?: array_keys($this->contentGatherer->entityTypes());
+    return StringUtils::csvToArray($option) ?: array_keys($this->contentGatherer->entityTypes());
   }
 
   /**

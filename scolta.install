@@ -416,31 +416,52 @@ function scolta_update_10006() {
 }
 
 /**
- * Discard the build state so page IDs renumber under the entity-type prefix.
- *
- * Page IDs and timestamp-manifest keys changed from '42' to 'node:42'. A build
- * on the old ledger would tombstone every old row and allocate a fresh ordinal
- * for every new one, doubling the page table. Emptying the build state
- * directory makes the next build of any kind number pages from zero; the
- * published index keeps serving until that build swaps in.
+ * Page IDs are now prefixed with the entity type ('42' became 'node:42').
  */
 function scolta_update_10007() {
+  return t('Page IDs are now prefixed with the entity type. @outcome', [
+    '@outcome' => scolta_reset_index_state('update_10007'),
+  ]);
+}
+
+/**
+ * Discard the build state and queue one full rebuild.
+ *
+ * For any release whose page IDs, ledger layout or manifest keys are not
+ * compatible with what an earlier release wrote. A build on incompatible state
+ * would tombstone every old row and allocate a fresh ordinal for every new
+ * one, doubling the page table; on an empty build state directory the next
+ * build of any kind numbers pages from zero. The published index keeps
+ * serving until that build swaps in.
+ *
+ * Idempotent: emptying an empty directory does nothing, and a rebuild is
+ * queued only when auto_rebuild is on and nothing is already waiting. Any
+ * queued item forces a full build against an empty ledger (the incremental
+ * updater reports itself unavailable without one), so one is enough.
+ *
+ * @param string $reason
+ *   Recorded on the queue item, e.g. the update hook name.
+ *
+ * @return \Drupal\Core\StringTranslation\TranslatableMarkup
+ *   What happened, for an update hook to return.
+ *
+ * @since 1.4.1
+ * @stability experimental
+ */
+function scolta_reset_index_state(string $reason) {
   $config = \Drupal::config('scolta.settings');
   $buildDir = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
 
   $emptied = _scolta_empty_directory($buildDir);
 
-  // Nudge cron into the rebuild, as the entity hooks would. Any queued item
-  // forces a full build against an empty ledger (the incremental updater
-  // reports itself unavailable without one), so one waiting item is enough.
   $queued = FALSE;
   $queue = \Drupal::queue('scolta_rebuild');
   if ($config->get('pagefind.auto_rebuild') && $queue->numberOfItems() === 0) {
-    $queue->createItem(['type' => 'update_10007']);
+    $queue->createItem(['type' => $reason]);
     $queued = TRUE;
   }
 
-  return t('Page IDs are now prefixed with the entity type. @emptied @queued Sites whose full build exceeds one PHP process should run `drush scolta:build` now; cron cannot resume a build.', [
+  return t('@emptied @queued Sites whose full build exceeds one PHP process should run `drush scolta:build` now; cron cannot resume a build.', [
     '@emptied' => $emptied
       ? t('Emptied the build state directory @dir so the next build renumbers every page from zero.', ['@dir' => $buildDir])
       : t('The build state directory @dir did not exist; nothing to discard.', ['@dir' => $buildDir]),

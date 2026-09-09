@@ -7,11 +7,14 @@ namespace Drupal\Tests\scolta\Kernel;
 use Drupal\KernelTests\KernelTestBase;
 
 /**
- * scolta_update_10007() discards build state and queues one rebuild, once.
+ * scolta_reset_index_state() discards build state and queues one rebuild, once.
+ *
+ * The helper every update hook for an incompatible index format calls;
+ * scolta_update_10007() is its first caller.
  *
  * @group scolta
  */
-class UpdateHook10007KernelTest extends KernelTestBase {
+class ResetIndexStateKernelTest extends KernelTestBase {
 
   /**
    * {@inheritdoc}
@@ -31,7 +34,7 @@ class UpdateHook10007KernelTest extends KernelTestBase {
     $this->installConfig(['scolta']);
     $this->container->get('module_handler')->loadInclude('scolta', 'install');
 
-    $this->buildDir = sys_get_temp_dir() . '/scolta-update-10007-' . uniqid();
+    $this->buildDir = sys_get_temp_dir() . '/scolta-reset-index-state-' . uniqid();
     mkdir($this->buildDir . '/chunks', 0755, TRUE);
     file_put_contents($this->buildDir . '/page-table.json', '{"42":0}');
     file_put_contents($this->buildDir . '/chunks/0.bin', 'x');
@@ -56,13 +59,17 @@ class UpdateHook10007KernelTest extends KernelTestBase {
     $queue = \Drupal::queue('scolta_rebuild');
     $queue->deleteQueue();
 
-    scolta_update_10007();
+    scolta_reset_index_state('test');
 
     $this->assertDirectoryExists($this->buildDir);
     $this->assertSame([], array_diff(scandir($this->buildDir), ['.', '..']), 'Every ledger, manifest and chunk file must be discarded.');
     $this->assertSame(1, $queue->numberOfItems());
+    $item = $queue->claimItem();
+    $this->assertSame(['type' => 'test'], $item->data);
+    $queue->releaseItem($item);
 
-    // Idempotent: a second run in the same deployment queues nothing more.
+    // Idempotent: two update hooks in one deployment queue one rebuild.
+    scolta_reset_index_state('test');
     scolta_update_10007();
     $this->assertSame(1, $queue->numberOfItems());
   }
@@ -75,7 +82,7 @@ class UpdateHook10007KernelTest extends KernelTestBase {
     $queue = \Drupal::queue('scolta_rebuild');
     $queue->deleteQueue();
 
-    scolta_update_10007();
+    scolta_reset_index_state('test');
 
     $this->assertSame([], array_diff(scandir($this->buildDir), ['.', '..']));
     $this->assertSame(0, $queue->numberOfItems());
