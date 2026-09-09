@@ -414,3 +414,60 @@ function scolta_update_10006() {
 
   return t('Added the body_fields setting, seeded with the field list that used to be hardcoded in ScoltaContentGatherer (body, field_body, field_content), so indexing behaviour is unchanged. Add bundle-specific fields at /admin/config/search/scolta — content with none of the listed fields is skipped, which is how Umami recipe nodes went unindexed.');
 }
+
+/**
+ * Discard the build state so page IDs renumber under the entity-type prefix.
+ *
+ * Page IDs and timestamp-manifest keys changed from '42' to 'node:42'. A build
+ * on the old ledger would tombstone every old row and allocate a fresh ordinal
+ * for every new one, doubling the page table. Emptying the build state
+ * directory makes the next build of any kind number pages from zero; the
+ * published index keeps serving until that build swaps in.
+ */
+function scolta_update_10007() {
+  $config = \Drupal::config('scolta.settings');
+  $buildDir = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
+
+  $emptied = _scolta_empty_directory($buildDir);
+
+  // Nudge cron into the rebuild, as the entity hooks would. Any queued item
+  // forces a full build against an empty ledger (the incremental updater
+  // reports itself unavailable without one), so one waiting item is enough.
+  $queued = FALSE;
+  $queue = \Drupal::queue('scolta_rebuild');
+  if ($config->get('pagefind.auto_rebuild') && $queue->numberOfItems() === 0) {
+    $queue->createItem(['type' => 'update_10007']);
+    $queued = TRUE;
+  }
+
+  return t('Page IDs are now prefixed with the entity type. @emptied @queued Sites whose full build exceeds one PHP process should run `drush scolta:build` now; cron cannot resume a build.', [
+    '@emptied' => $emptied
+      ? t('Emptied the build state directory @dir so the next build renumbers every page from zero.', ['@dir' => $buildDir])
+      : t('The build state directory @dir did not exist; nothing to discard.', ['@dir' => $buildDir]),
+    '@queued' => $queued
+      ? t('A full rebuild is queued for the next cron run.')
+      : t('No rebuild was queued (auto_rebuild is off or one is already waiting).'),
+  ]);
+}
+
+/**
+ * Delete everything inside a directory, keeping the directory itself.
+ *
+ * @param string $uri
+ *   A stream-wrapper URI or filesystem path.
+ *
+ * @return bool
+ *   TRUE when the directory existed and was emptied.
+ */
+function _scolta_empty_directory(string $uri): bool {
+  /** @var \Drupal\Core\File\FileSystemInterface $fs */
+  $fs = \Drupal::service('file_system');
+  $path = str_contains($uri, '://') ? ($fs->realpath($uri) ?: $uri) : $uri;
+  if (!is_dir($path)) {
+    return FALSE;
+  }
+  foreach (array_diff(scandir($path) ?: [], ['.', '..']) as $entry) {
+    $fs->deleteRecursive($path . '/' . $entry);
+  }
+  return TRUE;
+}

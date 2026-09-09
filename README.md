@@ -416,7 +416,11 @@ The index covers every node bundle by default. `scolta.settings: entity_types` i
 drush config:set --input-format=yaml scolta.settings entity_types '{node: [], group: [community]}'
 ```
 
-Any fieldable entity type with a `changed` field works; a type with a published flag is filtered to published entities. Add the field its prose lives in to `body_fields` (for example `field_description` for groups). Every page ID is prefixed with its entity type ID (`node:42`, `node:42-es`, `group:42`), which is why node 42 and group 42 do not collide. An index built by an earlier release used bare node IDs; run `drush scolta:build --restart` once after upgrading so its pages are not carried as stale rows. `drush scolta:build --entity-type=node,group` overrides the configured list for one run; `--bundle` and `--entity-ids` need a single `--entity-type`.
+Any fieldable entity type with a `changed` field works; a type with a published flag is filtered to published entities. Add the field its prose lives in to `body_fields` (for example `field_description` for groups). Every page ID is prefixed with its entity type ID (`node:42`, `node:42-es`, `group:42`), which is why node 42 and group 42 do not collide. An index built by an earlier release used bare node IDs; the update hook discards the build state and queues a rebuild, so the next build numbers every page from zero.
+
+#### Large sites: build after deploying
+
+Cron runs the same full build `drush scolta:build` does, but it cannot resume one: a build that outgrows one PHP process fails in the queue worker and is retried from the start, whereas drush chains `--resume` segments until the build completes. A site whose full build exceeds one process should run `drush scolta:build` after `drush deploy` whenever a full build is expected, such as the upgrade above. Pass `--force` when a deploy changed `body_fields` or `field_mappings`: the timestamp manifest skips every entity whose changed time is unchanged, so a plain build re-gathers nothing for a config-only change. `drush scolta:build --entity-type=node,group` overrides the configured list for one run; `--bundle` and `--entity-ids` need a single `--entity-type`.
 
 #### Auto-rebuild debounce
 
