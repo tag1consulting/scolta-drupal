@@ -79,7 +79,7 @@ class ScoltaContentGathererCacheTest extends BrowserTestBase {
         ],
         'status' => 1,
       ]);
-      $this->entityKeys[] = (string) $node->id();
+      $this->entityKeys[] = 'node:' . $node->id();
     }
 
     // A manifest on a scratch directory under the test site's files. Nothing

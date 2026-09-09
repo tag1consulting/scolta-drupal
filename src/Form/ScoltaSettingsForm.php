@@ -1640,25 +1640,38 @@ class ScoltaSettingsForm extends ConfigFormBase {
       // web request has to load the full corpus into memory. This prevents
       // the "Index Now" button from timing out on shared hosting at any
       // corpus size.
-      $storage = $this->entityTypeManager->getStorage('node');
-      $ids = array_values($storage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('status', 1)
-        ->execute());
+      $idsByType = [];
+      foreach ($this->contentGatherer->entityTypes() as $entityType => $bundles) {
+        $definition = $this->entityTypeManager->getDefinition($entityType);
+        $query = $this->entityTypeManager->getStorage($entityType)->getQuery()->accessCheck(FALSE);
+        if ($definition->getKey('published')) {
+          $query->condition($definition->getKey('published'), 1);
+        }
+        if ($bundles && $definition->getKey('bundle')) {
+          $query->condition($definition->getKey('bundle'), $bundles, 'IN');
+        }
+        $ids = array_values($query->execute());
+        if ($ids) {
+          $idsByType[$entityType] = $ids;
+        }
+      }
 
-      if (empty($ids)) {
+      if (empty($idsByType)) {
         $this->messenger()->addWarning($this->t('No content found to index.'));
         return;
       }
 
-      $this->rebuildWithBatch($ids, $siteName, $config);
+      $this->rebuildWithBatch($idsByType, $siteName, $config);
     }
     else {
       // Binary mode shells out to the Pagefind CLI, which shared hosting
       // does not allow. Loading all content synchronously is acceptable here
       // since binary mode is only used on hosts that support long-running
       // processes.
-      $items = iterator_to_array($this->contentGatherer->gather('node', '', $siteName), FALSE);
+      $items = [];
+      foreach (array_keys($this->contentGatherer->entityTypes()) as $entityType) {
+        $items = array_merge($items, iterator_to_array($this->contentGatherer->gather($entityType, '', $siteName), FALSE));
+      }
 
       if (empty($items)) {
         $this->messenger()->addWarning($this->t('No content found to index.'));
@@ -1770,14 +1783,14 @@ class ScoltaSettingsForm extends ConfigFormBase {
    * web request ever loads the full corpus. Entity loading, content extraction,
    * and filtering all happen inside each batch step.
    *
-   * @param array $entityIds
-   *   Flat array of published node IDs to index.
+   * @param array<string, int[]> $idsByType
+   *   Published entity IDs to index, keyed by entity type ID.
    * @param string $siteName
    *   Site name passed to each ContentItem.
    * @param \Drupal\Core\Config\ImmutableConfig $config
    *   The Scolta settings config.
    */
-  protected function rebuildWithBatch(array $entityIds, string $siteName, $config): void {
+  protected function rebuildWithBatch(array $idsByType, string $siteName, $config): void {
     $stateDir = $this->resolveStateDir($config);
     $outputDir = $this->resolveOutputDir($config);
     $language = $config->get('ai_languages')[0] ?? 'en';
@@ -1798,15 +1811,17 @@ class ScoltaSettingsForm extends ConfigFormBase {
     ];
 
     $chunkSize = 100;
-    $idChunks = array_chunk($entityIds, $chunkSize);
-    $totalCount = count($entityIds);
+    $totalCount = array_sum(array_map('count', $idsByType));
 
     $operations = [];
-    foreach ($idChunks as $idx => $idChunk) {
-      $operations[] = [
-        [ScoltaBatchOperations::class, 'loadAndProcessChunk'],
-        [$idx, $idChunk, $totalCount, $siteName, $batchConfig],
-      ];
+    $idx = 0;
+    foreach ($idsByType as $entityType => $entityIds) {
+      foreach (array_chunk($entityIds, $chunkSize) as $idChunk) {
+        $operations[] = [
+          [ScoltaBatchOperations::class, 'loadAndProcessChunk'],
+          [$idx++, $entityType, $idChunk, $totalCount, $siteName, $batchConfig],
+        ];
+      }
     }
 
     // Add finalize operation.

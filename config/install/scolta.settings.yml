@@ -28,6 +28,8 @@ sayt_expand: true
 sayt_expand_per_minute: 6
 sayt_expansion_delay_ms: 500
 sayt_suggestion_action: navigate
+entity_types:
+  node: []
 body_fields:
   - body
   - field_body

@@ -67,6 +67,7 @@ drush scolta:build
 | `drush scolta:build --indexer=php` | Use a specific indexer mode (`php`, `binary`, or `auto`); any other value is rejected |
 | `drush scolta:build --memory-budget=256M` | Set memory budget (profile name or byte value) |
 | `drush scolta:build --chunk-size=N` | Process N pages per chunk (overrides config) |
+| `drush scolta:build --entity-type=node,group` | Index these entity types instead of the configured `entity_types` (default `node`). See **Indexing more than one entity type** below |
 | `drush scolta:build --bundle=article` | Scope the build to one bundle. See **Scoped builds** below — this is not a way to reindex part of a larger index |
 | `drush scolta:build --entity-ids=12,34` | Scope the build to these entities; IDs that cannot be loaded are logged and skipped. `--bundle` is ignored (PHP indexer only). See **Scoped builds** below |
 | `drush scolta:finalize` (`sf`) | Merge chunks into the final search index |
@@ -406,6 +407,16 @@ Visit *Administration > Configuration > Search and Metadata > Scolta AI Search* 
 #### AI endpoint rate limiting
 
 The AI API endpoints (`/api/scolta/v1/expand-query`, `/api/scolta/v1/summarize`, `/api/scolta/v1/followup`) make cost-bearing LLM calls. They require the **Use Scolta AI features** permission, which is granted to authenticated users at install; flood limits apply to every caller regardless. The **Rate Limiting** section of the settings form configures per-IP and site-wide flood thresholds (defaults: 60 requests/minute per IP, 1000 requests/minute site-wide); requests beyond a threshold are rejected with HTTP 429 before any AI work happens. Set a limit to 0 to disable that layer.
+
+#### Indexing more than one entity type
+
+The index covers every node bundle by default. `scolta.settings: entity_types` is keyed by entity type ID and lists the bundles to index, an empty list meaning all of them. The build, the settings form's *Index now*, the rebuild queue worker and the auto-rebuild entity hooks all read it. It has no form field yet, so set it with Drush:
+
+```bash
+drush config:set --input-format=yaml scolta.settings entity_types '{node: [], group: [community]}'
+```
+
+Any fieldable entity type with a `changed` field works; a type with a published flag is filtered to published entities. Add the field its prose lives in to `body_fields` (for example `field_description` for groups). Every page ID is prefixed with its entity type ID (`node:42`, `node:42-es`, `group:42`), which is why node 42 and group 42 do not collide. An index built by an earlier release used bare node IDs; run `drush scolta:build --restart` once after upgrading so its pages are not carried as stale rows. `drush scolta:build --entity-type=node,group` overrides the configured list for one run; `--bundle` and `--entity-ids` need a single `--entity-type`.
 
 #### Auto-rebuild debounce
 

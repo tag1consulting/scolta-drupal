@@ -46,4 +46,14 @@ class ScoltaContentGathererTest extends TestCase {
       'gather() must accept an optional TimestampManifest for incremental builds');
   }
 
+  /**
+   * parseItemId() inverts the item ID namespacing rule.
+   */
+  public function testParseItemIdSplitsTypeAndEntityId(): void {
+    $this->assertSame(['node', '42'], ScoltaContentGatherer::parseItemId('node:42'));
+    $this->assertSame(['node', '42'], ScoltaContentGatherer::parseItemId('node:42-es'));
+    $this->assertSame(['group', '42'], ScoltaContentGatherer::parseItemId('group:42-es'));
+    $this->assertNull(ScoltaContentGatherer::parseItemId('42'), 'An ID from a nodes-only release has no type to seek.');
+  }
+
 }

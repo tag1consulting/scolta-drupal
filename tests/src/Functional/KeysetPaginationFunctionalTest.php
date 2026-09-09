@@ -104,7 +104,7 @@ class KeysetPaginationFunctionalTest extends BrowserTestBase {
     $ids = $this->gatheredItemIds('article');
 
     $this->assertSame(
-      array_map('strval', $this->publishedNids),
+      array_map(fn(int $nid) => 'node:' . $nid, $this->publishedNids),
       $ids,
       'Keyset pagination must yield every published node of the bundle exactly once, ascending, with no row skipped or repeated across a batch boundary'
     );
@@ -128,7 +128,7 @@ class KeysetPaginationFunctionalTest extends BrowserTestBase {
         ->execute()
     );
 
-    $this->assertSame(array_map('strval', $expected), $this->gatheredItemIds(''),
+    $this->assertSame(array_map(fn($nid) => 'node:' . $nid, $expected), $this->gatheredItemIds(''),
       'An unfiltered walk must cover every published node, ascending');
   }
 
@@ -154,7 +154,8 @@ class KeysetPaginationFunctionalTest extends BrowserTestBase {
     $all = $this->gatheredItemIds('article');
 
     foreach ([1, 10, 11, 57, 136] as $position) {
-      $boundary = $all[$position];
+      // Item IDs are 'node:57'; the resume boundary is the bare entity ID.
+      $boundary = (int) substr($all[$position], strlen('node:'));
 
       $this->assertSame(
         array_slice($all, $position),

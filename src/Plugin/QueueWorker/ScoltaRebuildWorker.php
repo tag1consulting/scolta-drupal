@@ -179,7 +179,8 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
         return;
       }
 
-      $totalCount = $this->contentGatherer->gatherCount('node', '');
+      $entityTypes = array_keys($this->contentGatherer->entityTypes());
+      $totalCount = array_sum(array_map(fn(string $type) => $this->contentGatherer->gatherCount($type, ''), $entityTypes));
       if ($totalCount === 0) {
         $this->logger->info('No content found to index.');
         $this->deleteClaimed($claimed);
@@ -204,10 +205,12 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       // place that decision is made against a body in memory.
       $tsManifest = $orchestrator->getTimestampManifest();
       $exporter = new ContentExporter($outputDir);
-      $items = $exporter->filterItems(
-        $this->contentGatherer->gather('node', '', $siteName, NULL, $tsManifest, FALSE),
-        $tsManifest
-      );
+      $source = (function () use ($entityTypes, $siteName, $tsManifest) {
+        foreach ($entityTypes as $type) {
+          yield from $this->contentGatherer->gather($type, '', $siteName, NULL, $tsManifest, FALSE);
+        }
+      })();
+      $items = $exporter->filterItems($source, $tsManifest);
 
       // The reporter renews the build lock at every chunk boundary, so the
       // lease only has to outlive one chunk rather than the whole build.
@@ -301,11 +304,11 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     $op = $data['op'] ?? '';
     $itemIds = $data['item_ids'] ?? [];
     $entityId = $data['entity_id'] ?? NULL;
-    // Only nodes are gathered today, so a payload naming anything else cannot
-    // be applied incrementally without silently indexing the wrong storage.
+    // A payload naming a type the index does not cover cannot be applied
+    // incrementally without silently indexing the wrong storage.
     $entityType = $data['entity_type'] ?? 'node';
 
-    if (!is_array($itemIds) || $itemIds === [] || $entityType !== 'node') {
+    if (!is_array($itemIds) || $itemIds === [] || !array_key_exists($entityType, $this->contentGatherer->entityTypes())) {
       $changeSet['targeted'] = FALSE;
       return;
     }
@@ -329,7 +332,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       return;
     }
 
-    $changeSet['upsert_entity_ids'][(string) $entityId] = $entityId;
+    $changeSet['upsert_entity_ids'][$entityType][(string) $entityId] = $entityId;
     foreach ($itemIds as $itemId) {
       $changeSet['upsert_item_ids'][(string) $itemId] = TRUE;
       unset($changeSet['delete_item_ids'][(string) $itemId]);
@@ -384,15 +387,16 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       return FALSE;
     }
 
-    // Gather only entities that are still published: an unpublish arrives as
-    // an update, and staging its content as an upsert would keep a hidden
-    // node in the index.
-    $publishedIds = $this->contentGatherer->publishedIds('node', array_values($changeSet['upsert_entity_ids']));
-
+    // Gather only entities that are still published and in a configured
+    // bundle: an unpublish arrives as an update, and staging its content as an
+    // upsert would keep a hidden node in the index.
     $produced = [];
-    foreach ($this->contentGatherer->gatherByIds('node', $publishedIds, $siteName) as $item) {
-      $updater->stageUpsert($item);
-      $produced[(string) $item->id] = TRUE;
+    foreach ($changeSet['upsert_entity_ids'] as $entityType => $entityIds) {
+      $publishedIds = $this->contentGatherer->publishedIds($entityType, array_values($entityIds));
+      foreach ($this->contentGatherer->gatherByIds($entityType, $publishedIds, $siteName) as $item) {
+        $updater->stageUpsert($item);
+        $produced[(string) $item->id] = TRUE;
+      }
     }
 
     // Every page we expected but did not produce has left the index: the node
