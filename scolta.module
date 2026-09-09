@@ -421,7 +421,8 @@ function scolta_form_search_api_index_fields_alter(array &$form, FormStateInterf
 /**
  * Check if auto-rebuild should be triggered for the given entity.
  *
- * Enqueues a rebuild request when a node is inserted, updated or deleted and
+ * Enqueues a rebuild request when an entity of an indexed type and bundle
+ * (scolta.settings: entity_types) is inserted, updated or deleted and
  * auto_rebuild is enabled in the Scolta pagefind configuration.
  *
  * The queue item carries the identity of what changed: the entity ID and the
@@ -437,14 +438,11 @@ function scolta_form_search_api_index_fields_alter(array &$form, FormStateInterf
  *   The operation: 'insert', 'update' or 'delete'.
  */
 function _scolta_auto_rebuild_check(EntityInterface $entity, $op = 'update') {
-  // @todo Support auto-rebuild for non-node entity types once the gatherer
-  // configuration allows specifying which entity types to index.
-  if ($entity->getEntityTypeId() !== 'node') {
-    return;
-  }
-
   $config = \Drupal::config('scolta.settings');
   if (!$config->get('pagefind.auto_rebuild')) {
+    return;
+  }
+  if (!\Drupal::service('scolta.content_gatherer')->isIndexable($entity)) {
     return;
   }
 

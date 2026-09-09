@@ -9,8 +9,10 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityChangedInterface;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityPublishedInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\text\Plugin\Field\FieldType\TextItemBase;
@@ -91,7 +93,8 @@ class ScoltaContentGatherer {
    * @param string $entityType
    *   The entity type to query (e.g. 'node').
    * @param string $bundle
-   *   The bundle to filter by, or empty string for all bundles.
+   *   The bundle to filter by, or empty string for the configured bundles of
+   *   the type (all of them when none are configured).
    *
    * @return int
    *   Total count of published entities matching the given type and bundle.
@@ -103,15 +106,9 @@ class ScoltaContentGatherer {
     $storage = $this->entityTypeManager->getStorage($entityType);
     $query = $storage->getQuery()
       ->accessCheck(FALSE)
-      ->condition('status', 1)
       ->count();
-
-    if ($bundle) {
-      $bundleKey = $this->entityTypeManager->getDefinition($entityType)->getKey('bundle');
-      if ($bundleKey) {
-        $query->condition($bundleKey, $bundle);
-      }
-    }
+    $this->publishedOnly($query, $entityType);
+    $this->bundlesOnly($query, $entityType, $bundle);
 
     return (int) $query->execute();
   }
@@ -194,7 +191,8 @@ class ScoltaContentGatherer {
    * @param string $entityType
    *   The entity type to query (e.g. 'node').
    * @param string $bundle
-   *   The bundle to filter by, or empty string for all bundles.
+   *   The bundle to filter by, or empty string for the configured bundles of
+   *   the type (all of them when none are configured).
    * @param string $siteName
    *   The site name used in the ContentItem metadata.
    * @param int|string|null $resumeFromId
@@ -226,9 +224,6 @@ class ScoltaContentGatherer {
     $storage = $this->entityTypeManager->getStorage($entityType);
 
     $idKey = $this->entityTypeManager->getDefinition($entityType)->getKey('id');
-    $bundleKey = $bundle
-      ? $this->entityTypeManager->getDefinition($entityType)->getKey('bundle')
-      : NULL;
 
     // Keyset pagination: each page asks for the rows after the last ID seen
     // rather than skipping a growing offset. Measured on a 124k-row corpus the
@@ -246,19 +241,16 @@ class ScoltaContentGatherer {
     while (TRUE) {
       $query = $storage->getQuery()
         ->accessCheck(FALSE)
-        ->condition('status', 1)
         ->range(0, self::ID_PAGE_SIZE)
         ->sort($idKey, 'ASC');
+      $this->publishedOnly($query, $entityType);
+      $this->bundlesOnly($query, $entityType, $bundle);
 
       if ($lastId !== NULL) {
         $query->condition($idKey, $lastId, '>');
       }
       elseif ($resumeBoundary !== NULL) {
         $query->condition($idKey, $resumeBoundary, '>=');
-      }
-
-      if ($bundleKey) {
-        $query->condition($bundleKey, $bundle);
       }
 
       $idPage = $query->execute();
@@ -293,7 +285,7 @@ class ScoltaContentGatherer {
         // the put() below.
         if ($manifest !== NULL && !$force) {
           foreach ($ids as $id) {
-            $entityKey = (string) $id;
+            $entityKey = self::entityKey($entityType, $id);
             $entry = $manifest->get($entityKey);
             if ($this->manifestEntryIsFresh($entry, (int) ($timestamps[$id] ?? 0))) {
               // Entity unchanged — yield cached references, skip the full
@@ -328,7 +320,7 @@ class ScoltaContentGatherer {
               continue;
             }
 
-            $entityKey = (string) $entity->id();
+            $entityKey = self::entityKey($entityType, $entity->id());
             $entityTs = (int) ($timestamps[$entity->id()] ?? 0);
             $itemsForManifest = [];
 
@@ -501,7 +493,7 @@ class ScoltaContentGatherer {
       if ($manifest !== NULL && !$force) {
         $toLoad = [];
         foreach ($chunk as $id) {
-          $entityKey = (string) $id;
+          $entityKey = self::entityKey($entityType, $id);
           $entry = $manifest->get($entityKey);
           if ($this->manifestEntryIsFresh($entry, (int) ($timestamps[$id] ?? 0))) {
             foreach ($entry['items'] as $itemData) {
@@ -524,7 +516,7 @@ class ScoltaContentGatherer {
           continue;
         }
 
-        $entityKey = (string) $entity->id();
+        $entityKey = self::entityKey($entityType, $entity->id());
         $entityTs = (int) ($timestamps[$entity->id()] ?? 0);
         $itemsForManifest = [];
 
@@ -594,19 +586,20 @@ class ScoltaContentGatherer {
 
     $itemIds = [];
     foreach (array_keys($languages) as $langcode) {
-      $itemIds[] = self::itemId((string) $entity->id(), (string) $langcode, $count);
+      $itemIds[] = self::itemId($entity->getEntityTypeId(), (string) $entity->id(), (string) $langcode, $count);
     }
 
     return $itemIds;
   }
 
   /**
-   * Filter a list of entity IDs down to the ones that are still published.
+   * Filter a list of entity IDs down to the ones that are still indexable.
    *
-   * Only published entities are ever yielded by gather(). A caller working
-   * from an explicit ID list — a queue payload, a batch slice — has no such
-   * filter, and an unpublish arrives as an ordinary update, so without this
-   * the unpublished node is re-gathered and stays in the index.
+   * Only published entities of the configured bundles are ever yielded by
+   * gather(). A caller working from an explicit ID list — a queue payload, a
+   * batch slice — has no such filter, and an unpublish arrives as an ordinary
+   * update, so without this the unpublished node is re-gathered and stays in
+   * the index.
    *
    * @param string $entityType
    *   The entity type to query (e.g. 'node').
@@ -614,7 +607,8 @@ class ScoltaContentGatherer {
    *   Candidate entity IDs.
    *
    * @return array
-   *   The subset of $ids that is published, in ascending ID order.
+   *   The subset of $ids that is published and in a configured bundle, in
+   *   ascending ID order.
    *
    * @since 1.2.0
    * @stability experimental
@@ -629,9 +623,10 @@ class ScoltaContentGatherer {
 
     $query = $this->entityTypeManager->getStorage($entityType)->getQuery()
       ->accessCheck(FALSE)
-      ->condition('status', 1)
       ->condition($idKey, array_values($ids), 'IN')
       ->sort($idKey, 'ASC');
+    $this->publishedOnly($query, $entityType);
+    $this->bundlesOnly($query, $entityType, '');
 
     return array_values($query->execute());
   }
@@ -639,15 +634,129 @@ class ScoltaContentGatherer {
   /**
    * The indexed page ID for one translation of an entity.
    *
-   * Single-language entities and English translations keep plain IDs for
-   * backward compatibility. Other languages get a -{langcode} suffix to avoid
-   * filename collisions when the same entity has multiple translations
-   * (e.g. node/42 → "42" for en, "42-es" for es).
+   * Namespaced with the entity type ID ('node:42', 'group:42') because entity
+   * types share an ID space and node 42 and group 42 would otherwise claim the
+   * same page. English translations and single-language entities carry no
+   * langcode suffix; other languages get -{langcode} ('node:42-es').
    */
-  private static function itemId(string $entityId, string $langcode, int $translationCount): string {
+  private static function itemId(string $entityType, string $entityId, string $langcode, int $translationCount): string {
+    $id = self::entityKey($entityType, $entityId);
     return ($langcode === 'en' || $translationCount === 1)
-      ? $entityId
-      : $entityId . '-' . $langcode;
+      ? $id
+      : $id . '-' . $langcode;
+  }
+
+  /**
+   * The key an entity is recorded under in the timestamp manifest.
+   *
+   * Same namespacing as itemId(): 'type:id'.
+   */
+  private static function entityKey(string $entityType, int|string $entityId): string {
+    return $entityType . ':' . $entityId;
+  }
+
+  /**
+   * The entity type and entity ID an indexed page ID belongs to.
+   *
+   * The inverse of itemId(). Used to route ledger rows back to the entity walk
+   * that produced them, so a resumed build seeks each type's cursor.
+   *
+   * @param string $itemId
+   *   An indexed page ID ('node:42', 'group:42-es').
+   *
+   * @return array{0: string, 1: string}|null
+   *   The entity type ID and the entity ID, or NULL for an ID that does not
+   *   follow the rule (one written by a release that indexed nodes only).
+   *
+   * @since 1.4.1
+   * @stability experimental
+   */
+  public static function parseItemId(string $itemId): ?array {
+    if (!str_contains($itemId, ':')) {
+      return NULL;
+    }
+    [$entityType, $rest] = explode(':', $itemId, 2);
+    // 'node:42-es' is entity 42.
+    return [$entityType, (string) strtok($rest, '-')];
+  }
+
+  /**
+   * The entity types and bundles the index covers.
+   *
+   * Read from scolta.settings: entity_types, a sequence keyed by entity type
+   * ID whose values list the bundles to index; an empty list means every
+   * bundle of that type. Every consumer of the list — the build command's
+   * default scope, the rebuild worker, the auto-rebuild entity hooks and the
+   * settings form — reads it from here so they cannot disagree about what is
+   * indexed.
+   *
+   * @return array<string, string[]>
+   *   Entity type ID => bundles; ['node' => []] when nothing is configured.
+   *
+   * @since 1.4.1
+   * @stability experimental
+   */
+  public function entityTypes(): array {
+    $configured = $this->configFactory->get('scolta.settings')->get('entity_types');
+    $types = [];
+    foreach (is_array($configured) ? $configured : [] as $key => $value) {
+      // A plain list entry ('- node') names a type with every bundle.
+      if (is_int($key) && is_string($value)) {
+        $types[$value] = [];
+      }
+      elseif (is_string($key)) {
+        $types[$key] = array_values(array_filter((array) $value, 'is_string'));
+      }
+    }
+
+    return $types ?: ['node' => []];
+  }
+
+  /**
+   * Whether an entity is of a configured type and bundle.
+   *
+   * @since 1.4.1
+   * @stability experimental
+   */
+  public function isIndexable(EntityInterface $entity): bool {
+    $bundles = $this->entityTypes()[$entity->getEntityTypeId()] ?? NULL;
+    return $bundles !== NULL && ($bundles === [] || in_array($entity->bundle(), $bundles, TRUE));
+  }
+
+  /**
+   * Restrict a query to one bundle, or to the type's configured bundles.
+   *
+   * @param \Drupal\Core\Entity\Query\QueryInterface $query
+   *   The entity query.
+   * @param string $entityType
+   *   The entity type being queried.
+   * @param string $bundle
+   *   An explicit bundle, or empty string for the configured ones.
+   */
+  private function bundlesOnly(QueryInterface $query, string $entityType, string $bundle): void {
+    $bundleKey = $this->entityTypeManager->getDefinition($entityType)->getKey('bundle');
+    if (!$bundleKey) {
+      return;
+    }
+    $bundles = $bundle !== '' ? [$bundle] : ($this->entityTypes()[$entityType] ?? []);
+    if ($bundles !== []) {
+      $query->condition($bundleKey, $bundles, 'IN');
+    }
+  }
+
+  /**
+   * Restrict a query to published entities, where the type has that notion.
+   *
+   * @param \Drupal\Core\Entity\Query\QueryInterface $query
+   *   The entity query.
+   * @param string $entityType
+   *   The entity type being queried.
+   */
+  private function publishedOnly(QueryInterface $query, string $entityType): void {
+    $publishedKey = $this->entityTypeManager->getDefinition($entityType)->getKey('published');
+    if ($publishedKey) {
+      $query->condition($publishedKey, 1);
+    }
   }
 
   /**
@@ -688,6 +797,12 @@ class ScoltaContentGatherer {
     foreach ($entity->getTranslationLanguages() as $langcode => $language) {
       $translation = $entity->getTranslation($langcode);
 
+      // The entity query only asks whether any translation is published; the
+      // flag is per translation, and an unpublished one must not be indexed.
+      if ($translation instanceof EntityPublishedInterface && !$translation->isPublished()) {
+        continue;
+      }
+
       // Extract body content from the first configured field that has a
       // value. The list is configurable because bundles do not agree on where
       // their prose lives: Umami's recipe nodes carry theirs in
@@ -722,7 +837,7 @@ class ScoltaContentGatherer {
       }
 
       $languages = $entity->getTranslationLanguages();
-      $itemId = self::itemId((string) $entity->id(), (string) $langcode, count($languages));
+      $itemId = self::itemId($entity->getEntityTypeId(), (string) $entity->id(), (string) $langcode, count($languages));
 
       $contentItem = new ContentItem(
         id: $itemId,

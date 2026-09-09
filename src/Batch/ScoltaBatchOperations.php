@@ -27,6 +27,8 @@ class ScoltaBatchOperations {
    *
    * @param int $chunkIdx
    *   The zero-based chunk index (used as the PhpIndexer chunk position).
+   * @param string $entityType
+   *   The entity type the IDs belong to.
    * @param array $entityIds
    *   Entity IDs to load and process in this step.
    * @param int $totalCount
@@ -38,7 +40,7 @@ class ScoltaBatchOperations {
    * @param array $context
    *   The batch context array.
    */
-  public static function loadAndProcessChunk(int $chunkIdx, array $entityIds, int $totalCount, string $siteName, array $config, array &$context): void {
+  public static function loadAndProcessChunk(int $chunkIdx, string $entityType, array $entityIds, int $totalCount, string $siteName, array $config, array &$context): void {
     // Convert through the shared gatherer so the batch path produces the
     // same ContentItems as drush scolta:build — text-format rendering,
     // translations, field mappings, and hook_scolta_content_item_alter()
@@ -46,7 +48,7 @@ class ScoltaBatchOperations {
     // statically callable, so constructor injection is not available here.)
     /** @var \Drupal\scolta\Service\ScoltaContentGatherer $gatherer */
     $gatherer = \Drupal::service('scolta.content_gatherer');
-    $items = iterator_to_array($gatherer->gatherByIds('node', $entityIds, $siteName), FALSE);
+    $items = iterator_to_array($gatherer->gatherByIds($entityType, $entityIds, $siteName), FALSE);
 
     if (!empty($items)) {
       $exporter = new ContentExporter($config['output_dir']);

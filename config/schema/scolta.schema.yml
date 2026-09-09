@@ -68,6 +68,15 @@ scolta.settings:
       sequence:
         type: string
         label: 'Filter field description'
+    entity_types:
+      type: sequence
+      label: 'Entity types to index, keyed by entity type ID'
+      sequence:
+        type: sequence
+        label: 'Bundles to index; empty for all bundles of the type'
+        sequence:
+          type: string
+          label: 'Bundle'
     body_fields:
       type: sequence
       label: 'Body content fields'

@@ -19,6 +19,7 @@ use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
+use Drush\Utils\StringUtils;
 use GuzzleHttp\ClientInterface;
 use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
@@ -104,13 +105,13 @@ class ScoltaCommands extends DrushCommands {
    * generation to the shared Tag1\Scolta\Export\ContentExporter.
    */
   #[CLI\Command(name: 'scolta:export', aliases: ['se'])]
-  #[CLI\Argument(name: 'entity_type', description: 'Entity type to export (default: node)')]
+  #[CLI\Argument(name: 'entity_type', description: 'Entity type(s) to export, comma-separated (default: the configured entity_types)')]
   #[CLI\Option(name: 'bundle', description: 'Bundle/content type to export (default: all)')]
   #[CLI\Option(name: 'output-dir', description: 'Output directory for HTML files (default: export/ under pagefind.build_dir)')]
   #[CLI\Usage(name: 'scolta:export node --bundle=article', description: 'Export all published articles')]
   #[CLI\Usage(name: 'scolta:export node --bundle=page --output-dir=/var/www/html/pagefind-site', description: 'Export pages to specific directory')]
   public function export(
-    string $entity_type = 'node',
+    string $entity_type = '',
     array $options = ['bundle' => '', 'output-dir' => ''],
   ): void {
     $config = $this->configFactory->get('scolta.settings');
@@ -121,15 +122,10 @@ class ScoltaCommands extends DrushCommands {
     $exporter = new ContentExporter($outputDir);
     $exporter->prepareOutputDir();
 
-    $items = $this->contentGatherer->gather($entity_type, $bundle, $siteName);
-
-    if (empty($items)) {
-      $this->logger()->warning('No published entities found.');
-      return;
-    }
-
-    foreach ($items as $item) {
-      $exporter->export($item);
+    foreach ($this->entityTypes($entity_type) as $entityType) {
+      foreach ($this->contentGatherer->gather($entityType, $bundle, $siteName) as $item) {
+        $exporter->export($item);
+      }
     }
 
     $stats = $exporter->getStats();
@@ -156,7 +152,7 @@ class ScoltaCommands extends DrushCommands {
    * them and let cron apply the change incrementally.
    */
   #[CLI\Command(name: 'scolta:build', aliases: ['sb'])]
-  #[CLI\Option(name: 'entity-type', description: 'Entity type to export')]
+  #[CLI\Option(name: 'entity-type', description: 'Entity type(s) to index, comma-separated. Default: the configured entity_types (node unless configured otherwise)')]
   #[CLI\Option(name: 'bundle', description: 'Bundle to index. Scopes the build; see the help text above')]
   #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build; see the help text above. Unloadable IDs are logged and skipped. PHP indexer only; --bundle is ignored')]
   #[CLI\Option(name: 'output-dir', description: 'Export directory for the binary indexer (default: export/ under pagefind.build_dir)')]
@@ -170,7 +166,7 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Option(name: 'reset-ledger', description: 'Discard the page-table ledger under a plain build, renumbering every page from zero. Escape hatch for a corrupt page table (a duplicate page ordinal at the merge) without a full --restart. Cannot be combined with --resume')]
   public function build(
     array $options = [
-      'entity-type' => 'node',
+      'entity-type' => '',
       'bundle' => '',
       'entity-ids' => '',
       'output-dir' => '',
@@ -291,10 +287,10 @@ class ScoltaCommands extends DrushCommands {
    *   Whether to skip the fingerprint check and force a rebuild.
    */
   private function buildWithPhpIndexer(array $options, $config, bool $force): void {
-    $entityType = $options['entity-type'] ?: 'node';
-    $bundle     = $options['bundle'] ?: '';
-    $siteName   = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
-    $language   = $config->get('ai_languages')[0] ?? 'en';
+    $entityTypes = $this->entityTypes($options['entity-type'] ?? '');
+    $bundle = $options['bundle'] ?: '';
+    $siteName = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
+    $language = $config->get('ai_languages')[0] ?? 'en';
 
     $budget = MemoryBudgetConfig::fromCliAndConfig(
       (isset($options['memory-budget']) && $options['memory-budget'] !== NULL)
@@ -325,16 +321,22 @@ class ScoltaCommands extends DrushCommands {
       return;
     }
 
+    // A bundle or an ID list belongs to one entity type, so scoping a
+    // multi-type build is ambiguous rather than merely unusual.
+    if (count($entityTypes) > 1 && ($bundle !== '' || ($options['entity-ids'] ?? '') !== '')) {
+      throw new \RuntimeException('--bundle and --entity-ids scope one entity type; pass --entity-type=<type> with them.');
+    }
+
     // NULL means "no scoping" — the build walks the whole corpus. An explicit
     // ID list, even one that resolved to nothing, must not fall through to a
     // full walk.
     $entityIds = ($options['entity-ids'] ?? '') !== ''
-      ? $this->resolveEntityIds($entityType, (string) $options['entity-ids'])
+      ? $this->resolveEntityIds($entityTypes[0], (string) $options['entity-ids'])
       : NULL;
 
     $totalCount = $entityIds !== NULL
       ? count($entityIds)
-      : $this->contentGatherer->gatherCount($entityType, $bundle);
+      : array_sum(array_map(fn(string $type) => $this->contentGatherer->gatherCount($type, $bundle), $entityTypes));
     if ($totalCount === 0) {
       $this->logger()->warning('No content found to index.');
       return;
@@ -375,13 +377,15 @@ class ScoltaCommands extends DrushCommands {
     $reporter = new DrushProgressReporter($this->output());
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
 
-    // Where a resumed build restarts its walk. The ledger knows exactly which
-    // pages this build has already committed, so the cursor is derived from
-    // real content ids rather than from pages_processed, which counts pages
-    // against a cursor that walks entities.
-    $resumeFromId = $resume ? $this->resumeCursor($orchestrator) : NULL;
-    if ($resumeFromId !== NULL) {
-      $this->logger()->notice('Resuming the content walk at entity {id}.', ['id' => $resumeFromId]);
+    // Where a resumed build restarts its walk, per entity type. The ledger
+    // knows exactly which pages this build has already committed, so the
+    // cursors are derived from real content ids rather than from
+    // pages_processed, which counts pages against a cursor that walks
+    // entities. A type with no cursor was not reached before the interruption
+    // and is walked from its first row.
+    $resumeCursors = $resume ? $this->resumeCursors($orchestrator) : [];
+    foreach ($resumeCursors as $type => $id) {
+      $this->logger()->notice('Resuming the {type} walk at entity {id}.', ['type' => $type, 'id' => $id]);
     }
 
     // Expose the timestamp manifest to the gatherer so it can skip full entity
@@ -408,13 +412,18 @@ class ScoltaCommands extends DrushCommands {
       // no cursor, so the ID list itself is trimmed to it. The boundary entity
       // stays in because only some of its translations may have committed; the
       // orchestrator drops the ones already indexed.
+      $resumeFromId = $resumeCursors[$entityTypes[0]] ?? NULL;
       if ($resumeFromId !== NULL) {
         $entityIds = array_values(array_filter($entityIds, fn($id) => (int) $id >= $resumeFromId));
       }
-      $source = $this->contentGatherer->gatherByIds($entityType, $entityIds, $siteName, $tsManifest, $force);
+      $source = $this->contentGatherer->gatherByIds($entityTypes[0], $entityIds, $siteName, $tsManifest, $force);
     }
     else {
-      $source = $this->contentGatherer->gather($entityType, $bundle, $siteName, $resumeFromId, $tsManifest, $force);
+      $source = (function () use ($entityTypes, $bundle, $siteName, $resumeCursors, $tsManifest, $force) {
+        foreach ($entityTypes as $type) {
+          yield from $this->contentGatherer->gather($type, $bundle, $siteName, $resumeCursors[$type] ?? NULL, $tsManifest, $force);
+        }
+      })();
     }
     $items = $exporter->filterItems($source, $tsManifest);
 
@@ -531,36 +540,51 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * The entity ID a resumed build should restart its content walk at.
+   * The entity IDs a resumed build should restart its content walks at.
    *
    * The ledger holds one row per *page* this build committed, keyed by the
-   * content item ID the gatherer produced ('42' for a single-language node,
-   * '42-es' for a translation). The walk is over *entities*, so the cursor is
-   * the highest entity those rows mention. It is used inclusively, because
-   * that entity may have had only some of its translations committed before
-   * the memory limit hit; the orchestrator drops the ones already indexed.
+   * content item ID the gatherer produced ('node:42' for a single-language
+   * node, 'node:42-es' for a translation, 'group:42' for a group). The walk
+   * is over *entities*, one walk per type, so each type's cursor is the
+   * highest entity its rows mention. It is used inclusively, because that
+   * entity may have had only some of its translations committed before the
+   * memory limit hit; the orchestrator drops the ones already indexed.
    *
-   * Returns NULL when the ledger is empty or holds an ID this cannot read as
-   * an entity ID, in which case the build re-reads from the start — slower,
-   * and never wrong.
+   * Returns an empty array when the ledger is empty or holds an ID this
+   * cannot read as an entity ID, in which case the build re-reads from the
+   * start — slower, and never wrong.
+   *
+   * @return array<string, int>
+   *   Entity type ID => the entity ID to resume at.
    */
-  private function resumeCursor(IndexBuildOrchestrator $orchestrator): ?int {
-    $highest = NULL;
+  private function resumeCursors(IndexBuildOrchestrator $orchestrator): array {
+    $highest = [];
 
     foreach ($orchestrator->pageTableLedger()->seenIdsThisBuild() as $itemId) {
-      // '42-es' is entity 42; anything that does not lead with digits is not
-      // an ID this walk can seek to.
-      $entityId = strtok($itemId, '-');
-      if ($entityId === FALSE || !ctype_digit($entityId)) {
-        return NULL;
+      $parsed = ScoltaContentGatherer::parseItemId($itemId);
+      // Anything without a type prefix or a numeric ID is not an ID this walk
+      // can seek to.
+      if ($parsed === NULL || !ctype_digit($parsed[1])) {
+        return [];
       }
-      $entityId = (int) $entityId;
-      if ($highest === NULL || $entityId > $highest) {
-        $highest = $entityId;
-      }
+      [$entityType, $entityId] = $parsed;
+      $highest[$entityType] = max($highest[$entityType] ?? 0, (int) $entityId);
     }
 
     return $highest;
+  }
+
+  /**
+   * Resolve an --entity-type value (or scolta:export argument) to a type list.
+   *
+   * @param string $option
+   *   Comma-separated entity type IDs, or empty for the configured list.
+   *
+   * @return string[]
+   *   At least one entity type ID.
+   */
+  private function entityTypes(string $option): array {
+    return StringUtils::csvToArray($option) ?: array_keys($this->contentGatherer->entityTypes());
   }
 
   /**
@@ -599,9 +623,8 @@ class ScoltaCommands extends DrushCommands {
     }
 
     $cmd = escapeshellarg($drushBin) . ' scolta:build --indexer=php --resume';
-    $entityType = $options['entity-type'] ?? 'node';
-    if ($entityType !== 'node') {
-      $cmd .= ' --entity-type=' . escapeshellarg($entityType);
+    if (!empty($options['entity-type'])) {
+      $cmd .= ' --entity-type=' . escapeshellarg((string) $options['entity-type']);
     }
     if (!empty($options['bundle'])) {
       $cmd .= ' --bundle=' . escapeshellarg($options['bundle']);

@@ -414,3 +414,81 @@ function scolta_update_10006() {
 
   return t('Added the body_fields setting, seeded with the field list that used to be hardcoded in ScoltaContentGatherer (body, field_body, field_content), so indexing behaviour is unchanged. Add bundle-specific fields at /admin/config/search/scolta — content with none of the listed fields is skipped, which is how Umami recipe nodes went unindexed.');
 }
+
+/**
+ * Page IDs are now prefixed with the entity type ('42' became 'node:42').
+ */
+function scolta_update_10007() {
+  return t('Page IDs are now prefixed with the entity type. @outcome', [
+    '@outcome' => scolta_reset_index_state('update_10007'),
+  ]);
+}
+
+/**
+ * Discard the build state and queue one full rebuild.
+ *
+ * For any release whose page IDs, ledger layout or manifest keys are not
+ * compatible with what an earlier release wrote. A build on incompatible state
+ * would tombstone every old row and allocate a fresh ordinal for every new
+ * one, doubling the page table; on an empty build state directory the next
+ * build of any kind numbers pages from zero. The published index keeps
+ * serving until that build swaps in.
+ *
+ * Idempotent: emptying an empty directory does nothing, and a rebuild is
+ * queued only when auto_rebuild is on and nothing is already waiting. Any
+ * queued item forces a full build against an empty ledger (the incremental
+ * updater reports itself unavailable without one), so one is enough.
+ *
+ * @param string $reason
+ *   Recorded on the queue item, e.g. the update hook name.
+ *
+ * @return \Drupal\Core\StringTranslation\TranslatableMarkup
+ *   What happened, for an update hook to return.
+ *
+ * @since 1.4.1
+ * @stability experimental
+ */
+function scolta_reset_index_state(string $reason) {
+  $config = \Drupal::config('scolta.settings');
+  $buildDir = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
+
+  $emptied = _scolta_empty_directory($buildDir);
+
+  $queued = FALSE;
+  $queue = \Drupal::queue('scolta_rebuild');
+  if ($config->get('pagefind.auto_rebuild') && $queue->numberOfItems() === 0) {
+    $queue->createItem(['type' => $reason]);
+    $queued = TRUE;
+  }
+
+  return t('@emptied @queued Sites whose full build exceeds one PHP process should run `drush scolta:build` now; cron cannot resume a build.', [
+    '@emptied' => $emptied
+      ? t('Emptied the build state directory @dir so the next build renumbers every page from zero.', ['@dir' => $buildDir])
+      : t('The build state directory @dir did not exist; nothing to discard.', ['@dir' => $buildDir]),
+    '@queued' => $queued
+      ? t('A full rebuild is queued for the next cron run.')
+      : t('No rebuild was queued (auto_rebuild is off or one is already waiting).'),
+  ]);
+}
+
+/**
+ * Delete everything inside a directory, keeping the directory itself.
+ *
+ * @param string $uri
+ *   A stream-wrapper URI or filesystem path.
+ *
+ * @return bool
+ *   TRUE when the directory existed and was emptied.
+ */
+function _scolta_empty_directory(string $uri): bool {
+  /** @var \Drupal\Core\File\FileSystemInterface $fs */
+  $fs = \Drupal::service('file_system');
+  $path = str_contains($uri, '://') ? ($fs->realpath($uri) ?: $uri) : $uri;
+  if (!is_dir($path)) {
+    return FALSE;
+  }
+  foreach (array_diff(scandir($path) ?: [], ['.', '..']) as $entry) {
+    $fs->deleteRecursive($path . '/' . $entry);
+  }
+  return TRUE;
+}
