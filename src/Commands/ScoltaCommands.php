@@ -57,6 +57,15 @@ class ScoltaCommands extends DrushCommands {
   private const MAX_RESUME_SEGMENTS = 50;
 
   /**
+   * Set in the environment of every segment runResumeChain() spawns.
+   *
+   * A `--resume` flag alone cannot tell a segment from an operator re-running
+   * the command by hand after an interruption, and only the segment must
+   * report its yield to a parent instead of chaining on itself.
+   */
+  public const RESUME_SEGMENT_ENV = 'SCOLTA_RESUME_SEGMENT';
+
+  /**
    * Constructs a ScoltaCommands object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
@@ -375,7 +384,7 @@ class ScoltaCommands extends DrushCommands {
     }
 
     $reporter = new DrushProgressReporter($this->output());
-    $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
+    $orchestrator = $this->orchestrator($resolvedStateDir, $resolvedOutputDir, $language);
 
     // Where a resumed build restarts its walk, per entity type. The ledger
     // knows exactly which pages this build has already committed, so the
@@ -484,11 +493,14 @@ class ScoltaCommands extends DrushCommands {
         ));
       }
 
-      // A process invoked with --resume is a segment of a chain the original
-      // process is driving; it reports its own outcome and lets that process
-      // decide what happens next. Nesting a chain inside every segment would
-      // keep one bootstrapped Drupal alive per segment.
-      if ($resume) {
+      // A segment spawned by runResumeChain() reports its own outcome and lets
+      // the process driving the chain decide what happens next. Nesting a
+      // chain inside every segment would keep one bootstrapped Drupal alive
+      // per segment. An operator's own `--resume` is not a segment: it owns
+      // the build like a fresh one does, and chains. It used to throw here,
+      // so a 124k-entity site whose first build had been interrupted got one
+      // segment per hand-launched command, each ending with this message.
+      if (getenv(self::RESUME_SEGMENT_ENV) !== FALSE) {
         throw new \RuntimeException(sprintf(
           'Memory limit reached after %d pages. The build is incomplete and the index has not been '
           . 'republished. Re-run `drush scolta:build --resume` to continue, or raise memory_limit.',
@@ -587,7 +599,7 @@ class ScoltaCommands extends DrushCommands {
       ));
     }
 
-    $cmd = escapeshellarg($drushBin) . ' scolta:build --indexer=php --resume';
+    $cmd = self::RESUME_SEGMENT_ENV . '=1 ' . escapeshellarg($drushBin) . ' scolta:build --indexer=php --resume';
     if (!empty($options['entity-type'])) {
       $cmd .= ' --entity-type=' . escapeshellarg((string) $options['entity-type']);
     }
@@ -644,9 +656,22 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Run a command in the foreground, streaming its output, and return its code.
+   * The orchestrator a build runs through.
+   *
+   * A seam: a kernel test overrides it to inject a memory-pressure probe, the
+   * only way to reach the yield path without a corpus that fills the heap.
    */
-  private function runForeground(string $cmd): int {
+  protected function orchestrator(string $stateDir, string $outputDir, string $language): IndexBuildOrchestrator {
+    return new IndexBuildOrchestrator($stateDir, $outputDir, NULL, $language);
+  }
+
+  /**
+   * Run a command in the foreground, streaming its output, and return its code.
+   *
+   * Protected so a kernel test can observe the segment command instead of
+   * spawning a drush that would run against the wrong database.
+   */
+  protected function runForeground(string $cmd): int {
     // phpcs:ignore Drupal.Functions.DiscouragedFunctions,Drupal.Commenting.PostStatementComment,Drupal.Commenting.InlineComment,Drupal.Files.LineLength -- nosemgrep trails the call because semgrep reads it only there. proc_open required to stream a child build's output while waiting for it. Arguments are escapeshellarg-quoted.
     $handle = proc_open($cmd . ' 2>&1', [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes); // nosemgrep: php.lang.security.exec-use.exec-use
     if ($handle === FALSE) {
