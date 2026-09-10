@@ -243,9 +243,6 @@ scolta.settings:
     prompt_follow_up:
       type: string
       label: 'Custom follow-up prompt'
-    indexer:
-      type: string
-      label: 'Indexer mode (auto, php, or binary)'
     memory_budget:
       type: mapping
       label: 'Memory budget configuration'
@@ -308,15 +305,12 @@ scolta.settings:
         output_dir:
           type: string
           label: 'Output directory'
-        binary:
-          type: string
-          label: 'Pagefind binary path'
         auto_rebuild:
           type: boolean
-          label: 'Auto-rebuild after indexing'
-        view_mode:
-          type: string
-          label: 'Entity view mode for indexing'
+          label: 'Rebuild the index when indexed content changes'
+        auto_rebuild_delay:
+          type: integer
+          label: 'Seconds to wait after the last content change before rebuilding (60-3600)'
     incremental:
       type: mapping
       label: 'Incremental index update configuration'
@@ -335,28 +329,3 @@ scolta.settings:
           type: integer
           label: 'Wall-clock seconds each cron run may spend deleting retired index directories (0 disables cron cleanup)'
 
-search_api.backend.plugin.scolta_pagefind:
-  type: mapping
-  label: 'Scolta Pagefind backend configuration'
-  mapping:
-    build_dir:
-      type: string
-      label: 'Build directory'
-    output_dir:
-      type: string
-      label: 'Pagefind output directory'
-    pagefind_binary:
-      type: string
-      label: 'Pagefind binary path'
-    auto_rebuild:
-      type: boolean
-      label: 'Auto-rebuild index after changes'
-    auto_rebuild_delay:
-      type: integer
-      label: 'Seconds to wait after the last content change before rebuilding'
-    view_mode:
-      type: string
-      label: 'Entity view mode'
-    indexer:
-      type: string
-      label: 'Indexer mode (auto, php, or binary)'

@@ -31,7 +31,7 @@ class CleanupCommandDryRunKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'search_api', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta'];
 
   /**
    * A real filesystem directory standing in for the published index location.
@@ -84,9 +84,7 @@ class CleanupCommandDryRunKernelTest extends KernelTestBase {
    */
   private function commands(): ScoltaCommands {
     $commands = new ScoltaCommands(
-      \Drupal::service('entity_type.manager'),
       \Drupal::service('config.factory'),
-      \Drupal::service('http_client'),
       \Drupal::service('state'),
       \Drupal::service('cache.default'),
       \Drupal::service('scolta.ai_service'),

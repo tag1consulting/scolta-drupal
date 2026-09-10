@@ -1,6 +1,6 @@
 {
     "name": "tag1/scolta-drupal",
-    "description": "Scolta AI Search for Drupal \u2014 Search API backend with Pagefind client-side search",
+    "description": "Scolta AI Search for Drupal \u2014 a PHP-built Pagefind index with client-side search",
     "type": "drupal-module",
     "license": "GPL-2.0-or-later",
     "authors": [
@@ -11,8 +11,7 @@
     ],
     "require": {
         "php": ">=8.3",
-        "drupal/search_api": "^1.36",
-        "tag1/scolta-php": "^1.5.0@dev"
+        "tag1/scolta-php": "^2.0.0@dev"
     },
     "suggest": {
         "drupal/ai": "For enhanced multi-provider AI support via the Drupal AI Initiative module (48+ providers, Key module integration, rate limiting, token tracking)"
@@ -83,7 +82,7 @@
         },
         "installer-name": "scolta",
         "branch-alias": {
-            "dev-main": "1.4.x-dev"
+            "dev-main": "2.0.x-dev"
         }
     },
     "config": {

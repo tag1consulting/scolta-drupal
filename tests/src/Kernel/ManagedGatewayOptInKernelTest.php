@@ -31,7 +31,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta', 'search_api'];
+  protected static $modules = ['system', 'user', 'scolta'];
 
   private const STATE_KEY = 'scolta.amazee.credentials';
   private const TOKEN = 'sk-stored-token';

@@ -33,16 +33,11 @@ parameters:
     - vendor/*
     # Drush commands require drush/drush which is not a dev dependency.
     - src/Commands/ScoltaCommands.php
-    # ScoltaBackend extends BackendPluginBase which extends Drupal core plugin
-    # classes unavailable in the unit-test environment (core is only "provided").
-    - src/Plugin/search_api/backend/ScoltaBackend.php
   ignoreErrors:
     # method_exists() guards that only look redundant where the class can be
     # resolved. Under ddev, phpstan-drupal loads search_api and Drupal core and
     # calls them always-true; in the isolated CI run the same guards are what
     # keep the code analysable at all. Unmatched there, which is why
     # reportUnmatchedIgnoredErrors is off.
-    - identifier: function.alreadyNarrowedType
-      path: src/Plugin/QueueWorker/ScoltaRebuildWorker.php
     - identifier: function.alreadyNarrowedType
       path: scolta.module

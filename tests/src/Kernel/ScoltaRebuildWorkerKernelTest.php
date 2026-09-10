@@ -15,7 +15,7 @@ use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
  *
  * Both tests return before any content gathering: the debounce check and
  * the build-lock acquisition happen before the pipeline runs, so this needs
- * no search_api server, no node content, and no scolta-php pipeline classes
+ * no node content, and no scolta-php pipeline classes
  * — only the queue worker plugin, real state, and a real lock. Pipeline
  * parity with `drush scolta:build` is covered by the functional tests
  * (PipelineParityFunctionalTest and friends).
@@ -27,7 +27,7 @@ class ScoltaRebuildWorkerKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'search_api', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta'];
 
   /**
    * Builds the worker through the real plugin manager, injected like Drupal.

@@ -56,9 +56,6 @@ jobs:
               ["type" => "composer", "url" => "https://packages.drupal.org/8"],
               ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
             ];
-            // Provide drupal/core so drupal/search_api dependency resolves without
-            // pulling in the full Drupal framework into the unit test environment.
-            $j["provide"]["drupal/core"] = "11.2.0";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
@@ -151,7 +148,6 @@ jobs:
               ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
             ];
             $j["require"]["tag1/scolta-php"] = "dev-" . $ref . "@dev";
-            $j["provide"]["drupal/core"] = "11.2.0";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
@@ -185,8 +181,11 @@ jobs:
               ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
             ];
             $j["require"]["tag1/scolta-php"] = "dev-main@dev";
-            // Do NOT provide drupal/core here — PHPStan needs the actual source
-            // files to analyze against. Unlike the test job, we let core install.
+            // phpstan-drupal needs the core source to resolve the classes the
+            // module extends. drupal/search_api used to pull it in; nothing
+            // else in the dependency tree does. No apostrophes here: the whole
+            // script sits inside a single-quoted shell string.
+            $j["require-dev"]["drupal/core"] = "^11";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
       - name: Install dependencies
@@ -233,9 +232,6 @@ jobs:
               ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
             ];
             $j["require"]["tag1/scolta-php"] = "dev-main@dev";
-            // Provide drupal/core so drupal/search_api dependency resolves without
-            // pulling in the full Drupal framework into the unit test environment.
-            $j["provide"]["drupal/core"] = "11.2.0";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 
@@ -359,7 +355,7 @@ jobs:
       # No silent resolutions: what this cell actually tested, in the log.
       - name: Report resolved versions
         run: |
-          for p in drupal/core drupal/search_api drush/drush phpunit/phpunit tag1/scolta-php; do
+          for p in drupal/core drush/drush phpunit/phpunit tag1/scolta-php; do
             echo "$p: $(ddev exec composer show "$p" 2>/dev/null | awk '/^versions/ {print $NF}')"
           done
 
@@ -396,9 +392,6 @@ jobs:
               ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
             ];
             $j["require"]["tag1/scolta-php"] = "dev-main@dev";
-            // Provide drupal/core so drupal/search_api dependency resolves without
-            // pulling in the full Drupal framework into the unit test environment.
-            $j["provide"]["drupal/core"] = "11.2.0";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
 

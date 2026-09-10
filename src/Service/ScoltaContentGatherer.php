@@ -25,8 +25,8 @@ use Tag1\Scolta\Index\TimestampManifest;
  * Central content gathering service.
  *
  * Single source of truth for collecting indexable content across entity types.
- * Both the Drush command pipeline (PHP indexer) and the legacy HTML-export
- * pipeline delegate to this class so the query logic lives in one place.
+ * The Drush build, the settings form's batch and the queue worker all
+ * delegate to this class so the query logic lives in one place.
  *
  * When a TimestampManifest is passed to gather(), entities whose changed
  * timestamp has not changed since the last build are yielded as

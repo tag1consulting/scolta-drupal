@@ -26,7 +26,7 @@ class AiEndpointFloodFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api', 'node'];
+  protected static $modules = ['scolta', 'node'];
 
   /**
    * {@inheritdoc}

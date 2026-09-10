@@ -19,7 +19,7 @@ class ResetIndexStateKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta', 'search_api'];
+  protected static $modules = ['system', 'user', 'scolta'];
 
   /**
    * Real build directory, outside vfsStream.

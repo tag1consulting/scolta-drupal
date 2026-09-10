@@ -1,10 +1,8 @@
 name: Scolta
 type: module
-description: 'AI-powered search with Pagefind — Search API backend with client-side search.'
+description: 'AI-powered search with Pagefind — a PHP-built index searched client-side.'
 core_version_requirement: ^10.5 || ^11
 package: Search
-dependencies:
-  - search_api:search_api
 configure: scolta.settings
-version: '1.4.1-dev'
+version: '2.0.0-dev'
 lifecycle: stable

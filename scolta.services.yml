@@ -15,14 +15,6 @@ services:
     class: Drupal\scolta\Service\ScoltaAiService
     arguments: ['@http_client', '@config.factory', '@logger.channel.scolta', '@scolta.amazee_budget_handler', '@scolta.amazee_config_storage', '@?ai.provider', '@cache.default']
 
-  scolta.pagefind_exporter:
-    class: Drupal\scolta\Service\PagefindExporter
-    arguments: ['@entity_type.manager', '@renderer', '@file_system', '@logger.channel.scolta']
-
-  scolta.pagefind_builder:
-    class: Drupal\scolta\Service\PagefindBuilder
-    arguments: ['@logger.channel.scolta', '@file_system', '@scolta.index_locator']
-
   scolta.content_gatherer:
     class: Drupal\scolta\Service\ScoltaContentGatherer
     arguments: ['@entity_type.manager', '@database', '@module_handler', '@config.factory']

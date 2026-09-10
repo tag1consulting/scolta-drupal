@@ -44,7 +44,6 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
    */
   protected static $modules = [
     'scolta',
-    'search_api',
     'node',
     'block',
     'language',

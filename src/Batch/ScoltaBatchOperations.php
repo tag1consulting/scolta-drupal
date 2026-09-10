@@ -51,7 +51,7 @@ class ScoltaBatchOperations {
     $items = iterator_to_array($gatherer->gatherByIds($entityType, $entityIds, $siteName), FALSE);
 
     if (!empty($items)) {
-      $exporter = new ContentExporter($config['output_dir']);
+      $exporter = new ContentExporter();
       $filtered = iterator_to_array($exporter->filterItems($items));
 
       if (!empty($filtered)) {

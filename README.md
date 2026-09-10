@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/tag1consulting/scolta-drupal/actions/workflows/ci.yml/badge.svg)](https://github.com/tag1consulting/scolta-drupal/actions/workflows/ci.yml)
 
-AI-powered search for Drupal — semantic relevance scoring, AI summaries, and natural language query expansion on top of Drupal's Search API.
+AI-powered search for Drupal — semantic relevance scoring, AI summaries, and natural language query expansion on a Pagefind-compatible index built in PHP.
 
 Built and maintained by [Tag1 Consulting](https://tag1.com/) — technology leadership since 2007. [Tag1 offers AI strategy, architecture, and implementation consulting](https://tag1.com/services/) for organizations evaluating or deploying AI-powered products.
 
@@ -14,7 +14,7 @@ Scolta 1.0 — the API documented here is stable. Breaking changes follow semant
 
 Scolta is a scoring, ranking, and AI layer built on [Pagefind](https://pagefind.app/). Pagefind is the search engine: it builds a static inverted index at publish time, runs a browser-side WASM search engine, produces word-position data, and generates highlighted excerpts. Scolta takes Pagefind's result set and re-ranks it with configurable boosts — title match weight, content match weight, recency decay curves, and phrase-proximity multipliers. No search server required. Queries resolve in the visitor's browser against the pre-built static index.
 
-This Drupal module is one of three CMS adapters (alongside [scolta-wp](https://github.com/tag1consulting/scolta-wp) and [scolta-laravel](https://github.com/tag1consulting/scolta-laravel)). It integrates with Drupal's Search API, provides Drush commands, an admin settings form, a search block, and API endpoints for AI query expansion and summarization.
+This Drupal module is one of three CMS adapters (alongside [scolta-wp](https://github.com/tag1consulting/scolta-wp) and [scolta-laravel](https://github.com/tag1consulting/scolta-laravel)). It provides Drush commands, an admin settings form, a search block, and API endpoints for AI query expansion and summarization.
 
 The LLM tier — query expansion, result summarization, follow-up questions — is optional. When enabled, it sends the query text and selected result excerpts to a configured LLM provider. The base search tier shares nothing with any third party; it runs entirely in the visitor's browser.
 
@@ -22,7 +22,6 @@ The LLM tier — query expansion, result summarization, follow-up questions — 
 
 - Drupal 10.5+ or Drupal 11
 - PHP 8.3+
-- `drupal/search_api` ^1.0
 
 ## Installation
 
@@ -39,43 +38,47 @@ the usual `composer update` followed by `drush cr`. That directory is runtime
 state, not code: if it is ever missing or stale — say, after restoring a
 database backup without the files directory — `drush cr` recreates it.
 
-### Search API setup
+### Choosing what to index
 
-Scolta uses Drupal's Search API as its indexing framework. After enabling the module:
+`scolta.settings: entity_types` names the entity types and bundles the index
+holds. It is keyed by entity type ID and lists the bundles to index, an empty
+list meaning every bundle. The default indexes every `node` bundle. There is
+no form field yet, so set it with Drush:
 
-1. Go to *Administration > Configuration > Search and Metadata > Search API* (`/admin/config/search/search-api`)
-2. Add a new **Server** and select **Scolta Pagefind** as the backend
-3. Add a new **Index**, select the content types you want to search, and assign it to the Scolta server
-4. Build the search index:
+```bash
+# Articles and pages only
+drush config:set --input-format=yaml scolta.settings entity_types '{node: [article, page]}'
+```
+
+Then build the index and place the **Scolta Search** block via *Structure >
+Block Layout*:
 
 ```bash
 drush scolta:build
 ```
 
-5. Place the **Scolta Search** block on your site via *Structure > Block Layout*
+Content saves, updates and deletes keep the index current through cron (see
+**Auto-rebuild debounce** below), and the settings form's **Index now** button
+rebuilds it from the browser.
 
 ## Drush Commands
 
 | Command | Description |
 |---|---|
-| `drush scolta:export` (`se`) | Export content as HTML files for Pagefind indexing |
-| `drush scolta:build` (`sb`) | Build the search index (export + index + deploy) |
+| `drush scolta:build` (`sb`) | Build the search index |
 | `drush scolta:build --force` | Force rebuild even if content has not changed |
 | `drush scolta:build --resume` | Resume a previously interrupted build |
 | `drush scolta:build --restart` | Discard interrupted state and start fresh. Also discards the page-table ledger, renumbering every page from zero |
 | `drush scolta:build --reset-ledger` | Discard the page-table ledger under a plain build, renumbering every page from zero. Escape hatch for a corrupt page table (a duplicate page ordinal at the merge) without a full `--restart`. Cannot be combined with `--resume` or a scoped build |
-| `drush scolta:build --indexer=php` | Use a specific indexer mode (`php`, `binary`, or `auto`); any other value is rejected |
 | `drush scolta:build --memory-budget=256M` | Set memory budget (profile name or byte value) |
 | `drush scolta:build --chunk-size=N` | Process N pages per chunk (overrides config) |
 | `drush scolta:build --entity-type=node,group` | Index these entity types instead of the configured `entity_types` (default `node`). See **Indexing more than one entity type** below |
 | `drush scolta:build --bundle=article` | Scope the build to one bundle. See **Scoped builds** below — this is not a way to reindex part of a larger index |
-| `drush scolta:build --entity-ids=12,34` | Scope the build to these entities; IDs that cannot be loaded are logged and skipped. `--bundle` is ignored (PHP indexer only). See **Scoped builds** below |
+| `drush scolta:build --entity-ids=12,34` | Scope the build to these entities; IDs that cannot be loaded are logged and skipped. `--bundle` is ignored. See **Scoped builds** below |
 | `drush scolta:finalize` (`sf`) | Merge chunks into the final search index |
-| `drush scolta:rebuild-index` (`sri`) | Rebuild index from existing exported HTML files |
 | `drush scolta:clear-cache` (`scc`) | Clear expansion and summary caches |
 | `drush scolta:check-setup` (`scs`) | Verify dependencies and configuration |
-| `drush scolta:status` (`sst`) | Show current index, indexer, and AI provider status as YAML |
-| `drush scolta:download-pagefind` (`sdp`) | Download the Pagefind binary for the current platform |
+| `drush scolta:status` (`sst`) | Show current index and AI provider status as YAML |
 
 ### Scoped builds
 
@@ -103,7 +106,7 @@ What to use instead:
 
 On sites with thousands of pages or on shared-hosting environments, builds can be interrupted by PHP timeouts, SSH disconnects, or memory limits.
 
-**Use `drush scolta:build` for initial and full index builds.** Do not use `drush search-api:index` — Search API's batch pipeline can exhaust shared-host resource limits on large corpora.
+**Use `drush scolta:build` for initial and full index builds.** The settings form's **Index now** runs the same build through the Batch API, which is fine for small sites but slower and less resilient than Drush.
 
 ### Surviving SSH disconnects
 
@@ -111,16 +114,16 @@ Run the build inside a persistent terminal session so it survives disconnects:
 
 ```bash
 # nohup — simplest, output goes to nohup.out
-nohup drush scolta:build --indexer=php &
+nohup drush scolta:build &
 
 # screen
 screen -S scolta
-drush scolta:build --indexer=php
+drush scolta:build
 # Detach: Ctrl+A, D  — reconnect: screen -r scolta
 
 # tmux
 tmux new-session -s scolta
-drush scolta:build --indexer=php
+drush scolta:build
 # Detach: Ctrl+B, D  — reconnect: tmux attach -t scolta
 ```
 
@@ -308,8 +311,6 @@ If searches return no results, the search index may not exist yet. Build it with
 drush scolta:build
 ```
 
-If you have previously run `drush search-api:index`, that is not sufficient — Scolta requires its own build step to generate the pagefind index.
-
 ### Permissions
 
 Scolta defines a **Use Scolta AI features** permission (`use scolta ai`) that gates the AI API endpoints. This permission is granted to the **authenticated** role automatically at module install, so logged-in visitors receive AI overviews with no admin action required. The **anonymous** role is deliberately not granted it: the AI endpoints make cost-bearing LLM calls, and opening them to unauthenticated traffic is a decision for the site rather than a default.
@@ -424,7 +425,7 @@ Cron runs the same full build `drush scolta:build` does. A build that outgrows o
 
 #### Auto-rebuild debounce
 
-When auto-rebuild is enabled, content saves enqueue an index rebuild that cron processes. The rebuild is debounced by the backend's **Rebuild delay** setting (Search API server > backend configuration, default 300 seconds): the queue waits until that many seconds have passed since the *last* content change, so a burst of edits produces one build instead of many.
+When auto-rebuild is enabled, content saves enqueue an index rebuild that cron processes. The rebuild is debounced by `scolta.settings: pagefind.auto_rebuild_delay` (default 300 seconds, clamped to 60–3600): the queue waits until that many seconds have passed since the *last* content change, so a burst of edits produces one build instead of many.
 
 Inserts, updates and deletes all enqueue a request, and each one names the node and the content item IDs it touched.
 
@@ -443,7 +444,7 @@ drush config:set scolta.settings incremental.enabled false
 drush config:set scolta.settings incremental.max_changed_items 250
 ```
 
-The worker falls back to a full rebuild, and logs why at `warning`, whenever it cannot update exactly: a queued request that does not name what changed (the install hook and the Search API backend enqueue plain full-rebuild markers), a change set over the threshold, or an index with no page-table ledger yet. Incremental updates apply to an index; they do not create one, so the first build after installing is always a full build.
+The worker falls back to a full rebuild, and logs why at `warning`, whenever it cannot update exactly: a queued request that does not name what changed (the install hook enqueues a plain full-rebuild marker), a change set over the threshold, or an index with no page-table ledger yet. Incremental updates apply to an index; they do not create one, so the first build after installing is always a full build.
 
 **This path is dormant until a `tag1/scolta-php` release carrying `IncrementalIndexUpdater` is installed.** Until then the class is absent, the worker takes the full build path, and nothing changes.
 
@@ -465,23 +466,6 @@ Top-level keys (without a namespace prefix) override nested values of the same n
 ## External Services
 
 Scolta connects to external services under specific conditions. No data is sent automatically — all connections are triggered by admin/developer action or explicit configuration.
-
-### GitHub API (api.github.com)
-
-**When:** An administrator runs `drush scolta:download-pagefind` to download the Pagefind binary.
-**What is sent:** A standard HTTPS GET request to `https://api.github.com/repos/CloudCannon/pagefind/releases/latest`. No personally identifiable information is transmitted beyond standard HTTP request headers (IP address, user agent).
-**Service:** GitHub, operated by GitHub, Inc. (a subsidiary of Microsoft Corporation).
-**Terms of Service:** https://docs.github.com/en/site-policy/github-terms/github-terms-of-service
-**Privacy Statement:** https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement
-
-### Pagefind Binary (GitHub Releases / Pagefind)
-
-**When:** `drush scolta:download-pagefind` downloads the Pagefind binary from GitHub Releases after querying the GitHub API above.
-**What is sent:** A standard HTTPS GET request to download the release archive. No personally identifiable information is transmitted beyond standard HTTP request headers.
-**Service:** Pagefind is an open-source project (MIT license) maintained by the Pagefind project.
-**Pagefind:** https://pagefind.app/
-**CloudCannon:** https://cloudcannon.com/
-**Pagefind License:** https://github.com/Pagefind/pagefind/blob/main/LICENSE
 
 ### Amazee.ai
 

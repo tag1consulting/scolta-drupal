@@ -5,7 +5,6 @@
  * Scolta module hooks.
  */
 
-use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Session\AccountInterface;
@@ -372,44 +371,6 @@ function _scolta_rebuild_notice(array &$page_top, AccountInterface $current_user
 }
 
 /**
- * Implements hook_form_FORM_ID_alter() for search_api_index_fields.
- *
- * Adds a notice to the Search API "Manage fields" form explaining that field
- * configuration is optional when Scolta is the backend — Scolta indexes the
- * full rendered entity view, not individual Search API fields.
- */
-function scolta_form_search_api_index_fields_alter(array &$form, FormStateInterface $form_state, string $form_id): void {
-  $form_object = $form_state->getFormObject();
-  if (!method_exists($form_object, 'getEntity')) {
-    return;
-  }
-
-  /** @var \Drupal\search_api\IndexInterface $index */
-  $index = $form_object->getEntity();
-
-  try {
-    $server = $index->getServerInstance();
-    if ($server === NULL || $server->getBackendId() !== 'scolta_pagefind') {
-      return;
-    }
-  }
-  catch (\Exception $e) {
-    return;
-  }
-
-  $form['scolta_fields_notice'] = [
-    '#type' => 'html_tag',
-    '#tag' => 'div',
-    '#attributes' => [
-      'class' => ['messages', 'messages--info'],
-      'role' => 'contentinfo',
-    ],
-    '#value' => (string) t('Scolta indexes the full rendered content of each entity. Individual field selection is not required — fields configured here are not used by the Scolta indexer.'),
-    '#weight' => -100,
-  ];
-}
-
-/**
  * @defgroup scolta_hooks Scolta module hooks
  * @{
  * Hooks for extending Scolta content gathering and indexing.
@@ -423,7 +384,7 @@ function scolta_form_search_api_index_fields_alter(array &$form, FormStateInterf
  *
  * Enqueues a rebuild request when an entity of an indexed type and bundle
  * (scolta.settings: entity_types) is inserted, updated or deleted and
- * auto_rebuild is enabled in the Scolta pagefind configuration.
+ * pagefind.auto_rebuild is on.
  *
  * The queue item carries the identity of what changed: the entity ID and the
  * per-translation content item IDs the gatherer would produce for it. Without

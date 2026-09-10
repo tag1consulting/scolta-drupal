@@ -7,7 +7,6 @@ namespace Drupal\scolta\Commands;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
@@ -19,10 +18,8 @@ use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 use Drush\Utils\StringUtils;
-use GuzzleHttp\ClientInterface;
 use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
-use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\BuildIntentFactory;
@@ -38,11 +35,11 @@ use Tag1\Scolta\Storage\FilesystemDriver;
 /**
  * Drush commands for Scolta.
  *
- * Scolta:export  -- Export CMS content as HTML files.
- * scolta:build   -- Run export, pagefind CLI, deploy.
- * scolta:clear-cache -- Clear expansion/summary caches.
- * scolta:cleanup -- Delete retired index (.scolta-trash-*) directories.
- * scolta:download-pagefind -- Download the Pagefind binary.
+ * Commands: scolta:build gathers content and builds the search index in
+ * PHP; scolta:finalize merges committed chunks into the final index;
+ * scolta:clear-cache clears the expansion/summary caches; scolta:cleanup
+ * deletes retired index (.scolta-trash-*) directories; scolta:status reports
+ * index, build directory and AI provider state.
  */
 class ScoltaCommands extends DrushCommands {
 
@@ -59,12 +56,8 @@ class ScoltaCommands extends DrushCommands {
   /**
    * Constructs a ScoltaCommands object.
    *
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
-   *   The entity type manager.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
-   * @param \GuzzleHttp\ClientInterface $httpClient
-   *   The HTTP client.
    * @param \Drupal\Core\State\StateInterface $state
    *   The state service.
    * @param \Drupal\Core\Cache\CacheBackendInterface $cache
@@ -83,9 +76,7 @@ class ScoltaCommands extends DrushCommands {
    *   The index locator.
    */
   public function __construct(
-    private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ConfigFactoryInterface $configFactory,
-    private readonly ClientInterface $httpClient,
     private readonly StateInterface $state,
     private readonly CacheBackendInterface $cache,
     private readonly ScoltaAiService $aiService,
@@ -99,48 +90,10 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Export content as minimal HTML files for Pagefind indexing.
+   * Build the search index.
    *
-   * Queries Drupal entities and delegates content cleaning and HTML
-   * generation to the shared Tag1\Scolta\Export\ContentExporter.
-   */
-  #[CLI\Command(name: 'scolta:export', aliases: ['se'])]
-  #[CLI\Argument(name: 'entity_type', description: 'Entity type(s) to export, comma-separated (default: the configured entity_types)')]
-  #[CLI\Option(name: 'bundle', description: 'Bundle/content type to export (default: all)')]
-  #[CLI\Option(name: 'output-dir', description: 'Output directory for HTML files (default: export/ under pagefind.build_dir)')]
-  #[CLI\Usage(name: 'scolta:export node --bundle=article', description: 'Export all published articles')]
-  #[CLI\Usage(name: 'scolta:export node --bundle=page --output-dir=/var/www/html/pagefind-site', description: 'Export pages to specific directory')]
-  public function export(
-    string $entity_type = '',
-    array $options = ['bundle' => '', 'output-dir' => ''],
-  ): void {
-    $config = $this->configFactory->get('scolta.settings');
-    $outputDir = $options['output-dir'] ?: $this->defaultExportDir();
-    $bundle = $options['bundle'] ?: '';
-    $siteName = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
-
-    $exporter = new ContentExporter($outputDir);
-    $exporter->prepareOutputDir();
-
-    foreach ($this->entityTypes($entity_type) as $entityType) {
-      foreach ($this->contentGatherer->gather($entityType, $bundle, $siteName) as $item) {
-        $exporter->export($item);
-      }
-    }
-
-    $stats = $exporter->getStats();
-    $this->logger()->success("Exported {$stats['exported']} entities to {$outputDir}/");
-    if ($stats['skipped'] > 0) {
-      $this->logger()->notice("Skipped {$stats['skipped']} entities with insufficient content.");
-    }
-  }
-
-  /**
-   * Build the Pagefind search index.
-   *
-   * Runs export -> pagefind CLI -> copies search page to docroot.
-   * When using the PHP indexer, content is processed in-memory without
-   * exporting HTML files or invoking the Pagefind binary.
+   * Gathers the configured entity types and indexes them in PHP: no HTML is
+   * exported and nothing shells out, so it runs on any host.
    *
    * Scoped builds: --bundle and --entity-ids narrow what the build gathers,
    * not what it publishes. A build merges the pages it gathered into a whole
@@ -154,10 +107,7 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Command(name: 'scolta:build', aliases: ['sb'])]
   #[CLI\Option(name: 'entity-type', description: 'Entity type(s) to index, comma-separated. Default: the configured entity_types (node unless configured otherwise)')]
   #[CLI\Option(name: 'bundle', description: 'Bundle to index. Scopes the build; see the help text above')]
-  #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build; see the help text above. Unloadable IDs are logged and skipped. PHP indexer only; --bundle is ignored')]
-  #[CLI\Option(name: 'output-dir', description: 'Export directory for the binary indexer (default: export/ under pagefind.build_dir)')]
-  #[CLI\Option(name: 'skip-pagefind', description: 'Export content only, skip Pagefind build')]
-  #[CLI\Option(name: 'indexer', description: 'Indexer mode: php, binary, or auto (default: from config)')]
+  #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build; see the help text above. Unloadable IDs are logged and skipped. --bundle is ignored')]
   #[CLI\Option(name: 'force', description: 'Skip fingerprint check and force a full rebuild')]
   #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value for the PHP indexer (e.g. conservative, 256M). Default: from config.')]
   #[CLI\Option(name: 'chunk-size', description: 'Pages per chunk during a PHP index build. Overrides the profile default and config setting.')]
@@ -169,9 +119,6 @@ class ScoltaCommands extends DrushCommands {
       'entity-type' => '',
       'bundle' => '',
       'entity-ids' => '',
-      'output-dir' => '',
-      'skip-pagefind' => FALSE,
-      'indexer' => '',
       'force' => FALSE,
       'memory-budget' => NULL,
       'chunk-size' => NULL,
@@ -181,103 +128,14 @@ class ScoltaCommands extends DrushCommands {
     ],
   ): void {
     $config = $this->configFactory->get('scolta.settings');
+    $this->buildWithPhpIndexer($options, $config, (bool) $options['force']);
 
-    // Resolve indexer mode: CLI option overrides config.
-    $indexerMode = $options['indexer'] ?: ($config->get('indexer') ?: 'auto');
-    if (!in_array($indexerMode, ['auto', 'php', 'binary'], TRUE)) {
-      throw new \RuntimeException(sprintf('Invalid indexer "%s". Must be one of: auto, php, binary.', $indexerMode));
-    }
-
-    if ($indexerMode === 'auto') {
-      $indexerMode = $this->resolveAutoIndexer($config);
-    }
-
-    if ($indexerMode === 'php') {
-      $this->buildWithPhpIndexer($options, $config, (bool) $options['force']);
-    }
-    else {
-      // The binary pipeline walks the whole corpus through scolta:export and
-      // has no ID-scoped entry point.
-      if (!empty($options['entity-ids'])) {
-        throw new \RuntimeException('--entity-ids is only supported by the PHP indexer. Re-run with --indexer=php.');
-      }
-      if (!empty($options['reset-ledger'])) {
-        throw new \RuntimeException('--reset-ledger is only supported by the PHP indexer. Re-run with --indexer=php.');
-      }
-      $this->buildWithBinary($options);
-    }
-
-    // Cache resolved prompts regardless of indexer mode.
     $this->logger()->notice('Caching resolved prompts...');
     $this->cacheResolvedPrompts();
   }
 
   /**
-   * Resolve 'auto' indexer mode.
-   *
-   * Auto always uses the PHP indexer — it works on all PHP hosting
-   * environments without exec() or Node.js, uses less memory, and
-   * supports fast incremental re-indexing. Set indexer: binary to
-   * use the Pagefind binary explicitly.
-   *
-   * @param \Drupal\Core\Config\ImmutableConfig $config
-   *   The Scolta settings config.
-   *
-   * @return string
-   *   Always 'php'.
-   */
-  private function resolveAutoIndexer($config): string {
-    $this->logger()->notice('Auto-detected indexer: php (default).');
-    return 'php';
-  }
-
-  /**
-   * Build using the existing binary pipeline (export HTML + run Pagefind).
-   */
-  private function buildWithBinary(array $options): void {
-    $this->logger()->notice('Step 1: Exporting content...');
-    $exportDir = $options['output-dir'] ?: $this->defaultExportDir();
-    $this->export($options['entity-type'], [
-      'bundle' => $options['bundle'],
-      'output-dir' => $exportDir,
-    ]);
-
-    if ($options['skip-pagefind']) {
-      $this->logger()->success('Export complete. Skipped Pagefind build (--skip-pagefind).');
-      return;
-    }
-
-    $this->logger()->notice('Step 2: Building Pagefind index (binary)...');
-    $config = $this->configFactory->get('scolta.settings');
-    $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
-    if (str_contains($outputDir, '://')) {
-      try {
-        $resolvedOutputDir = $this->streamWrapperManager
-          ->getViaUri($outputDir)->realpath() ?: $outputDir;
-      }
-      catch (\Exception $e) {
-        $resolvedOutputDir = $outputDir;
-      }
-    }
-    else {
-      $resolvedOutputDir = $outputDir;
-    }
-    $this->runPagefind($exportDir, $resolvedOutputDir . '/pagefind');
-  }
-
-  /**
-   * Where the binary pipeline exports HTML when no --output-dir is given.
-   *
-   * A scratch directory under the configured build dir, so it lands beside
-   * the rest of the build state instead of at a path hardcoded for one host.
-   */
-  private function defaultExportDir(): string {
-    $config = $this->configFactory->get('scolta.settings');
-    return $this->resolveBuildDir($config->get('pagefind.build_dir') ?? 'public://scolta-build') . '/export';
-  }
-
-  /**
-   * Build using the PHP indexer (in-memory, no Pagefind binary needed).
+   * Build the index in PHP.
    *
    * @param array $options
    *   The command options.
@@ -341,7 +199,7 @@ class ScoltaCommands extends DrushCommands {
       $this->logger()->warning('No content found to index.');
       return;
     }
-    $this->logger()->notice('Gathering content (PHP indexer): {count} entities.', ['count' => $totalCount]);
+    $this->logger()->notice('Gathering content: {count} entities.', ['count' => $totalCount]);
 
     $resume = (bool) ($options['resume'] ?? FALSE);
     $restart = (bool) ($options['restart'] ?? FALSE);
@@ -406,7 +264,7 @@ class ScoltaCommands extends DrushCommands {
     // manifest goes to the exporter as well: it is the exporter that drops
     // bodies too short to index, and it records those so the next build stops
     // re-gathering them.
-    $exporter = new ContentExporter($resolvedOutputDir);
+    $exporter = new ContentExporter();
     if ($entityIds !== NULL) {
       // Same inclusive resume boundary as the corpus walk: gatherByIds() has
       // no cursor, so the ID list itself is trimmed to it. The boundary entity
@@ -540,7 +398,7 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Resolve an --entity-type value (or scolta:export argument) to a type list.
+   * Resolve an --entity-type value to a type list.
    *
    * @param string $option
    *   Comma-separated entity type IDs, or empty for the configured list.
@@ -587,7 +445,7 @@ class ScoltaCommands extends DrushCommands {
       ));
     }
 
-    $cmd = escapeshellarg($drushBin) . ' scolta:build --indexer=php --resume';
+    $cmd = escapeshellarg($drushBin) . ' scolta:build --resume';
     if (!empty($options['entity-type'])) {
       $cmd .= ' --entity-type=' . escapeshellarg((string) $options['entity-type']);
     }
@@ -915,74 +773,6 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Rebuild the Pagefind index from existing exported HTML files.
-   *
-   * Skips the content export step — runs only the Pagefind CLI.
-   * Useful after config changes or Pagefind upgrades.
-   */
-  #[CLI\Command(name: 'scolta:rebuild-index', aliases: ['sri'])]
-  #[CLI\Option(name: 'source-dir', description: 'Source directory with exported HTML files (default: export/ under pagefind.build_dir)')]
-  #[CLI\Option(name: 'output-dir', description: 'Pagefind output directory (default: pagefind/ under pagefind.output_dir)')]
-  public function rebuildIndex(
-    array $options = [
-      'source-dir' => '',
-      'output-dir' => '',
-    ],
-  ): void {
-    $config = $this->configFactory->get('scolta.settings');
-    $sourceDir = $options['source-dir'] ?: $this->defaultExportDir();
-    $outputDir = $options['output-dir'] ?: $this->resolvePath($config->get('pagefind.output_dir') ?? 'public://scolta-pagefind') . '/pagefind';
-    $this->logger()->notice('Rebuilding Pagefind index from existing HTML files...');
-    $this->runPagefind($sourceDir, $outputDir);
-  }
-
-  /**
-   * Run the Pagefind CLI to build a search index.
-   */
-  private function runPagefind(string $sourceDir, string $outputDir): void {
-    $config = $this->configFactory->get('scolta.settings');
-    $resolver = new PagefindBinary(
-      configuredPath: $config->get('pagefind.binary'),
-      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
-    );
-
-    $binary = $resolver->resolve();
-    if ($binary === NULL) {
-      $status = $resolver->status();
-      $this->logger()->error($status['message']);
-      return;
-    }
-
-    $this->logger()->notice('Using Pagefind: {binary} (resolved via {via})', [
-      'binary' => $binary,
-      'via' => $resolver->resolvedVia(),
-    ]);
-
-    $cmd = $binary
-      . ' --site ' . escapeshellarg($sourceDir)
-      . ' --output-path ' . escapeshellarg($outputDir)
-      . ' 2>&1';
-    $result = NULL;
-    $output = [];
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions,Drupal.Commenting.PostStatementComment,Drupal.Commenting.InlineComment,Drupal.Files.LineLength -- nosemgrep trails the call because semgrep reads it only there. exec runs the Pagefind CLI; paths are escapeshellarg-quoted and the binary comes from admin config.
-    exec($cmd, $output, $result); // nosemgrep: php.lang.security.exec-use.exec-use
-    foreach ($output as $line) {
-      $this->logger()->notice($line);
-    }
-    if ($result !== 0) {
-      $this->logger()->error('Pagefind build failed.');
-      return;
-    }
-
-    // Increment generation counter to invalidate caches.
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->state->set('scolta.generation', $generation + 1);
-
-    $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
-    $this->logger()->success('Index built successfully.');
-  }
-
-  /**
    * Pre-resolve and cache all prompt templates.
    *
    * Stores resolved prompts in Drupal's cache so API endpoints can
@@ -1123,16 +913,11 @@ class ScoltaCommands extends DrushCommands {
   /**
    * Verify Scolta dependencies and configuration.
    *
-   * Checks PHP version, Pagefind binary, and AI key.
+   * Checks PHP version, runtime requirements, and AI key.
    */
   #[CLI\Command(name: 'scolta:check-setup', aliases: ['scs'])]
   public function checkSetup(): void {
-    $config = $this->configFactory->get('scolta.settings');
-
     $results = SetupCheck::run(
-      configuredBinaryPath: $config->get('pagefind.binary'),
-      projectDir: defined('DRUPAL_ROOT')
-        ? DRUPAL_ROOT : getcwd(),
       aiApiKey: $this->aiService->getApiKey(),
       // The AI-key row names the source and reports an overridden Amazee.ai
       // credential, from the same resolution the settings form and /health
@@ -1165,7 +950,7 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Show Scolta status: tracker, index, binary, AI provider.
+   * Show Scolta status: build directory, index, AI provider, cache.
    *
    * Emits YAML on stdout so the section groupings survive machine
    * consumption — logger lines flattened the structure and went to stderr.
@@ -1174,61 +959,6 @@ class ScoltaCommands extends DrushCommands {
   public function status(): void {
     $config = $this->configFactory->get('scolta.settings');
     $status = [];
-
-    // Search API index status.
-    try {
-      $indexes = $this->entityTypeManager
-        ->getStorage('search_api_index')
-        ->loadMultiple();
-      $rows = [];
-      foreach ($indexes as $index) {
-        if ($index->getServerId() && str_contains($index->getServerId(), 'scolta')) {
-          $tracker = $index->getTrackerInstance();
-          $rows[] = [
-            'label' => $index->label(),
-            'status' => $index->status() ? 'enabled' : 'disabled',
-            'indexed' => $tracker->getIndexedItemsCount(),
-            'total' => $tracker->getTotalItemsCount(),
-          ];
-        }
-      }
-      $status['search_api'] = ['indexes' => $rows];
-      if ($rows === []) {
-        $status['search_api']['note'] = 'No Scolta index configured.';
-      }
-    }
-    catch (\Exception $e) {
-      $status['search_api'] = ['error' => 'Could not query Search API: ' . $e->getMessage()];
-    }
-
-    // Indexer selection and active state.
-    $indexerSetting = $config->get('indexer') ?: 'auto';
-    $status['indexer'] = ['configured' => $indexerSetting];
-    if ($indexerSetting === 'binary') {
-      // Only probe the binary when it's actually the active indexer:
-      // PagefindBinary::status() runs up to five blocking exec() calls with
-      // no timeout (configured path, project-local, `npx pagefind
-      // --version`, bare `pagefind`, then a version() call), and on a
-      // network-restricted host an npx resolution attempt can hang
-      // indefinitely. When the indexer is php/auto that status is never
-      // even displayed, so it isn't worth the risk.
-      $resolver = new PagefindBinary(
-        configuredPath: $config->get('pagefind.binary'),
-        projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
-      );
-      $binaryStatus = $resolver->status();
-      $status['indexer']['active'] = 'binary';
-      $status['indexer']['binary'] = [
-        'available' => $binaryStatus['available'],
-        'message' => $binaryStatus['message'],
-      ];
-      if (!$binaryStatus['available']) {
-        $status['indexer']['binary']['hint'] = 'To install: npm install -g pagefind  OR  drush scolta:download-pagefind';
-      }
-    }
-    else {
-      $status['indexer']['active'] = 'php';
-    }
 
     // Build directory.
     $buildDirConfig = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
@@ -1316,170 +1046,6 @@ class ScoltaCommands extends DrushCommands {
     ];
 
     $this->output()->writeln(Yaml::dump($status, 4, 2));
-  }
-
-  /**
-   * Download the Pagefind binary for the current platform.
-   *
-   * Detects OS and architecture, fetches the latest release from GitHub,
-   * and extracts the binary to the specified location.
-   */
-  #[CLI\Command(name: 'scolta:download-pagefind', aliases: ['sdp'])]
-  #[CLI\Option(name: 'version', description: 'Pagefind version to download (default: latest)')]
-  #[CLI\Option(name: 'dest', description: 'Destination directory for the binary')]
-  #[CLI\Usage(name: 'scolta:download-pagefind', description: 'Download latest Pagefind binary')]
-  #[CLI\Usage(name: 'scolta:download-pagefind --version=1.1.0 --dest=/usr/local/bin', description: 'Download specific version to specific directory')]
-  public function downloadPagefind(
-    array $options = ['version' => 'latest', 'dest' => ''],
-  ): void {
-    // Detect platform.
-    $os = PHP_OS_FAMILY;
-    $arch = php_uname('m');
-
-    $platformMap = [
-      'Darwin' => [
-        'x86_64' => 'x86_64-apple-darwin',
-        'arm64' => 'aarch64-apple-darwin',
-      ],
-      'Linux' => [
-        'x86_64' => 'x86_64-unknown-linux-musl',
-        'aarch64' => 'aarch64-unknown-linux-musl',
-        'arm64' => 'aarch64-unknown-linux-musl',
-      ],
-      'Windows' => [
-        'x86_64' => 'x86_64-pc-windows-msvc',
-        'AMD64' => 'x86_64-pc-windows-msvc',
-      ],
-    ];
-
-    if (!isset($platformMap[$os][$arch])) {
-      $this->logger()->error("Unsupported platform: {$os} {$arch}");
-      return;
-    }
-
-    $platform = $platformMap[$os][$arch];
-    $version = $options['version'];
-    $resolver = new PagefindBinary(
-      projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
-    );
-    $dest = $options['dest'] ?: $resolver->downloadTargetDir();
-
-    // Resolve latest version from GitHub API.
-    if ($version === 'latest') {
-      $this->logger()->notice('Fetching latest Pagefind release info from GitHub...');
-      try {
-        $response = $this->httpClient->request('GET', 'https://api.github.com/repos/CloudCannon/pagefind/releases/latest', [
-          'headers' => [
-            'Accept' => 'application/vnd.github.v3+json',
-            'User-Agent' => 'Scolta-Drupal',
-          ],
-          'timeout' => 15,
-        ]);
-        try {
-          $releaseData = json_decode((string) $response->getBody(), TRUE, 512, JSON_THROW_ON_ERROR);
-        }
-        catch (\JsonException $e) {
-          $this->logger()->error('Failed to parse GitHub API response: ' . $e->getMessage());
-          return;
-        }
-        $version = ltrim($releaseData['tag_name'] ?? '', 'v');
-        if (empty($version)) {
-          $this->logger()->error('Could not determine latest Pagefind version from GitHub.');
-          return;
-        }
-      }
-      catch (\Exception $e) {
-        $this->logger()->error('Failed to fetch release info from GitHub: ' . $e->getMessage());
-        return;
-      }
-    }
-
-    $this->logger()->notice("Downloading Pagefind v{$version} for {$platform}...");
-
-    $ext = ($os === 'Windows') ? 'zip' : 'tar.gz';
-    $filename = "pagefind-v{$version}-{$platform}.{$ext}";
-    $url = "https://github.com/CloudCannon/pagefind/releases/download/v{$version}/{$filename}";
-
-    // Download the archive.
-    $tempFile = sys_get_temp_dir() . '/' . $filename;
-    try {
-      $response = $this->httpClient->request('GET', $url, [
-        'sink' => $tempFile,
-        'timeout' => 120,
-        'headers' => [
-          'User-Agent' => 'Scolta-Drupal',
-        ],
-      ]);
-
-      if ($response->getStatusCode() !== 200) {
-        $this->logger()->error("Download failed with HTTP {$response->getStatusCode()}");
-        return;
-      }
-    }
-    catch (\Exception $e) {
-      $this->logger()->error('Download failed: ' . $e->getMessage());
-      return;
-    }
-
-    // Extract the binary.
-    if (!is_dir($dest)) {
-      $this->fileSystem->mkdir($dest, 0755, TRUE);
-    }
-
-    try {
-      if ($ext === 'tar.gz') {
-        $phar = new \PharData($tempFile);
-        $phar->extractTo($dest, NULL, TRUE);
-      }
-      else {
-        $zip = new \ZipArchive();
-        if ($zip->open($tempFile) === TRUE) {
-          $zip->extractTo($dest);
-          $zip->close();
-        }
-        else {
-          $this->logger()->error('Failed to open zip archive.');
-          return;
-        }
-      }
-    }
-    catch (\Exception $e) {
-      $this->logger()->error('Extraction failed: ' . $e->getMessage());
-      return;
-    }
-
-    // Make binary executable on Unix.
-    $binaryPath = rtrim($dest, '/') . '/pagefind';
-    if ($os !== 'Windows' && file_exists($binaryPath)) {
-      $this->fileSystem->chmod($binaryPath, 0755);
-    }
-
-    // Clean up temp file.
-    if (file_exists($tempFile)) {
-      $this->fileSystem->delete($tempFile);
-    }
-
-    $this->logger()->success("Pagefind v{$version} installed to {$dest}/");
-
-    // Auto-update Drupal config to point to the downloaded binary.
-    $editableConfig = $this->configFactory->getEditable('scolta.settings');
-    $editableConfig->set('pagefind.binary', $binaryPath);
-    $editableConfig->save();
-    $this->logger()->notice('Drupal config updated: pagefind.binary = {path}', [
-      'path' => $binaryPath,
-    ]);
-
-    // Verify the binary works.
-    $output = [];
-    $exitCode = NULL;
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions,Drupal.Commenting.PostStatementComment,Drupal.Commenting.InlineComment,Drupal.Files.LineLength -- nosemgrep trails the call because semgrep reads it only there. exec runs the binary this command just downloaded; the path is escapeshellarg-quoted.
-    exec(escapeshellarg($binaryPath) . ' --version 2>&1', $output, $exitCode); // nosemgrep: php.lang.security.exec-use.exec-use
-    if ($exitCode === 0) {
-      $this->logger()->notice('Verified: ' . implode(' ', $output));
-    }
-    else {
-      $this->logger()->warning('Binary was extracted but --version check failed. You may need to adjust your PATH or permissions.');
-    }
   }
 
 }

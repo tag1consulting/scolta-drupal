@@ -36,7 +36,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api'];
+  protected static $modules = ['scolta'];
 
   /**
    * {@inheritdoc}
@@ -196,8 +196,6 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
 
       // 4. The CLI check-setup row, composed as ScoltaCommands does.
       $rows = SetupCheck::run(
-        configuredBinaryPath: NULL,
-        projectDir: NULL,
         aiApiKey: $service->getApiKey(),
         browserWasmDir: NULL,
         resolvedKey: $resolved,

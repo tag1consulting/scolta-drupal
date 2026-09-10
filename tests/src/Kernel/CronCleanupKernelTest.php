@@ -35,7 +35,7 @@ class CronCleanupKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'search_api', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta'];
 
   /**
    * A real filesystem directory standing in for the published index location.

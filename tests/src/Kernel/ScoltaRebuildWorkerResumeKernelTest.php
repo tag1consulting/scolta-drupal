@@ -33,7 +33,7 @@ class ScoltaRebuildWorkerResumeKernelTest extends KernelTestBase {
    * {@inheritdoc}
    */
   protected static $modules = [
-    'system', 'user', 'scolta', 'search_api', 'node', 'filter', 'field', 'text', 'dblog',
+    'system', 'user', 'scolta', 'node', 'filter', 'field', 'text', 'dblog',
   ];
 
   /**
@@ -182,7 +182,6 @@ class ScoltaRebuildWorkerResumeKernelTest extends KernelTestBase {
       $c->get('config.factory'),
       $c->get('file_system'),
       $c->get('stream_wrapper_manager'),
-      $c->get('entity_type.manager'),
       $c->get('state'),
       $c->get('cache_tags.invalidator'),
       $c->get('logger.channel.scolta'),
