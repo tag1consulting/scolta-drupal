@@ -181,9 +181,10 @@ jobs:
               ["type" => "vcs", "url" => "https://github.com/tag1consulting/scolta-php.git"],
             ];
             $j["require"]["tag1/scolta-php"] = "dev-main@dev";
-            // phpstan-drupal needs core's source to resolve the classes the
+            // phpstan-drupal needs the core source to resolve the classes the
             // module extends. drupal/search_api used to pull it in; nothing
-            // else in the dependency tree does.
+            // else in the dependency tree does. No apostrophes here: the whole
+            // script sits inside a single-quoted shell string.
             $j["require-dev"]["drupal/core"] = "^11";
             file_put_contents("composer.json", json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
           '
