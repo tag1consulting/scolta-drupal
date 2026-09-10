@@ -105,9 +105,9 @@ class ScoltaCommands extends DrushCommands {
    * generation to the shared Tag1\Scolta\Export\ContentExporter.
    */
   #[CLI\Command(name: 'scolta:export', aliases: ['se'])]
-  #[CLI\Argument(name: 'entity_type', description: 'Entity type(s) to export, comma-separated (default: the configured entity_types)')]
-  #[CLI\Option(name: 'bundle', description: 'Bundle/content type to export (default: all)')]
-  #[CLI\Option(name: 'output-dir', description: 'Output directory for HTML files (default: export/ under pagefind.build_dir)')]
+  #[CLI\Argument(name: 'entity_type', description: 'Entity type(s) to export, comma-separated')]
+  #[CLI\Option(name: 'bundle', description: 'Bundle/content type to export')]
+  #[CLI\Option(name: 'output-dir', description: 'Output directory for HTML files')]
   #[CLI\Usage(name: 'scolta:export node --bundle=article', description: 'Export all published articles')]
   #[CLI\Usage(name: 'scolta:export node --bundle=page --output-dir=/var/www/html/pagefind-site', description: 'Export pages to specific directory')]
   public function export(
@@ -152,14 +152,14 @@ class ScoltaCommands extends DrushCommands {
    * them and let cron apply the change incrementally.
    */
   #[CLI\Command(name: 'scolta:build', aliases: ['sb'])]
-  #[CLI\Option(name: 'entity-type', description: 'Entity type(s) to index, comma-separated. Default: the configured entity_types (node unless configured otherwise)')]
+  #[CLI\Option(name: 'entity-type', description: 'Entity type(s) to index, comma-separated')]
   #[CLI\Option(name: 'bundle', description: 'Bundle to index. Scopes the build; see the help text above')]
   #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build; see the help text above. Unloadable IDs are logged and skipped. PHP indexer only; --bundle is ignored')]
-  #[CLI\Option(name: 'output-dir', description: 'Export directory for the binary indexer (default: export/ under pagefind.build_dir)')]
+  #[CLI\Option(name: 'output-dir', description: 'Export directory for the binary indexer')]
   #[CLI\Option(name: 'skip-pagefind', description: 'Export content only, skip Pagefind build')]
-  #[CLI\Option(name: 'indexer', description: 'Indexer mode: php, binary, or auto (default: from config)')]
+  #[CLI\Option(name: 'indexer', description: 'Indexer mode: php, binary, or auto')]
   #[CLI\Option(name: 'force', description: 'Skip fingerprint check and force a full rebuild')]
-  #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value for the PHP indexer (e.g. conservative, 256M). Default: from config.')]
+  #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value for the PHP indexer (e.g. conservative, 256M).')]
   #[CLI\Option(name: 'chunk-size', description: 'Pages per chunk during a PHP index build. Overrides the profile default and config setting.')]
   #[CLI\Option(name: 'resume', description: 'Resume a previously interrupted PHP index build')]
   #[CLI\Option(name: 'restart', description: 'Discard interrupted state and restart the PHP index build. Also discards the page-table ledger, renumbering every page from zero')]
@@ -860,9 +860,9 @@ class ScoltaCommands extends DrushCommands {
    * The chunks must already be committed to the build state directory.
    */
   #[CLI\Command(name: 'scolta:finalize', aliases: ['sf'])]
-  #[CLI\Option(name: 'state-dir', description: 'Build state directory (default: from config)')]
-  #[CLI\Option(name: 'output-dir', description: 'Output directory for the final index (default: from config)')]
-  #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value (default: from config)')]
+  #[CLI\Option(name: 'state-dir', description: 'Build state directory')]
+  #[CLI\Option(name: 'output-dir', description: 'Output directory for the final index')]
+  #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value')]
   public function finalize(
     array $options = [
       'state-dir' => '',
@@ -921,8 +921,8 @@ class ScoltaCommands extends DrushCommands {
    * Useful after config changes or Pagefind upgrades.
    */
   #[CLI\Command(name: 'scolta:rebuild-index', aliases: ['sri'])]
-  #[CLI\Option(name: 'source-dir', description: 'Source directory with exported HTML files (default: export/ under pagefind.build_dir)')]
-  #[CLI\Option(name: 'output-dir', description: 'Pagefind output directory (default: pagefind/ under pagefind.output_dir)')]
+  #[CLI\Option(name: 'source-dir', description: 'Source directory with exported HTML files')]
+  #[CLI\Option(name: 'output-dir', description: 'Pagefind output directory')]
   public function rebuildIndex(
     array $options = [
       'source-dir' => '',
@@ -1325,7 +1325,7 @@ class ScoltaCommands extends DrushCommands {
    * and extracts the binary to the specified location.
    */
   #[CLI\Command(name: 'scolta:download-pagefind', aliases: ['sdp'])]
-  #[CLI\Option(name: 'version', description: 'Pagefind version to download (default: latest)')]
+  #[CLI\Option(name: 'version', description: 'Pagefind version to download')]
   #[CLI\Option(name: 'dest', description: 'Destination directory for the binary')]
   #[CLI\Usage(name: 'scolta:download-pagefind', description: 'Download latest Pagefind binary')]
   #[CLI\Usage(name: 'scolta:download-pagefind --version=1.1.0 --dest=/usr/local/bin', description: 'Download specific version to specific directory')]
