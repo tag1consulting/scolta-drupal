@@ -681,6 +681,48 @@ class ScoltaContentGatherer {
   }
 
   /**
+   * Where a resumed build restarts its entity walk, per entity type.
+   *
+   * The ledger holds one row per *page* a build committed, keyed by the
+   * content item ID the gatherer produced ('node:42' for a single-language
+   * node, 'node:42-es' for a translation, 'group:42' for a group). The walk
+   * is over *entities*, one walk per type, so each type's cursor is the
+   * highest entity its rows mention. It is used inclusively, because that
+   * entity may have had only some of its translations committed before the
+   * memory limit hit; the orchestrator drops the ones already indexed.
+   *
+   * Returns an empty array when the ledger is empty or holds an ID this
+   * cannot read as an entity ID, in which case the build re-reads from the
+   * start — slower, and never wrong.
+   *
+   * @param iterable<string> $seenItemIds
+   *   The item IDs the ledger recorded for the interrupted build
+   *   (PageTableLedger::seenIdsThisBuild()).
+   *
+   * @return array<string, int>
+   *   Entity type ID => the entity ID to resume at.
+   *
+   * @since 1.4.1
+   * @stability experimental
+   */
+  public static function resumeCursors(iterable $seenItemIds): array {
+    $highest = [];
+
+    foreach ($seenItemIds as $itemId) {
+      $parsed = self::parseItemId($itemId);
+      // Anything without a type prefix or a numeric ID is not an ID this walk
+      // can seek to.
+      if ($parsed === NULL || !ctype_digit($parsed[1])) {
+        return [];
+      }
+      [$entityType, $entityId] = $parsed;
+      $highest[$entityType] = max($highest[$entityType] ?? 0, (int) $entityId);
+    }
+
+    return $highest;
+  }
+
+  /**
    * The entity types and bundles the index covers.
    *
    * Read from scolta.settings: entity_types, a sequence keyed by entity type
