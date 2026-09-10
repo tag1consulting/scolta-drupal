@@ -323,15 +323,19 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
    *
    * Runs the real validateForm() against a stub form state: getValue() feeds
    * the candidate URL and setErrorByName() records what the form flags. The
-   * form object is built without its constructor — validateForm() touches no
-   * injected service, only the form state and string translation.
+   * form object is built without its constructor; only the two services the
+   * entity-types rule reads are set on it.
    *
    * @dataProvider urlValidationProvider
    */
   public function testValidateFormBaseUrlValidation(string $url, bool $shouldBeValid): void {
     /** @var \Drupal\scolta\Form\ScoltaSettingsForm $formObject */
-    $formObject = (new \ReflectionClass(ScoltaSettingsForm::class))->newInstanceWithoutConstructor();
+    $reflection = new \ReflectionClass(ScoltaSettingsForm::class);
+    $formObject = $reflection->newInstanceWithoutConstructor();
     $formObject->setStringTranslation($this->createStub(TranslationInterface::class));
+    // The entity-types rule reads the configured and the listable types.
+    $reflection->getProperty('contentGatherer')->setValue($formObject, $this->container->get('scolta.content_gatherer'));
+    $reflection->getProperty('entityTypeManager')->setValue($formObject, $this->container->get('entity_type.manager'));
 
     $errors = [];
     $formState = $this->createStub(FormStateInterface::class);

@@ -1444,11 +1444,15 @@ class ScoltaSettingsForm extends ConfigFormBase {
   /**
    * The entity_types config value the submitted form describes.
    *
+   * A configured type the form does not list (its module is not installed,
+   * or it is not renderable) is carried through unchanged rather than
+   * silently dropped.
+   *
    * @return array<string, string[]>
-   *   Checked entity type ID => checked bundles (empty for all).
+   *   Entity type ID => bundles (empty for all).
    */
   private function entityTypesFromForm(FormStateInterface $form_state): array {
-    $types = [];
+    $types = array_diff_key($this->contentGatherer->entityTypes(), $this->indexableEntityTypes());
     foreach ((array) ($form_state->getValue('entity_types') ?? []) as $typeId => $values) {
       if (empty($values['enabled'])) {
         continue;
