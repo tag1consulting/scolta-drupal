@@ -264,7 +264,7 @@ class ScoltaCommands extends DrushCommands {
     // manifest goes to the exporter as well: it is the exporter that drops
     // bodies too short to index, and it records those so the next build stops
     // re-gathering them.
-    $exporter = new ContentExporter($resolvedOutputDir);
+    $exporter = new ContentExporter();
     if ($entityIds !== NULL) {
       // Same inclusive resume boundary as the corpus walk: gatherByIds() has
       // no cursor, so the ID list itself is trimmed to it. The boundary entity
@@ -918,9 +918,6 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Command(name: 'scolta:check-setup', aliases: ['scs'])]
   public function checkSetup(): void {
     $results = SetupCheck::run(
-      configuredBinaryPath: NULL,
-      projectDir: defined('DRUPAL_ROOT')
-        ? DRUPAL_ROOT : getcwd(),
       aiApiKey: $this->aiService->getApiKey(),
       // The AI-key row names the source and reports an overridden Amazee.ai
       // credential, from the same resolution the settings form and /health

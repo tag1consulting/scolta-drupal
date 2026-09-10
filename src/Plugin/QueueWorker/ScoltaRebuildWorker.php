@@ -367,7 +367,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     // the bodies it drops for being too short to index, which is the only
     // place that decision is made against a body in memory.
     $tsManifest = $orchestrator->getTimestampManifest();
-    $exporter = new ContentExporter($outputDir);
+    $exporter = new ContentExporter();
     $source = (function () use ($entityTypes, $cursors, $siteName, $tsManifest) {
       foreach ($entityTypes as $type) {
         yield from $this->contentGatherer->gather($type, '', $siteName, $cursors[$type] ?? NULL, $tsManifest, FALSE);

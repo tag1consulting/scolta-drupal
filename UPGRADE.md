@@ -20,6 +20,9 @@ are removed, along with the `indexer`, `pagefind.binary` and
 `pagefind.view_mode` config keys and the `search_api` dependency. The
 auto-rebuild debounce moved from the Search API server's *Rebuild delay* to
 `scolta.settings: pagefind.auto_rebuild_delay`.
+The module now requires `tag1/scolta-php` `^2.0`, the release that removes the
+binary pipeline from the library; `composer update tag1/scolta-php` brings it
+in with the module.
 
 **What to do:** run `drush updb`. `scolta_update_10008()` deletes the Search
 API index and server that used the Scolta backend, copies the server's rebuild

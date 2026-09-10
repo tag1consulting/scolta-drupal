@@ -160,8 +160,6 @@ namespace Drupal\scolta\Tests {
       $checker = new HealthChecker(
             config: $config,
             indexOutputDir: sys_get_temp_dir(),
-            pagefindBinaryPath: NULL,
-            projectDir: NULL,
             cache: $cache,
         );
 
