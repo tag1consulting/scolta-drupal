@@ -323,23 +323,31 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
    *
    * Runs the real validateForm() against a stub form state: getValue() feeds
    * the candidate URL and setErrorByName() records what the form flags. The
-   * form object is built without its constructor — validateForm() touches no
-   * injected service, only the form state and string translation.
+   * form object is built without its constructor; only the two services the
+   * entity-types rule reads are set on it.
    *
    * @dataProvider urlValidationProvider
    */
   public function testValidateFormBaseUrlValidation(string $url, bool $shouldBeValid): void {
     /** @var \Drupal\scolta\Form\ScoltaSettingsForm $formObject */
-    $formObject = (new \ReflectionClass(ScoltaSettingsForm::class))->newInstanceWithoutConstructor();
+    $reflection = new \ReflectionClass(ScoltaSettingsForm::class);
+    $formObject = $reflection->newInstanceWithoutConstructor();
     $formObject->setStringTranslation($this->createStub(TranslationInterface::class));
+    // The entity-types rule reads the configured and the listable types.
+    $reflection->getProperty('contentGatherer')->setValue($formObject, $this->container->get('scolta.content_gatherer'));
+    $reflection->getProperty('entityTypeManager')->setValue($formObject, $this->container->get('entity_type.manager'));
 
     $errors = [];
     $formState = $this->createStub(FormStateInterface::class);
-    // ai_base_url carries the candidate; every other validated field (the
-    // recency curve, the pipe-separated mappings) reads as empty so only the
-    // URL rule can fire.
+    // ai_base_url carries the candidate; one entity type is checked and
+    // every other validated field (the recency curve, the pipe-separated
+    // mappings) reads as empty so only the URL rule can fire.
     $formState->method('getValue')->willReturnCallback(
-      static fn ($key, $default = NULL) => $key === 'ai_base_url' ? $url : ''
+      static fn ($key, $default = NULL) => match ($key) {
+        'ai_base_url' => $url,
+        'entity_types' => ['node' => ['enabled' => 1, 'bundles' => []]],
+        default => '',
+      }
     );
     $formState->method('setErrorByName')->willReturnCallback(
       function ($name, $message = '') use (&$errors, $formState) {

@@ -410,7 +410,7 @@ The AI API endpoints (`/api/scolta/v1/expand-query`, `/api/scolta/v1/summarize`,
 
 #### Indexing more than one entity type
 
-The index covers every node bundle by default. `scolta.settings: entity_types` is keyed by entity type ID and lists the bundles to index, an empty list meaning all of them. The build, the settings form's *Index now*, the rebuild queue worker and the auto-rebuild entity hooks all read it. It has no form field yet, so set it with Drush:
+The index covers every node bundle by default. `scolta.settings: entity_types` is keyed by entity type ID and lists the bundles to index, an empty list meaning all of them. The build, the settings form's *Index now*, the rebuild queue worker and the auto-rebuild entity hooks all read it. Set it under **Entity types to index** in the *Content* section of the settings form, or with Drush:
 
 ```bash
 drush config:set --input-format=yaml scolta.settings entity_types '{node: [], group: [community]}'
