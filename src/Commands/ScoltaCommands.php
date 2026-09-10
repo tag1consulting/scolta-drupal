@@ -14,7 +14,6 @@ use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Cache\DrupalCacheDriver;
 use Drupal\scolta\Progress\DrushProgressReporter;
 use Drupal\scolta\Service\IndexLocator;
-use Drupal\scolta\Service\ResumeChainPolicy;
 use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
@@ -30,6 +29,7 @@ use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
 use Tag1\Scolta\Index\PageTableLedger;
+use Tag1\Scolta\Index\ResumeChainPolicy;
 use Tag1\Scolta\Index\RetiredIndexTrash;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 use Tag1\Scolta\SetupCheck;
@@ -383,7 +383,7 @@ class ScoltaCommands extends DrushCommands {
     // pages_processed, which counts pages against a cursor that walks
     // entities. A type with no cursor was not reached before the interruption
     // and is walked from its first row.
-    $resumeCursors = $resume ? $this->resumeCursors($orchestrator) : [];
+    $resumeCursors = $resume ? ScoltaContentGatherer::resumeCursors($orchestrator->pageTableLedger()->seenIdsThisBuild()) : [];
     foreach ($resumeCursors as $type => $id) {
       $this->logger()->notice('Resuming the {type} walk at entity {id}.', ['type' => $type, 'id' => $id]);
     }
@@ -540,41 +540,6 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * The entity IDs a resumed build should restart its content walks at.
-   *
-   * The ledger holds one row per *page* this build committed, keyed by the
-   * content item ID the gatherer produced ('node:42' for a single-language
-   * node, 'node:42-es' for a translation, 'group:42' for a group). The walk
-   * is over *entities*, one walk per type, so each type's cursor is the
-   * highest entity its rows mention. It is used inclusively, because that
-   * entity may have had only some of its translations committed before the
-   * memory limit hit; the orchestrator drops the ones already indexed.
-   *
-   * Returns an empty array when the ledger is empty or holds an ID this
-   * cannot read as an entity ID, in which case the build re-reads from the
-   * start — slower, and never wrong.
-   *
-   * @return array<string, int>
-   *   Entity type ID => the entity ID to resume at.
-   */
-  private function resumeCursors(IndexBuildOrchestrator $orchestrator): array {
-    $highest = [];
-
-    foreach ($orchestrator->pageTableLedger()->seenIdsThisBuild() as $itemId) {
-      $parsed = ScoltaContentGatherer::parseItemId($itemId);
-      // Anything without a type prefix or a numeric ID is not an ID this walk
-      // can seek to.
-      if ($parsed === NULL || !ctype_digit($parsed[1])) {
-        return [];
-      }
-      [$entityType, $entityId] = $parsed;
-      $highest[$entityType] = max($highest[$entityType] ?? 0, (int) $entityId);
-    }
-
-    return $highest;
-  }
-
-  /**
    * Resolve an --entity-type value (or scolta:export argument) to a type list.
    *
    * @param string $option
@@ -648,9 +613,9 @@ class ScoltaCommands extends DrushCommands {
 
     $pagesBefore = $firstReport->pagesProcessed;
     $segment = 0;
-    $policy = new ResumeChainPolicy(ini_get('memory_limit') ?: NULL);
+    $policy = new ResumeChainPolicy(ini_get('memory_limit') ?: NULL, self::MAX_RESUME_SEGMENTS);
 
-    while ($segment < self::MAX_RESUME_SEGMENTS) {
+    while (TRUE) {
       $segment++;
       $this->logger()->notice(
         'Memory limit reached at {pages} pages. Continuing in a fresh process (segment {n})...',
@@ -667,7 +632,8 @@ class ScoltaCommands extends DrushCommands {
       // Every failure exits non-zero, so exit status alone cannot say whether
       // the segment yielded on memory pressure and wants another one or found
       // the build broken and wants the chain to stop. The segment records
-      // which it was; ResumeChainPolicy turns that record into the decision.
+      // which it was; ResumeChainPolicy turns that record into the decision
+      // and ends the chain at MAX_RESUME_SEGMENTS.
       $pagesNow = $this->pagesCommitted($stateDir);
       $reason = $policy->failureReason($this->segmentOutcome($stateDir), $pagesNow, $pagesBefore, $segment);
       if ($reason !== NULL) {
@@ -675,15 +641,6 @@ class ScoltaCommands extends DrushCommands {
       }
       $pagesBefore = $pagesNow;
     }
-
-    throw new \RuntimeException(sprintf(
-      'The build did not complete within %d resume segments (%d pages committed). '
-      . 'The index has not been republished. Raise PHP memory_limit (currently %s) so fewer segments are needed, '
-      . 'then re-run with --restart.',
-      self::MAX_RESUME_SEGMENTS,
-      $pagesBefore,
-      ini_get('memory_limit') ?: 'unknown',
-    ));
   }
 
   /**

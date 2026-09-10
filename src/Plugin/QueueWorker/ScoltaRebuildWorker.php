@@ -6,12 +6,14 @@ namespace Drupal\scolta\Plugin\QueueWorker;
 
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\Queue\QueueWorkerBase;
+use Drupal\Core\Queue\RequeueException;
 use Drupal\Core\Queue\SuspendQueueException;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
@@ -21,10 +23,15 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Export\ContentExporter;
+use Tag1\Scolta\Index\BuildIntent;
 use Tag1\Scolta\Index\BuildIntentFactory;
+use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\IncrementalIndexUpdater;
 use Tag1\Scolta\Index\IncrementalUpdateUnavailable;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
+use Tag1\Scolta\Index\MemoryBudget;
+use Tag1\Scolta\Index\ResumeChainPolicy;
+use Tag1\Scolta\Index\StatusReport;
 
 /**
  * Queue worker for rebuilding the Scolta search index.
@@ -40,6 +47,12 @@ use Tag1\Scolta\Index\IndexBuildOrchestrator;
  * queue until the backend's auto_rebuild_delay has elapsed since that
  * change, so a burst of edits produces one build. After a successful build
  * the remaining queued duplicates are drained.
+ *
+ * A build too large for one process yields on memory pressure and is
+ * continued on the next cron run, one segment per run, the way
+ * `drush scolta:build` chains `--resume` child processes. Each run decides
+ * from the state directory alone (ResumeChainPolicy::resumable()) whether it
+ * is starting a build or continuing one.
  *
  * @QueueWorker(
  *   id = "scolta_rebuild",
@@ -79,6 +92,28 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    * queued for the next run.
    */
   protected const MAX_CLAIMED_ITEMS = 50000;
+
+  /**
+   * The queue payload that stands in for an interrupted full build.
+   *
+   * Enqueued when a fresh build yields on memory pressure, once the requests
+   * it folded in have been deleted: the walk that build started covers every
+   * entity, so those requests are served the moment it completes. A request
+   * arriving after that is not covered — the walk may already have passed its
+   * entity — and the marker is what keeps the two apart: it is the only
+   * payload a resumed segment lets the queue runner delete on success.
+   */
+  protected const RESUME_MARKER = ['op' => 'resume'];
+
+  /**
+   * Whether a build segment already ran in this process.
+   *
+   * A segment that yielded on memory pressure leaves the heap it ran in
+   * fragmented; a second segment in the same process hits the wall at once
+   * and is judged a stall. Cron reuses one worker instance for a queue run,
+   * so this suspends the queue for the rest of the run.
+   */
+  protected bool $segmentRan = FALSE;
 
   public function __construct(
     array $configuration,
@@ -123,6 +158,10 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    * {@inheritdoc}
    */
   public function processItem($data): void {
+    if ($this->segmentRan) {
+      throw new SuspendQueueException('A Scolta build segment already ran in this process; the next cron run continues the build.');
+    }
+
     // Debounce: wait until the configured delay has elapsed since the LAST
     // content change so a burst of edits coalesces into one rebuild.
     $requestedAt = (int) $this->state->get('scolta.rebuild_requested_at', 0);
@@ -167,6 +206,22 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       $siteName = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
       $language = $config->get('ai_languages')[0] ?? 'en';
 
+      $orchestrator = $this->createOrchestrator($stateDir, $outputDir, $language);
+      $buildState = $orchestrator->coordinator()->buildState();
+
+      // An interrupted build on disk takes precedence over whatever this
+      // request asks for: the incremental updater and a fresh build both
+      // write the ledger that build's remaining segments depend on.
+      if (ResumeChainPolicy::resumable($buildState)) {
+        $this->resumeBuild($data, $orchestrator, $buildState, $config, $outputDir, $siteName);
+        return;
+      }
+      if ($data === self::RESUME_MARKER) {
+        // The build this marker stood for completed, or was given up on and
+        // logged. Either way there is nothing left to continue.
+        return;
+      }
+
       // Aggregate every rebuild request visible right now into one change set.
       // Anything enqueued after this claim loop returns is deliberately left
       // in the queue: it belongs to the next run, and deleting it here is how
@@ -187,35 +242,8 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
         return;
       }
 
-      $budget = MemoryBudgetConfig::fromCliAndConfig(NULL, NULL, fn() => [
-        'profile' => $config->get('memory_budget.profile') ?? 'conservative',
-        'chunk_size' => $config->get('memory_budget.chunk_size'),
-      ]);
-
-      $orchestrator = new IndexBuildOrchestrator($stateDir, $outputDir, NULL, $language);
-      $intent = BuildIntentFactory::fromFlags(FALSE, FALSE, $totalCount, $budget);
-
-      // Stream content one entity at a time through the shared gatherer —
-      // translations, text-format rendering, field mappings, and the alter
-      // hook all apply, and the timestamp manifest lets unchanged entities
-      // skip the full load. No eager loadMultiple() of the whole corpus.
-      // One manifest instance for both: the gatherer reads it to skip
-      // unchanged entities and writes what it loads, and the exporter records
-      // the bodies it drops for being too short to index, which is the only
-      // place that decision is made against a body in memory.
-      $tsManifest = $orchestrator->getTimestampManifest();
-      $exporter = new ContentExporter($outputDir);
-      $source = (function () use ($entityTypes, $siteName, $tsManifest) {
-        foreach ($entityTypes as $type) {
-          yield from $this->contentGatherer->gather($type, '', $siteName, NULL, $tsManifest, FALSE);
-        }
-      })();
-      $items = $exporter->filterItems($source, $tsManifest);
-
-      // The reporter renews the build lock at every chunk boundary, so the
-      // lease only has to outlive one chunk rather than the whole build.
-      $reporter = new LockRenewingProgressReporter($this->lock, 'scolta_build', self::LOCK_TIMEOUT);
-      $report = $orchestrator->build($intent, $items, $this->logger, $reporter);
+      $intent = BuildIntentFactory::fromFlags(FALSE, FALSE, $totalCount, $this->memoryBudget($config));
+      $report = $this->runSegment($orchestrator, $intent, $entityTypes, [], $outputDir, $siteName);
 
       if ($report->success) {
         $this->bumpGeneration();
@@ -224,16 +252,160 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
           '@pages' => $report->pagesProcessed,
           '@time' => $report->durationSeconds,
         ]);
+        return;
       }
-      else {
-        $this->logger->error('Queue index rebuild failed: @error', [
-          '@error' => $report->error ?? 'unknown',
+
+      $reason = $this->policy()->stopReason($report, $buildState);
+      if ($reason === NULL) {
+        // Yielded with progress. The walk this build started covers every
+        // entity, so the requests folded into it are served when it completes;
+        // deleting them now (and letting the runner delete $data) is what
+        // keeps them from forcing a second full build afterwards. The marker
+        // carries the build to the next cron run.
+        $this->deleteClaimed($claimed);
+        $this->queueFactory->get('scolta_rebuild')->createItem(self::RESUME_MARKER);
+        $this->logger->info('Queue index rebuild yielded on memory pressure after @pages pages; the next cron run resumes it.', [
+          '@pages' => $report->pagesProcessed,
         ]);
+        return;
       }
+
+      $this->logger->error('Queue index rebuild failed: @error', ['@error' => $reason]);
     }
     finally {
       $this->lock->release('scolta_build');
     }
+  }
+
+  /**
+   * Run one more segment of the interrupted build on disk.
+   *
+   * Claims no other queue items: the requests the build covers were deleted
+   * when it first yielded, and anything else in the queue arrived after the
+   * walk started and is applied to the finished index on a later run.
+   *
+   * @param mixed $data
+   *   The payload the queue runner handed to processItem().
+   * @param \Tag1\Scolta\Index\IndexBuildOrchestrator $orchestrator
+   *   The orchestrator for the state and output directories.
+   * @param \Tag1\Scolta\Index\BuildState $buildState
+   *   The state directory's build state.
+   * @param \Drupal\Core\Config\ImmutableConfig $config
+   *   The scolta.settings config.
+   * @param string $outputDir
+   *   The resolved index output directory.
+   * @param string $siteName
+   *   The site name recorded on each indexed page.
+   *
+   * @throws \Drupal\Core\Queue\SuspendQueueException
+   *   When this segment yielded too: the payload goes back to the queue and
+   *   the next cron run continues the build.
+   * @throws \Drupal\Core\Queue\RequeueException
+   *   When the build completed but the payload is not the resume marker: it
+   *   arrived mid-build, so it is applied to the finished index next run.
+   */
+  protected function resumeBuild($data, IndexBuildOrchestrator $orchestrator, BuildState $buildState, ImmutableConfig $config, string $outputDir, string $siteName): void {
+    // Where each entity walk restarts. The ledger knows exactly which pages
+    // this build has committed, so the cursors come from real content ids
+    // rather than from pages_processed, which counts pages against a walk
+    // over entities. A type with no cursor was not reached before the
+    // interruption and is walked from its first row.
+    $cursors = ScoltaContentGatherer::resumeCursors($orchestrator->pageTableLedger()->seenIdsThisBuild());
+    $intent = BuildIntent::resume($this->memoryBudget($config));
+    $report = $this->runSegment($orchestrator, $intent, array_keys($this->contentGatherer->entityTypes()), $cursors, $outputDir, $siteName);
+
+    if ($report->success) {
+      $this->bumpGeneration();
+      $this->logger->info('Search index rebuilt via queue after resuming at segment @segment: @pages pages in @time s.', [
+        '@segment' => $buildState->segment(),
+        '@pages' => $report->pagesProcessed,
+        '@time' => $report->durationSeconds,
+      ]);
+      if ($data !== self::RESUME_MARKER) {
+        throw new RequeueException('This rebuild request arrived while a build was in progress; it is applied to the finished index on the next run.');
+      }
+      return;
+    }
+
+    $reason = $this->policy()->stopReason($report, $buildState);
+    if ($reason === NULL) {
+      $this->logger->info('Queue index rebuild yielded on memory pressure at @pages pages (segment @segment); the next cron run resumes it.', [
+        '@pages' => $report->pagesProcessed,
+        '@segment' => $buildState->segment(),
+      ]);
+      throw new SuspendQueueException('Scolta build yielded on memory pressure; the next cron run continues it.');
+    }
+
+    // stopReason() recorded the stop, so the next run starts fresh instead of
+    // resuming into the same wall. The runner deletes $data, as it does for
+    // any failed build.
+    $this->logger->error('Queue index rebuild failed: @error', ['@error' => $reason]);
+  }
+
+  /**
+   * Stream the corpus through one build segment.
+   *
+   * @param \Tag1\Scolta\Index\IndexBuildOrchestrator $orchestrator
+   *   The orchestrator to build with.
+   * @param \Tag1\Scolta\Index\BuildIntent $intent
+   *   Fresh or resume.
+   * @param string[] $entityTypes
+   *   The entity types to walk, in order.
+   * @param array<string, int> $cursors
+   *   Entity type ID => the entity ID to resume that type's walk at.
+   * @param string $outputDir
+   *   The resolved index output directory.
+   * @param string $siteName
+   *   The site name recorded on each indexed page.
+   */
+  protected function runSegment(IndexBuildOrchestrator $orchestrator, BuildIntent $intent, array $entityTypes, array $cursors, string $outputDir, string $siteName): StatusReport {
+    $this->segmentRan = TRUE;
+
+    // Stream content one entity at a time through the shared gatherer —
+    // translations, text-format rendering, field mappings, and the alter
+    // hook all apply, and the timestamp manifest lets unchanged entities
+    // skip the full load. No eager loadMultiple() of the whole corpus.
+    // One manifest instance for both: the gatherer reads it to skip
+    // unchanged entities and writes what it loads, and the exporter records
+    // the bodies it drops for being too short to index, which is the only
+    // place that decision is made against a body in memory.
+    $tsManifest = $orchestrator->getTimestampManifest();
+    $exporter = new ContentExporter($outputDir);
+    $source = (function () use ($entityTypes, $cursors, $siteName, $tsManifest) {
+      foreach ($entityTypes as $type) {
+        yield from $this->contentGatherer->gather($type, '', $siteName, $cursors[$type] ?? NULL, $tsManifest, FALSE);
+      }
+    })();
+    $items = $exporter->filterItems($source, $tsManifest);
+
+    // The reporter renews the build lock at every chunk boundary, so the
+    // lease only has to outlive one chunk rather than the whole build.
+    $reporter = new LockRenewingProgressReporter($this->lock, 'scolta_build', self::LOCK_TIMEOUT);
+    return $orchestrator->build($intent, $items, $this->logger, $reporter);
+  }
+
+  /**
+   * The orchestrator for a build; a seam for tests to inject a pressure probe.
+   */
+  protected function createOrchestrator(string $stateDir, string $outputDir, string $language): IndexBuildOrchestrator {
+    return new IndexBuildOrchestrator($stateDir, $outputDir, NULL, $language);
+  }
+
+  /**
+   * The memory budget scolta.settings configures.
+   */
+  protected function memoryBudget(ImmutableConfig $config): MemoryBudget {
+    return MemoryBudgetConfig::fromCliAndConfig(NULL, NULL, fn() => [
+      'profile' => $config->get('memory_budget.profile') ?? 'conservative',
+      'chunk_size' => $config->get('memory_budget.chunk_size'),
+    ]);
+  }
+
+  /**
+   * The policy deciding whether a failed segment is resumed or ends the build.
+   */
+  protected function policy(): ResumeChainPolicy {
+    return new ResumeChainPolicy(ini_get('memory_limit') ?: NULL);
   }
 
   /**
@@ -296,6 +468,12 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    * Fold one queue payload into the change set.
    */
   protected function foldPayload($data, array &$changeSet): void {
+    // A marker left by a build that has since completed or been abandoned
+    // asks for nothing; it must not force a full rebuild.
+    if ($data === self::RESUME_MARKER) {
+      return;
+    }
+
     if (!is_array($data)) {
       $changeSet['targeted'] = FALSE;
       return;
