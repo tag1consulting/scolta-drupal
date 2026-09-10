@@ -14,7 +14,7 @@ use Symfony\Component\Yaml\Yaml;
  * Runs real drush invocations against an installed site, replacing the
  * retired source-grep tests that asserted command names and aliases as
  * strings in ScoltaCommands.php. Commands that need real fixtures (a built
- * index, a pagefind binary, an AI key) get a presence check via `drush list`
+ * index, an AI key) get a presence check via `drush list`
  * or a smoke invocation only.
  *
  * @group scolta
@@ -26,7 +26,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api'];
+  protected static $modules = ['scolta'];
 
   /**
    * {@inheritdoc}
@@ -41,8 +41,6 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
     $status = Yaml::parse($this->getOutput());
     $this->assertIsArray($status, 'scolta:status must emit parseable YAML');
     foreach ([
-      'search_api',
-      'indexer',
       'build_directory',
       'pagefind_index',
       'ai_provider',
@@ -52,7 +50,6 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
         "scolta:status must report the {$section} section");
     }
     // Groupings are nested maps, not flattened lines.
-    $this->assertSame('php', $status['indexer']['active']);
     $this->assertFalse($status['pagefind_index']['built']);
     $this->assertIsInt($status['cache']['generation']);
     // A fresh site has no recorded Amazee auth failure, but the field must be

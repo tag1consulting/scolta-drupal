@@ -7,8 +7,7 @@ namespace Drupal\scolta\Service;
 /**
  * Single source of truth for locating a built Pagefind index on disk.
  *
- * Three call sites previously disagreed on what "the index exists" means:
- * PagefindBuilder::getStatus() checked the legacy root pagefind.js,
+ * Call sites previously disagreed on what "the index exists" means:
  * HealthController and drush scolta:status checked pagefind/pagefind.js,
  * and the search block checked pagefind/pagefind-entry.json. They now all
  * resolve through this service. (Eventually this belongs upstream in
@@ -96,8 +95,7 @@ class IndexLocator {
    * Pagefind records "page_count" per language in this file at build time,
    * so it answers the same question as countFragments() with a single small
    * JSON read instead of a glob() of the fragment directory -- minutes-slow
-   * once a corpus reaches six figures on NFS (see
-   * PagefindBuilder::getStatus()).
+   * once a corpus reaches six figures on NFS.
    *
    * @param array{indexFile: string, fragmentDir: string, entryFile: string} $location
    *   A location returned by locate().

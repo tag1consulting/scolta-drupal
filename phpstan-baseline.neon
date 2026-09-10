@@ -103,42 +103,6 @@ parameters:
 			path: src/Plugin/QueueWorker/ScoltaRebuildWorker.php
 
 		-
-			message: '#^Call to method getDatasourceId\(\) on an unknown class Drupal\\search_api\\Item\\ItemInterface\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Service/PagefindExporter.php
-
-		-
-			message: '#^Call to method getId\(\) on an unknown class Drupal\\search_api\\Item\\ItemInterface\.$#'
-			identifier: class.notFound
-			count: 5
-			path: src/Service/PagefindExporter.php
-
-		-
-			message: '#^Call to method getOriginalObject\(\) on an unknown class Drupal\\search_api\\Item\\ItemInterface\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Service/PagefindExporter.php
-
-		-
-			message: '#^Parameter \$item of method Drupal\\scolta\\Service\\PagefindExporter\:\:buildMetadata\(\) has invalid type Drupal\\search_api\\Item\\ItemInterface\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Service/PagefindExporter.php
-
-		-
-			message: '#^Parameter \$item of method Drupal\\scolta\\Service\\PagefindExporter\:\:exportItem\(\) has invalid type Drupal\\search_api\\Item\\ItemInterface\.$#'
-			identifier: class.notFound
-			count: 2
-			path: src/Service/PagefindExporter.php
-
-		-
-			message: '#^Parameter \$item of method Drupal\\scolta\\Service\\PagefindExporter\:\:extractEntity\(\) has invalid type Drupal\\search_api\\Item\\ItemInterface\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Service/PagefindExporter.php
-
-		-
 			message: '#^Call to method createInstance\(\) on an unknown class Drupal\\ai\\AiProviderPluginManager\.$#'
 			identifier: class.notFound
 			count: 2

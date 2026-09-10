@@ -84,8 +84,7 @@ prompt_follow_up: ''
 
 # --- Pagefind ---
 pagefind:
-  build_dir: 'private://scolta-build'     # Where exported HTML is stored
-  output_dir: 'public://scolta-pagefind'  # Where Pagefind index is built
-  binary: 'pagefind'                       # Binary path (leave default for auto-detection)
-  auto_rebuild: true                       # Rebuild index on Search API indexing
-  view_mode: 'search_index'               # Entity view mode for rendering
+  build_dir: 'private://scolta-build'     # Build state: page-table ledger, timestamp manifest, chunks
+  output_dir: 'public://scolta-pagefind'  # Where the published index is served from
+  auto_rebuild: true                       # Queue a rebuild when indexed content changes
+  auto_rebuild_delay: 300                  # Seconds of quiet after the last change before cron rebuilds (60-3600)

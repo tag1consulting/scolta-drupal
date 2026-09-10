@@ -34,7 +34,7 @@ class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'search_api', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta'];
 
   /**
    * {@inheritdoc}

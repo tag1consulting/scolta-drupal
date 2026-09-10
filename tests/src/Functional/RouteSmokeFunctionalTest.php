@@ -28,7 +28,7 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api', 'node', 'block'];
+  protected static $modules = ['scolta', 'node', 'block'];
 
   /**
    * {@inheritdoc}

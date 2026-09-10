@@ -6,6 +6,32 @@ record.
 
 ## Unreleased
 
+### Search API and the Pagefind binary are gone; the PHP indexer is the only pipeline
+
+**Who is affected:** every site. A site whose index was defined through a
+Search API index (its datasources and bundles) needs to move that selection
+into `scolta.settings`. A site that set `indexer: binary` loses that mode.
+
+**What changed:** `scolta.settings: entity_types` is the only definition of
+what is indexed. The `scolta_pagefind` Search API backend, the HTML export and
+the Pagefind CLI pipeline (`drush scolta:export`, `scolta:rebuild-index`,
+`scolta:download-pagefind`, `scolta:build --indexer/--output-dir/--skip-pagefind`)
+are removed, along with the `indexer`, `pagefind.binary` and
+`pagefind.view_mode` config keys and the `search_api` dependency. The
+auto-rebuild debounce moved from the Search API server's *Rebuild delay* to
+`scolta.settings: pagefind.auto_rebuild_delay`.
+
+**What to do:** run `drush updb`. `scolta_update_10008()` deletes the Search
+API index and server that used the Scolta backend, copies the server's rebuild
+delay into `pagefind.auto_rebuild_delay`, and uninstalls `search_api` when no
+other server, index or module still uses it. If your Search API index selected
+specific bundles, set them before the next build, e.g.
+`drush config:set --input-format=yaml scolta.settings entity_types '{node: [article, page]}'`;
+the default indexes every `node` bundle. Then `drush scolta:build`. Exported
+config that carries `search_api.server.*`/`search_api.index.*` for Scolta, or
+the removed keys, should be re-exported with `drush config:export` after the
+update so the next import does not recreate them.
+
 ### The browser bundle moved from the module directory to public files
 
 **Who is affected:** every site, but the standard deploy routine already does

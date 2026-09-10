@@ -36,7 +36,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'search_api'];
+  protected static $modules = ['scolta'];
 
   /**
    * {@inheritdoc}

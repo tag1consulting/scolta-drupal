@@ -7,7 +7,6 @@ namespace Drupal\scolta\Plugin\QueueWorker;
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
@@ -66,7 +65,7 @@ use Tag1\Scolta\Index\StatusReport;
 class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPluginInterface {
 
   /**
-   * Fallback debounce delay when no Scolta search_api server exists.
+   * Debounce delay when scolta.settings says nothing.
    */
   protected const DEFAULT_REBUILD_DELAY = 300;
 
@@ -123,7 +122,6 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     protected readonly ConfigFactoryInterface $configFactory,
     protected readonly FileSystemInterface $fileSystem,
     protected readonly StreamWrapperManagerInterface $streamWrapperManager,
-    protected readonly EntityTypeManagerInterface $entityTypeManager,
     protected readonly StateInterface $state,
     protected readonly CacheTagsInvalidatorInterface $cacheTagsInvalidator,
     protected readonly LoggerInterface $logger,
@@ -145,7 +143,6 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       $container->get('config.factory'),
       $container->get('file_system'),
       $container->get('stream_wrapper_manager'),
-      $container->get('entity_type.manager'),
       $container->get('state'),
       $container->get('cache_tags.invalidator'),
       $container->get('logger.channel.scolta'),
@@ -418,9 +415,9 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    * it survives the build and is picked up by the next run.
    *
    * A payload is "targeted" only when it names the entity and the content
-   * item IDs it changed. The install hook and the search_api backend enqueue
-   * bare full-rebuild markers, and so did every version of the entity hooks
-   * before this one, so a queue holding any of those forces a full rebuild.
+   * item IDs it changed. The install hook enqueues a bare full-rebuild
+   * marker, and so did every version of the entity hooks before this one, so
+   * a queue holding any of those forces a full rebuild.
    *
    * @param mixed $data
    *   The payload of the item the queue runner handed to processItem(). The
@@ -635,29 +632,11 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
   }
 
   /**
-   * The debounce delay: the Scolta backend's auto_rebuild_delay setting.
-   *
-   * Read from the first enabled search_api server using the scolta_pagefind
-   * backend; falls back to 300 seconds when none exists (e.g. rebuilds
-   * triggered purely by scolta.module's entity hooks).
+   * The debounce delay: scolta.settings pagefind.auto_rebuild_delay, 60-3600.
    */
   protected function autoRebuildDelay(): int {
-    try {
-      $servers = $this->entityTypeManager->getStorage('search_api_server')->loadMultiple();
-      foreach ($servers as $server) {
-        // method_exists() rather than instanceof ServerInterface: search_api
-        // classes are not autoloadable in every analysis environment.
-        if (method_exists($server, 'getBackendId') && method_exists($server, 'getBackendConfig')
-          && $server->getBackendId() === 'scolta_pagefind') {
-          $backendConfig = $server->getBackendConfig();
-          return max(60, min(3600, (int) ($backendConfig['auto_rebuild_delay'] ?? self::DEFAULT_REBUILD_DELAY)));
-        }
-      }
-    }
-    catch (\Throwable $e) {
-      // search_api server storage unavailable — use the default.
-    }
-    return self::DEFAULT_REBUILD_DELAY;
+    $delay = $this->configFactory->get('scolta.settings')->get('pagefind.auto_rebuild_delay');
+    return max(60, min(3600, (int) ($delay ?? self::DEFAULT_REBUILD_DELAY)));
   }
 
   /**

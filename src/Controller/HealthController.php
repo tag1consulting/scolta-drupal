@@ -117,7 +117,7 @@ class HealthController extends ControllerBase {
     $checker = new HealthChecker(
       config: $scoltaConfig,
       indexOutputDir: $outputDir,
-      pagefindBinaryPath: $config->get('pagefind.binary'),
+      pagefindBinaryPath: NULL,
       projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
       cache: $cacheDriver,
       // The same resolution the client performs, so /health names the key's

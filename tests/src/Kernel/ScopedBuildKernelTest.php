@@ -40,7 +40,7 @@ class ScopedBuildKernelTest extends KernelTestBase {
    * {@inheritdoc}
    */
   protected static $modules = [
-    'system', 'user', 'scolta', 'search_api', 'node', 'filter', 'field', 'text', 'dblog',
+    'system', 'user', 'scolta', 'node', 'filter', 'field', 'text', 'dblog',
   ];
 
   /**
@@ -116,9 +116,7 @@ class ScopedBuildKernelTest extends KernelTestBase {
     // therefore not in the container. A drift between the two is caught by
     // StructuralIntegrityTest's service-argument check, not here.
     $commands = new ScoltaCommands(
-      $this->container->get('entity_type.manager'),
       $this->container->get('config.factory'),
-      $this->container->get('http_client'),
       $this->container->get('state'),
       $this->container->get('cache.default'),
       $this->container->get('scolta.ai_service'),
@@ -135,7 +133,7 @@ class ScopedBuildKernelTest extends KernelTestBase {
   }
 
   /**
-   * Run scolta:build with the PHP indexer against the test's index directory.
+   * Run scolta:build against the test's index directory.
    *
    * @param array<string, mixed> $overrides
    *   Option values to override on top of the command's own defaults.
@@ -145,9 +143,6 @@ class ScopedBuildKernelTest extends KernelTestBase {
       'entity-type' => 'node',
       'bundle' => '',
       'entity-ids' => '',
-      'output-dir' => $this->indexRoot . '/export',
-      'skip-pagefind' => FALSE,
-      'indexer' => 'php',
       'force' => FALSE,
       'memory-budget' => NULL,
       'chunk-size' => NULL,
@@ -316,15 +311,6 @@ class ScopedBuildKernelTest extends KernelTestBase {
     $this->assertSame(11, $this->ledger()->liveCount());
     $this->assertSame([], $this->ledger()->tombstones());
     $this->assertNotSame([], $this->publishedIndex());
-  }
-
-  /**
-   * An unknown --indexer value is an error, not a silent binary build.
-   */
-  public function testAnUnknownIndexerIsRejected(): void {
-    $this->expectException(\RuntimeException::class);
-    $this->expectExceptionMessage('Invalid indexer "rust". Must be one of: auto, php, binary.');
-    $this->runBuild(['indexer' => 'rust']);
   }
 
 }

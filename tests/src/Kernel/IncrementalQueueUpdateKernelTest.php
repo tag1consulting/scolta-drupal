@@ -38,7 +38,7 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
    * {@inheritdoc}
    */
   protected static $modules = [
-    'system', 'user', 'scolta', 'search_api', 'node', 'filter', 'field', 'text', 'dblog', 'language',
+    'system', 'user', 'scolta', 'node', 'filter', 'field', 'text', 'dblog', 'language',
   ];
 
   /**

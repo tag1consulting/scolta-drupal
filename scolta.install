@@ -5,7 +5,6 @@
  * Install and uninstall hooks for the Scolta module.
  */
 
-use Tag1\Scolta\Binary\PagefindBinary;
 use Drupal\Core\Site\Settings;
 use Drupal\scolta\Form\ScoltaSettingsForm;
 use Drupal\user\Entity\Role;
@@ -54,54 +53,6 @@ function _scolta_has_explicit_api_key(): bool {
   // Drupal config-stored key (e.g. set via config import or admin UI path).
   $configKey = \Drupal::config('scolta.settings')->get('ai_api_key') ?? '';
   return $configKey !== '';
-}
-
-/**
- * Implements hook_requirements().
- */
-function scolta_requirements(string $phase): array {
-  $requirements = [];
-
-  if ($phase === 'runtime') {
-    $config = \Drupal::config('scolta.settings');
-    $indexer = $config->get('indexer') ?? 'auto';
-
-    if ($indexer === 'binary') {
-      // Only check binary availability when explicitly configured to use it.
-      $binary_path = $config->get('pagefind.binary') ?? 'pagefind';
-      $resolver = new PagefindBinary(
-        configuredPath: $binary_path !== 'pagefind' ? $binary_path : NULL,
-        projectDir: \Drupal::root(),
-      );
-      $status = $resolver->status();
-
-      if (!$status['available']) {
-        $requirements['scolta_pagefind_binary'] = [
-          'title' => t('Scolta Search Indexer'),
-          'value' => t('Pagefind binary (not found)'),
-          'description' => t('Indexer is set to "binary" but the Pagefind binary was not found. Install Pagefind (<code>npm install -g pagefind</code>) or change indexer to "auto" in Scolta settings.'),
-          'severity' => REQUIREMENT_ERROR,
-        ];
-      }
-      else {
-        $requirements['scolta_pagefind_binary'] = [
-          'title' => t('Scolta Search Indexer'),
-          'value' => t('Pagefind binary (@version)', ['@version' => $status['version'] ?? 'unknown']),
-          'severity' => REQUIREMENT_OK,
-        ];
-      }
-    }
-    else {
-      // Auto or php: PHP indexer is active, no binary needed.
-      $requirements['scolta_pagefind_binary'] = [
-        'title' => t('Scolta Search Indexer'),
-        'value' => t('PHP indexer (active)'),
-        'severity' => REQUIREMENT_OK,
-      ];
-    }
-  }
-
-  return $requirements;
 }
 
 /**
@@ -421,6 +372,60 @@ function scolta_update_10006() {
 function scolta_update_10007() {
   return t('Page IDs are now prefixed with the entity type. @outcome', [
     '@outcome' => scolta_reset_index_state('update_10007'),
+  ]);
+}
+
+/**
+ * The PHP indexer is the only pipeline: drop the Search API server and index.
+ *
+ * Deletes every Search API index attached to a server using the removed
+ * scolta_pagefind backend, then the server, carrying the backend's rebuild
+ * delay into scolta.settings pagefind.auto_rebuild_delay. Uninstalls
+ * search_api only when no other server or index remains and no other module
+ * depends on it. Clears the indexer, pagefind.binary and pagefind.view_mode
+ * keys the binary pipeline read.
+ */
+function scolta_update_10008() {
+  $config = \Drupal::configFactory()->getEditable('scolta.settings');
+  $config->clear('indexer')->clear('pagefind.binary')->clear('pagefind.view_mode');
+  $delay = 300;
+
+  $removed = [];
+  $search_api_uninstalled = FALSE;
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if ($entity_type_manager->hasDefinition('search_api_server')) {
+    $server_storage = $entity_type_manager->getStorage('search_api_server');
+    $index_storage = $entity_type_manager->getStorage('search_api_index');
+    foreach ($server_storage->loadMultiple() as $server) {
+      if ($server->getBackendId() !== 'scolta_pagefind') {
+        continue;
+      }
+      $delay = (int) ($server->getBackendConfig()['auto_rebuild_delay'] ?? $delay);
+      foreach ($index_storage->loadByProperties(['server' => $server->id()]) as $index) {
+        $removed[] = 'index ' . $index->id();
+        $index->delete();
+      }
+      $removed[] = 'server ' . $server->id();
+      $server->delete();
+    }
+    if ($server_storage->loadMultiple() === [] && $index_storage->loadMultiple() === []) {
+      try {
+        // FALSE: refuse rather than uninstall dependents. Returns FALSE when
+        // another module still requires search_api, and that site keeps it.
+        $search_api_uninstalled = \Drupal::service('module_installer')->uninstall(['search_api'], FALSE);
+      }
+      catch (\Exception $e) {
+        \Drupal::logger('scolta')->warning('Could not uninstall search_api: @message', ['@message' => $e->getMessage()]);
+      }
+    }
+  }
+
+  $config->set('pagefind.auto_rebuild_delay', max(60, min(3600, $delay)))->save(TRUE);
+
+  return t('Scolta no longer uses Search API. Removed: @removed. search_api @uninstalled. The rebuild delay is now scolta.settings pagefind.auto_rebuild_delay (@delay seconds).', [
+    '@removed' => $removed ? implode(', ', $removed) : 'nothing',
+    '@uninstalled' => $search_api_uninstalled ? 'was uninstalled' : 'was left installed',
+    '@delay' => max(60, min(3600, $delay)),
   ]);
 }
 

@@ -34,7 +34,7 @@ class BodyFieldsKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'search_api', 'scolta', 'node', 'field', 'filter', 'text'];
+  protected static $modules = ['system', 'user', 'scolta', 'node', 'field', 'filter', 'text'];
 
   /**
    * {@inheritdoc}

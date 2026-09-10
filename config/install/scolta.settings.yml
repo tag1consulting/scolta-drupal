@@ -80,7 +80,6 @@ flood:
 prompt_expand_query: ''
 prompt_summarize: ''
 prompt_follow_up: ''
-indexer: 'auto'
 memory_budget:
   profile: 'conservative'
   custom_bytes: ~
@@ -89,9 +88,8 @@ show_attribution: false
 pagefind:
   build_dir: 'public://scolta-build'
   output_dir: 'public://scolta-pagefind'
-  binary: 'pagefind'
   auto_rebuild: true
-  view_mode: 'search_index'
+  auto_rebuild_delay: 300
 incremental:
   enabled: true
   max_changed_items: 100
