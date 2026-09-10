@@ -7,6 +7,8 @@ namespace Drupal\scolta\Form;
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
+use Drupal\Core\Entity\ContentEntityTypeInterface;
+use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Form\ConfigFormBase;
@@ -109,6 +111,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
   protected ConfigStorageInterface $amazeeConfigStorage;
 
   /**
+   * The entity type bundle info service.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeBundleInfoInterface
+   */
+  protected EntityTypeBundleInfoInterface $bundleInfo;
+
+  /**
    * Constructs a ScoltaSettingsForm object.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -134,6 +143,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
    * @param \Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface $amazeeConfigStorage
    *   The managed-gateway credential store, cleared when the operator selects
    *   a different AI provider.
+   * @param \Drupal\Core\Entity\EntityTypeBundleInfoInterface $bundleInfo
+   *   The entity type bundle info service.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
@@ -147,6 +158,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     CacheTagsInvalidatorInterface $cacheTagsInvalidator,
     ScoltaContentGatherer $contentGatherer,
     ConfigStorageInterface $amazeeConfigStorage,
+    EntityTypeBundleInfoInterface $bundleInfo,
   ) {
     parent::__construct($configFactory, $typedConfigManager);
     $this->aiService = $aiService;
@@ -158,6 +170,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $this->cacheTagsInvalidator = $cacheTagsInvalidator;
     $this->contentGatherer = $contentGatherer;
     $this->amazeeConfigStorage = $amazeeConfigStorage;
+    $this->bundleInfo = $bundleInfo;
   }
 
   /**
@@ -176,6 +189,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $container->get('cache_tags.invalidator'),
       $container->get('scolta.content_gatherer'),
       $container->get('scolta.amazee_config_storage'),
+      $container->get('entity_type.bundle.info'),
     );
   }
 
@@ -378,6 +392,43 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#maxlength' => 512,
       '#description' => $this->t('Brief description used in AI prompts (e.g., "corporate website", "health system websites").'),
     ];
+
+    // ── Entity types ──
+    // Maps one-to-one onto scolta.settings: entity_types (type => bundles,
+    // an empty bundle list meaning every bundle), so entityTypes() needs no
+    // form-specific decoding.
+    $configuredTypes = $this->contentGatherer->entityTypes();
+    $form['content']['entity_types'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Entity types to index'),
+      '#description' => $this->t('Content entity types the index covers. Under a checked type, leave every bundle unchecked to index all of its bundles, including ones added later. Changing this list requires a full rebuild.'),
+      '#tree' => TRUE,
+    ];
+    foreach ($this->indexableEntityTypes() as $typeId => $definition) {
+      $form['content']['entity_types'][$typeId]['enabled'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Index @label', ['@label' => $definition->getLabel()]),
+        '#default_value' => array_key_exists($typeId, $configuredTypes),
+      ];
+      if (!$definition->getKey('bundle')) {
+        continue;
+      }
+      $bundleOptions = [];
+      foreach ($this->bundleInfo->getBundleInfo($typeId) as $bundle => $info) {
+        $bundleOptions[$bundle] = $info['label'];
+      }
+      $form['content']['entity_types'][$typeId]['bundles'] = [
+        '#type' => 'checkboxes',
+        '#title' => $this->t('@label bundles', ['@label' => $definition->getLabel()]),
+        '#options' => $bundleOptions,
+        '#default_value' => $configuredTypes[$typeId] ?? [],
+        '#states' => [
+          'visible' => [
+            ':input[name="entity_types[' . $typeId . '][enabled]"]' => ['checked' => TRUE],
+          ],
+        ],
+      ];
+    }
 
     $form['content']['body_fields'] = [
       '#type' => 'textfield',
@@ -1374,6 +1425,41 @@ class ScoltaSettingsForm extends ConfigFormBase {
   }
 
   /**
+   * Content entity types the indexer can render and link to.
+   *
+   * @return array<string, \Drupal\Core\Entity\ContentEntityTypeInterface>
+   *   Definitions keyed by entity type ID, sorted by label.
+   */
+  private function indexableEntityTypes(): array {
+    $types = array_filter(
+      $this->entityTypeManager->getDefinitions(),
+      static fn ($definition) => $definition instanceof ContentEntityTypeInterface
+        && $definition->hasViewBuilderClass()
+        && $definition->hasLinkTemplate('canonical')
+    );
+    uasort($types, static fn ($a, $b) => strcasecmp((string) $a->getLabel(), (string) $b->getLabel()));
+    return $types;
+  }
+
+  /**
+   * The entity_types config value the submitted form describes.
+   *
+   * @return array<string, string[]>
+   *   Checked entity type ID => checked bundles (empty for all).
+   */
+  private function entityTypesFromForm(FormStateInterface $form_state): array {
+    $types = [];
+    foreach ((array) ($form_state->getValue('entity_types') ?? []) as $typeId => $values) {
+      if (empty($values['enabled'])) {
+        continue;
+      }
+      // Checkboxes submit checked options as key => key and unchecked as 0.
+      $types[$typeId] = array_map('strval', array_keys(array_filter((array) ($values['bundles'] ?? []))));
+    }
+    return $types;
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function validateForm(array &$form, FormStateInterface $form_state): void {
@@ -1389,6 +1475,10 @@ class ScoltaSettingsForm extends ConfigFormBase {
           $this->t('The API Base URL must be a valid URL beginning with http:// or https://.')
         );
       }
+    }
+
+    if ($this->entityTypesFromForm($form_state) === []) {
+      $form_state->setErrorByName('entity_types', $this->t('Select at least one entity type to index.'));
     }
 
     // Reject malformed recency-curve JSON instead of silently discarding it
@@ -1478,6 +1568,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       // Content settings.
       ->set('site_name', $form_state->getValue('site_name'))
       ->set('site_description', $form_state->getValue('site_description'))
+      ->set('entity_types', $this->entityTypesFromForm($form_state))
       ->set('body_fields', array_values(array_filter(array_map(
         'trim',
         explode(',', $form_state->getValue('body_fields') ?? '')

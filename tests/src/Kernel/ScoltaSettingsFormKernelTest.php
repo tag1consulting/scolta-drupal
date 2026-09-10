@@ -335,11 +335,15 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
 
     $errors = [];
     $formState = $this->createStub(FormStateInterface::class);
-    // ai_base_url carries the candidate; every other validated field (the
-    // recency curve, the pipe-separated mappings) reads as empty so only the
-    // URL rule can fire.
+    // ai_base_url carries the candidate; one entity type is checked and
+    // every other validated field (the recency curve, the pipe-separated
+    // mappings) reads as empty so only the URL rule can fire.
     $formState->method('getValue')->willReturnCallback(
-      static fn ($key, $default = NULL) => $key === 'ai_base_url' ? $url : ''
+      static fn ($key, $default = NULL) => match ($key) {
+        'ai_base_url' => $url,
+        'entity_types' => ['node' => ['enabled' => 1, 'bundles' => []]],
+        default => '',
+      }
     );
     $formState->method('setErrorByName')->willReturnCallback(
       function ($name, $message = '') use (&$errors, $formState) {
