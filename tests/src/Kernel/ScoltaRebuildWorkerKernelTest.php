@@ -37,6 +37,17 @@ class ScoltaRebuildWorkerKernelTest extends KernelTestBase {
   }
 
   /**
+   * Drupal cron does not run this queue; an external `queue:run` tick does.
+   *
+   * A `cron` key on the definition is what makes Cron::processQueues() run a
+   * worker, so its absence is the whole contract.
+   */
+  public function testWorkerIsNotRegisteredForDrupalCron(): void {
+    $definition = $this->container->get('plugin.manager.queue_worker')->getDefinition('scolta_rebuild');
+    $this->assertArrayNotHasKey('cron', $definition);
+  }
+
+  /**
    * A content change inside the debounce window suspends the queue.
    */
   public function testFreshContentChangeSuspendsTheQueue(): void {

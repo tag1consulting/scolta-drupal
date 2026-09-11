@@ -11,6 +11,7 @@ use Drupal\Tests\node\Traits\ContentTypeCreationTrait;
 use Drush\Log\DrushLoggerManager;
 use Symfony\Component\Console\Output\NullOutput;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
+use Tag1\Scolta\Index\ResumeChainRunner;
 
 /**
  * An operator's `--resume` drives the chain the same way a fresh build does.
@@ -20,7 +21,8 @@ use Tag1\Scolta\Index\IndexBuildOrchestrator;
  * with "Re-run `drush scolta:build --resume` to continue". The command took
  * any `--resume` for a segment spawned by its own chain, which must report to
  * its parent rather than chain again; the parent is now the only process
- * that sets SCOLTA_RESUME_SEGMENT, and the flag alone no longer means that.
+ * that sets ResumeChainRunner::SEGMENT_ENV, and the flag alone no longer
+ * means that.
  *
  * @group scolta
  */
@@ -44,6 +46,11 @@ class ResumeChainKernelTest extends KernelTestBase {
    * The segment command the chain tried to run, if it got that far.
    */
   public ?string $spawned = NULL;
+
+  /**
+   * The environment the chain set for that segment.
+   */
+  public array $spawnedEnv = [];
 
   /**
    * {@inheritdoc}
@@ -84,7 +91,7 @@ class ResumeChainKernelTest extends KernelTestBase {
    * {@inheritdoc}
    */
   protected function tearDown(): void {
-    putenv(ScoltaCommands::RESUME_SEGMENT_ENV);
+    putenv(ResumeChainRunner::SEGMENT_ENV);
     if (is_dir($this->indexRoot)) {
       $items = new \RecursiveIteratorIterator(
         new \RecursiveDirectoryIterator($this->indexRoot, \FilesystemIterator::SKIP_DOTS),
@@ -123,6 +130,8 @@ class ResumeChainKernelTest extends KernelTestBase {
       $this->container->get('file_system'),
       $this->container->get('cache_tags.invalidator'),
       $this->container->get('scolta.index_locator'),
+      $this->container->get('scolta.index_build_runner'),
+      $this->container->get('queue'),
     ) extends ScoltaCommands {
 
       /**
@@ -140,8 +149,9 @@ class ResumeChainKernelTest extends KernelTestBase {
       /**
        * {@inheritdoc}
        */
-      protected function runForeground(string $cmd): int {
+      protected function runForeground(string $cmd, array $env): int {
         $this->test->spawned = $cmd;
+        $this->test->spawnedEnv = $env;
         throw new \RuntimeException('segment captured');
       }
 
@@ -179,7 +189,7 @@ class ResumeChainKernelTest extends KernelTestBase {
   public function testAnOperatorResumeChainsLikeAFreshBuild(): void {
     $this->assertSame('segment captured', $this->runYieldingBuild(resume: FALSE), 'A fresh build that yields chains.');
     $this->assertSame('segment captured', $this->runYieldingBuild(resume: TRUE), 'An operator --resume that yields chains too.');
-    $this->assertStringStartsWith(ScoltaCommands::RESUME_SEGMENT_ENV . '=1 ', (string) $this->spawned);
+    $this->assertSame([ResumeChainRunner::SEGMENT_ENV => '1'], $this->spawnedEnv);
     $this->assertStringContainsString(' scolta:build --indexer=php --resume', (string) $this->spawned);
   }
 
@@ -189,7 +199,7 @@ class ResumeChainKernelTest extends KernelTestBase {
   public function testASpawnedSegmentReportsToItsParent(): void {
     $this->runYieldingBuild(resume: FALSE);
 
-    putenv(ScoltaCommands::RESUME_SEGMENT_ENV . '=1');
+    putenv(ResumeChainRunner::SEGMENT_ENV . '=1');
     $message = $this->runYieldingBuild(resume: TRUE);
     $this->assertStringContainsString('Re-run `drush scolta:build --resume` to continue', $message);
     $this->assertNull($this->spawned, 'A segment must not spawn a segment.');
