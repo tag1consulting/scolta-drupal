@@ -325,6 +325,7 @@ class ScoltaCommands extends DrushCommands {
       $this->logger()->error('Failed to create state directory: {dir}', ['dir' => $resolvedStateDir]);
       return;
     }
+    scolta_mark_state_format($resolvedStateDir);
     if (!is_dir($resolvedOutputDir) && !$this->fileSystem->mkdir($resolvedOutputDir, 0755, TRUE)) {
       $this->logger()->error('Failed to create output directory: {dir}', ['dir' => $resolvedOutputDir]);
       return;

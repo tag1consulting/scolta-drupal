@@ -62,7 +62,7 @@ class ResetIndexStateKernelTest extends KernelTestBase {
     scolta_reset_index_state('test');
 
     $this->assertDirectoryExists($this->buildDir);
-    $this->assertSame([], array_diff(scandir($this->buildDir), ['.', '..']), 'Every ledger, manifest and chunk file must be discarded.');
+    $this->assertSame(['state-format'], array_values(array_diff(scandir($this->buildDir), ['.', '..'])), 'Every ledger, manifest and chunk file must be discarded; only the format marker remains.');
     $this->assertSame(1, $queue->numberOfItems());
     $item = $queue->claimItem();
     $this->assertSame(['type' => 'test'], $item->data);
@@ -75,6 +75,58 @@ class ResetIndexStateKernelTest extends KernelTestBase {
   }
 
   /**
+   * A marker at or past the target format leaves the state alone.
+   *
+   * The scenario behind the marker: a database rollback or a production
+   * database copied onto an environment whose files already carry the new
+   * format re-runs the update hook, which used to discard an in-progress build.
+   */
+  public function testMarkerAtFormatSkipsResetAndQueue(): void {
+    $queue = \Drupal::queue('scolta_rebuild');
+    $queue->deleteQueue();
+    file_put_contents($this->buildDir . '/state-format', '10007');
+    // A failed resume's leftover must not enter into the decision.
+    file_put_contents($this->buildDir . '/segment-outcome.json', '{"outcome":"memory_abort"}');
+
+    $message = scolta_reset_index_state('test');
+
+    $this->assertFileExists($this->buildDir . '/page-table.json');
+    $this->assertFileExists($this->buildDir . '/chunks/0.bin');
+    $this->assertSame(0, $queue->numberOfItems());
+    $this->assertStringContainsString('already at state format 10007', (string) $message);
+  }
+
+  /**
+   * A marker older than the target format still resets, and is advanced.
+   */
+  public function testOlderMarkerStillResets(): void {
+    $queue = \Drupal::queue('scolta_rebuild');
+    $queue->deleteQueue();
+    file_put_contents($this->buildDir . '/state-format', '10006');
+
+    scolta_reset_index_state('test');
+
+    $this->assertFileDoesNotExist($this->buildDir . '/page-table.json');
+    $this->assertSame(['state-format'], array_values(array_diff(scandir($this->buildDir), ['.', '..'])));
+    $this->assertSame('10007', file_get_contents($this->buildDir . '/state-format'));
+    $this->assertSame(1, $queue->numberOfItems());
+  }
+
+  /**
+   * An empty, unmarked directory gets the marker; the build path writes it too.
+   */
+  public function testEmptyDirectoryGetsMarker(): void {
+    _scolta_empty_directory($this->buildDir);
+
+    scolta_reset_index_state('test');
+    $this->assertSame('10007', file_get_contents($this->buildDir . '/state-format'));
+
+    unlink($this->buildDir . '/state-format');
+    scolta_mark_state_format($this->buildDir);
+    $this->assertSame('10007', file_get_contents($this->buildDir . '/state-format'));
+  }
+
+  /**
    * Sites with auto_rebuild off drive builds from drush and get no queue item.
    */
   public function testQueuesNothingWhenAutoRebuildIsOff(): void {
@@ -84,7 +136,7 @@ class ResetIndexStateKernelTest extends KernelTestBase {
 
     scolta_reset_index_state('test');
 
-    $this->assertSame([], array_diff(scandir($this->buildDir), ['.', '..']));
+    $this->assertSame(['state-format'], array_values(array_diff(scandir($this->buildDir), ['.', '..'])));
     $this->assertSame(0, $queue->numberOfItems());
   }
 

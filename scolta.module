@@ -15,6 +15,31 @@ use Tag1\Scolta\Index\RetiredIndexTrash;
 use Tag1\Scolta\Storage\FilesystemDriver;
 
 /**
+ * Record the state format in the build state directory, if not already there.
+ *
+ * The marker lives beside the state it describes, so a database rollback or a
+ * copied-in production database does not make scolta_reset_index_state()
+ * discard state that is already in the new format.
+ *
+ * @param string $stateDir
+ *   The build state directory, a path or stream-wrapper URI, which must exist.
+ * @param int $format
+ *   The state format the code about to write there produces. Bump the default
+ *   here and in scolta_reset_index_state(), and add an update hook calling the
+ *   latter, whenever a release writes state an earlier release's ledger or
+ *   manifest cannot share.
+ *
+ * @since 1.4.1
+ * @stability experimental
+ */
+function scolta_mark_state_format(string $stateDir, int $format = 10007): void {
+  $marker = rtrim($stateDir, '/') . '/state-format';
+  if (is_dir($stateDir) && (!is_file($marker) || (int) file_get_contents($marker) < $format)) {
+    file_put_contents($marker, (string) $format);
+  }
+}
+
+/**
  * Implements hook_help().
  */
 function scolta_help($route_name, RouteMatchInterface $route_match) {

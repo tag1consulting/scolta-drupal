@@ -1894,6 +1894,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     if (!is_dir($stateDir)) {
       $this->fileSystem->mkdir($stateDir, 0755, TRUE);
     }
+    scolta_mark_state_format($stateDir);
     if (!is_dir($outputDir)) {
       $this->fileSystem->mkdir($outputDir, 0755, TRUE);
     }
@@ -1951,6 +1952,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     if (!is_dir($stateDir)) {
       $this->fileSystem->mkdir($stateDir, 0755, TRUE);
     }
+    scolta_mark_state_format($stateDir);
     if (!is_dir($outputDir)) {
       $this->fileSystem->mkdir($outputDir, 0755, TRUE);
     }

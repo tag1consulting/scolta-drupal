@@ -441,6 +441,9 @@ function scolta_update_10007() {
  *
  * @param string $reason
  *   Recorded on the queue item, e.g. the update hook name.
+ * @param int $format
+ *   The state format this reset brings the directory to. Skipped entirely when
+ *   the directory's state-format marker is already at or past it.
  *
  * @return \Drupal\Core\StringTranslation\TranslatableMarkup
  *   What happened, for an update hook to return.
@@ -448,11 +451,24 @@ function scolta_update_10007() {
  * @since 1.4.1
  * @stability experimental
  */
-function scolta_reset_index_state(string $reason) {
+function scolta_reset_index_state(string $reason, int $format = 10007) {
   $config = \Drupal::config('scolta.settings');
   $buildDir = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
 
+  // The schema version lives in the database, the state on the files mount;
+  // after a database rollback or a copied-in production database this hook
+  // runs again against state that is already current. The marker beside the
+  // state decides, before anything else in the directory is looked at.
+  $marker = rtrim($buildDir, '/') . '/state-format';
+  if (is_file($marker) && (int) file_get_contents($marker) >= $format) {
+    return t('The build state directory @dir is already at state format @format; nothing was discarded or queued.', [
+      '@dir' => $buildDir,
+      '@format' => $format,
+    ]);
+  }
+
   $emptied = _scolta_empty_directory($buildDir);
+  scolta_mark_state_format($buildDir, $format);
 
   $queued = FALSE;
   $queue = \Drupal::queue('scolta_rebuild');
