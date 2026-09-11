@@ -7,7 +7,9 @@ namespace Drupal\scolta\Service;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drush\Drush;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Process\Process;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\BuildIntent;
@@ -24,9 +26,9 @@ use Tag1\Scolta\Index\StatusReport;
  *
  * Both drivers resolve the same config into the same directories and memory
  * budget, stream the same gatherer through the same orchestrator, and carry a
- * memory-yielded build to its end by spawning `drush scolta:build --resume`
- * child processes. Each used to hold its own copy of all of that, so a fix
- * to one lagged in the other. What stays with the driver is what differs:
+ * memory-yielded build to its end by running `drush scolta:build --resume`
+ * child processes through Drush's own process manager. Each used to hold its
+ * own copy of all of that, so a fix to one lagged in the other. What stays with the driver is what differs:
  * the queue worker's lock, debounce and marker bookkeeping, and the command's
  * scoping options and operator-facing messages.
  *
@@ -225,7 +227,7 @@ class IndexBuildRunner {
    * A second segment in the heap the first one fragmented is judged a stall,
    * so each segment is a child `drush scolta:build --indexer=php --resume`.
    * The loop itself is scolta-php's ResumeChainRunner; this supplies the
-   * command line and the process runner.
+   * options and hands each segment to the runner the caller passes in.
    *
    * @param \Tag1\Scolta\Index\BuildState $state
    *   The state directory the build runs against.
@@ -234,91 +236,71 @@ class IndexBuildRunner {
    * @param \Tag1\Scolta\Index\MemoryBudget $budget
    *   Passed to each segment as --memory-budget.
    * @param \Psr\Log\LoggerInterface $logger
-   *   Receives the chain's notices and each child's output.
-   * @param callable(string, array<string, string>): int $runChild
-   *   Runs one child command with the given environment variables set and
-   *   returns its exit code; see runForeground(). A seam for tests.
-   * @param string $extraArgs
-   *   Shell-escaped options every segment must repeat (scope, --force …).
+   *   Receives the chain's notices.
+   * @param callable(array<string, mixed>, array<string, string>): int $runChild
+   *   Runs one `scolta:build` child with the given options and environment
+   *   variables and returns its exit code; see runDrush(). A seam for tests.
+   * @param array<string, mixed> $extraOptions
+   *   Options every segment must repeat (scope, --force …).
    *
    * @return \Tag1\Scolta\Index\StatusReport
    *   Success once a segment exits 0; otherwise the policy's reason to stop.
-   *
-   * @throws \RuntimeException
-   *   When drush cannot be located, so no segment can be spawned.
    */
-  public function resumeChain(BuildState $state, StatusReport $yielded, MemoryBudget $budget, LoggerInterface $logger, callable $runChild, string $extraArgs = ''): StatusReport {
-    $drushBin = $this->findDrushBin();
-    if ($drushBin === NULL) {
-      throw new \RuntimeException(sprintf(
-        'Memory limit reached after %d pages and drush could not be located to continue the build. '
-        . 'Run `drush scolta:build --resume` until it completes, or raise memory_limit.',
-        $yielded->pagesProcessed,
-      ));
-    }
-    $cmd = escapeshellarg($drushBin) . ' scolta:build --indexer=php --resume' . $extraArgs
-      . ' --memory-budget=' . escapeshellarg(round($budget->totalBudgetBytes() / 1_048_576) . 'M');
-
-    $runner = new ResumeChainRunner($state, $this->policy(), fn(array $env): int => $runChild($cmd, $env), $logger);
+  public function resumeChain(BuildState $state, StatusReport $yielded, MemoryBudget $budget, LoggerInterface $logger, callable $runChild, array $extraOptions = []): StatusReport {
+    $options = $extraOptions + [
+      'indexer' => 'php',
+      'resume' => TRUE,
+      'memory-budget' => round($budget->totalBudgetBytes() / 1_048_576) . 'M',
+    ];
+    $runner = new ResumeChainRunner($state, $this->policy(), fn(array $env): int => $runChild($options, $env), $logger);
     return $runner->run($yielded);
   }
 
   /**
-   * Run a command in the foreground, streaming its output, and return its code.
+   * Run a drush command against this site in the foreground; return its code.
    *
-   * @param string $cmd
-   *   The shell-escaped command line.
+   * Drush::drush() knows how to launch another command — the same binary,
+   * root and URI as the running one — so nothing here guesses at a path.
+   *
+   * @param string $command
+   *   The drush command name.
+   * @param array<string, mixed> $options
+   *   Its options; TRUE renders as a bare flag.
    * @param array<string, string> $env
    *   Environment variables to set for the child.
    * @param \Psr\Log\LoggerInterface $logger
    *   Receives each non-empty output line at notice level.
    * @param callable|null $keepAlive
-   *   Called at least every 30 seconds while the child runs, whether or not
-   *   it printed anything; the worker renews its lock here.
+   *   Called about every 30 seconds while the child runs, whether or not it
+   *   printed anything; the queue worker renews its lock here.
    */
-  public function runForeground(string $cmd, array $env, LoggerInterface $logger, ?callable $keepAlive = NULL): int {
-    foreach (array_reverse($env, TRUE) as $name => $value) {
-      $cmd = $name . '=' . escapeshellarg($value) . ' ' . $cmd;
-    }
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions,Drupal.Commenting.PostStatementComment,Drupal.Commenting.InlineComment,Drupal.Files.LineLength -- nosemgrep trails the call because semgrep reads it only there. proc_open required to stream a child build's output while waiting for it. Arguments are escapeshellarg-quoted.
-    $handle = proc_open($cmd . ' 2>&1', [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes); // nosemgrep: php.lang.security.exec-use.exec-use
-    if ($handle === FALSE) {
-      throw new \RuntimeException('Failed to start the resume segment: ' . $cmd);
-    }
-
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- feof/fgets/fclose/proc_close required for subprocess pipe operations.
-    while (!feof($pipes[1])) {
-      $read = [$pipes[1]];
-      $write = $except = [];
-      if (!stream_select($read, $write, $except, 30)) {
-        $keepAlive && $keepAlive();
-        continue;
+  public function runDrush(string $command, array $options, array $env, LoggerInterface $logger, ?callable $keepAlive = NULL): int {
+    $process = Drush::drush(Drush::aliasManager()->getSelf(), $command, [], $options);
+    $process->setTimeout(NULL);
+    $process->setEnv($env);
+    $process->start(function (string $type, string $buffer) use ($logger): void {
+      foreach (preg_split('/\R/', $buffer) ?: [] as $line) {
+        if (trim($line) !== '') {
+          $logger->notice($line);
+        }
       }
-      $line = fgets($pipes[1]);
-      if ($line !== FALSE && trim($line) !== '') {
-        $logger->notice(rtrim($line));
-      }
-      $keepAlive && $keepAlive();
-    }
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-
-    return proc_close($handle);
+    });
+    return $this->wait($process, $keepAlive);
   }
 
   /**
-   * Locate the drush binary.
+   * Block until a started process exits, poking $keepAlive every 30 seconds.
    */
-  public function findDrushBin(): ?string {
-    // Vendor bin is the most reliable location in a Composer project.
-    $root = defined('DRUPAL_ROOT') ? dirname(DRUPAL_ROOT) : getcwd();
-    $vendorBin = $root . '/vendor/bin/drush';
-    if (is_executable($vendorBin)) {
-      return $vendorBin;
+  protected function wait(Process $process, ?callable $keepAlive): int {
+    $last = time();
+    while ($process->isRunning()) {
+      usleep(200_000);
+      if ($keepAlive && time() - $last >= 30) {
+        $keepAlive();
+        $last = time();
+      }
     }
-    // Fall back to PATH.
-    $which = trim((string) shell_exec('which drush 2>/dev/null'));
-    return ($which !== '' && is_executable($which)) ? $which : NULL;
+    return (int) $process->getExitCode();
   }
 
   /**

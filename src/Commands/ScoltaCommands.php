@@ -509,10 +509,10 @@ class ScoltaCommands extends DrushCommands {
    *   When the chain stalls, exceeds its segment budget, or fails.
    */
   private function runResumeChain(array $options, MemoryBudget $budget, StatusReport $firstReport, IndexBuildOrchestrator $orchestrator, string $outputDir): void {
-    $args = '';
+    $repeat = [];
     foreach (['entity-type', 'bundle', 'entity-ids', 'chunk-size'] as $name) {
       if (isset($options[$name]) && $options[$name] !== '') {
-        $args .= ' --' . $name . '=' . escapeshellarg((string) $options[$name]);
+        $repeat[$name] = (string) $options[$name];
       }
     }
     // --force must survive segmentation: an unforced segment serves any
@@ -522,10 +522,10 @@ class ScoltaCommands extends DrushCommands {
     // which the aborting parent never reached. Without this, a forced build
     // big enough to segment silently degrades to incremental for its tail.
     if (!empty($options['force'])) {
-      $args .= ' --force';
+      $repeat['force'] = TRUE;
     }
 
-    $report = $this->runner->resumeChain($orchestrator->coordinator()->buildState(), $firstReport, $budget, $this->logger(), $this->runForeground(...), $args);
+    $report = $this->runner->resumeChain($orchestrator->coordinator()->buildState(), $firstReport, $budget, $this->logger(), $this->runSegmentProcess(...), $repeat);
     if (!$report->success) {
       throw new \RuntimeException($report->error ?? 'The resume chain failed.');
     }
@@ -543,18 +543,18 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Run a child segment in the foreground and return its exit code.
+   * Run a child `scolta:build` segment in the foreground; return its exit code.
    *
-   * Protected so a kernel test can observe the segment command instead of
-   * spawning a drush that would run against the wrong database.
+   * Protected so a kernel test can observe the segment instead of running a
+   * drush that would run against the wrong database.
    *
-   * @param string $cmd
-   *   The shell-escaped command line.
+   * @param array<string, mixed> $options
+   *   The segment's command options.
    * @param array<string, string> $env
    *   Environment variables to set for the child.
    */
-  protected function runForeground(string $cmd, array $env): int {
-    return $this->runner->runForeground($cmd, $env, $this->logger());
+  protected function runSegmentProcess(array $options, array $env): int {
+    return $this->runner->runDrush('scolta:build', $options, $env, $this->logger());
   }
 
   /**
@@ -612,21 +612,12 @@ class ScoltaCommands extends DrushCommands {
    * merge starts with a clean heap.
    */
   private function spawnFinalize(string $stateDir, string $outputDir, int $budgetBytes): void {
-    $drushBin = $this->runner->findDrushBin();
-    if ($drushBin === NULL) {
-      $this->logger()->error('Cannot auto-finalize: drush executable not found. Run manually: drush scolta:finalize');
-      return;
-    }
-
-    $budgetMb = round($budgetBytes / 1_048_576) . 'M';
-    $cmd = escapeshellarg($drushBin)
-      . ' scolta:finalize'
-      . ' --state-dir=' . escapeshellarg($stateDir)
-      . ' --output-dir=' . escapeshellarg($outputDir)
-      . ' --memory-budget=' . escapeshellarg($budgetMb);
-
-    $this->logger()->notice('Running: {cmd}', ['cmd' => $cmd]);
-    $exitCode = $this->runner->runForeground($cmd, [], $this->logger());
+    $this->logger()->notice('Running scolta:finalize in a fresh process.');
+    $exitCode = $this->runner->runDrush('scolta:finalize', [
+      'state-dir' => $stateDir,
+      'output-dir' => $outputDir,
+      'memory-budget' => round($budgetBytes / 1_048_576) . 'M',
+    ], [], $this->logger());
 
     if ($exitCode !== 0) {
       throw new \RuntimeException(sprintf(

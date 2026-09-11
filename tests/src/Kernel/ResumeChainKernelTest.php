@@ -43,9 +43,9 @@ class ResumeChainKernelTest extends KernelTestBase {
   protected string $indexRoot;
 
   /**
-   * The segment command the chain tried to run, if it got that far.
+   * The options of the segment the chain tried to run, if it got that far.
    */
-  public ?string $spawned = NULL;
+  public ?array $spawned = NULL;
 
   /**
    * The environment the chain set for that segment.
@@ -149,8 +149,8 @@ class ResumeChainKernelTest extends KernelTestBase {
       /**
        * {@inheritdoc}
        */
-      protected function runForeground(string $cmd, array $env): int {
-        $this->test->spawned = $cmd;
+      protected function runSegmentProcess(array $options, array $env): int {
+        $this->test->spawned = $options;
         $this->test->spawnedEnv = $env;
         throw new \RuntimeException('segment captured');
       }
@@ -190,7 +190,9 @@ class ResumeChainKernelTest extends KernelTestBase {
     $this->assertSame('segment captured', $this->runYieldingBuild(resume: FALSE), 'A fresh build that yields chains.');
     $this->assertSame('segment captured', $this->runYieldingBuild(resume: TRUE), 'An operator --resume that yields chains too.');
     $this->assertSame([ResumeChainRunner::SEGMENT_ENV => '1'], $this->spawnedEnv);
-    $this->assertStringContainsString(' scolta:build --indexer=php --resume', (string) $this->spawned);
+    $this->assertSame('php', $this->spawned['indexer']);
+    $this->assertTrue($this->spawned['resume']);
+    $this->assertSame('node', $this->spawned['entity-type'], 'The scope is repeated on every segment');
   }
 
   /**

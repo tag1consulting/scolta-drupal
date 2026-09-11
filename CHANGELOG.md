@@ -8,7 +8,7 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ### Changed
 - **Breaking: Drupal cron no longer runs the `scolta_rebuild` queue.** Run rebuilds from an external cron line, every minute, in every environment that should index: `* * * * * drush queue:run scolta_rebuild`. The worker enqueues its resume marker before a full build's first segment and deletes it only when the build completes or is given up on, so a killed process leaves a claimable request whatever `--lease-time` was, and a yielded segment is chained to completion in the same tick via scolta-php's `ResumeChainRunner`.
-- `ScoltaCommands` and `ScoltaRebuildWorker` share one build path, `Drupal\scolta\Service\IndexBuildRunner` (`scolta.index_build_runner`), which both take as a constructor argument. `ScoltaCommands::RESUME_SEGMENT_ENV` is replaced by `ResumeChainRunner::SEGMENT_ENV`.
+- `ScoltaCommands` and `ScoltaRebuildWorker` share one build path, `Drupal\scolta\Service\IndexBuildRunner` (`scolta.index_build_runner`), which both take as a constructor argument. `ScoltaCommands::RESUME_SEGMENT_ENV` is replaced by `ResumeChainRunner::SEGMENT_ENV`, and child segments and `scolta:finalize` are launched through `Drush::drush()` instead of a located binary.
 
 ### Added
 - `drush scolta:request-build` (`srb`): enqueues one full-rebuild request for the next `queue:run scolta_rebuild` tick, adding nothing when one is already waiting.

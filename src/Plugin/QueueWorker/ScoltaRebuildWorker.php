@@ -340,14 +340,14 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    */
   protected function chain(BuildState $buildState, StatusReport $yielded): ?StatusReport {
     try {
-      return $this->runner->resumeChain($buildState, $yielded, $this->runner->memoryBudget(), $this->logger, function (string $cmd, array $env): int {
+      return $this->runner->resumeChain($buildState, $yielded, $this->runner->memoryBudget(), $this->logger, function (array $options, array $env): int {
         // Renew the Drupal lock while the child holds the state lock, so
         // a tick during a child segment still exits at the lock instead of
         // reaching the state directory and reading contention as a failure.
-        return $this->runner->runForeground($cmd, $env, $this->logger, fn() => $this->lock->acquire(IndexBuildRunner::LOCK_NAME, self::LOCK_TIMEOUT));
+        return $this->runner->runDrush('scolta:build', $options, $env, $this->logger, fn() => $this->lock->acquire(IndexBuildRunner::LOCK_NAME, self::LOCK_TIMEOUT));
       });
     }
-    catch (\RuntimeException $e) {
+    catch (\Throwable $e) {
       $this->logger->warning($e->getMessage());
       return NULL;
     }
