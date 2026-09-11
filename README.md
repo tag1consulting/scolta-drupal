@@ -162,7 +162,7 @@ drush scolta:finalize
 
 ### Retired-index cleanup on network filesystems
 
-When a build publishes a new index, the previous one is renamed to a `.scolta-trash-*` directory next to `pagefind/`, then deleted after publishing (scolta-php ≥ 1.5.0). On NFS-backed file storage (e.g. Lagoon's `/mnt/files`) the deletion is parallelized (16 concurrent `rm` workers), which turns the hours-long serial deletion that used to make a finished `drush scolta:build` look hung into minutes — and it now happens after the new index is live, announced with a notice so it is never mistaken for a hang. Environments without process spawning fall back to serial deletion automatically.
+When a build publishes a new index, the previous one is renamed to a `.scolta-trash-*` directory next to `pagefind/`, then deleted after publishing (scolta-php ≥ 1.5.0). On NFS-backed file storage the deletion is parallelized (16 concurrent `rm` workers), which turns the hours-long serial deletion that used to make a finished `drush scolta:build` look hung into minutes — and it now happens after the new index is live, announced with a notice so it is never mistaken for a hang. Environments without process spawning fall back to serial deletion automatically.
 
 Two backstops catch trash from builds that died before their own sweep, and from the batch-UI indexing path (which never sweeps):
 
@@ -435,15 +435,7 @@ A deploy does not need to run `drush scolta:build`. Content edits are applied in
 
 Sites without a drush cron of any kind keep the settings form's *Index now*, which builds in a batch of web requests.
 
-On Lagoon, run the tick in the `cli` pod. In-pod crons are additionally `flock`-wrapped by Lagoon, so two ticks never overlap even before the build lock is reached. Do not set `inPod: false` or a `timeout`: a chained build can run for hours.
-
-```yaml
-cronjobs:
-  - name: scolta rebuild queue
-    schedule: "M * * * *"
-    command: mail_log.sh "drush queue:run scolta_rebuild"
-    service: cli
-```
+On container platforms, run the tick in the CLI container from a platform cron entry that is not given a timeout: a chained build can run for hours.
 
 #### Auto-rebuild debounce
 
