@@ -6,6 +6,7 @@ namespace Drupal\scolta\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\File\FileSystemInterface;
+use Consolidation\SiteProcess\ProcessBase;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drush\Drush;
 use Psr\Log\LoggerInterface;
@@ -274,13 +275,23 @@ class IndexBuildRunner {
    *   printed anything; the queue worker renews its lock here.
    */
   public function runDrush(string $command, array $options, array $env, ?callable $keepAlive = NULL): int {
-    $process = Drush::drush(Drush::aliasManager()->getSelf(), $command, [], $options);
+    $process = $this->process($command, $options);
     $process->setTimeout(NULL);
     $process->setEnv($env);
     // The child's output reaches this process's output as it is produced —
     // an operator's terminal, or the cron mail of a `queue:run` tick.
     $process->start($process->showRealtime());
     return $this->wait($process, $keepAlive);
+  }
+
+  /**
+   * The child process for a drush command against this site, not yet started.
+   *
+   * A seam: a kernel test substitutes a shell command, since a real child
+   * drush would run against the wrong database.
+   */
+  protected function process(string $command, array $options): ProcessBase {
+    return Drush::drush(Drush::aliasManager()->getSelf(), $command, [], $options);
   }
 
   /**
