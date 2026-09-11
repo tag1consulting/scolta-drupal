@@ -30,7 +30,7 @@ function scolta_install() {
   user_role_grant_permissions(RoleInterface::AUTHENTICATED_ID, ['use scolta ai']);
 
   \Drupal::queue('scolta_rebuild')->createItem(['type' => 'install']);
-  \Drupal::messenger()->addStatus(t('Scolta installed. Your search index will be built on the next cron run. To build immediately: <code>drush scolta:build</code>'));
+  \Drupal::messenger()->addStatus(t('Scolta installed. Your search index will be built by the next <code>drush queue:run scolta_rebuild</code> tick; see the README for the cron line. To build immediately: <code>drush scolta:build</code>'));
 }
 
 /**
@@ -475,12 +475,12 @@ function scolta_reset_index_state(string $reason) {
     $queued = TRUE;
   }
 
-  return t('@emptied @queued Sites whose full build exceeds one PHP process should run `drush scolta:build` now; cron cannot resume a build.', [
+  return t('@emptied @queued Sites without the `drush queue:run scolta_rebuild` cron line should run `drush scolta:build` now.', [
     '@emptied' => $emptied
       ? t('Emptied the build state directory @dir so the next build renumbers every page from zero.', ['@dir' => $buildDir])
       : t('The build state directory @dir did not exist; nothing to discard.', ['@dir' => $buildDir]),
     '@queued' => $queued
-      ? t('A full rebuild is queued for the next cron run.')
+      ? t('A full rebuild is queued for the next `drush queue:run scolta_rebuild` tick.')
       : t('No rebuild was queued (auto_rebuild is off or one is already waiting).'),
   ]);
 }

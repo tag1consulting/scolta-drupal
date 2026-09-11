@@ -13,5 +13,7 @@ services:
       - '@file_system'
       - '@cache_tags.invalidator'
       - '@scolta.index_locator'
+      - '@scolta.index_build_runner'
+      - '@queue'
     tags:
       - { name: drush.command }

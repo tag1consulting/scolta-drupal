@@ -194,6 +194,8 @@ class MultiEntityTypeBuildKernelTest extends KernelTestBase {
       $this->container->get('file_system'),
       $this->container->get('cache_tags.invalidator'),
       $this->container->get('scolta.index_locator'),
+      $this->container->get('scolta.index_build_runner'),
+      $this->container->get('queue'),
     );
     $commands->setLogger(new DrushLoggerManager());
     $commands->setOutput(new NullOutput());

@@ -30,6 +30,12 @@ services:
   scolta.index_locator:
     class: Drupal\scolta\Service\IndexLocator
 
+  # The build path `drush scolta:build` and the rebuild queue worker share:
+  # directories, memory budget, one streamed segment, the resume chain.
+  scolta.index_build_runner:
+    class: Drupal\scolta\Service\IndexBuildRunner
+    arguments: ['@config.factory', '@file_system', '@stream_wrapper_manager', '@scolta.content_gatherer']
+
   # Copies the scolta-php browser bundle from vendor/ into
   # public://scolta-assets. Runs at install and on every cache rebuild;
   # copies only files that differ from the vendored canonical.
