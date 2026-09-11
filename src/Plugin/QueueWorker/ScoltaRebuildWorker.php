@@ -355,7 +355,9 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
         return $this->runner->runDrush('scolta:build', $options, $env, fn() => $this->lock->acquire(IndexBuildRunner::LOCK_NAME, self::LOCK_TIMEOUT));
       });
     }
-    catch (\Throwable $e) {
+    catch (\RuntimeException $e) {
+      // Drush could not launch a child here; the marker carries the build to
+      // the next tick instead. Anything else is a bug and propagates.
       $this->logger->warning($e->getMessage());
       return NULL;
     }

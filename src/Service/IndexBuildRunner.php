@@ -295,7 +295,8 @@ class IndexBuildRunner {
         $last = time();
       }
     }
-    return (int) $process->getExitCode();
+    // A child that died without an exit status is a failure, not a success.
+    return $process->getExitCode() ?? 1;
   }
 
   /**
