@@ -84,7 +84,7 @@ class ResetIndexStateKernelTest extends KernelTestBase {
   public function testMarkerAtFormatSkipsResetAndQueue(): void {
     $queue = \Drupal::queue('scolta_rebuild');
     $queue->deleteQueue();
-    file_put_contents($this->buildDir . '/state-format', '10007');
+    file_put_contents($this->buildDir . '/state-format', (string) SCOLTA_STATE_FORMAT);
     // A failed resume's leftover must not enter into the decision.
     file_put_contents($this->buildDir . '/segment-outcome.json', '{"outcome":"memory_abort"}');
 
@@ -93,7 +93,7 @@ class ResetIndexStateKernelTest extends KernelTestBase {
     $this->assertFileExists($this->buildDir . '/page-table.json');
     $this->assertFileExists($this->buildDir . '/chunks/0.bin');
     $this->assertSame(0, $queue->numberOfItems());
-    $this->assertStringContainsString('already at state format 10007', (string) $message);
+    $this->assertStringContainsString('already at state format ' . SCOLTA_STATE_FORMAT, (string) $message);
   }
 
   /**
@@ -102,13 +102,13 @@ class ResetIndexStateKernelTest extends KernelTestBase {
   public function testOlderMarkerStillResets(): void {
     $queue = \Drupal::queue('scolta_rebuild');
     $queue->deleteQueue();
-    file_put_contents($this->buildDir . '/state-format', '10006');
+    file_put_contents($this->buildDir . '/state-format', (string) (SCOLTA_STATE_FORMAT - 1));
 
     scolta_reset_index_state('test');
 
     $this->assertFileDoesNotExist($this->buildDir . '/page-table.json');
     $this->assertSame(['state-format'], array_values(array_diff(scandir($this->buildDir), ['.', '..'])));
-    $this->assertSame('10007', file_get_contents($this->buildDir . '/state-format'));
+    $this->assertSame((string) SCOLTA_STATE_FORMAT, file_get_contents($this->buildDir . '/state-format'));
     $this->assertSame(1, $queue->numberOfItems());
   }
 
@@ -119,11 +119,11 @@ class ResetIndexStateKernelTest extends KernelTestBase {
     _scolta_empty_directory($this->buildDir);
 
     scolta_reset_index_state('test');
-    $this->assertSame('10007', file_get_contents($this->buildDir . '/state-format'));
+    $this->assertSame((string) SCOLTA_STATE_FORMAT, file_get_contents($this->buildDir . '/state-format'));
 
     unlink($this->buildDir . '/state-format');
     scolta_mark_state_format($this->buildDir);
-    $this->assertSame('10007', file_get_contents($this->buildDir . '/state-format'));
+    $this->assertSame((string) SCOLTA_STATE_FORMAT, file_get_contents($this->buildDir . '/state-format'));
   }
 
   /**
