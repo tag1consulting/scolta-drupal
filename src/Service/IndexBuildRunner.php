@@ -28,9 +28,10 @@ use Tag1\Scolta\Index\StatusReport;
  * budget, stream the same gatherer through the same orchestrator, and carry a
  * memory-yielded build to its end by running `drush scolta:build --resume`
  * child processes through Drush's own process manager. Each used to hold its
- * own copy of all of that, so a fix to one lagged in the other. What stays with the driver is what differs:
- * the queue worker's lock, debounce and marker bookkeeping, and the command's
- * scoping options and operator-facing messages.
+ * own copy of all of that, so a fix to one lagged in the other. What stays
+ * with the driver is what differs: the queue worker's lock, debounce and
+ * marker bookkeeping, and the command's scoping options and operator-facing
+ * messages.
  *
  * @since 1.4.1
  * @stability experimental
