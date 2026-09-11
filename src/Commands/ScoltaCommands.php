@@ -13,6 +13,7 @@ use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Cache\DrupalCacheDriver;
+use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
 use Drupal\scolta\Progress\DrushProgressReporter;
 use Drupal\scolta\Service\IndexBuildRunner;
 use Drupal\scolta\Service\IndexLocator;
@@ -554,7 +555,7 @@ class ScoltaCommands extends DrushCommands {
    *   Environment variables to set for the child.
    */
   protected function runSegmentProcess(array $options, array $env): int {
-    return $this->runner->runDrush('scolta:build', $options, $env, $this->logger());
+    return $this->runner->runDrush('scolta:build', $options, $env);
   }
 
   /**
@@ -617,7 +618,7 @@ class ScoltaCommands extends DrushCommands {
       'state-dir' => $stateDir,
       'output-dir' => $outputDir,
       'memory-budget' => round($budgetBytes / 1_048_576) . 'M',
-    ], [], $this->logger());
+    ], []);
 
     if ($exitCode !== 0) {
       throw new \RuntimeException(sprintf(
@@ -663,7 +664,7 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Command(name: 'scolta:request-build', aliases: ['srb'])]
   #[CLI\Usage(name: 'scolta:request-build', description: 'Queue a full rebuild; the queue:run cron tick runs it')]
   public function requestBuild(): void {
-    $queue = $this->queueFactory->get('scolta_rebuild');
+    $queue = $this->queueFactory->get(ScoltaRebuildWorker::QUEUE_NAME);
     if ($queue->numberOfItems() > 0) {
       $this->logger()->notice('A rebuild request is already waiting in the scolta_rebuild queue; nothing was added.');
       return;

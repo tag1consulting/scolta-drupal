@@ -69,6 +69,14 @@ use Tag1\Scolta\Index\StatusReport;
 class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPluginInterface {
 
   /**
+   * The queue this worker serves.
+   *
+   * @since 1.4.1
+   * @stability experimental
+   */
+  public const QUEUE_NAME = 'scolta_rebuild';
+
+  /**
    * Fallback debounce delay when no Scolta search_api server exists.
    */
   protected const DEFAULT_REBUILD_DELAY = 300;
@@ -344,7 +352,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
         // Renew the Drupal lock while the child holds the state lock, so
         // a tick during a child segment still exits at the lock instead of
         // reaching the state directory and reading contention as a failure.
-        return $this->runner->runDrush('scolta:build', $options, $env, $this->logger, fn() => $this->lock->acquire(IndexBuildRunner::LOCK_NAME, self::LOCK_TIMEOUT));
+        return $this->runner->runDrush('scolta:build', $options, $env, fn() => $this->lock->acquire(IndexBuildRunner::LOCK_NAME, self::LOCK_TIMEOUT));
       });
     }
     catch (\Throwable $e) {
@@ -394,14 +402,14 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    */
   protected function ensureMarker(): void {
     $this->deleteMarkers();
-    $this->queueFactory->get('scolta_rebuild')->createItem(self::RESUME_MARKER);
+    $this->queueFactory->get(self::QUEUE_NAME)->createItem(self::RESUME_MARKER);
   }
 
   /**
    * Delete every claimable resume marker; every other item goes back as it was.
    */
   protected function deleteMarkers(): void {
-    $queue = $this->queueFactory->get('scolta_rebuild');
+    $queue = $this->queueFactory->get(self::QUEUE_NAME);
     $others = [];
     for ($n = 0; $n < self::MAX_CLAIMED_ITEMS; $n++) {
       $item = $queue->claimItem(self::LOCK_TIMEOUT);
@@ -454,7 +462,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
 
     $this->foldPayload($data, $changeSet);
 
-    $queue = $this->queueFactory->get('scolta_rebuild');
+    $queue = $this->queueFactory->get(self::QUEUE_NAME);
     // Lease the claims for a full lock period: a claim that lapses mid-build
     // can be handed to a second worker, which then blocks on the build lock
     // and suspends the queue for no reason.
@@ -629,7 +637,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    * it would drop that edit permanently.
    */
   protected function deleteClaimed(array $claimed): void {
-    $queue = $this->queueFactory->get('scolta_rebuild');
+    $queue = $this->queueFactory->get(self::QUEUE_NAME);
     foreach ($claimed as $item) {
       $queue->deleteItem($item);
     }

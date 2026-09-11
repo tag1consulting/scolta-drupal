@@ -269,23 +269,17 @@ class IndexBuildRunner {
    *   Its options; TRUE renders as a bare flag.
    * @param array<string, string> $env
    *   Environment variables to set for the child.
-   * @param \Psr\Log\LoggerInterface $logger
-   *   Receives each non-empty output line at notice level.
    * @param callable|null $keepAlive
    *   Called about every 30 seconds while the child runs, whether or not it
    *   printed anything; the queue worker renews its lock here.
    */
-  public function runDrush(string $command, array $options, array $env, LoggerInterface $logger, ?callable $keepAlive = NULL): int {
+  public function runDrush(string $command, array $options, array $env, ?callable $keepAlive = NULL): int {
     $process = Drush::drush(Drush::aliasManager()->getSelf(), $command, [], $options);
     $process->setTimeout(NULL);
     $process->setEnv($env);
-    $process->start(function (string $type, string $buffer) use ($logger): void {
-      foreach (preg_split('/\R/', $buffer) ?: [] as $line) {
-        if (trim($line) !== '') {
-          $logger->notice($line);
-        }
-      }
-    });
+    // The child's output reaches this process's output as it is produced —
+    // an operator's terminal, or the cron mail of a `queue:run` tick.
+    $process->start($process->showRealtime());
     return $this->wait($process, $keepAlive);
   }
 
