@@ -10,9 +10,9 @@ use Drupal\KernelTests\KernelTestBase;
  * The scolta_cron() hook sweeps leftover retired-index trash.
  *
  * Publishing a new index parks the previous one in a `.scolta-trash-*`
- * directory and sweeps it after publishing (scolta-php's RetiredIndexTrash);
- * cron is the backstop for builds that died before their own sweep and for
- * the batch-UI path, which never sweeps. Cron runs by calling the 'cron'
+ * directory and does not delete it (scolta-php's RetiredIndexTrash); cron
+ * is what deletes it, with the next build's bounded pre-build sweep as the
+ * backstop for a site without cron. Cron runs by calling the 'cron'
  * service directly, in-process — no HTTP request is involved, so this needs
  * only a real container and a writable directory. (Not CronRunTrait's
  * cronRun(): that always calls drupalGet(), which needs the
