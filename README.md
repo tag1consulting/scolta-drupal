@@ -435,6 +435,19 @@ A deploy does not need to run `drush scolta:build`. Content edits are applied in
 
 Sites without a drush cron of any kind keep the settings form's *Index now*, which builds in a batch of web requests.
 
+What sits in the queue, and what the worker does with it:
+
+| Payload | Enqueued by | Meaning to the worker |
+|---|---|---|
+| `{type: install}` | module install | Untargeted; forces a full build |
+| `{type: <update hook>}` | `scolta_reset_index_state()` from an update hook | Untargeted; full build |
+| `{type: request-build}` | `drush scolta:request-build` | Untargeted; full build |
+| `{triggered_by: search_api_indexing}` | the Search API backend | Untargeted; full build |
+| `{type: auto, op, entity_type, entity_id, item_ids}` | entity insert, update and delete hooks | Targeted; applied incrementally to the published index |
+| `{op: resume}` | the worker itself, before a full build's first segment | The standing request for a build in progress; with nothing to resume on disk, a full build |
+
+Duplicates are harmless. When a build starts, the worker claims every item in the queue and folds them into one change set, so a burst of saves becomes one incremental update and several full-build requests become one build. The worker keeps exactly one `{op: resume}` marker itself, draining extras before each segment and deleting them all when the build completes or is given up on.
+
 On container platforms, run the tick in the CLI container from a platform cron entry that is not given a timeout: a chained build can run for hours.
 
 #### Auto-rebuild debounce
