@@ -15,6 +15,36 @@ use Tag1\Scolta\Index\RetiredIndexTrash;
 use Tag1\Scolta\Storage\FilesystemDriver;
 
 /**
+ * Format of the build state (ledger, manifest keys) the current code writes.
+ *
+ * Bump it, and add an update hook calling scolta_reset_index_state(),
+ * whenever a release writes state an earlier release's ledger or manifest
+ * cannot share.
+ */
+// phpcs:ignore DrupalPractice.Constants.GlobalConstant.GlobalConstant
+const SCOLTA_STATE_FORMAT = 10007;
+
+/**
+ * Record the state format in the build state directory, if not already there.
+ *
+ * The marker lives beside the state it describes, so a database rollback or a
+ * copied-in production database does not make scolta_reset_index_state()
+ * discard state that is already in the new format.
+ *
+ * @param string $stateDir
+ *   The build state directory, a path or stream-wrapper URI, which must exist.
+ *
+ * @since 1.4.1
+ * @stability experimental
+ */
+function scolta_mark_state_format(string $stateDir): void {
+  $marker = rtrim($stateDir, '/') . '/state-format';
+  if (is_dir($stateDir) && (!is_file($marker) || (int) file_get_contents($marker) < SCOLTA_STATE_FORMAT)) {
+    file_put_contents($marker, (string) SCOLTA_STATE_FORMAT);
+  }
+}
+
+/**
  * Implements hook_help().
  */
 function scolta_help($route_name, RouteMatchInterface $route_match) {

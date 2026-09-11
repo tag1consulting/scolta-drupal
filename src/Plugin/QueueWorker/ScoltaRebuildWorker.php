@@ -198,6 +198,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
         $this->logger->error('Failed to create state directory: @dir', ['@dir' => $stateDir]);
         return;
       }
+      scolta_mark_state_format($stateDir);
       if (!is_dir($outputDir) && !$this->fileSystem->mkdir($outputDir, 0755, TRUE)) {
         $this->logger->error('Failed to create output directory: @dir', ['@dir' => $outputDir]);
         return;

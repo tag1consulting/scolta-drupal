@@ -428,11 +428,12 @@ function scolta_update_10007() {
  * Discard the build state and queue one full rebuild.
  *
  * For any release whose page IDs, ledger layout or manifest keys are not
- * compatible with what an earlier release wrote. A build on incompatible state
- * would tombstone every old row and allocate a fresh ordinal for every new
- * one, doubling the page table; on an empty build state directory the next
- * build of any kind numbers pages from zero. The published index keeps
- * serving until that build swaps in.
+ * compatible with what an earlier release wrote. Skipped entirely when the
+ * directory's state-format marker is already at SCOLTA_STATE_FORMAT. A build
+ * on incompatible state would tombstone every old row and allocate a fresh
+ * ordinal for every new one, doubling the page table; on an empty build state
+ * directory the next build of any kind numbers pages from zero. The published
+ * index keeps serving until that build swaps in.
  *
  * Idempotent: emptying an empty directory does nothing, and a rebuild is
  * queued only when auto_rebuild is on and nothing is already waiting. Any
@@ -452,7 +453,20 @@ function scolta_reset_index_state(string $reason) {
   $config = \Drupal::config('scolta.settings');
   $buildDir = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
 
+  // The schema version lives in the database, the state on the files mount;
+  // after a database rollback or a copied-in production database this hook
+  // runs again against state that is already current. The marker beside the
+  // state decides, before anything else in the directory is looked at.
+  $marker = rtrim($buildDir, '/') . '/state-format';
+  if (is_file($marker) && (int) file_get_contents($marker) >= SCOLTA_STATE_FORMAT) {
+    return t('The build state directory @dir is already at state format @format; nothing was discarded or queued.', [
+      '@dir' => $buildDir,
+      '@format' => SCOLTA_STATE_FORMAT,
+    ]);
+  }
+
   $emptied = _scolta_empty_directory($buildDir);
+  scolta_mark_state_format($buildDir);
 
   $queued = FALSE;
   $queue = \Drupal::queue('scolta_rebuild');
