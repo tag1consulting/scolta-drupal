@@ -59,11 +59,11 @@ function scolta_help($route_name, RouteMatchInterface $route_match) {
  * Implements hook_cron().
  *
  * Time-boxed deletion of retired index directories (`.scolta-trash-*`).
- * Publishing a new index renames the previous one to trash and sweeps it
- * right after publishing (see RetiredIndexTrash in scolta-php), so this
- * cron sweep is a backstop: it deletes trash left by builds that died
- * before their own sweep, and by the batch-UI indexing path, which never
- * sweeps. `drush scolta:cleanup` remains for on-demand or unbounded runs.
+ * Publishing a new index renames the previous one to trash and returns;
+ * it does not delete it (see RetiredIndexTrash in scolta-php). Deleting is
+ * this cron sweep's job, with a 60 s sweep at the start of the next build
+ * as the backstop for a site with no cron. `drush scolta:cleanup` remains
+ * for on-demand or unbounded runs.
  *
  * The budget comes from cleanup.cron_seconds (0 disables cron cleanup, 180
  * when unset). On web-triggered cron the budget is additionally capped by

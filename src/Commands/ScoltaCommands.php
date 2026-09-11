@@ -1037,11 +1037,11 @@ class ScoltaCommands extends DrushCommands {
    * Delete retired index directories left by index builds.
    *
    * Publishing a new index renames the previous one to a `.scolta-trash-*`
-   * directory next to `pagefind/` and sweeps trash right after publishing —
-   * the old inline file-by-file deletion made a finished build look hung
-   * for hours on NFS-backed file storage. This command and the cron sweep
-   * are the backstops: they delete trash left by builds that died before
-   * their own sweep and by the batch-UI indexing path, which never sweeps.
+   * directory next to `pagefind/` and returns — deleting it inline, or
+   * sweeping right after publishing, made a finished build look hung for
+   * minutes to hours on NFS-backed file storage. This command and the cron
+   * sweep are what delete that trash; the next build's bounded pre-build
+   * sweep is the backstop for a site running neither.
    * Always safe: the live index is never touched, and a directory that
    * cannot be deleted is left for the next run.
    *
