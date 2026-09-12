@@ -29,7 +29,7 @@ function scolta_install() {
   user_role_grant_permissions(RoleInterface::AUTHENTICATED_ID, ['use scolta ai']);
 
   \Drupal::queue('scolta_rebuild')->createItem(['type' => 'install']);
-  \Drupal::messenger()->addStatus(t('Scolta installed. Your search index will be built on the next cron run. To build immediately: <code>drush scolta:build</code>'));
+  \Drupal::messenger()->addStatus(t('Scolta installed. Your search index will be built by the next <code>drush queue:run scolta_rebuild</code> tick; see the README for the cron line. To build immediately: <code>drush scolta:build</code>'));
 }
 
 /**
@@ -433,11 +433,12 @@ function scolta_update_10008() {
  * Discard the build state and queue one full rebuild.
  *
  * For any release whose page IDs, ledger layout or manifest keys are not
- * compatible with what an earlier release wrote. A build on incompatible state
- * would tombstone every old row and allocate a fresh ordinal for every new
- * one, doubling the page table; on an empty build state directory the next
- * build of any kind numbers pages from zero. The published index keeps
- * serving until that build swaps in.
+ * compatible with what an earlier release wrote. Skipped entirely when the
+ * directory's state-format marker is already at SCOLTA_STATE_FORMAT. A build
+ * on incompatible state would tombstone every old row and allocate a fresh
+ * ordinal for every new one, doubling the page table; on an empty build state
+ * directory the next build of any kind numbers pages from zero. The published
+ * index keeps serving until that build swaps in.
  *
  * Idempotent: emptying an empty directory does nothing, and a rebuild is
  * queued only when auto_rebuild is on and nothing is already waiting. Any
@@ -457,7 +458,20 @@ function scolta_reset_index_state(string $reason) {
   $config = \Drupal::config('scolta.settings');
   $buildDir = $config->get('pagefind.build_dir') ?? 'public://scolta-build';
 
+  // The schema version lives in the database, the state on the files mount;
+  // after a database rollback or a copied-in production database this hook
+  // runs again against state that is already current. The marker beside the
+  // state decides, before anything else in the directory is looked at.
+  $marker = rtrim($buildDir, '/') . '/state-format';
+  if (is_file($marker) && (int) file_get_contents($marker) >= SCOLTA_STATE_FORMAT) {
+    return t('The build state directory @dir is already at state format @format; nothing was discarded or queued.', [
+      '@dir' => $buildDir,
+      '@format' => SCOLTA_STATE_FORMAT,
+    ]);
+  }
+
   $emptied = _scolta_empty_directory($buildDir);
+  scolta_mark_state_format($buildDir);
 
   $queued = FALSE;
   $queue = \Drupal::queue('scolta_rebuild');
@@ -466,12 +480,12 @@ function scolta_reset_index_state(string $reason) {
     $queued = TRUE;
   }
 
-  return t('@emptied @queued Sites whose full build exceeds one PHP process should run `drush scolta:build` now; cron cannot resume a build.', [
+  return t('@emptied @queued Sites without the `drush queue:run scolta_rebuild` cron line should run `drush scolta:build` now.', [
     '@emptied' => $emptied
       ? t('Emptied the build state directory @dir so the next build renumbers every page from zero.', ['@dir' => $buildDir])
       : t('The build state directory @dir did not exist; nothing to discard.', ['@dir' => $buildDir]),
     '@queued' => $queued
-      ? t('A full rebuild is queued for the next cron run.')
+      ? t('A full rebuild is queued for the next `drush queue:run scolta_rebuild` tick.')
       : t('No rebuild was queued (auto_rebuild is off or one is already waiting).'),
   ]);
 }

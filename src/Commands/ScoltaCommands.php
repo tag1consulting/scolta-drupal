@@ -4,30 +4,32 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Commands;
 
+use Consolidation\OutputFormatters\StructuredData\UnstructuredListData;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\scolta\Cache\DrupalCacheDriver;
+use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
 use Drupal\scolta\Progress\DrushProgressReporter;
+use Drupal\scolta\Service\IndexBuildRunner;
 use Drupal\scolta\Service\IndexLocator;
 use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
-use Drush\Utils\StringUtils;
-use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
-use Tag1\Scolta\Config\MemoryBudgetConfig;
-use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
+use Tag1\Scolta\Index\MemoryBudget;
 use Tag1\Scolta\Index\PageTableLedger;
-use Tag1\Scolta\Index\ResumeChainPolicy;
+use Tag1\Scolta\Index\ResumeChainRunner;
 use Tag1\Scolta\Index\RetiredIndexTrash;
+use Tag1\Scolta\Index\StatusReport;
 use Tag1\Scolta\Prompt\DefaultPrompts;
 use Tag1\Scolta\SetupCheck;
 use Tag1\Scolta\Storage\FilesystemDriver;
@@ -42,16 +44,6 @@ use Tag1\Scolta\Storage\FilesystemDriver;
  * index, build directory and AI provider state.
  */
 class ScoltaCommands extends DrushCommands {
-
-  /**
-   * How many fresh processes a single build may use to get through the corpus.
-   *
-   * A bound rather than a target: each segment must commit pages the previous
-   * one did not, so a build that is genuinely progressing finishes well inside
-   * this, and one that is not fails with a message naming the limit instead of
-   * spawning processes until someone notices.
-   */
-  private const MAX_RESUME_SEGMENTS = 50;
 
   /**
    * Constructs a ScoltaCommands object.
@@ -74,6 +66,10 @@ class ScoltaCommands extends DrushCommands {
    *   The cache tags invalidator.
    * @param \Drupal\scolta\Service\IndexLocator $indexLocator
    *   The index locator.
+   * @param \Drupal\scolta\Service\IndexBuildRunner $runner
+   *   The build path shared with the rebuild queue worker.
+   * @param \Drupal\Core\Queue\QueueFactory $queueFactory
+   *   The queue factory.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
@@ -85,6 +81,8 @@ class ScoltaCommands extends DrushCommands {
     private readonly FileSystemInterface $fileSystem,
     private readonly CacheTagsInvalidatorInterface $cacheTagsInvalidator,
     private readonly IndexLocator $indexLocator,
+    private readonly IndexBuildRunner $runner,
+    private readonly QueueFactory $queueFactory,
   ) {
     parent::__construct();
   }
@@ -105,11 +103,11 @@ class ScoltaCommands extends DrushCommands {
    * them and let cron apply the change incrementally.
    */
   #[CLI\Command(name: 'scolta:build', aliases: ['sb'])]
-  #[CLI\Option(name: 'entity-type', description: 'Entity type(s) to index, comma-separated. Default: the configured entity_types (node unless configured otherwise)')]
+  #[CLI\Option(name: 'entity-type', description: 'Entity type(s) to index, comma-separated')]
   #[CLI\Option(name: 'bundle', description: 'Bundle to index. Scopes the build; see the help text above')]
   #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build; see the help text above. Unloadable IDs are logged and skipped. --bundle is ignored')]
   #[CLI\Option(name: 'force', description: 'Skip fingerprint check and force a full rebuild')]
-  #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value for the PHP indexer (e.g. conservative, 256M). Default: from config.')]
+  #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value for the PHP indexer (e.g. conservative, 256M).')]
   #[CLI\Option(name: 'chunk-size', description: 'Pages per chunk during a PHP index build. Overrides the profile default and config setting.')]
   #[CLI\Option(name: 'resume', description: 'Resume a previously interrupted PHP index build')]
   #[CLI\Option(name: 'restart', description: 'Discard interrupted state and restart the PHP index build. Also discards the page-table ledger, renumbering every page from zero')]
@@ -145,37 +143,21 @@ class ScoltaCommands extends DrushCommands {
    *   Whether to skip the fingerprint check and force a rebuild.
    */
   private function buildWithPhpIndexer(array $options, $config, bool $force): void {
-    $entityTypes = $this->entityTypes($options['entity-type'] ?? '');
+    $entityTypes = $this->runner->entityTypes($options['entity-type'] ?? '');
     $bundle = $options['bundle'] ?: '';
-    $siteName = $config->get('site_name') ?: ($this->configFactory->get('system.site')->get('name') ?? '');
-    $language = $config->get('ai_languages')[0] ?? 'en';
+    $language = $this->runner->language();
 
-    $budget = MemoryBudgetConfig::fromCliAndConfig(
-      (isset($options['memory-budget']) && $options['memory-budget'] !== NULL)
-        ? (string) $options['memory-budget']
-        : NULL,
-      (isset($options['chunk-size']) && $options['chunk-size'] !== NULL)
-        ? (string) $options['chunk-size']
-        : NULL,
-      fn() => [
-        'profile'    => $config->get('memory_budget.profile') ?? 'conservative',
-        'chunk_size' => $config->get('memory_budget.chunk_size'),
-      ],
+    $budget = $this->runner->memoryBudget(
+      isset($options['memory-budget']) ? (string) $options['memory-budget'] : NULL,
+      isset($options['chunk-size']) ? (string) $options['chunk-size'] : NULL,
     );
 
-    $resolvedOutputDir = $this->resolvePath(
-      $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind'
-    );
-    $resolvedStateDir = $this->resolveBuildDir(
-      $config->get('pagefind.build_dir') ?? 'public://scolta-build'
-    );
-
-    if (!is_dir($resolvedStateDir) && !$this->fileSystem->mkdir($resolvedStateDir, 0755, TRUE)) {
-      $this->logger()->error('Failed to create state directory: {dir}', ['dir' => $resolvedStateDir]);
-      return;
+    try {
+      $resolvedOutputDir = $this->runner->outputDir();
+      $resolvedStateDir = $this->runner->stateDir($this->logger());
     }
-    if (!is_dir($resolvedOutputDir) && !$this->fileSystem->mkdir($resolvedOutputDir, 0755, TRUE)) {
-      $this->logger()->error('Failed to create output directory: {dir}', ['dir' => $resolvedOutputDir]);
+    catch (\RuntimeException $e) {
+      $this->logger()->error($e->getMessage());
       return;
     }
 
@@ -233,59 +215,19 @@ class ScoltaCommands extends DrushCommands {
     }
 
     $reporter = new DrushProgressReporter($this->output());
-    $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
+    $orchestrator = $this->orchestrator($resolvedStateDir, $resolvedOutputDir, $language);
 
-    // Where a resumed build restarts its walk, per entity type. The ledger
-    // knows exactly which pages this build has already committed, so the
-    // cursors are derived from real content ids rather than from
-    // pages_processed, which counts pages against a cursor that walks
-    // entities. A type with no cursor was not reached before the interruption
-    // and is walked from its first row.
-    $resumeCursors = $resume ? ScoltaContentGatherer::resumeCursors($orchestrator->pageTableLedger()->seenIdsThisBuild()) : [];
+    $resumeCursors = $resume ? $this->runner->resumeCursors($orchestrator) : [];
     foreach ($resumeCursors as $type => $id) {
       $this->logger()->notice('Resuming the {type} walk at entity {id}.', ['type' => $type, 'id' => $id]);
     }
 
-    // Expose the timestamp manifest to the gatherer so it can skip full entity
-    // loads for unchanged content — the manifest is null-safe, so passing it
-    // on resume/restart is harmless.
-    //
-    // Passed under --force too, which it was not before. --force is a rule
-    // about what this build READS: reload every entity, trust nothing cached.
-    // Withholding the manifest also stopped the build WRITING to it, and the
-    // orchestrator's own pruneAndSave() at the end then found nothing marked
-    // seen and emptied it — so a --force build deleted the very state that
-    // makes the next build incremental, and that next build was a second cold
-    // one. The gatherer gates the skip decision on $force and records
-    // regardless, so a --force build now leaves the manifest primed.
-    $tsManifest = $orchestrator->getTimestampManifest();
-
-    // Stream content one entity at a time — no full pre-load into RAM. The
-    // manifest goes to the exporter as well: it is the exporter that drops
-    // bodies too short to index, and it records those so the next build stops
-    // re-gathering them.
-    $exporter = new ContentExporter();
-    if ($entityIds !== NULL) {
-      // Same inclusive resume boundary as the corpus walk: gatherByIds() has
-      // no cursor, so the ID list itself is trimmed to it. The boundary entity
-      // stays in because only some of its translations may have committed; the
-      // orchestrator drops the ones already indexed.
-      $resumeFromId = $resumeCursors[$entityTypes[0]] ?? NULL;
-      if ($resumeFromId !== NULL) {
-        $entityIds = array_values(array_filter($entityIds, fn($id) => (int) $id >= $resumeFromId));
-      }
-      $source = $this->contentGatherer->gatherByIds($entityTypes[0], $entityIds, $siteName, $tsManifest, $force);
-    }
-    else {
-      $source = (function () use ($entityTypes, $bundle, $siteName, $resumeCursors, $tsManifest, $force) {
-        foreach ($entityTypes as $type) {
-          yield from $this->contentGatherer->gather($type, $bundle, $siteName, $resumeCursors[$type] ?? NULL, $tsManifest, $force);
-        }
-      })();
-    }
-    $items = $exporter->filterItems($source, $tsManifest);
-
-    $report = $orchestrator->build($intent, $items, $this->logger(), $reporter, force: $force);
+    // The timestamp manifest goes to the gatherer under --force too: --force
+    // is a rule about what this build READS (reload every entity, trust
+    // nothing cached), and withholding the manifest also stopped the build
+    // WRITING to it, so a --force build emptied the very state that makes the
+    // next build incremental.
+    $report = $this->runner->runSegment($orchestrator, $intent, $entityTypes, $resumeCursors, $this->logger(), $reporter, $bundle, $entityIds, $force);
 
     if ($report->success) {
       $this->reportBuildSuccess($report, $resolvedOutputDir);
@@ -329,7 +271,7 @@ class ScoltaCommands extends DrushCommands {
       $this->spawnFinalize($resolvedStateDir, $resolvedOutputDir, $budget->totalBudgetBytes());
       // spawnFinalize() throws unless the child exited 0, so reaching here
       // means an index was published. Verify it before saying so.
-      $this->confirmChainComplete($resolvedOutputDir, 0);
+      $this->confirmChainComplete($resolvedOutputDir, FALSE);
       return;
     }
 
@@ -342,11 +284,14 @@ class ScoltaCommands extends DrushCommands {
         ));
       }
 
-      // A process invoked with --resume is a segment of a chain the original
-      // process is driving; it reports its own outcome and lets that process
-      // decide what happens next. Nesting a chain inside every segment would
-      // keep one bootstrapped Drupal alive per segment.
-      if ($resume) {
+      // A segment spawned by runResumeChain() reports its own outcome and lets
+      // the process driving the chain decide what happens next. Nesting a
+      // chain inside every segment would keep one bootstrapped Drupal alive
+      // per segment. An operator's own `--resume` is not a segment: it owns
+      // the build like a fresh one does, and chains. It used to throw here,
+      // so a 124k-entity site whose first build had been interrupted got one
+      // segment per hand-launched command, each ending with this message.
+      if (ResumeChainRunner::isSegment()) {
         throw new \RuntimeException(sprintf(
           'Memory limit reached after %d pages. The build is incomplete and the index has not been '
           . 'republished. Re-run `drush scolta:build --resume` to continue, or raise memory_limit.',
@@ -354,7 +299,7 @@ class ScoltaCommands extends DrushCommands {
         ));
       }
 
-      $this->runResumeChain($options, $budget->totalBudgetBytes(), $report, $resolvedStateDir, $resolvedOutputDir);
+      $this->runResumeChain($options, $budget, $report, $orchestrator, $resolvedOutputDir);
       return;
     }
 
@@ -398,65 +343,35 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Resolve an --entity-type value to a type list.
-   *
-   * @param string $option
-   *   Comma-separated entity type IDs, or empty for the configured list.
-   *
-   * @return string[]
-   *   At least one entity type ID.
-   */
-  private function entityTypes(string $option): array {
-    return StringUtils::csvToArray($option) ?: array_keys($this->contentGatherer->entityTypes());
-  }
-
-  /**
    * Drive resume segments to completion, in the foreground.
    *
    * This used to be `exec('drush … --resume &')`: the command returned in
    * seconds having indexed nothing, exited 0, and left a detached chain of
    * about twenty processes to decide the real outcome with nobody reading the
-   * result. Whatever the chain produced — including an index missing hundreds
-   * of pages — the operator and any deploy pipeline had already been told the
-   * build succeeded. The process that was asked to build the index now owns
-   * whether it exists.
+   * result. The process that was asked to build the index now owns whether
+   * it exists. The loop is scolta-php's ResumeChainRunner, via the shared
+   * IndexBuildRunner; this supplies the options every segment must repeat.
    *
    * @param array $options
    *   The original command options.
-   * @param int $budgetBytes
+   * @param \Tag1\Scolta\Index\MemoryBudget $budget
    *   Memory budget to pass to each segment.
    * @param \Tag1\Scolta\Index\StatusReport $firstReport
    *   The report from the segment that ran in this process.
-   * @param string $stateDir
-   *   Resolved build state directory.
+   * @param \Tag1\Scolta\Index\IndexBuildOrchestrator $orchestrator
+   *   The orchestrator that ran it.
    * @param string $outputDir
    *   Resolved index output directory.
    *
    * @throws \RuntimeException
    *   When the chain stalls, exceeds its segment budget, or fails.
    */
-  private function runResumeChain(array $options, int $budgetBytes, $firstReport, string $stateDir, string $outputDir): void {
-    $drushBin = $this->findDrushBin();
-    if ($drushBin === NULL) {
-      throw new \RuntimeException(sprintf(
-        'Memory limit reached after %d pages and drush could not be located to continue the build. '
-        . 'Run `drush scolta:build --resume` until it completes, or raise memory_limit.',
-        $firstReport->pagesProcessed,
-      ));
-    }
-
-    $cmd = escapeshellarg($drushBin) . ' scolta:build --resume';
-    if (!empty($options['entity-type'])) {
-      $cmd .= ' --entity-type=' . escapeshellarg((string) $options['entity-type']);
-    }
-    if (!empty($options['bundle'])) {
-      $cmd .= ' --bundle=' . escapeshellarg($options['bundle']);
-    }
-    if (!empty($options['entity-ids'])) {
-      $cmd .= ' --entity-ids=' . escapeshellarg((string) $options['entity-ids']);
-    }
-    if (isset($options['chunk-size']) && $options['chunk-size'] !== NULL) {
-      $cmd .= ' --chunk-size=' . escapeshellarg((string) $options['chunk-size']);
+  private function runResumeChain(array $options, MemoryBudget $budget, StatusReport $firstReport, IndexBuildOrchestrator $orchestrator, string $outputDir): void {
+    $repeat = [];
+    foreach (['entity-type', 'bundle', 'entity-ids', 'chunk-size'] as $name) {
+      if (isset($options[$name]) && $options[$name] !== '') {
+        $repeat[$name] = (string) $options[$name];
+      }
     }
     // --force must survive segmentation: an unforced segment serves any
     // entity whose changed timestamp matches the manifest from cached
@@ -465,102 +380,39 @@ class ScoltaCommands extends DrushCommands {
     // which the aborting parent never reached. Without this, a forced build
     // big enough to segment silently degrades to incremental for its tail.
     if (!empty($options['force'])) {
-      $cmd .= ' --force';
+      $repeat['force'] = TRUE;
     }
-    $cmd .= ' --memory-budget=' . escapeshellarg(round($budgetBytes / 1_048_576) . 'M');
 
-    $pagesBefore = $firstReport->pagesProcessed;
-    $segment = 0;
-    $policy = new ResumeChainPolicy(ini_get('memory_limit') ?: NULL, self::MAX_RESUME_SEGMENTS);
-
-    while (TRUE) {
-      $segment++;
-      $this->logger()->notice(
-        'Memory limit reached at {pages} pages. Continuing in a fresh process (segment {n})...',
-        ['pages' => $pagesBefore, 'n' => $segment],
-      );
-
-      $this->clearSegmentOutcome($stateDir);
-      $exitCode = $this->runForeground($cmd);
-      if ($exitCode === 0) {
-        $this->confirmChainComplete($outputDir, $segment);
-        return;
-      }
-
-      // Every failure exits non-zero, so exit status alone cannot say whether
-      // the segment yielded on memory pressure and wants another one or found
-      // the build broken and wants the chain to stop. The segment records
-      // which it was; ResumeChainPolicy turns that record into the decision
-      // and ends the chain at MAX_RESUME_SEGMENTS.
-      $pagesNow = $this->pagesCommitted($stateDir);
-      $reason = $policy->failureReason($this->segmentOutcome($stateDir), $pagesNow, $pagesBefore, $segment);
-      if ($reason !== NULL) {
-        throw new \RuntimeException($reason);
-      }
-      $pagesBefore = $pagesNow;
+    $report = $this->runner->resumeChain($orchestrator->coordinator()->buildState(), $firstReport, $budget, $this->logger(), $this->runSegmentProcess(...), $repeat);
+    if (!$report->success) {
+      throw new \RuntimeException($report->error ?? 'The resume chain failed.');
     }
+    $this->confirmChainComplete($outputDir, TRUE);
   }
 
   /**
-   * Run a command in the foreground, streaming its output, and return its code.
-   */
-  private function runForeground(string $cmd): int {
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions,Drupal.Commenting.PostStatementComment,Drupal.Commenting.InlineComment,Drupal.Files.LineLength -- nosemgrep trails the call because semgrep reads it only there. proc_open required to stream a child build's output while waiting for it. Arguments are escapeshellarg-quoted.
-    $handle = proc_open($cmd . ' 2>&1', [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes); // nosemgrep: php.lang.security.exec-use.exec-use
-    if ($handle === FALSE) {
-      throw new \RuntimeException('Failed to start the resume segment: ' . $cmd);
-    }
-
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- feof/fgets/fclose/proc_close required for subprocess pipe operations.
-    while (!feof($pipes[1])) {
-      $line = fgets($pipes[1]);
-      if ($line !== FALSE && trim($line) !== '') {
-        $this->logger()->notice(rtrim($line));
-      }
-    }
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-
-    return proc_close($handle);
-  }
-
-  /**
-   * How the last segment reported it ended, or NULL if it never reported.
+   * The orchestrator a build runs through.
    *
-   * @return array|null
-   *   The outcome BuildState recorded, or NULL when none is readable.
+   * A seam: a kernel test overrides it to inject a memory-pressure probe, the
+   * only way to reach the yield path without a corpus that fills the heap.
    */
-  private function segmentOutcome(string $stateDir): ?array {
-    try {
-      return (new BuildState($stateDir))->readOutcome();
-    }
-    catch (\Throwable) {
-      return NULL;
-    }
+  protected function orchestrator(string $stateDir, string $outputDir, string $language): IndexBuildOrchestrator {
+    return new IndexBuildOrchestrator($stateDir, $outputDir, NULL, $language);
   }
 
   /**
-   * Drop any outcome on disk so the next segment's silence reads as silence.
+   * Run a child `scolta:build` segment in the foreground; return its exit code.
+   *
+   * Protected so a kernel test can observe the segment instead of running a
+   * drush that would run against the wrong database.
+   *
+   * @param array<string, mixed> $options
+   *   The segment's command options.
+   * @param array<string, string> $env
+   *   Environment variables to set for the child.
    */
-  private function clearSegmentOutcome(string $stateDir): void {
-    try {
-      (new BuildState($stateDir))->clearOutcome();
-    }
-    catch (\Throwable) {
-      // A state dir this cannot open is one the segment will fail on anyway.
-    }
-  }
-
-  /**
-   * Pages the shared build manifest records as committed so far.
-   */
-  private function pagesCommitted(string $stateDir): int {
-    try {
-      return (new BuildState($stateDir))->getPagesProcessed();
-    }
-    catch (\Throwable) {
-      return 0;
-    }
+  protected function runSegmentProcess(array $options, array $env): int {
+    return $this->runner->runDrush('scolta:build', $options, $env);
   }
 
   /**
@@ -581,7 +433,7 @@ class ScoltaCommands extends DrushCommands {
    * published rather than repeating its own partial figure as if it were the
    * total.
    */
-  private function confirmChainComplete(string $outputDir, int $segments): void {
+  private function confirmChainComplete(string $outputDir, bool $chained): void {
     $this->assertIndexUsable($outputDir);
 
     $fragments = glob($outputDir . '/pagefind/fragment/*.pf_fragment') ?: [];
@@ -589,7 +441,7 @@ class ScoltaCommands extends DrushCommands {
     $this->state->set('scolta.generation', $generation + 1);
     $this->logger()->success('Index built: {pages} pages on disk{via}.', [
       'pages' => count($fragments),
-      'via' => $segments > 0 ? " (completed across {$segments} resume segments)" : ' (finalized in a fresh process)',
+      'via' => $chained ? ' (completed across resume segments)' : ' (finalized in a fresh process)',
     ]);
     $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
   }
@@ -618,39 +470,12 @@ class ScoltaCommands extends DrushCommands {
    * merge starts with a clean heap.
    */
   private function spawnFinalize(string $stateDir, string $outputDir, int $budgetBytes): void {
-    $drushBin = $this->findDrushBin();
-    if ($drushBin === NULL) {
-      $this->logger()->error('Cannot auto-finalize: drush executable not found. Run manually: drush scolta:finalize');
-      return;
-    }
-
-    $budgetMb = round($budgetBytes / 1_048_576) . 'M';
-    $cmd = escapeshellarg($drushBin)
-      . ' scolta:finalize'
-      . ' --state-dir=' . escapeshellarg($stateDir)
-      . ' --output-dir=' . escapeshellarg($outputDir)
-      . ' --memory-budget=' . escapeshellarg($budgetMb)
-      . ' 2>&1';
-
-    $this->logger()->notice('Running: {cmd}', ['cmd' => $cmd]);
-
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions,Drupal.Commenting.PostStatementComment,Drupal.Commenting.InlineComment,Drupal.Files.LineLength -- nosemgrep trails the call because semgrep reads it only there. proc_open required for pagefind subprocess execution with real-time output streaming. Arguments are escapeshellarg-quoted.
-    $handle = proc_open($cmd, [STDIN, ['pipe', 'w'], ['pipe', 'w']], $pipes); // nosemgrep: php.lang.security.exec-use.exec-use
-    if ($handle === FALSE) {
-      $this->logger()->error('proc_open() failed. Run manually: drush scolta:finalize');
-      return;
-    }
-
-    // phpcs:ignore Drupal.Functions.DiscouragedFunctions -- feof/fgets/fclose/proc_close required for subprocess pipe operations.
-    while (!feof($pipes[1])) {
-      $line = fgets($pipes[1]);
-      if ($line !== FALSE && trim($line) !== '') {
-        $this->logger()->notice(rtrim($line));
-      }
-    }
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-    $exitCode = proc_close($handle);
+    $this->logger()->notice('Running scolta:finalize in a fresh process.');
+    $exitCode = $this->runner->runDrush('scolta:finalize', [
+      'state-dir' => $stateDir,
+      'output-dir' => $outputDir,
+      'memory-budget' => round($budgetBytes / 1_048_576) . 'M',
+    ], []);
 
     if ($exitCode !== 0) {
       throw new \RuntimeException(sprintf(
@@ -662,34 +487,10 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Locate the drush binary.
-   */
-  private function findDrushBin(): ?string {
-    // Vendor bin is the most reliable location in a Composer project.
-    $root = defined('DRUPAL_ROOT') ? dirname(DRUPAL_ROOT) : getcwd();
-    $vendorBin = $root . '/vendor/bin/drush';
-    if (is_executable($vendorBin)) {
-      return $vendorBin;
-    }
-    // Fall back to PATH.
-    $which = trim((string) shell_exec('which drush 2>/dev/null'));
-    return ($which !== '' && is_executable($which)) ? $which : NULL;
-  }
-
-  /**
    * Resolve a stream-wrapper URI or plain path to an absolute filesystem path.
    */
   private function resolvePath(string $uri): string {
-    if (!str_contains($uri, '://')) {
-      return $uri;
-    }
-    try {
-      $wrapper = $this->streamWrapperManager->getViaUri($uri);
-      return ($wrapper && ($path = $wrapper->realpath())) ? $path : $uri;
-    }
-    catch (\Throwable) {
-      return $uri;
-    }
+    return $this->runner->resolvePath($uri);
   }
 
   /**
@@ -711,6 +512,25 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
+   * Queue one full index rebuild for the next `drush queue:run scolta_rebuild`.
+   *
+   * For operators and deploy scripts. One waiting request is enough — the
+   * worker folds everything in the queue into one build — so a queue that
+   * already holds an item gets nothing added.
+   */
+  #[CLI\Command(name: 'scolta:request-build', aliases: ['srb'])]
+  #[CLI\Usage(name: 'scolta:request-build', description: 'Queue a full rebuild; the queue:run cron tick runs it')]
+  public function requestBuild(): void {
+    $queue = $this->queueFactory->get(ScoltaRebuildWorker::QUEUE_NAME);
+    if ($queue->numberOfItems() > 0) {
+      $this->logger()->notice('A rebuild request is already waiting in the scolta_rebuild queue; nothing was added.');
+      return;
+    }
+    $queue->createItem(['type' => 'request-build']);
+    $this->logger()->success('Queued a full index rebuild. The next `drush queue:run scolta_rebuild` tick runs it.');
+  }
+
+  /**
    * Merge committed index chunks into the final Pagefind-compatible index.
    *
    * Use this after `scolta:build` exits with "merge deferred" on large
@@ -718,9 +538,9 @@ class ScoltaCommands extends DrushCommands {
    * The chunks must already be committed to the build state directory.
    */
   #[CLI\Command(name: 'scolta:finalize', aliases: ['sf'])]
-  #[CLI\Option(name: 'state-dir', description: 'Build state directory (default: from config)')]
-  #[CLI\Option(name: 'output-dir', description: 'Output directory for the final index (default: from config)')]
-  #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value (default: from config)')]
+  #[CLI\Option(name: 'state-dir', description: 'Build state directory')]
+  #[CLI\Option(name: 'output-dir', description: 'Output directory for the final index')]
+  #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value')]
   public function finalize(
     array $options = [
       'state-dir' => '',
@@ -737,16 +557,7 @@ class ScoltaCommands extends DrushCommands {
       $config->get('pagefind.build_dir') ?? 'public://scolta-build'
     );
 
-    $budget = MemoryBudgetConfig::fromCliAndConfig(
-      (isset($options['memory-budget']) && $options['memory-budget'] !== NULL)
-        ? (string) $options['memory-budget']
-        : NULL,
-      NULL,
-      fn() => [
-        'profile'    => $config->get('memory_budget.profile') ?? 'conservative',
-        'chunk_size' => $config->get('memory_budget.chunk_size'),
-      ],
-    );
+    $budget = $this->runner->memoryBudget(isset($options['memory-budget']) ? (string) $options['memory-budget'] : NULL);
 
     $this->logger()->notice('Finalizing index: merging chunks from {state} into {out}', [
       'state' => $resolvedStateDir,
@@ -801,11 +612,11 @@ class ScoltaCommands extends DrushCommands {
    * Delete retired index directories left by index builds.
    *
    * Publishing a new index renames the previous one to a `.scolta-trash-*`
-   * directory next to `pagefind/` and sweeps trash right after publishing —
-   * the old inline file-by-file deletion made a finished build look hung
-   * for hours on NFS-backed file storage. This command and the cron sweep
-   * are the backstops: they delete trash left by builds that died before
-   * their own sweep and by the batch-UI indexing path, which never sweeps.
+   * directory next to `pagefind/` and returns — deleting it inline, or
+   * sweeping right after publishing, made a finished build look hung for
+   * minutes to hours on NFS-backed file storage. This command and the cron
+   * sweep are what delete that trash; the next build's bounded pre-build
+   * sweep is the backstop for a site running neither.
    * Always safe: the live index is never touched, and a directory that
    * cannot be deleted is left for the next run.
    *
@@ -952,11 +763,14 @@ class ScoltaCommands extends DrushCommands {
   /**
    * Show Scolta status: build directory, index, AI provider, cache.
    *
-   * Emits YAML on stdout so the section groupings survive machine
-   * consumption — logger lines flattened the structure and went to stderr.
+   * Returns the structured data rather than printing it, so Drush's output
+   * formatters offer --format=json and friends; the default stays YAML so the
+   * section groupings survive machine consumption on stdout — logger lines
+   * flattened the structure and went to stderr.
    */
   #[CLI\Command(name: 'scolta:status', aliases: ['sst'])]
-  public function status(): void {
+  #[CLI\Usage(name: 'scolta:status --format=json', description: 'Emit the same report as JSON')]
+  public function status(array $options = ['format' => 'yaml']): UnstructuredListData {
     $config = $this->configFactory->get('scolta.settings');
     $status = [];
 
@@ -968,6 +782,55 @@ class ScoltaCommands extends DrushCommands {
       'resolved' => $resolvedBuildDir,
       'exists' => is_dir($resolvedBuildDir),
     ];
+
+    // Anything in flight: a queued rebuild, and the manifest a running or
+    // half-finished build leaves in the state directory. All of it is a few
+    // small file reads plus one queue count, so status can afford it.
+    $status['build'] = [
+      'queued_items' => (int) $this->queueFactory->get(ScoltaRebuildWorker::QUEUE_NAME)->numberOfItems(),
+    ];
+    if (is_dir($resolvedBuildDir)) {
+      $buildState = new BuildState($resolvedBuildDir);
+      if ($buildState->shouldResume() !== NULL) {
+        $status['build'] += [
+          // FALSE here means the manifest says 'building' but no live process
+          // holds the lock: a segment that died, waiting for a resume.
+          'running' => $buildState->isRunning(),
+          'started' => $buildState->getStartTime(),
+          'segment' => $buildState->segment(),
+          'pages_processed' => $buildState->getPagesProcessed(),
+          'progress' => round($buildState->getProgress() * 100, 1) . '%',
+        ];
+        $lock = $buildState->lockDiagnostics();
+        if ($lock !== NULL) {
+          $status['build']['lock'] = [
+            'pid' => $lock['pid'],
+            'host' => $lock['host'],
+            // A live build rewrites its lock record every
+            // BuildState::HEARTBEAT_INTERVAL_SECONDS; once the last one is
+            // STALE_LOCK_SECONDS old the holder is presumed dead.
+            'heartbeat_age_seconds' => $lock['age_seconds'],
+            'stale_after_seconds' => BuildState::STALE_LOCK_SECONDS,
+            'stale' => $lock['stale'],
+          ];
+        }
+        // Why the last run that reported stopped. 'memory_abort' means it
+        // yielded on purpose and wants another segment; any other error means
+        // the chain stopped and nothing will resume the build on its own. A
+        // segment killed outright (OOM killer) records nothing, so this can
+        // describe an earlier segment — hence recorded_at, to compare against
+        // the build's own start time.
+        $outcome = $buildState->readOutcome();
+        if ($outcome !== NULL) {
+          $status['build']['last_segment'] = [
+            'success' => $outcome['success'],
+            'error' => $outcome['error'],
+            'pages_processed' => $outcome['pages_processed'],
+            'recorded_at' => $outcome['recorded_at'],
+          ];
+        }
+      }
+    }
 
     // Pagefind index.
     $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
@@ -1045,7 +908,7 @@ class ScoltaCommands extends DrushCommands {
       'generation' => $this->state->get('scolta.generation', 0),
     ];
 
-    $this->output()->writeln(Yaml::dump($status, 4, 2));
+    return new UnstructuredListData($status);
   }
 
 }

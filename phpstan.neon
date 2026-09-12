@@ -22,6 +22,10 @@ parameters:
   reportUnmatchedIgnoredErrors: false
   paths:
     - src
+  # Classes under src call module-file functions. In the isolated CI run
+  # nothing loads scolta.module, so PHPStan needs it for symbol discovery.
+  scanFiles:
+    - scolta.module
   excludePaths:
     # `paths` above says src, but a path argument on the command line replaces
     # it, and `ddev phpstan` always passes one (the module directory). These

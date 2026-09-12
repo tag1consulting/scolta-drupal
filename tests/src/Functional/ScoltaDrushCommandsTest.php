@@ -42,6 +42,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
     $this->assertIsArray($status, 'scolta:status must emit parseable YAML');
     foreach ([
       'build_directory',
+      'build',
       'pagefind_index',
       'ai_provider',
       'cache',
@@ -58,6 +59,54 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
     $this->assertArrayHasKey('auth_failing', $status['ai_provider']);
     $this->assertFalse($status['ai_provider']['auth_failing']);
     $this->assertNull($status['ai_provider']['auth_failing_since']);
+  }
+
+  /**
+   * scolta:status reports a half-finished build, not just the built index.
+   *
+   * Writes the manifest a build segment leaves behind when it stops without
+   * finishing, which is exactly the state an operator cannot see from the
+   * pagefind_index section.
+   */
+  public function testStatusReportsAnInProgressBuild(): void {
+    $dir = $this->container->get('file_system')->realpath('public://scolta-build');
+    mkdir($dir, 0777, TRUE);
+    file_put_contents($dir . '/manifest.json', json_encode([
+      'status' => 'building',
+      'started_at' => '2026-09-10T22:00:00+00:00',
+      'segment' => 2,
+      'total_pages' => 1000,
+      'chunk_size' => 100,
+      'chunks_written' => 4,
+      'pages_processed' => 400,
+    ]));
+
+    file_put_contents($dir . '/segment-outcome.json', json_encode([
+      'success' => FALSE,
+      'error' => 'memory_abort',
+      'pages_processed' => 180,
+      'pid' => 999,
+      'recorded_at' => '2026-09-10T22:31:08+00:00',
+    ]));
+
+    $this->drush('scolta:status');
+    $status = Yaml::parse($this->getOutput());
+
+    $this->assertSame(2, $status['build']['segment']);
+    $this->assertSame(400, $status['build']['pages_processed']);
+    $this->assertSame('40%', $status['build']['progress']);
+    // No process holds the lock, so the build is stalled, not running.
+    $this->assertFalse($status['build']['running']);
+    // The segment yielded on memory rather than failing outright, which is
+    // the difference an operator cannot get from the manifest.
+    $this->assertSame('memory_abort', $status['build']['last_segment']['error']);
+    $this->assertFalse($status['build']['last_segment']['success']);
+
+    // The same report through Drush's formatters, for machine consumption.
+    $this->drush('scolta:status', [], ['format' => 'json']);
+    $json = json_decode($this->getOutput(), TRUE);
+    $this->assertSame(2, $json['build']['segment']);
+    $this->assertSame('memory_abort', $json['build']['last_segment']['error']);
   }
 
   /**

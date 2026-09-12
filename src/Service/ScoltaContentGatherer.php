@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\scolta\Service;
 
 use Drupal\Component\Render\PlainTextOutput;
+use Drupal\Core\Cache\MemoryCache\MemoryCacheInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityChangedInterface;
@@ -76,12 +77,16 @@ class ScoltaContentGatherer {
    *   The module handler (used to invoke hook_scolta_content_item_alter).
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory (used to read field_mappings).
+   * @param \Drupal\Core\Cache\MemoryCache\MemoryCacheInterface $entityMemoryCache
+   *   The process-local entity cache (entity.memory_cache), emptied after each
+   *   batch that loaded entities.
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly Connection $database,
     private readonly ModuleHandlerInterface $moduleHandler,
     private readonly ConfigFactoryInterface $configFactory,
+    private readonly MemoryCacheInterface $entityMemoryCache,
   ) {}
 
   /**
@@ -178,11 +183,10 @@ class ScoltaContentGatherer {
    * therefore left the manifest empty and cost the NEXT build a second full
    * gather.
    *
-   * After each batch that loaded an entity, resetCache(),
-   * drupal_static_reset(), and gc_collect_cycles() are called to release
-   * Drupal's accumulated per-request static caches. Peak RSS stays bounded
-   * regardless of corpus size. A batch the manifest answered in full loaded
-   * nothing and has nothing to release, so it skips them.
+   * After each batch that loaded an entity, the process-local entity memory
+   * cache is emptied so peak RSS stays bounded regardless of corpus size. A
+   * batch the manifest answered in full loaded nothing and has nothing to
+   * release, so it skips that.
    *
    * Callers must NOT convert this generator to an array — that restores
    * the pre-0.3.2 eager-load behaviour. Pass the generator directly to
@@ -358,43 +362,40 @@ class ScoltaContentGatherer {
           }
         }
 
-        $this->releaseBatch($storage, $ids, $loadedAnything);
+        $this->releaseBatch($loadedAnything);
       }
     }
   }
 
   /**
-   * Release the per-request statics a batch accumulated.
+   * Release the memory a batch of loaded entities left behind.
    *
-   * Drupal never resets its per-request static caches during a long CLI run,
-   * so URL aliases, access results and typed-data instances would grow for the
-   * whole build. The reset is therefore not optional when entities were
-   * loaded.
+   * A hydrated node is 50-200 KB and entity.memory_cache would otherwise hold
+   * the whole corpus by the end of a build, so it is emptied after every batch
+   * that loaded something. That is the only release. Indexing is a read-only
+   * walk, so nothing here may invalidate anything shared with web requests:
+   * the storage's resetCache(), which used to run here, also deletes the batch
+   * from the persistent cache.entity bin and invalidates its revision tags, so
+   * every page request during and after a full build reloaded its nodes from
+   * the database. A global drupal_static_reset() ran here too, emptying every
+   * static in the process (term and media storage statics, alias lookups,
+   * field definitions, whatever hook_scolta_content_item_alter() memoizes)
+   * once per ten entities, followed by a forced gc_collect_cycles() at ~8 ms
+   * per call against a large heap. Measured over a 3,000-node walk with
+   * aliases, the statics grew by about 1 MB in total (the alias manager's
+   * maps: 111 KB) and a reset at the end freed nothing the memory cache
+   * release had not, so neither is done.
    *
-   * It is skippable when nothing was loaded. On a warm build the timestamp
-   * manifest answers most batches from its own records without touching entity
-   * storage, so there is no new entity static to release, and the reset plus
-   * collection is pure overhead repeated once per batch — thousands of times
-   * per build. Only the batches that actually loaded something pay for it.
+   * Skippable when nothing was loaded: on a warm build the timestamp manifest
+   * answers most batches without touching entity storage.
    *
-   * @param mixed $storage
-   *   The entity storage handler.
-   * @param array $ids
-   *   The IDs in this batch.
    * @param bool $loadedAnything
    *   Whether this batch loaded any entity.
    */
-  private function releaseBatch($storage, array $ids, bool $loadedAnything): void {
-    if (!$loadedAnything) {
-      return;
+  private function releaseBatch(bool $loadedAnything): void {
+    if ($loadedAnything) {
+      $this->entityMemoryCache->deleteAll();
     }
-
-    $storage->resetCache($ids);
-    // Clear Drupal's per-request static caches (URL aliases, access results,
-    // typed data instances, etc.) that accumulate across entity batches and
-    // are never automatically reset during a long-running CLI build.
-    drupal_static_reset();
-    gc_collect_cycles();
   }
 
   /**
@@ -548,7 +549,7 @@ class ScoltaContentGatherer {
         unset($entity);
       }
 
-      $this->releaseBatch($storage, $chunk, $loadedAnything);
+      $this->releaseBatch($loadedAnything);
     }
   }
 

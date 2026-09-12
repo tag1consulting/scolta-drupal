@@ -42,8 +42,8 @@ database backup without the files directory — `drush cr` recreates it.
 
 `scolta.settings: entity_types` names the entity types and bundles the index
 holds. It is keyed by entity type ID and lists the bundles to index, an empty
-list meaning every bundle. The default indexes every `node` bundle. There is
-no form field yet, so set it with Drush:
+list meaning every bundle. The default indexes every `node` bundle. Set it
+under **Entity types to index** on the settings form, or with Drush:
 
 ```bash
 # Articles and pages only
@@ -57,9 +57,10 @@ Block Layout*:
 drush scolta:build
 ```
 
-Content saves, updates and deletes keep the index current through cron (see
-**Auto-rebuild debounce** below), and the settings form's **Index now** button
-rebuilds it from the browser.
+Content saves, updates and deletes keep the index current through the
+`queue:run scolta_rebuild` cron line (see **Running rebuilds: the cron line**
+and **Auto-rebuild debounce** below), and the settings form's **Index now**
+button rebuilds it from the browser.
 
 ## Drush Commands
 
@@ -74,11 +75,12 @@ rebuilds it from the browser.
 | `drush scolta:build --chunk-size=N` | Process N pages per chunk (overrides config) |
 | `drush scolta:build --entity-type=node,group` | Index these entity types instead of the configured `entity_types` (default `node`). See **Indexing more than one entity type** below |
 | `drush scolta:build --bundle=article` | Scope the build to one bundle. See **Scoped builds** below — this is not a way to reindex part of a larger index |
+| `drush scolta:request-build` (`srb`) | Queue one full rebuild for the next `drush queue:run scolta_rebuild` tick; adds nothing if a request is already waiting. For operators and deploy scripts |
 | `drush scolta:build --entity-ids=12,34` | Scope the build to these entities; IDs that cannot be loaded are logged and skipped. `--bundle` is ignored. See **Scoped builds** below |
 | `drush scolta:finalize` (`sf`) | Merge chunks into the final search index |
 | `drush scolta:clear-cache` (`scc`) | Clear expansion and summary caches |
 | `drush scolta:check-setup` (`scs`) | Verify dependencies and configuration |
-| `drush scolta:status` (`sst`) | Show current index and AI provider status as YAML |
+| `drush scolta:status` (`sst`) | Show current index, in-progress build, indexer, and AI provider status; YAML by default, `--format=json` for machines |
 
 ### Scoped builds
 
@@ -99,7 +101,7 @@ What to use instead:
 | Goal | Command |
 | --- | --- |
 | Refresh the whole index | `drush scolta:build` |
-| Reflect an edit to a few nodes | Nothing — saving a node queues it, and cron applies the change to the published index in place |
+| Reflect an edit to a few nodes | Nothing — saving a node queues it, and the next `queue:run scolta_rebuild` tick applies the change to the published index in place |
 | Build an index of one bundle only | `drush scolta:build --bundle=article`, every time, so the scope and the index agree |
 
 ## Large Corpora and Shared Hosting
@@ -162,7 +164,7 @@ drush scolta:finalize
 
 ### Retired-index cleanup on network filesystems
 
-When a build publishes a new index, the previous one is renamed to a `.scolta-trash-*` directory next to `pagefind/`, then deleted after publishing (scolta-php ≥ 1.5.0). On NFS-backed file storage (e.g. Lagoon's `/mnt/files`) the deletion is parallelized (16 concurrent `rm` workers), which turns the hours-long serial deletion that used to make a finished `drush scolta:build` look hung into minutes — and it now happens after the new index is live, announced with a notice so it is never mistaken for a hang. Environments without process spawning fall back to serial deletion automatically.
+When a build publishes a new index, the previous one is renamed to a `.scolta-trash-*` directory next to `pagefind/`, then deleted after publishing (scolta-php ≥ 1.5.0). On NFS-backed file storage the deletion is parallelized (16 concurrent `rm` workers), which turns the hours-long serial deletion that used to make a finished `drush scolta:build` look hung into minutes — and it now happens after the new index is live, announced with a notice so it is never mistaken for a hang. Environments without process spawning fall back to serial deletion automatically.
 
 Two backstops catch trash from builds that died before their own sweep, and from the batch-UI indexing path (which never sweeps):
 
@@ -411,7 +413,7 @@ The AI API endpoints (`/api/scolta/v1/expand-query`, `/api/scolta/v1/summarize`,
 
 #### Indexing more than one entity type
 
-The index covers every node bundle by default. `scolta.settings: entity_types` is keyed by entity type ID and lists the bundles to index, an empty list meaning all of them. The build, the settings form's *Index now*, the rebuild queue worker and the auto-rebuild entity hooks all read it. It has no form field yet, so set it with Drush:
+The index covers every node bundle by default. `scolta.settings: entity_types` is keyed by entity type ID and lists the bundles to index, an empty list meaning all of them. The build, the settings form's *Index now*, the rebuild queue worker and the auto-rebuild entity hooks all read it. Set it under **Entity types to index** in the *Content* section of the settings form, or with Drush:
 
 ```bash
 drush config:set --input-format=yaml scolta.settings entity_types '{node: [], group: [community]}'
@@ -419,13 +421,37 @@ drush config:set --input-format=yaml scolta.settings entity_types '{node: [], gr
 
 Any fieldable entity type with a `changed` field works; a type with a published flag is filtered to published entities. Add the field its prose lives in to `body_fields` (for example `field_description` for groups). Every page ID is prefixed with its entity type ID (`node:42`, `node:42-es`, `group:42`), which is why node 42 and group 42 do not collide. An index built by an earlier release used bare node IDs; the update hook discards the build state and queues a rebuild, so the next build numbers every page from zero.
 
-#### Large sites: builds that span cron runs
+#### Running rebuilds: the cron line
 
-Cron runs the same full build `drush scolta:build` does. A build that outgrows one PHP process yields on memory pressure, and the queue worker continues it on the next cron run, one segment per run, until it completes; the requests it covered are deleted when it yields, and a request that arrives mid-build is applied to the finished index afterwards. A build that stops making progress, or fails for any other reason, is logged once with the remedy and abandoned; the published index is untouched. Run `drush scolta:build` after `drush deploy` when a full build is expected and you want it finished before the next cron rather than across several. Pass `--force` when a deploy changed `body_fields` or `field_mappings`: the timestamp manifest skips every entity whose changed time is unchanged, so a plain build re-gathers nothing for a config-only change. `drush scolta:build --entity-type=node,group` overrides the configured list for one run; `--bundle` and `--entity-ids` need a single `--entity-type`.
+Rebuilds — the install-time build, auto-rebuild requests from content edits, `drush scolta:request-build`, and the rebuild an update hook queues when the index format changes — sit in the `scolta_rebuild` queue until something runs it. **Drupal cron does not.** Run the queue from an external cron line, every minute, in every environment that should index:
+
+```
+* * * * * drush queue:run scolta_rebuild
+```
+
+A tick that finds a build running exits at the build lock in about a second, so the one-minute cadence costs nothing while a build is in progress and picks up a finished or killed build within a minute. `--lease-time` does not matter: the worker enqueues one resume marker before the first segment of a full build runs and deletes it only when the build completes or is given up on, so a process killed mid-segment (an evicted pod, the OOM killer) leaves a claimable request whatever the lease was, and the next tick continues from the last committed page (the on-disk build state is the truth; the queue item is only the request). A build too large for one process yields on memory pressure and is chained to completion within that same tick by spawning `drush scolta:build --resume` segments, the way `drush scolta:build` does; on a host where drush cannot be spawned, each tick runs one segment. A build that stops making progress, or fails for any other reason, is logged once with the remedy and given up on; the published index is untouched. A request that arrives mid-build is applied to the finished index afterwards.
+
+A deploy does not need to run `drush scolta:build`. Content edits are applied incrementally, and a release that changes the index format queues its own full rebuild from its update hook and says so in its release notes. Pass `--force` to a hand-run `drush scolta:build` when a deploy changed `body_fields` or `field_mappings`: the timestamp manifest skips every entity whose changed time is unchanged, so a plain build re-gathers nothing for a config-only change. `drush scolta:build --entity-type=node,group` overrides the configured list for one run; `--bundle` and `--entity-ids` need a single `--entity-type`.
+
+Sites without a drush cron of any kind keep the settings form's *Index now*, which builds in a batch of web requests.
+
+What sits in the queue, and what the worker does with it:
+
+| Payload | Enqueued by | Meaning to the worker |
+|---|---|---|
+| `{type: install}` | module install | Untargeted; forces a full build |
+| `{type: <update hook>}` | `scolta_reset_index_state()` from an update hook | Untargeted; full build |
+| `{type: request-build}` | `drush scolta:request-build` | Untargeted; full build |
+| `{type: auto, op, entity_type, entity_id, item_ids}` | entity insert, update and delete hooks | Targeted; applied incrementally to the published index |
+| `{op: resume}` | the worker itself, before a full build's first segment | The standing request for a build in progress; with nothing to resume on disk, a full build |
+
+Duplicates are harmless. When a build starts, the worker claims every item in the queue and folds them into one change set, so a burst of saves becomes one incremental update and several full-build requests become one build. The worker keeps exactly one `{op: resume}` marker itself, draining extras before each segment and deleting them all when the build completes or is given up on.
+
+On container platforms, run the tick in the CLI container from a platform cron entry that is not given a timeout: a chained build can run for hours.
 
 #### Auto-rebuild debounce
 
-When auto-rebuild is enabled, content saves enqueue an index rebuild that cron processes. The rebuild is debounced by `scolta.settings: pagefind.auto_rebuild_delay` (default 300 seconds, clamped to 60–3600): the queue waits until that many seconds have passed since the *last* content change, so a burst of edits produces one build instead of many.
+When auto-rebuild is enabled, content saves enqueue an index rebuild that the `queue:run scolta_rebuild` tick processes. The rebuild is debounced by `scolta.settings: pagefind.auto_rebuild_delay` (default 300 seconds, clamped to 60–3600): the queue waits until that many seconds have passed since the *last* content change, so a burst of edits produces one build instead of many.
 
 Inserts, updates and deletes all enqueue a request, and each one names the node and the content item IDs it touched.
 

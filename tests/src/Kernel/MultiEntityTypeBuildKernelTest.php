@@ -192,6 +192,8 @@ class MultiEntityTypeBuildKernelTest extends KernelTestBase {
       $this->container->get('file_system'),
       $this->container->get('cache_tags.invalidator'),
       $this->container->get('scolta.index_locator'),
+      $this->container->get('scolta.index_build_runner'),
+      $this->container->get('queue'),
     );
     $commands->setLogger(new DrushLoggerManager());
     $commands->setOutput(new NullOutput());
@@ -199,9 +201,6 @@ class MultiEntityTypeBuildKernelTest extends KernelTestBase {
       'entity-type' => '',
       'bundle' => '',
       'entity-ids' => '',
-      'output-dir' => $this->indexRoot . '/export',
-      'skip-pagefind' => FALSE,
-      'indexer' => 'php',
       'force' => FALSE,
       'memory-budget' => NULL,
       'chunk-size' => NULL,
