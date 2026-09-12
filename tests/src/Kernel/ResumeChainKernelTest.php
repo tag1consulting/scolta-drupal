@@ -119,9 +119,7 @@ class ResumeChainKernelTest extends KernelTestBase {
   protected function runYieldingBuild(bool $resume): string {
     $test = $this;
     $commands = new class(
-      $this->container->get('entity_type.manager'),
       $this->container->get('config.factory'),
-      $this->container->get('http_client'),
       $this->container->get('state'),
       $this->container->get('cache.default'),
       $this->container->get('scolta.ai_service'),

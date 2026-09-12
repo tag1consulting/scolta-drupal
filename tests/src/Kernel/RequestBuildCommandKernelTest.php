@@ -27,9 +27,7 @@ class RequestBuildCommandKernelTest extends KernelTestBase {
   public function testOneWaitingRequestIsEnough(): void {
     $queue = \Drupal::queue('scolta_rebuild');
     $commands = new ScoltaCommands(
-      $this->container->get('entity_type.manager'),
       $this->container->get('config.factory'),
-      $this->container->get('http_client'),
       $this->container->get('state'),
       $this->container->get('cache.default'),
       $this->container->get('scolta.ai_service'),

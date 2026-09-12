@@ -45,3 +45,9 @@ parameters:
     # reportUnmatchedIgnoredErrors is off.
     - identifier: function.alreadyNarrowedType
       path: scolta.module
+    # scolta_update_10008() drives Search API storage that only exists on a
+    # site still carrying the module; the classes are not a dependency, so
+    # the ddev run (which resolves them through phpstan-drupal's entity map)
+    # cannot find them. Guarded by hasDefinition() at runtime.
+    - identifier: class.notFound
+      path: scolta.install

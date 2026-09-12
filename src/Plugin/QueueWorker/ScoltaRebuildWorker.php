@@ -371,8 +371,6 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    *   The entity types to walk, in order.
    * @param array<string, int> $cursors
    *   Entity type ID => the entity ID to resume that type's walk at.
-   * @param string $outputDir
-   *   The resolved index output directory.
    */
   protected function runSegment(IndexBuildOrchestrator $orchestrator, BuildIntent $intent, array $entityTypes, array $cursors): StatusReport {
     $this->segmentRan = TRUE;
