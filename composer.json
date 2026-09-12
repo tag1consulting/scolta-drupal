@@ -43,7 +43,7 @@
             "url": "https://packages.drupal.org/8"
         },
         {
-            "_comment": "Development only — symlinks the sibling checkout. In effect exactly while the scolta-php constraint carries @dev (no stable release satisfies it); once the release exists and the suffix drops, prefer-stable picks Packagist instead.",
+            "_comment": "Development only — symlinks the sibling checkout. Never wins against a range constraint: this repo advertises scolta-php's composer.json version field (1.5.0-dev) while dev-main aliases to 1.x-dev, which sorts higher. Reached only by an exact-version require. See CLAUDE.md, Local cross-package development.",
             "type": "path",
             "url": "../scolta-php",
             "canonical": false

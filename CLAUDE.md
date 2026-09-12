@@ -38,9 +38,23 @@ We use DDEV and [a few custom commands](.ddev/commands/web) from the https://git
 
 ### Local cross-package development
 
-To test against un-released scolta-php locally, run `composer config minimum-stability dev && composer require tag1/scolta-php:@dev` (the path repo then supplies the dev build). Both edits are local-only: `minimum-stability` must stay `stable` in the committed `composer.json`, and there is no lock to accidentally commit.
+To test against the sibling checkout of scolta-php locally, pin its exact development version:
 
-Which source supplies scolta-php is deterministic, decided by the committed constraint, not the machine: the path-repo symlink is in effect exactly while the constraint carries `@dev` (no published stable release satisfies it); once the release ships and the suffix drops, `prefer-stable` picks the Packagist release even with the sibling checkout present. `preferred-install` makes a Packagist-resolved scolta-php a git clone in vendor rather than a dist zip, for debuggability — it is never the sibling checkout.
+```bash
+composer config minimum-stability dev && composer require tag1/scolta-php:$(php -r 'echo json_decode(file_get_contents("../scolta-php/composer.json"))->version;')
+```
+
+Both edits are local-only: `minimum-stability` must stay `stable` in the committed `composer.json`, and there is no lock to accidentally commit.
+
+The exact pin is what makes the path repo win, and nothing else does. The path repo advertises scolta-php's `composer.json` `version` field verbatim (`1.5.0-dev` today); the Packagist/VCS source advertises `dev-main`, aliased by scolta-php's `branch-alias` to `1.x-dev` — i.e. `1.9999999.9999999-dev`. Both satisfy the committed `^1.5.0@dev` floor, and the alias sorts higher, so **a range constraint always resolves to the git clone even with the sibling checkout present**. Only an exact-version constraint reaches the sibling, because no other repository offers that version. `composer require tag1/scolta-php:@dev` does *not* do it; that recipe used to be documented here and never worked.
+
+Confirm which source you got: `vendor/tag1/scolta-php` is a symlink when the path repo won, and a real directory (a git clone — `preferred-install` makes it source rather than a dist zip, for debuggability) when it did not.
+
+In a git worktree, `../scolta-php` resolves relative to the worktree's own parent, not to `~/reps/tag1/`. One symlink per worktree parent directory fixes it for every worktree under it:
+
+```bash
+ln -s ~/reps/tag1/scolta-php ~/worktrees/scolta-drupal/scolta-php
+```
 
 The constraint is the coordination gate. While the adapter needs an unreleased scolta-php the floor carries a `@dev` suffix (e.g. `^1.5@dev`), which reaches the development branch from a root that asks for it; `release.yml`'s `constraint-guard` refuses to publish while the floor is a development constraint or while no published stable release satisfies it. So scolta-drupal 1.5.0 cannot ship before scolta-php 1.5.0 exists. Drop the `@dev` suffix when it does.
 
