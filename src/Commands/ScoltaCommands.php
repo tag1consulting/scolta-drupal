@@ -1190,12 +1190,11 @@ class ScoltaCommands extends DrushCommands {
    * and extracts the binary to the specified location.
    */
   #[CLI\Command(name: 'scolta:download-pagefind', aliases: ['sdp'])]
-  #[CLI\Option(name: 'version', description: 'Pagefind version to download')]
   #[CLI\Option(name: 'dest', description: 'Destination directory for the binary')]
   #[CLI\Usage(name: 'scolta:download-pagefind', description: 'Download latest Pagefind binary')]
-  #[CLI\Usage(name: 'scolta:download-pagefind --version=1.1.0 --dest=/usr/local/bin', description: 'Download specific version to specific directory')]
+  #[CLI\Usage(name: 'scolta:download-pagefind --dest=/usr/local/bin', description: 'Download latest Pagefind binary to a specific directory')]
   public function downloadPagefind(
-    array $options = ['version' => 'latest', 'dest' => ''],
+    array $options = ['dest' => ''],
   ): void {
     // Detect platform.
     $os = PHP_OS_FAMILY;
@@ -1223,40 +1222,37 @@ class ScoltaCommands extends DrushCommands {
     }
 
     $platform = $platformMap[$os][$arch];
-    $version = $options['version'];
     $resolver = new PagefindBinary(
       projectDir: defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd(),
     );
     $dest = $options['dest'] ?: $resolver->downloadTargetDir();
 
-    // Resolve latest version from GitHub API.
-    if ($version === 'latest') {
-      $this->logger()->notice('Fetching latest Pagefind release info from GitHub...');
+    // Resolve the latest version from the GitHub API.
+    $this->logger()->notice('Fetching latest Pagefind release info from GitHub...');
+    try {
+      $response = $this->httpClient->request('GET', 'https://api.github.com/repos/CloudCannon/pagefind/releases/latest', [
+        'headers' => [
+          'Accept' => 'application/vnd.github.v3+json',
+          'User-Agent' => 'Scolta-Drupal',
+        ],
+        'timeout' => 15,
+      ]);
       try {
-        $response = $this->httpClient->request('GET', 'https://api.github.com/repos/CloudCannon/pagefind/releases/latest', [
-          'headers' => [
-            'Accept' => 'application/vnd.github.v3+json',
-            'User-Agent' => 'Scolta-Drupal',
-          ],
-          'timeout' => 15,
-        ]);
-        try {
-          $releaseData = json_decode((string) $response->getBody(), TRUE, 512, JSON_THROW_ON_ERROR);
-        }
-        catch (\JsonException $e) {
-          $this->logger()->error('Failed to parse GitHub API response: ' . $e->getMessage());
-          return;
-        }
-        $version = ltrim($releaseData['tag_name'] ?? '', 'v');
-        if (empty($version)) {
-          $this->logger()->error('Could not determine latest Pagefind version from GitHub.');
-          return;
-        }
+        $releaseData = json_decode((string) $response->getBody(), TRUE, 512, JSON_THROW_ON_ERROR);
       }
-      catch (\Exception $e) {
-        $this->logger()->error('Failed to fetch release info from GitHub: ' . $e->getMessage());
+      catch (\JsonException $e) {
+        $this->logger()->error('Failed to parse GitHub API response: ' . $e->getMessage());
         return;
       }
+      $version = ltrim($releaseData['tag_name'] ?? '', 'v');
+      if (empty($version)) {
+        $this->logger()->error('Could not determine latest Pagefind version from GitHub.');
+        return;
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger()->error('Failed to fetch release info from GitHub: ' . $e->getMessage());
+      return;
     }
 
     $this->logger()->notice("Downloading Pagefind v{$version} for {$platform}...");
