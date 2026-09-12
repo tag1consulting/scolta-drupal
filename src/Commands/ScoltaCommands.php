@@ -27,6 +27,7 @@ use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Export\ContentExporter;
 use Tag1\Scolta\Index\BuildIntentFactory;
+use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
 use Tag1\Scolta\Index\MemoryBudget;
 use Tag1\Scolta\Index\PageTableLedger;
@@ -1050,6 +1051,55 @@ class ScoltaCommands extends DrushCommands {
       'resolved' => $resolvedBuildDir,
       'exists' => is_dir($resolvedBuildDir),
     ];
+
+    // Anything in flight: a queued rebuild, and the manifest a running or
+    // half-finished build leaves in the state directory. All of it is a few
+    // small file reads plus one queue count, so status can afford it.
+    $status['build'] = [
+      'queued_items' => (int) $this->queueFactory->get(ScoltaRebuildWorker::QUEUE_NAME)->numberOfItems(),
+    ];
+    if (is_dir($resolvedBuildDir)) {
+      $buildState = new BuildState($resolvedBuildDir);
+      if ($buildState->shouldResume() !== NULL) {
+        $status['build'] += [
+          // FALSE here means the manifest says 'building' but no live process
+          // holds the lock: a segment that died, waiting for a resume.
+          'running' => $buildState->isRunning(),
+          'started' => $buildState->getStartTime(),
+          'segment' => $buildState->segment(),
+          'pages_processed' => $buildState->getPagesProcessed(),
+          'progress' => round($buildState->getProgress() * 100, 1) . '%',
+        ];
+        $lock = $buildState->lockDiagnostics();
+        if ($lock !== NULL) {
+          $status['build']['lock'] = [
+            'pid' => $lock['pid'],
+            'host' => $lock['host'],
+            // A live build rewrites its lock record every
+            // BuildState::HEARTBEAT_INTERVAL_SECONDS; once the last one is
+            // STALE_LOCK_SECONDS old the holder is presumed dead.
+            'heartbeat_age_seconds' => $lock['age_seconds'],
+            'stale_after_seconds' => BuildState::STALE_LOCK_SECONDS,
+            'stale' => $lock['stale'],
+          ];
+        }
+        // Why the last run that reported stopped. 'memory_abort' means it
+        // yielded on purpose and wants another segment; any other error means
+        // the chain stopped and nothing will resume the build on its own. A
+        // segment killed outright (OOM killer) records nothing, so this can
+        // describe an earlier segment — hence recorded_at, to compare against
+        // the build's own start time.
+        $outcome = $buildState->readOutcome();
+        if ($outcome !== NULL) {
+          $status['build']['last_segment'] = [
+            'success' => $outcome['success'],
+            'error' => $outcome['error'],
+            'pages_processed' => $outcome['pages_processed'],
+            'recorded_at' => $outcome['recorded_at'],
+          ];
+        }
+      }
+    }
 
     // Pagefind index.
     $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
