@@ -25,7 +25,7 @@ services:
 
   scolta.content_gatherer:
     class: Drupal\scolta\Service\ScoltaContentGatherer
-    arguments: ['@entity_type.manager', '@database', '@module_handler', '@config.factory']
+    arguments: ['@entity_type.manager', '@database', '@module_handler', '@config.factory', '@entity.memory_cache']
 
   scolta.index_locator:
     class: Drupal\scolta\Service\IndexLocator
