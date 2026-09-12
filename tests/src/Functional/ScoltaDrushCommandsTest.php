@@ -104,6 +104,12 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
     // the difference an operator cannot get from the manifest.
     $this->assertSame('memory_abort', $status['build']['last_segment']['error']);
     $this->assertFalse($status['build']['last_segment']['success']);
+
+    // The same report through Drush's formatters, for machine consumption.
+    $this->drush('scolta:status', [], ['format' => 'json']);
+    $json = json_decode($this->getOutput(), TRUE);
+    $this->assertSame(2, $json['build']['segment']);
+    $this->assertSame('memory_abort', $json['build']['last_segment']['error']);
   }
 
   /**

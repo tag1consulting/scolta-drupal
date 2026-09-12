@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Commands;
 
+use Consolidation\OutputFormatters\StructuredData\UnstructuredListData;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -22,7 +23,6 @@ use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 use GuzzleHttp\ClientInterface;
-use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 use Tag1\Scolta\Binary\PagefindBinary;
 use Tag1\Scolta\Export\ContentExporter;
@@ -980,11 +980,14 @@ class ScoltaCommands extends DrushCommands {
   /**
    * Show Scolta status: tracker, index, binary, AI provider.
    *
-   * Emits YAML on stdout so the section groupings survive machine
-   * consumption — logger lines flattened the structure and went to stderr.
+   * Returns the structured data rather than printing it, so Drush's output
+   * formatters offer --format=json and friends; the default stays YAML so the
+   * section groupings survive machine consumption on stdout — logger lines
+   * flattened the structure and went to stderr.
    */
   #[CLI\Command(name: 'scolta:status', aliases: ['sst'])]
-  public function status(): void {
+  #[CLI\Usage(name: 'scolta:status --format=json', description: 'Emit the same report as JSON')]
+  public function status(array $options = ['format' => 'yaml']): UnstructuredListData {
     $config = $this->configFactory->get('scolta.settings');
     $status = [];
 
@@ -1177,7 +1180,7 @@ class ScoltaCommands extends DrushCommands {
       'generation' => $this->state->get('scolta.generation', 0),
     ];
 
-    $this->output()->writeln(Yaml::dump($status, 4, 2));
+    return new UnstructuredListData($status);
   }
 
   /**
