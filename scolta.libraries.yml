@@ -11,10 +11,13 @@
 # a site with the locale module enabled — _locale_parse_js_file() throws on
 # any path containing one, and locale scans every file asset on the page —
 # so declaring these URIs directly returned HTTP 500 on every rendered page.
-# The css/js cache-busting query string is refreshed by the same cache
-# rebuild that refreshes the files.
+# Neither library declares a version: Drupal then appends the
+# system.css_js_query_string state value, which every cache rebuild rotates,
+# so the query string changes with the same rebuild that refreshes the
+# files. A `version: VERSION` line would instead pin it to core's version,
+# which never changes when scolta-php ships a new bundle, and browsers kept
+# the stale scolta.js.
 search:
-  version: VERSION
   js:
     public://scolta-assets/js/scolta.js: { minified: false }
   css:
@@ -22,7 +25,6 @@ search:
       public://scolta-assets/css/scolta.css: {}
 
 drupal_bridge:
-  version: VERSION
   js:
     js/scolta-drupal-bridge.js: {}
   dependencies:
