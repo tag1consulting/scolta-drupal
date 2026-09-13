@@ -11,7 +11,7 @@ use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\Queue\QueueWorkerBase;
 use Drupal\Core\Queue\RequeueException;
-use Drupal\Core\Queue\SuspendQueueException;
+use Drupal\Core\Queue\DelayedRequeueException;
 use Drupal\Core\State\StateInterface;
 use Drupal\scolta\Progress\LockRenewingProgressReporter;
 use Drupal\scolta\Service\IndexBuildRunner;
@@ -42,9 +42,14 @@ use Tag1\Scolta\Index\StatusReport;
  * ContentExporter::filterItems() → IndexBuildOrchestrator.
  *
  * Rebuilds are debounced: scolta.module records the last content change in
- * the scolta.rebuild_requested_at state key, and the worker suspends the
- * queue until the backend's auto_rebuild_delay has elapsed since that
+ * the scolta.rebuild_requested_at state key, and the worker delays the
+ * item until the backend's auto_rebuild_delay has elapsed since that
  * change, so a burst of edits produces one build.
+ *
+ * "Not now" is always signalled with DelayedRequeueException, never
+ * SuspendQueueException: `drush queue:run` turns a suspend into a non-zero
+ * exit, which pages whoever reads the cron mail for a tick that merely found
+ * a build running or a debounce window still open.
  *
  * A full build enqueues one RESUME_MARKER item before its first segment runs
  * and deletes it only when the build completes or is given up on, so a
@@ -124,7 +129,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    * A segment that yielded on memory pressure leaves the heap it ran in
    * fragmented; a second segment in the same process hits the wall at once
    * and is judged a stall. The queue runner reuses one worker instance for a
-   * run, so this suspends the queue for the rest of the run.
+   * run, so every further item in the run is delayed to the next tick.
    */
   protected bool $segmentRan = FALSE;
 
@@ -168,7 +173,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    */
   public function processItem($data): void {
     if ($this->segmentRan) {
-      throw new SuspendQueueException('A Scolta build segment already ran in this process; the next cron run continues the build.');
+      throw new DelayedRequeueException(60, 'A Scolta build segment already ran in this process; the next cron run continues the build.');
     }
 
     // Debounce: wait until the configured delay has elapsed since the LAST
@@ -178,17 +183,12 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       $delay = $this->autoRebuildDelay();
       $remaining = ($requestedAt + $delay) - time();
       if ($remaining > 0) {
-        throw new SuspendQueueException(
-          sprintf('Debouncing Scolta rebuild: %d seconds until the rebuild delay elapses.', $remaining),
-          0,
-          NULL,
-          (float) $remaining
-        );
+        throw new DelayedRequeueException($remaining, sprintf('Debouncing Scolta rebuild: %d seconds until the rebuild delay elapses.', $remaining));
       }
     }
 
     if (!$this->lock->acquire(IndexBuildRunner::LOCK_NAME, self::LOCK_TIMEOUT)) {
-      throw new SuspendQueueException('Build lock held.');
+      throw new DelayedRequeueException(60, 'Build lock held.');
     }
 
     try {

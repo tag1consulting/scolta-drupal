@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ## [Unreleased]
 
+### Fixed
+- **The `scolta_rebuild` queue worker no longer throws `SuspendQueueException` for "not now".** A debounce window still open, the build lock held by another process, or a second item after a segment already ran in this process are all normal; `drush queue:run` turns a suspend into exit status 1, so every such cron tick was reported as a failed job. The worker now throws `DelayedRequeueException`, which delays that item (for the rest of the debounce window, or 60 seconds) and lets the run exit 0.
+
 ### Removed
 - **The Search API backend and the Pagefind binary pipeline. The PHP indexer is the only pipeline and `scolta.settings: entity_types` the only definition of what is indexed.** ([#280](https://github.com/tag1consulting/scolta-drupal/issues/280)) Gone: `ScoltaBackend`, `PagefindExporter`, `PagefindBuilder`; `drush scolta:export`, `scolta:rebuild-index`, `scolta:download-pagefind`; `scolta:build --indexer/--output-dir/--skip-pagefind`; the indexer selector on the settings form; the `indexer`, `pagefind.binary` and `pagefind.view_mode` config keys; the `search_api` dependency. `scolta_update_10008()` removes the Scolta Search API server and index and uninstalls `search_api` when nothing else uses it. See UPGRADE.md. Requires `tag1/scolta-php` `^2.0`, which removed the binary pipeline on its side ([scolta-php#345](https://github.com/tag1consulting/scolta-php/pull/345)): `SetupCheck::run()` and `HealthChecker::__construct()` are called without the binary-resolution arguments and `ContentExporter` without an output directory.
 

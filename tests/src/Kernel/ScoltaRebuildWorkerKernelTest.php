@@ -6,7 +6,7 @@ namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\Core\Lock\DatabaseLockBackend;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
-use Drupal\Core\Queue\SuspendQueueException;
+use Drupal\Core\Queue\DelayedRequeueException;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
 
@@ -37,16 +37,25 @@ class ScoltaRebuildWorkerKernelTest extends KernelTestBase {
   }
 
   /**
-   * A content change inside the debounce window suspends the queue.
+   * A content change inside the debounce window delays the item, not the queue.
+   *
+   * DelayedRequeueException rather than SuspendQueueException: drush
+   * queue:run exits non-zero on a suspend, so a debounce would page
+   * whoever reads the cron mail.
    */
-  public function testFreshContentChangeSuspendsTheQueue(): void {
+  public function testFreshContentChangeDelaysTheItem(): void {
     // 1 second ago is well inside any configured delay (floor 60s,
     // fallback 300s).
     \Drupal::state()->set('scolta.rebuild_requested_at', time() - 1);
 
-    $this->expectException(SuspendQueueException::class);
-    $this->expectExceptionMessageMatches('/Debouncing/');
-    $this->worker()->processItem(['type' => 'auto']);
+    try {
+      $this->worker()->processItem(['type' => 'auto']);
+      $this->fail('Expected DelayedRequeueException from the debounce');
+    }
+    catch (DelayedRequeueException $e) {
+      $this->assertMatchesRegularExpression('/Debouncing/', $e->getMessage());
+      $this->assertGreaterThan(0, $e->getDelay(), 'The item is delayed for the rest of the debounce window');
+    }
   }
 
   /**
@@ -70,9 +79,9 @@ class ScoltaRebuildWorkerKernelTest extends KernelTestBase {
 
     try {
       $this->worker()->processItem(['type' => 'install']);
-      $this->fail('Expected SuspendQueueException from the held lock');
+      $this->fail('Expected DelayedRequeueException from the held lock');
     }
-    catch (SuspendQueueException $e) {
+    catch (DelayedRequeueException $e) {
       $this->assertStringContainsString(
         'lock', $e->getMessage(),
         'With no recorded change the worker must reach lock acquisition, not the debounce'
