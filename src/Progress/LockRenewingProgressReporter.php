@@ -25,7 +25,7 @@ use Tag1\Scolta\Index\ProgressReporterInterface;
  * build never loses it.
  *
  * The same boundary is where the build's progress is logged, so a headless
- * `drush queue:run scolta_rebuild -v` shows how far along the build is.
+ * `drush queue:run scolta_rebuild` shows how far along the build is.
  *
  * @since 1.2.0
  * @stability experimental
@@ -69,7 +69,7 @@ class LockRenewingProgressReporter implements ProgressReporterInterface {
   public function start(int $totalSteps, string $label): void {
     $this->total = $totalSteps;
     $this->done = 0;
-    $this->logger->info('@label: @total chunks to build.', ['@label' => $label, '@total' => $totalSteps]);
+    $this->logger->notice('@label: @total chunks to build.', ['@label' => $label, '@total' => $totalSteps]);
     $this->renew();
   }
 
@@ -79,7 +79,7 @@ class LockRenewingProgressReporter implements ProgressReporterInterface {
   public function advance(int $steps = 1, ?string $detail = NULL): void {
     $this->done += $steps;
     $pct = $this->total > 0 ? round($this->done / $this->total * 100) : 0;
-    $this->logger->info('Progress @done/@total chunks (@pct%) @detail', [
+    $this->logger->notice('Progress @done/@total chunks (@pct%) @detail', [
       '@done' => $this->done,
       '@total' => $this->total,
       '@pct' => $pct,
@@ -93,7 +93,7 @@ class LockRenewingProgressReporter implements ProgressReporterInterface {
    */
   public function finish(?string $summary = NULL): void {
     if ($summary !== NULL) {
-      $this->logger->info('Finished: @summary', ['@summary' => $summary]);
+      $this->logger->notice('Finished: @summary', ['@summary' => $summary]);
     }
     // The caller releases the lock in its own finally block; renewing here
     // would only widen the window in which a crash leaves it held.
