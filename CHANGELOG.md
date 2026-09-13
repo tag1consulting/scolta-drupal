@@ -13,6 +13,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 - **Breaking: Drupal cron no longer runs the `scolta_rebuild` queue.** Run rebuilds from an external cron line, every minute, in every environment that should index: `* * * * * drush queue:run scolta_rebuild`. The worker enqueues its resume marker before a full build's first segment and deletes it only when the build completes or is given up on, so a killed process leaves a claimable request whatever `--lease-time` was, and a yielded segment is chained to completion in the same tick via scolta-php's `ResumeChainRunner`.
 - `ScoltaCommands` and `ScoltaRebuildWorker` share one build path, `Drupal\scolta\Service\IndexBuildRunner` (`scolta.index_build_runner`), which both take as a constructor argument. `ScoltaCommands::RESUME_SEGMENT_ENV` is replaced by `ResumeChainRunner::SEGMENT_ENV`, and child segments and `scolta:finalize` are launched through `Drush::drush()` instead of a located binary.
 
+### Fixed
+- `scolta_update_10008()` failed with "The backend with ID 'scolta_pagefind' could not be retrieved" on sites that also run `search_api_solr`: its `SolrDocumentDeriver` calls `Server::getBackend()` for every server during typed-data discovery, which the update's own `Index::delete()` triggers, and the backend class was gone. The same throw broke every cold cache rebuild until the server was deleted. `ScoltaBackend` is back as an inert placeholder under the `scolta_pagefind` id so the server stays loadable until the update removes it.
+
 ### Added
 - `scolta.settings: pagefind.auto_rebuild_delay` (default 300, clamped to 60–3600) replaces the Search API server's *Rebuild delay* as the auto-rebuild debounce the queue worker waits for.
 - `drush scolta:status` returns its report through Drush's output formatters instead of printing YAML itself, so `--format=json` (and `print-r`, `var_export`, …) work. The default format is still `yaml`, so existing output is unchanged.
