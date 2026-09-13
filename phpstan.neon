@@ -37,6 +37,8 @@ parameters:
     - vendor/*
     # Drush commands require drush/drush which is not a dev dependency.
     - src/Commands/ScoltaCommands.php
+    # search_api is no longer a dependency; this stub exists only for update 10008.
+    - src/Plugin/search_api/backend/ScoltaBackend.php
   ignoreErrors:
     # method_exists() guards that only look redundant where the class can be
     # resolved. Under ddev, phpstan-drupal loads search_api and Drupal core and
