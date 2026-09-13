@@ -788,19 +788,28 @@ class ScoltaCommands extends DrushCommands {
     // small file reads plus one queue count, so status can afford it.
     $status['build'] = [
       'queued_items' => (int) $this->queueFactory->get(ScoltaRebuildWorker::QUEUE_NAME)->numberOfItems(),
+      // What the build is doing: idle, gathering, merging, publishing, or
+      // interrupted when the manifest says 'building' but no live process
+      // holds the lock (a segment that died, waiting for a resume).
+      'activity' => 'idle',
     ];
     if (is_dir($resolvedBuildDir)) {
       $buildState = new BuildState($resolvedBuildDir);
       if ($buildState->shouldResume() !== NULL) {
+        $phase = $buildState->phase() ?? BuildState::PHASE_GATHERING;
+        $status['build']['activity'] = $buildState->isRunning() ? $phase : 'interrupted';
         $status['build'] += [
-          // FALSE here means the manifest says 'building' but no live process
-          // holds the lock: a segment that died, waiting for a resume.
-          'running' => $buildState->isRunning(),
           'started' => $buildState->getStartTime(),
           'segment' => $buildState->segment(),
           'pages_processed' => $buildState->getPagesProcessed(),
-          'progress' => round($buildState->getProgress() * 100, 1) . '%',
         ];
+        // Chunks committed over the chunk count the pre-gather entity total
+        // implies. Documents that produce no page make that total an
+        // over-estimate, so it describes only the gather and is left out once
+        // the build has moved on to merging.
+        if ($phase === BuildState::PHASE_GATHERING) {
+          $status['build']['progress'] = round($buildState->getProgress() * 100, 1) . '%';
+        }
         $lock = $buildState->lockDiagnostics();
         if ($lock !== NULL) {
           $status['build']['lock'] = [

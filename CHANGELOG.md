@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ## [Unreleased]
 
+### Changed
+- **`drush scolta:status` reports `activity` instead of `running` in its `build` section.** `running: false` could not tell an interrupted build from one that was merging: the lock heartbeat was refreshed only during the gather, so a long merge over NFS read as stale (sharemylesson.com staging, 2026-09-13: `running: false`, `stale: true`, `progress: 96.5%` for a build that was alive and writing fragments). `activity` is now `idle`, `gathering`, `merging`, `publishing`, or `interrupted` when the manifest says building but no live process holds the lock, read from the phase scolta-php now records. `progress` is shown only while gathering: it is chunks committed over the chunk count implied by the pre-gather entity total, which documents that produce no page make an over-estimate, so it never said 100% and said nothing about the merge. Requires scolta-php with `BuildState::phase()`.
+
 ### Fixed
 - **The `scolta_rebuild` queue worker no longer throws `SuspendQueueException` for "not now".** A debounce window still open, the build lock held by another process, or a second item after a segment already ran in this process are all normal; `drush queue:run` turns a suspend into exit status 1, so every such cron tick was reported as a failed job. The worker now throws `DelayedRequeueException`, which delays that item (for the rest of the debounce window, or 60 seconds) and lets the run exit 0.
 

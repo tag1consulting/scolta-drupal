@@ -96,7 +96,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
     $this->assertSame(400, $status['build']['pages_processed']);
     $this->assertSame('40%', $status['build']['progress']);
     // No process holds the lock, so the build is stalled, not running.
-    $this->assertFalse($status['build']['running']);
+    $this->assertSame('interrupted', $status['build']['activity']);
     // The segment yielded on memory rather than failing outright, which is
     // the difference an operator cannot get from the manifest.
     $this->assertSame('memory_abort', $status['build']['last_segment']['error']);
