@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\scolta\Progress;
 
 use Drupal\Core\Lock\LockBackendInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Tag1\Scolta\Index\ProgressReporterInterface;
 
 /**
@@ -22,10 +24,23 @@ use Tag1\Scolta\Index\ProgressReporterInterface;
  * build, so a crashed build frees the lock in seconds while a healthy long
  * build never loses it.
  *
+ * The same boundary is where the build's progress is logged, so a headless
+ * `drush queue:run scolta_rebuild -v` shows how far along the build is.
+ *
  * @since 1.2.0
  * @stability experimental
  */
 class LockRenewingProgressReporter implements ProgressReporterInterface {
+
+  /**
+   * Total steps announced by start(); 0 until then.
+   */
+  private int $total = 0;
+
+  /**
+   * Steps completed so far.
+   */
+  private int $done = 0;
 
   /**
    * Constructs a LockRenewingProgressReporter.
@@ -36,17 +51,25 @@ class LockRenewingProgressReporter implements ProgressReporterInterface {
    *   The name of the lock to renew.
    * @param float $timeout
    *   The lock lease, in seconds, renewed on every advance().
+   * @param \Psr\Log\LoggerInterface|null $logger
+   *   Receives one progress line per chunk.
    */
   public function __construct(
     private readonly LockBackendInterface $lock,
     private readonly string $lockName,
     private readonly float $timeout = 300.0,
-  ) {}
+    private ?LoggerInterface $logger = NULL,
+  ) {
+    $this->logger ??= new NullLogger();
+  }
 
   /**
    * {@inheritdoc}
    */
   public function start(int $totalSteps, string $label): void {
+    $this->total = $totalSteps;
+    $this->done = 0;
+    $this->logger->info('@label: @total chunks to build.', ['@label' => $label, '@total' => $totalSteps]);
     $this->renew();
   }
 
@@ -54,6 +77,14 @@ class LockRenewingProgressReporter implements ProgressReporterInterface {
    * {@inheritdoc}
    */
   public function advance(int $steps = 1, ?string $detail = NULL): void {
+    $this->done += $steps;
+    $pct = $this->total > 0 ? round($this->done / $this->total * 100) : 0;
+    $this->logger->info('Progress @done/@total chunks (@pct%) @detail', [
+      '@done' => $this->done,
+      '@total' => $this->total,
+      '@pct' => $pct,
+      '@detail' => $detail ?? '',
+    ]);
     $this->renew();
   }
 
@@ -61,6 +92,9 @@ class LockRenewingProgressReporter implements ProgressReporterInterface {
    * {@inheritdoc}
    */
   public function finish(?string $summary = NULL): void {
+    if ($summary !== NULL) {
+      $this->logger->info('Finished: @summary', ['@summary' => $summary]);
+    }
     // The caller releases the lock in its own finally block; renewing here
     // would only widen the window in which a crash leaves it held.
   }

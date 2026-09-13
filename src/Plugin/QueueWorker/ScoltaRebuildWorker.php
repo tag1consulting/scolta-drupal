@@ -375,8 +375,10 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
   protected function runSegment(IndexBuildOrchestrator $orchestrator, BuildIntent $intent, array $entityTypes, array $cursors): StatusReport {
     $this->segmentRan = TRUE;
     // The reporter renews the build lock at every chunk boundary, so the
-    // lease only has to outlive one chunk rather than the whole build.
-    $reporter = new LockRenewingProgressReporter($this->lock, IndexBuildRunner::LOCK_NAME, self::LOCK_TIMEOUT);
+    // lease only has to outlive one chunk rather than the whole build, and
+    // logs a progress line there so a verbose queue:run shows how far along
+    // the build is.
+    $reporter = new LockRenewingProgressReporter($this->lock, IndexBuildRunner::LOCK_NAME, self::LOCK_TIMEOUT, $this->logger);
     return $this->runner->runSegment($orchestrator, $intent, $entityTypes, $cursors, $this->logger, $reporter);
   }
 
