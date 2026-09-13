@@ -30,10 +30,21 @@ delay into `pagefind.auto_rebuild_delay`, and uninstalls `search_api` when no
 other server, index or module still uses it. If your Search API index selected
 specific bundles, set them before the next build, e.g.
 `drush config:set --input-format=yaml scolta.settings entity_types '{node: [article, page]}'`;
-the default indexes every `node` bundle. Then `drush scolta:build`. Exported
-config that carries `search_api.server.*`/`search_api.index.*` for Scolta, or
-the removed keys, should be re-exported with `drush config:export` after the
-update so the next import does not recreate them.
+the default indexes every `node` bundle. Then `drush scolta:build`.
+
+**Exported config recreates what the update deleted.** `drush deploy` runs
+`config:import` right after `updb`, so a sync directory that still holds the
+Scolta `search_api.server.*` and `search_api.index.*` files puts the server
+and index back the moment the update has removed them. The module keeps an
+inert `scolta_pagefind` backend so that import does not fail, but the
+recreated index tracks content and does nothing with it on every cron run,
+and `search_api` stays installed. Delete those two files from the sync
+directory (and the `indexer`, `pagefind.binary` and `pagefind.view_mode` keys
+from `scolta.settings.yml`, or re-export it after the update) and deploy;
+the import then deletes the recreated entities. Until that is done the status
+report at `/admin/reports/status` warns about the leftover server. When
+`search_api` is no longer used by anything else, uninstall it by hand:
+`drush pm:uninstall search_api`.
 
 ### The browser bundle moved from the module directory to public files
 

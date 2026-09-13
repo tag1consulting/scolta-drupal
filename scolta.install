@@ -56,6 +56,29 @@ function _scolta_has_explicit_api_key(): bool {
 }
 
 /**
+ * Implements hook_requirements().
+ */
+function scolta_requirements(string $phase): array {
+  $requirements = [];
+  if ($phase !== 'runtime' || !\Drupal::entityTypeManager()->hasDefinition('search_api_server')) {
+    return $requirements;
+  }
+  // The stub backend keeps these loadable; see UPGRADE.md. A site whose sync
+  // directory still exports the server and index recreates them right after
+  // scolta_update_10008() deleted them, and the update never runs again.
+  $servers = \Drupal::entityTypeManager()->getStorage('search_api_server')->loadByProperties(['backend' => 'scolta_pagefind']);
+  if ($servers) {
+    $requirements['scolta_search_api'] = [
+      'title' => t('Scolta Search API server'),
+      'value' => t('Leftover server: @servers', ['@servers' => implode(', ', array_keys($servers))]),
+      'description' => t('Scolta no longer uses Search API. Delete this server, its indexes, and their search_api.server.* / search_api.index.* files from the config sync directory, then uninstall Search API if nothing else needs it. See UPGRADE.md.'),
+      'severity' => REQUIREMENT_WARNING,
+    ];
+  }
+  return $requirements;
+}
+
+/**
  * Implements hook_uninstall().
  */
 function scolta_uninstall() {
