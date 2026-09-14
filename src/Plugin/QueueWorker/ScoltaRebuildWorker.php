@@ -110,6 +110,22 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
   protected const MAX_CLAIMED_ITEMS = 50000;
 
   /**
+   * Consecutive failed segments tolerated before a build is given up on.
+   *
+   * A segment that dies on a transient infrastructure fault (a dropped redis
+   * connection, a database restart) is indistinguishable from one that died
+   * on a corrupt corpus, so the marker is kept and the next tick retries;
+   * this bounds that so a genuinely broken build stops instead of retrying
+   * every minute forever.
+   */
+  protected const MAX_SEGMENT_FAILURES = 3;
+
+  /**
+   * State key holding the consecutive segment failure count.
+   */
+  protected const FAILURE_COUNT_KEY = 'scolta.rebuild_segment_failures';
+
+  /**
    * The queue payload that stands in for a full build in progress.
    *
    * Enqueued before a segment runs, in place of the requests folded into the
@@ -239,6 +255,12 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       // it completes, and a kill before then leaves the marker for the next
       // tick to act on.
       $this->ensureMarker();
+      // A new request starts the failure count over; the marker does not —
+      // it is this build's own standing request, and a build retrying a
+      // failed first segment arrives here looking exactly like a new one.
+      if ($data !== self::RESUME_MARKER) {
+        $this->state->delete(self::FAILURE_COUNT_KEY);
+      }
       $this->deleteClaimed($claimed);
 
       $intent = BuildIntentFactory::fromFlags(FALSE, FALSE, $totalCount, $this->runner->memoryBudget());
@@ -317,6 +339,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
 
     if ($report->success) {
       $this->bumpGeneration();
+      $this->state->delete(self::FAILURE_COUNT_KEY);
       $this->deleteMarkers();
       $this->logger->info($successMessage, [
         '@pages' => $report->pagesProcessed,
@@ -328,13 +351,41 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       return;
     }
 
+    // A segment that died on something other than memory pressure may have
+    // died on a transient fault — a dropped redis connection, a database
+    // restart — which reads exactly like an unrecoverable one. Keep the
+    // marker so the next tick retries, bounded by MAX_SEGMENT_FAILURES so a
+    // build that is genuinely broken still stops. A memory abort reaching
+    // here was judged a stall by the policy, and retrying it walks into the
+    // same wall, so it is given up on at once as before.
+    if (!$report->isMemoryAbort()) {
+      $failures = (int) $this->state->get(self::FAILURE_COUNT_KEY, 0) + 1;
+      if ($failures < self::MAX_SEGMENT_FAILURES) {
+        $this->state->set(self::FAILURE_COUNT_KEY, $failures);
+        $this->ensureMarker();
+        $this->logger->warning('Queue index rebuild segment failed (attempt @attempt of @max): @error. The next tick retries.', [
+          '@attempt' => $failures,
+          '@max' => self::MAX_SEGMENT_FAILURES,
+          '@error' => $report->error ?? 'unknown',
+        ]);
+        if (!$dataCovered) {
+          throw new RequeueException('This rebuild request arrived while a build was in progress; it is applied to the finished index on a later run.');
+        }
+        return;
+      }
+    }
+
     // A chained failure already carries the policy's reason; a segment that
     // failed in this process is judged (and a stall recorded) here, so the
     // next run starts fresh instead of resuming into the same wall. Given up
     // on: the marker goes, and the runner deletes $data as for any failure.
     $reason = $report->isMemoryAbort() ? $this->policy()->stopReason($report, $buildState) : $report->error;
+    $this->state->delete(self::FAILURE_COUNT_KEY);
     $this->deleteMarkers();
-    $this->logger->error('Queue index rebuild failed: @error', ['@error' => $reason ?? 'unknown']);
+    $this->logger->error('Queue index rebuild failed after @attempts attempts: @error', [
+      '@attempts' => $report->isMemoryAbort() ? 1 : self::MAX_SEGMENT_FAILURES,
+      '@error' => $reason ?? 'unknown',
+    ]);
   }
 
   /**
