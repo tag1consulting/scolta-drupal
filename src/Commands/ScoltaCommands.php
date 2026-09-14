@@ -8,6 +8,7 @@ use Consolidation\OutputFormatters\StructuredData\UnstructuredListData;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\State\StateInterface;
@@ -70,6 +71,8 @@ class ScoltaCommands extends DrushCommands {
    *   The build path shared with the rebuild queue worker.
    * @param \Drupal\Core\Queue\QueueFactory $queueFactory
    *   The queue factory.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
+   *   The entity type manager, to resolve an entity argument to its URL.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
@@ -83,6 +86,7 @@ class ScoltaCommands extends DrushCommands {
     private readonly IndexLocator $indexLocator,
     private readonly IndexBuildRunner $runner,
     private readonly QueueFactory $queueFactory,
+    private readonly EntityTypeManagerInterface $entityTypeManager,
   ) {
     parent::__construct();
   }
@@ -918,6 +922,77 @@ class ScoltaCommands extends DrushCommands {
     ];
 
     return new UnstructuredListData($status);
+  }
+
+  /**
+   * Show what the built index holds for an entity.
+   *
+   * A fragment is the index's own copy of a page: the URL, the indexed text,
+   * the filter values and the metadata the result list renders. Reading one
+   * answers "is this entity in the index, and with what?" without a rebuild
+   * and without the browser.
+   *
+   * Fragment files are named by a content hash, not by URL, so finding the
+   * one for an entity means decompressing fragments until its URL turns up.
+   * Fine for debugging one page; slow on a six-figure corpus over NFS.
+   */
+  #[CLI\Command(name: 'scolta:inspect', aliases: ['sin'])]
+  #[CLI\Argument(name: 'entityType', description: 'Entity type ID, e.g. node')]
+  #[CLI\Argument(name: 'entityId', description: 'Entity ID')]
+  #[CLI\Usage(name: 'scolta:inspect node 123', description: 'Show the fragment indexed for that node, and its translations')]
+  #[CLI\Usage(name: 'scolta:inspect node 123 --format=json', description: 'The same, as JSON')]
+  public function inspect(string $entityType, string $entityId, array $options = ['format' => 'yaml']): UnstructuredListData {
+    $config = $this->configFactory->get('scolta.settings');
+    $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
+    $location = $this->indexLocator->locate($this->resolvePath($outputDir));
+    if ($location === NULL) {
+      throw new \RuntimeException(sprintf('No built index under %s. Run drush scolta:build first.', $outputDir));
+    }
+
+    if (!$this->entityTypeManager->hasDefinition($entityType)) {
+      throw new \RuntimeException(sprintf('No such entity type: %s.', $entityType));
+    }
+    $entity = $this->entityTypeManager->getStorage($entityType)->load($entityId);
+    if ($entity === NULL) {
+      throw new \RuntimeException(sprintf('No %s with ID %s.', $entityType, $entityId));
+    }
+    // The URL is the only join between an entity and its fragment: nothing in
+    // the fragment carries the entity ID. Matching is anchored on the end of
+    // the URL rather than str_contains() so that /node/123 does not match
+    // /node/1234, while a translation under a language prefix still does.
+    $url = $entity->toUrl()->toString();
+
+    $matches = [];
+    foreach ($this->indexLocator->fragmentFiles($location) as $file) {
+      $fragment = $this->readFragment($file);
+      if ($fragment === NULL) {
+        continue;
+      }
+      if (($fragment['url'] ?? '') === $url || str_ends_with($fragment['url'] ?? '', $url)) {
+        $matches[basename($file)] = $fragment;
+      }
+    }
+
+    if ($matches === []) {
+      $this->logger()->warning(dt('Nothing in the index is indexed at @url. It may not be indexed, or the index may predate it.', ['@url' => $url]));
+    }
+    return new UnstructuredListData($matches);
+  }
+
+  /**
+   * Decode one fragment file: gzipped "pagefind_dcd" + JSON.
+   *
+   * @return array|null
+   *   The decoded fragment, or NULL when the file is not one (a stray file in
+   *   the fragment directory, or a truncated write).
+   */
+  private function readFragment(string $file): ?array {
+    $raw = @gzdecode((string) file_get_contents($file));
+    if ($raw === FALSE || !str_starts_with($raw, 'pagefind_dcd')) {
+      return NULL;
+    }
+    $decoded = json_decode(substr($raw, strlen('pagefind_dcd')), TRUE);
+    return is_array($decoded) ? $decoded : NULL;
   }
 
 }

@@ -81,6 +81,7 @@ button rebuilds it from the browser.
 | `drush scolta:clear-cache` (`scc`) | Clear expansion and summary caches |
 | `drush scolta:check-setup` (`scs`) | Verify dependencies and configuration |
 | `drush scolta:status` (`sst`) | Show current index, in-progress build, indexer, and AI provider status; YAML by default, `--format=json` for machines |
+| `drush scolta:inspect node 123` (`sin`) | Show what the index holds for an entity: the URL, indexed text, filters and metadata of its fragment, and of its translations |
 
 ### Scoped builds
 

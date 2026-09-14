@@ -127,6 +127,7 @@ class ScopedBuildKernelTest extends KernelTestBase {
       $this->container->get('scolta.index_locator'),
       $this->container->get('scolta.index_build_runner'),
       $this->container->get('queue'),
+      $this->container->get('entity_type.manager'),
     );
     $commands->setLogger(new DrushLoggerManager());
     $commands->setOutput(new NullOutput());

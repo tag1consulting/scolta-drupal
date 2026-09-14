@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ## [Unreleased]
 
+### Added
+- **`drush scolta:inspect <entity-type> <entity-id>` (`sin`) reads back what the index holds for an entity.** Answering "is this node indexed, and with what text and filters?" meant building a fresh index and searching in a browser, because a fragment file is named by a content hash rather than by URL and nothing mapped one to the other. `scolta:inspect node 123` resolves the entity's canonical URL, decodes the fragments indexed at it — translations under a language prefix included — and returns them through Drush's output formatters (`--format=json`). Finding them means decompressing fragments until the URL turns up: fine for one page, slow on a six-figure corpus over NFS.
+
 ### Changed
 - **`drush scolta:status` reports `activity` instead of `running` in its `build` section.** `running: false` could not tell an interrupted build from one that was merging: the lock heartbeat was refreshed only during the gather, so a long merge over NFS read as stale (sharemylesson.com staging, 2026-09-13: `running: false`, `stale: true`, `progress: 96.5%` for a build that was alive and writing fragments). `activity` is now `idle`, `gathering`, `merging`, `publishing`, or `interrupted` when the manifest says building but no live process holds the lock, read from the phase scolta-php now records. `progress` is shown only while gathering: it is chunks committed over the chunk count implied by the pre-gather entity total, which documents that produce no page make an over-estimate, so it never said 100% and said nothing about the merge. Requires scolta-php with `BuildState::phase()`.
 
