@@ -83,6 +83,12 @@ class BrowserConfigParityFunctionalTest extends BrowserTestBase {
     // the retired-index-cleanup work that first pulled in a scolta-php
     // carrying this key.
     'labels',
+    // Indexed filter value => display text (window.scolta.valueLabels,
+    // ScoltaConfig::$valueLabels, scolta-php 2.0.0). Not emitted by the block:
+    // this module has no setting for the map, and the one site using it
+    // (sharemylesson.com) injects it through hook_js_settings_alter(). Emit it
+    // from config if a second site wants it.
+    'valueLabels',
   ];
 
   /**

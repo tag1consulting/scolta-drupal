@@ -7,6 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 ## [Unreleased]
 
 ### Changed
+- **`BrowserConfigParityFunctionalTest` excuses `valueLabels`, the filter-value display map scolta-php 2.0.0's bundle reads (tag1consulting/scolta-php#357).** The block does not emit it: the module has no setting for the map, and a site can inject it through `hook_js_settings_alter()`. Listed beside `labels` so the guard stays green against a scolta-php carrying the key.
 - **`drush scolta:status` reports `activity` instead of `running` in its `build` section.** `running: false` could not tell an interrupted build from one that was merging: the lock heartbeat was refreshed only during the gather, so a long merge over NFS read as stale (sharemylesson.com staging, 2026-09-13: `running: false`, `stale: true`, `progress: 96.5%` for a build that was alive and writing fragments). `activity` is now `idle`, `gathering`, `merging`, `publishing`, or `interrupted` when the manifest says building but no live process holds the lock, read from the phase scolta-php now records. `progress` is shown only while gathering: it is chunks committed over the chunk count implied by the pre-gather entity total, which documents that produce no page make an over-estimate, so it never said 100% and said nothing about the merge. Requires scolta-php with `BuildState::phase()`.
 
 ### Fixed
