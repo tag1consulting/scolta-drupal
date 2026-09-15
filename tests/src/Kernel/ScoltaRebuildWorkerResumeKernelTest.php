@@ -159,6 +159,28 @@ class ScoltaRebuildWorkerResumeKernelTest extends KernelTestBase {
   }
 
   /**
+   * Content edits during an interrupted build do not delay resuming it.
+   *
+   * Every save rewrites scolta.rebuild_requested_at, so on a site that is
+   * edited more often than the debounce window the marker would never come
+   * due — a half-built index waiting on a quiet period that never arrives.
+   */
+  public function testEditsDuringAnInterruptedBuildDoNotDelayItsResume(): void {
+    $this->worker()->processItem(['type' => 'install']);
+    $this->assertTrue(ResumeChainPolicy::resumable($this->buildState()));
+
+    for ($run = 0; $run < 10 && ResumeChainPolicy::resumable($this->buildState()); $run++) {
+      $worker = $this->worker();
+      // An edit lands just before this tick, as it does on a busy site.
+      \Drupal::state()->set('scolta.rebuild_requested_at', time());
+      $worker->processItem(self::MARKER);
+    }
+
+    $this->assertCount(10, $this->fragments(), 'The build finished despite continuous editing');
+    $this->assertFalse(ResumeChainPolicy::resumable($this->buildState()));
+  }
+
+  /**
    * A process killed mid-segment leaves a claimable marker for the next tick.
    *
    * The lease on the payload the runner holds does not matter: the marker

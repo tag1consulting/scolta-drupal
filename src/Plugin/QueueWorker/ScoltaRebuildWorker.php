@@ -193,9 +193,13 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     }
 
     // Debounce: wait until the configured delay has elapsed since the LAST
-    // content change so a burst of edits coalesces into one rebuild.
+    // content change so a burst of edits coalesces into one rebuild. The
+    // marker is exempt: it is an interrupted build's own continuation, not a
+    // new request, and every save rewrites the requested-at key, so on a site
+    // edited more often than the delay a debounced marker would leave a
+    // half-built index waiting for a quiet period that never comes.
     $requestedAt = (int) $this->state->get('scolta.rebuild_requested_at', 0);
-    if ($requestedAt > 0) {
+    if ($requestedAt > 0 && $data !== self::RESUME_MARKER) {
       $delay = $this->autoRebuildDelay();
       $remaining = ($requestedAt + $delay) - time();
       if ($remaining > 0) {
