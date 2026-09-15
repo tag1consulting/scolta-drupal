@@ -44,7 +44,9 @@ use Tag1\Scolta\Index\StatusReport;
  * Rebuilds are debounced: scolta.module records the last content change in
  * the scolta.rebuild_requested_at state key, and the worker delays the
  * item until the backend's auto_rebuild_delay has elapsed since that
- * change, so a burst of edits produces one build.
+ * change, so a burst of edits produces one build. The delay is capped at
+ * MAX_DEBOUNCE_MULTIPLIER windows since the oldest unserved request, so a
+ * write stream faster than the window cannot starve the index.
  *
  * "Not now" is always signalled with DelayedRequeueException, never
  * SuspendQueueException: `drush queue:run` turns a suspend into a non-zero
@@ -84,6 +86,24 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    * Debounce delay when scolta.settings says nothing.
    */
   protected const DEFAULT_REBUILD_DELAY = 300;
+
+  /**
+   * State key holding the oldest unserved rebuild request.
+   *
+   * Set only when unset, and cleared when a build is allowed to start, so it
+   * marks how long the currently pending batch of changes has been waiting.
+   */
+  public const FIRST_REQUEST_KEY = 'scolta.rebuild_first_requested_at';
+
+  /**
+   * Multiples of the debounce delay after which the debounce stops applying.
+   *
+   * Without a ceiling, any workload saving content more often than once per
+   * delay window resets the timer forever and the index is never rebuilt —
+   * an attachment-text backfill saving thousands of nodes an hour, or a busy
+   * site at peak editing.
+   */
+  protected const MAX_DEBOUNCE_MULTIPLIER = 4;
 
   /**
    * Largest change set applied incrementally when config says nothing.
@@ -227,14 +247,30 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     if ($requestedAt > 0 && $data !== self::RESUME_MARKER) {
       $delay = $this->autoRebuildDelay();
       $remaining = ($requestedAt + $delay) - time();
-      if ($remaining > 0) {
+      // ...but never longer than MAX_DEBOUNCE_MULTIPLIER windows since the
+      // oldest unserved request, or a sustained write stream would reset the
+      // timer indefinitely and starve the index.
+      $firstRequestedAt = (int) $this->state->get(self::FIRST_REQUEST_KEY, 0);
+      $starved = $firstRequestedAt > 0
+        && time() >= $firstRequestedAt + ($delay * self::MAX_DEBOUNCE_MULTIPLIER);
+      if ($remaining > 0 && !$starved) {
         throw new DelayedRequeueException($remaining, sprintf('Debouncing Scolta rebuild: %d seconds until the rebuild delay elapses.', $remaining));
       }
+      if ($starved) {
+        $this->logger->info('Scolta rebuild debounce capped: content has changed continuously for @seconds seconds, building anyway.', [
+          '@seconds' => time() - $firstRequestedAt,
+        ]);
+      }
     }
-
     if (!$this->lock->acquire(IndexBuildRunner::LOCK_NAME, self::LOCK_TIMEOUT)) {
       throw new DelayedRequeueException(60, 'Build lock held.');
     }
+    // Past the debounce and holding the lock: whatever is pending is about to
+    // be served, so the next request starts a fresh max-wait window. Not
+    // before the lock — a tick that turns back at a held lock has served
+    // nothing, and clearing the window there would let the next save reopen
+    // it and reset the cap this is here to guarantee.
+    $this->state->delete(self::FIRST_REQUEST_KEY);
 
     try {
       $config = $this->configFactory->get('scolta.settings');

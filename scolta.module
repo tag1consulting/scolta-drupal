@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
+use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
 use Drupal\scolta\Service\AssetDeployer;
 use Tag1\Scolta\Index\RetiredIndexTrash;
 use Tag1\Scolta\Storage\FilesystemDriver;
@@ -472,6 +473,11 @@ function _scolta_auto_rebuild_check(EntityInterface $entity, $op = 'update') {
   }
 
   \Drupal::state()->set('scolta.rebuild_requested_at', time());
+  // The oldest unserved request caps how long the worker's debounce may hold
+  // a build off; only the first change after a build opens that window.
+  if (!\Drupal::state()->get(ScoltaRebuildWorker::FIRST_REQUEST_KEY)) {
+    \Drupal::state()->set(ScoltaRebuildWorker::FIRST_REQUEST_KEY, time());
+  }
   \Drupal::queue('scolta_rebuild')->createItem([
     'type' => 'auto',
     'op' => $op,
