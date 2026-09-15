@@ -58,7 +58,9 @@ class ScoltaReindexer {
    *   The entity type ID the IDs belong to.
    * @param array $ids
    *   Entity IDs to reindex. Unpublished, missing, or non-indexed IDs are
-   *   filtered out and reported in the return value's `skipped`.
+   *   filtered out and reported in the return value's `skipped`. Duplicates
+   *   are not: they are collapsed first, so a repeated ID is not reported as
+   *   one that could not be loaded.
    *
    * @return array
    *   `['entities' => int, 'pages' => int, 'skipped' => int]`.
@@ -71,7 +73,11 @@ class ScoltaReindexer {
    * @stability experimental
    */
   public function queue(string $entityType, array $ids): array {
-    $targets = $this->contentGatherer->publishedIds($entityType, array_values($ids));
+    // publishedIds() resolves the list through an IN query, which collapses
+    // duplicates. Collapsing them here too keeps `skipped` a count of IDs
+    // that could not be loaded rather than of IDs passed twice.
+    $ids = array_values(array_unique(array_map('strval', $ids)));
+    $targets = $this->contentGatherer->publishedIds($entityType, $ids);
     $skipped = count($ids) - count($targets);
     if ($targets === []) {
       return ['entities' => 0, 'pages' => 0, 'skipped' => $skipped];

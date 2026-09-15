@@ -164,6 +164,9 @@ class ScoltaReindexerKernelTest extends KernelTestBase {
 
   /**
    * IDs that are missing or unpublished are counted, not queued.
+   *
+   * A repeated ID is not one of them: publishedIds() resolves the list
+   * through an IN query, so a duplicate collapses rather than going missing.
    */
   public function testUnusableIdsAreReportedAsSkipped(): void {
     $unpublished = Node::create(['type' => 'article', 'title' => 'Draft', 'status' => 0]);
@@ -172,7 +175,7 @@ class ScoltaReindexerKernelTest extends KernelTestBase {
     // reindexer queues is under test here.
     \Drupal::queue('scolta_rebuild')->deleteQueue();
 
-    $result = $this->reindexer()->queue('node', [$this->nids[0], $unpublished->id(), 999999]);
+    $result = $this->reindexer()->queue('node', [$this->nids[0], $this->nids[0], $unpublished->id(), 999999]);
 
     $this->assertSame(1, $result['entities']);
     $this->assertSame(2, $result['skipped']);
