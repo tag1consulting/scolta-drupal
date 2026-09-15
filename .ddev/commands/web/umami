@@ -7,6 +7,6 @@
 
 set -eu -o pipefail
 
+drush si demo_umami
 drush recipe ../recipes/scolta_umami
-drush search-api:reset-tracker
-drush search-api:index
+drush scolta:build --force

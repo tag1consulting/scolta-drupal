@@ -92,14 +92,11 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Build the search index.
+   * Build the search index per the configured entity types.
    *
-   * Gathers the configured entity types and indexes them in PHP: no HTML is
-   * exported and nothing shells out, so it runs on any host.
-   *
-   * Scoped builds: --bundle and --entity-ids narrow what the build gathers,
-   * not what it publishes. A build merges the pages it gathered into a whole
-   * new index and cannot carry over a page it never looked at, so a scoped
+   * Scoped builds: --bundle and --entity-ids not be used in production.
+   * A build merges the pages it gathered into a whole new index and
+   * cannot carry over a page it never looked at, so a scoped
    * build is a way to build an index holding only that scope — not a way to
    * refresh part of a larger one. If the index already holds pages outside
    * the scope, the build stops before publishing and the index that was
@@ -112,10 +109,10 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Option(name: 'bundle', description: 'Bundle to index. Scopes the build; see the help text above')]
   #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build; see the help text above. Unloadable IDs are logged and skipped. --bundle is ignored')]
   #[CLI\Option(name: 'force', description: 'Skip fingerprint check and force a full rebuild')]
-  #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value for the PHP indexer (e.g. conservative, 256M).')]
-  #[CLI\Option(name: 'chunk-size', description: 'Pages per chunk during a PHP index build. Overrides the profile default and config setting.')]
-  #[CLI\Option(name: 'resume', description: 'Resume a previously interrupted PHP index build')]
-  #[CLI\Option(name: 'restart', description: 'Discard interrupted state and restart the PHP index build. Also discards the page-table ledger, renumbering every page from zero')]
+  #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value (e.g. conservative, 256M).')]
+  #[CLI\Option(name: 'chunk-size', description: 'Pages per chunk. Overrides the profile default and config setting.')]
+  #[CLI\Option(name: 'resume', description: 'Resume a previously interrupted build')]
+  #[CLI\Option(name: 'restart', description: 'Discard interrupted state and restart the build. Also discards the page-table ledger, renumbering every page from zero')]
   #[CLI\Option(name: 'reset-ledger', description: 'Discard the page-table ledger under a plain build, renumbering every page from zero. Escape hatch for a corrupt page table (a duplicate page ordinal at the merge) without a full --restart. Cannot be combined with --resume')]
   public function build(
     array $options = [
@@ -310,7 +307,7 @@ class ScoltaCommands extends DrushCommands {
       return;
     }
 
-    throw new \RuntimeException('PHP indexer failed: ' . ($report->error ?? 'unknown'));
+    throw new \RuntimeException('Indexer failed: ' . ($report->error ?? 'unknown'));
   }
 
   /**
@@ -472,7 +469,7 @@ class ScoltaCommands extends DrushCommands {
   /**
    * Spawn drush scolta:finalize in a fresh PHP process.
    *
-   * After large-corpus PHP indexing the heap is too fragmented to run
+   * After large-corpus indexing the heap is too fragmented to run
    * the merge in-process. This spawns a child drush command so the
    * merge starts with a clean heap.
    */
