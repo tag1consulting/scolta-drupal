@@ -607,7 +607,7 @@ class ScoltaContentGatherer {
    * @param array $ids
    *   Candidate entity IDs.
    *
-   * @return array
+   * @return string[]
    *   The subset of $ids that is published and in a configured bundle, in
    *   ascending ID order.
    *
@@ -643,7 +643,7 @@ class ScoltaContentGatherer {
    * @param string $bundle
    *   A bundle to restrict to, or '' for the type's configured bundles.
    *
-   * @return array
+   * @return string[]
    *   Published entity IDs in ascending ID order.
    *
    * @since 1.5.0

@@ -62,8 +62,10 @@ class ScoltaReindexer {
    *   are not: they are collapsed first, so a repeated ID is not reported as
    *   one that could not be loaded.
    *
-   * @return array
-   *   `['entities' => int, 'pages' => int, 'skipped' => int]`.
+   * @return array{entities: int, pages: int, skipped: int}
+   *   The number of entities queued, the number of pages those entities
+   *   contribute, and the number of IDs filtered out as unpublished, missing
+   *   or non-indexed.
    *
    * @throws \RuntimeException
    *   If the target set exceeds `incremental.max_changed_items`, or if the
