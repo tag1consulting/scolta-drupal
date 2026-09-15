@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Kernel;
 
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Queue\DelayedRequeueException;
 use Drupal\KernelTests\KernelTestBase;
@@ -377,41 +378,43 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
     $node->save();
 
     $state = \Drupal::state();
-    $firstRequestedAt = (int) $state->get(ScoltaRebuildWorker::FIRST_REQUEST_KEY);
-    $this->assertGreaterThan(0, $firstRequestedAt, 'A save must open the max-wait window');
+    $openedAt = (int) $state->get(ScoltaRebuildWorker::FIRST_REQUEST_KEY);
+    $this->assertGreaterThan(0, $openedAt, 'A save must open the max-wait window');
 
     // A further save keeps moving the debounce timer but must not move the
     // window it is measured against.
     $other = Node::load($this->nids[10]);
     $other->setChangedTime($other->getChangedTime() + 60);
     $other->save();
-    $this->assertSame($firstRequestedAt, (int) $state->get(ScoltaRebuildWorker::FIRST_REQUEST_KEY),
+    $this->assertSame($openedAt, (int) $state->get(ScoltaRebuildWorker::FIRST_REQUEST_KEY),
       'Only the first change after a build opens the max-wait window');
 
     $queue = \Drupal::queue('scolta_rebuild');
     $item = $queue->claimItem();
     $this->assertNotFalse($item);
-    $worker = $this->container->get('plugin.manager.queue_worker')
-      ->createInstance('scolta_rebuild');
 
-    // Still inside the window: the debounce holds, as it always has.
-    $state->set('scolta.rebuild_requested_at', time());
+    // The write stream runs on: nothing is backdated, the clock simply moves
+    // and every tick finds a change more recent than one delay window.
+    $writeJustBefore = fn(int $now) => $state->set('scolta.rebuild_requested_at', $now - 1);
+
+    // One window in, the debounce holds, as it always has.
+    $writeJustBefore($openedAt + $delay);
     try {
-      $worker->processItem($item->data);
+      $this->workerAt($openedAt + $delay)->processItem($item->data);
       $this->fail('A recent content change must still be debounced');
     }
     catch (DelayedRequeueException $e) {
       $this->assertStringContainsString('Debouncing', $e->getMessage());
     }
 
-    // A tick that turns back at a held build lock has served nothing, so it
-    // must leave the window standing rather than let the next save reopen it.
-    // KernelTestBase's lock backend never refuses, so the contention comes
-    // from a worker built on a lock that does.
-    $state->set('scolta.rebuild_requested_at', time());
-    $state->set(ScoltaRebuildWorker::FIRST_REQUEST_KEY, time() - ($delay * 4) - 1);
+    // Past the cap, but the build lock is held by another process: the tick
+    // has served nothing, so it must leave the window standing rather than
+    // let the next save reopen it. KernelTestBase's lock backend never
+    // refuses, so the contention comes from a lock that does.
+    $cappedAt = $openedAt + ($delay * 4) + 1;
+    $writeJustBefore($cappedAt);
     try {
-      $this->workerWithBusyLock()->processItem($item->data);
+      $this->workerAt($cappedAt, TRUE)->processItem($item->data);
       $this->fail('A held build lock must send the item back');
     }
     catch (DelayedRequeueException $e) {
@@ -420,12 +423,9 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
     $this->assertNotNull($state->get(ScoltaRebuildWorker::FIRST_REQUEST_KEY),
       'A tick that built nothing must not reset the max-wait window');
 
-    // The write stream has now outlasted the cap: the timer is as fresh as
-    // ever, but the oldest unserved request is older than the allowed wait.
-    $state->set('scolta.rebuild_requested_at', time());
-    $state->set(ScoltaRebuildWorker::FIRST_REQUEST_KEY, time() - ($delay * 4) - 1);
-
-    $worker->processItem($item->data);
+    // Same moment, lock free: the timer is as fresh as ever, but the oldest
+    // unserved request has outlasted the cap, so the build runs.
+    $this->workerAt($cappedAt)->processItem($item->data);
     $queue->deleteItem($item);
 
     $this->assertStringContainsStringInArray('marmosets', $this->fragmentContents(),
@@ -461,11 +461,17 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
   }
 
   /**
-   * A worker whose build lock is always held by someone else.
+   * A worker whose clock reads $now, optionally with the build lock held.
    */
-  protected function workerWithBusyLock(): ScoltaRebuildWorker {
-    $lock = $this->createMock(LockBackendInterface::class);
-    $lock->method('acquire')->willReturn(FALSE);
+  protected function workerAt(int $now, bool $lockHeld = FALSE): ScoltaRebuildWorker {
+    $time = $this->createMock(TimeInterface::class);
+    $time->method('getCurrentTime')->willReturn($now);
+
+    $lock = $this->container->get('lock');
+    if ($lockHeld) {
+      $lock = $this->createMock(LockBackendInterface::class);
+      $lock->method('acquire')->willReturn(FALSE);
+    }
 
     return new ScoltaRebuildWorker(
       [],
@@ -479,7 +485,7 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
       $this->container->get('scolta.content_gatherer'),
       $this->container->get('queue'),
       $this->container->get('scolta.index_build_runner'),
-      $this->container->get('datetime.time'),
+      $time,
     );
   }
 
