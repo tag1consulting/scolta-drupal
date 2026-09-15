@@ -1035,8 +1035,21 @@ class ScoltaCommands extends DrushCommands {
     }
 
     $queue = $this->queueFactory->get(ScoltaRebuildWorker::QUEUE_NAME);
+    $queued = 0;
     foreach ($payloads as $payload) {
-      $queue->createItem($payload);
+      // DatabaseQueue::createItem() returns FALSE rather than throwing when
+      // the insert fails, so an unchecked loop can report a queued reindex
+      // that queued nothing.
+      if ($queue->createItem($payload) !== FALSE) {
+        $queued++;
+      }
+    }
+    if ($queued !== count($payloads)) {
+      throw new \RuntimeException(sprintf(
+        'Only %d of %d reindex requests could be queued. The queue backend rejected the rest; nothing further was attempted.',
+        $queued,
+        count($payloads),
+      ));
     }
 
     // Deliberately does not set scolta.rebuild_requested_at: that key debounces
@@ -1044,7 +1057,7 @@ class ScoltaCommands extends DrushCommands {
     // would make the operator wait out a delay they did not cause.
     $this->logger()->success(sprintf(
       'Queued %d %s entities (%d pages) for reindexing. The next `drush queue:run scolta_rebuild` tick applies them.',
-      count($payloads),
+      $queued,
       $entityType,
       $pages,
     ));

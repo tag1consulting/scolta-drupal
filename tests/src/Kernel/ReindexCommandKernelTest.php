@@ -46,6 +46,11 @@ class ReindexCommandKernelTest extends KernelTestBase {
   protected array $nids = [];
 
   /**
+   * The real directory holding the built index.
+   */
+  protected string $indexDir = '';
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -59,11 +64,12 @@ class ReindexCommandKernelTest extends KernelTestBase {
 
     // A real directory rather than the vfsStream public:// mount, which
     // scolta-php's FilesystemDriver rejects. See IncrementalQueueUpdateKernelTest.
-    $realDir = sys_get_temp_dir() . '/scolta-reindex-test-' . uniqid();
-    mkdir($realDir, 0755, TRUE);
+    $this->indexDir = $this->container->get('file_system')->getTempDirectory()
+      . '/scolta-reindex-test-' . uniqid();
+    mkdir($this->indexDir, 0755, TRUE);
     $this->config('scolta.settings')
-      ->set('pagefind.output_dir', $realDir . '/output')
-      ->set('pagefind.build_dir', $realDir . '/build')
+      ->set('pagefind.output_dir', $this->indexDir . '/output')
+      ->set('pagefind.build_dir', $this->indexDir . '/build')
       ->save();
 
     $this->createContentType(['type' => 'article']);
@@ -84,6 +90,17 @@ class ReindexCommandKernelTest extends KernelTestBase {
 
     // The index the reindex will be merged into.
     $this->runWorker(['type' => 'install']);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function tearDown(): void {
+    // Outside the vfsStream mount KernelTestBase tears down, so it is ours.
+    if ($this->indexDir !== '' && is_dir($this->indexDir)) {
+      $this->container->get('file_system')->deleteRecursive($this->indexDir);
+    }
+    parent::tearDown();
   }
 
   /**
