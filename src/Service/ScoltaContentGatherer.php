@@ -633,6 +633,34 @@ class ScoltaContentGatherer {
   }
 
   /**
+   * Every published entity ID of a type, optionally narrowed to one bundle.
+   *
+   * The bundle-wide counterpart of publishedIds(), using the same published
+   * and bundle filters the build walk uses.
+   *
+   * @param string $entityType
+   *   The entity type to query (e.g. 'node').
+   * @param string $bundle
+   *   A bundle to restrict to, or '' for the type's configured bundles.
+   *
+   * @return array
+   *   Published entity IDs in ascending ID order.
+   *
+   * @since 1.5.0
+   * @stability experimental
+   */
+  public function publishedIdsInBundle(string $entityType, string $bundle = ''): array {
+    $idKey = $this->entityTypeManager->getDefinition($entityType)->getKey('id');
+    $query = $this->entityTypeManager->getStorage($entityType)->getQuery()
+      ->accessCheck(FALSE)
+      ->sort($idKey, 'ASC');
+    $this->publishedOnly($query, $entityType);
+    $this->bundlesOnly($query, $entityType, $bundle);
+
+    return array_values($query->execute());
+  }
+
+  /**
    * The indexed page ID for one translation of an entity.
    *
    * Namespaced with the entity type ID ('node:42', 'group:42') because entity

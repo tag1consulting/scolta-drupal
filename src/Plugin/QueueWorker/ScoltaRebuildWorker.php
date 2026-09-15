@@ -113,7 +113,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    * ceiling worth knowing about is LOCK_TIMEOUT, since this path holds the
    * build lock without renewing it.
    */
-  protected const DEFAULT_MAX_INCREMENTAL_ITEMS = 1000;
+  public const DEFAULT_MAX_INCREMENTAL_ITEMS = 1000;
 
   /**
    * The build lock lease, in seconds.
@@ -534,6 +534,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
   protected function collectChangeSet($data, array &$claimed): array {
     $changeSet = [
       'targeted' => TRUE,
+      'force' => FALSE,
       'upsert_entity_ids' => [],
       'upsert_item_ids' => [],
       'delete_item_ids' => [],
@@ -607,6 +608,13 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       return;
     }
 
+    // A forced request (drush scolta:reindex) reindexes content that did not
+    // change, so the timestamp manifest has to be rewritten too; see
+    // tryIncrementalUpdate().
+    if (!empty($data['force'])) {
+      $changeSet['force'] = TRUE;
+    }
+
     $changeSet['upsert_entity_ids'][$entityType][(string) $entityId] = $entityId;
     foreach ($itemIds as $itemId) {
       $changeSet['upsert_item_ids'][(string) $itemId] = TRUE;
@@ -665,10 +673,22 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     // Gather only entities that are still published and in a configured
     // bundle: an unpublish arrives as an update, and staging its content as an
     // upsert would keep a hidden node in the index.
+    //
+    // A forced reindex gets the timestamp manifest as well. Without it the
+    // gather never calls TimestampManifest::put(), so the manifest keeps the
+    // entity's old timestamp and old item data — harmless after a real save,
+    // which moves `changed` and makes the entry stale, but fatal here: nothing
+    // moved `changed`, so the next full build would find the entry fresh and
+    // serve the cached page this run just replaced.
+    $force = !empty($changeSet['force']);
+    $manifest = $force
+      ? $this->createOrchestrator($stateDir, $outputDir, $language)->getTimestampManifest()
+      : NULL;
+
     $produced = [];
     foreach ($changeSet['upsert_entity_ids'] as $entityType => $entityIds) {
       $publishedIds = $this->contentGatherer->publishedIds($entityType, array_values($entityIds));
-      foreach ($this->contentGatherer->gatherByIds($entityType, $publishedIds, $siteName) as $item) {
+      foreach ($this->contentGatherer->gatherByIds($entityType, $publishedIds, $siteName, $manifest, $force) as $item) {
         $updater->stageUpsert($item);
         $produced[(string) $item->id] = TRUE;
       }
@@ -693,6 +713,10 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       ]);
       return FALSE;
     }
+
+    // saveWithoutPruning(), never pruneAndSave(): this run saw a handful of
+    // entities, and pruning would drop the manifest entry of every other one.
+    $manifest?->saveWithoutPruning();
 
     $this->bumpGeneration();
 

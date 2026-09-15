@@ -1,0 +1,6 @@
+name: 'Scolta reindex test'
+type: module
+description: 'Provides an alter hook whose output changes with state, standing in for a real alter-logic change.'
+package: Testing
+dependencies:
+  - scolta:scolta

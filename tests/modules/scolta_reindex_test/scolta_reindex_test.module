@@ -1,0 +1,22 @@
+<?php
+
+/**
+ * @file
+ * Alter hook whose output is driven by state, for reindex coverage.
+ */
+
+use Drupal\Core\Entity\FieldableEntityInterface;
+use Tag1\Scolta\Export\ContentItem;
+
+/**
+ * Implements hook_scolta_content_item_alter().
+ *
+ * Appends whatever marker state holds, so a test can change the indexed
+ * output of unchanged content the way an edited alter hook does.
+ */
+function scolta_reindex_test_scolta_content_item_alter(ContentItem &$item, FieldableEntityInterface $entity): void {
+  $marker = \Drupal::state()->get('scolta_reindex_test.marker', '');
+  if ($marker !== '') {
+    $item = $item->cloneWith(['bodyHtml' => $item->bodyHtml . ' <p>' . $marker . '</p>']);
+  }
+}

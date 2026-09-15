@@ -104,7 +104,8 @@ class ScoltaCommands extends DrushCommands {
    * refresh part of a larger one. If the index already holds pages outside
    * the scope, the build stops before publishing and the index that was
    * already serving stays in place. To reflect an edit to a few nodes, save
-   * them and let cron apply the change incrementally.
+   * them and let cron apply the change incrementally; to refresh entities
+   * that did not change (an alter hook did), use scolta:reindex.
    */
   #[CLI\Command(name: 'scolta:build', aliases: ['sb'])]
   #[CLI\Option(name: 'entity-type', description: 'Entity type(s) to index, comma-separated')]
@@ -252,7 +253,9 @@ class ScoltaCommands extends DrushCommands {
         . "To refresh the whole index, re-run with no scoping options:\n"
         . "  drush scolta:build\n\n"
         . "To reflect an edit to a few entities, no command is needed — saving an\n"
-        . "entity queues it and cron applies the change to the published index.\n\n"
+        . "entity queues it and cron applies the change to the published index. To\n"
+        . "refresh entities that did not change (the alter logic did), run\n"
+        . "drush scolta:reindex.\n\n"
         . "To narrow the index to this scope for good, the page-table ledger has to\n"
         . "go first, because it is what still holds the out-of-scope pages. Neither\n"
         . "--restart nor --reset-ledger will do it: both refuse a scoped build, since\n"
@@ -922,6 +925,129 @@ class ScoltaCommands extends DrushCommands {
     ];
 
     return new UnstructuredListData($status);
+  }
+
+  /**
+   * Queue entities for reindexing without re-saving them.
+   *
+   * For when the indexed output is stale but the content is not: an alter
+   * hook changed, a field mapping was added, a text format was rewritten.
+   * Saving every node would work but rewrites `changed` on content nobody
+   * edited; a scoped `scolta:build` cannot do it at all, because a build
+   * publishes a whole new index and is refused when the existing one holds
+   * pages outside the scope.
+   *
+   * The queued requests take the incremental update path, which merges into
+   * the published index. They are marked forced, so the gather reloads every
+   * entity and rewrites its timestamp manifest entry — without that the next
+   * full build would find the untouched `changed` timestamp still matching
+   * the manifest and serve the cached page again, silently undoing this.
+   */
+  #[CLI\Command(name: 'scolta:reindex', aliases: ['sri'])]
+  #[CLI\Argument(name: 'entityType', description: 'Entity type ID, e.g. node')]
+  #[CLI\Argument(name: 'bundle', description: 'Bundle to reindex. Omit for every configured bundle of the type')]
+  #[CLI\Option(name: 'ids', description: 'Comma-separated entity IDs to reindex instead of a whole bundle')]
+  #[CLI\Usage(name: 'scolta:reindex node article', description: 'Queue every published article for reindexing')]
+  #[CLI\Usage(name: 'scolta:reindex node --ids=12,34', description: 'Queue two specific nodes')]
+  public function reindex(string $entityType, string $bundle = '', array $options = ['ids' => '']): void {
+    $configured = $this->contentGatherer->entityTypes();
+    if (!array_key_exists($entityType, $configured)) {
+      throw new \RuntimeException(sprintf(
+        'Entity type %s is not indexed by Scolta. Configured types: %s.',
+        $entityType,
+        implode(', ', array_keys($configured)),
+      ));
+    }
+    if ($bundle !== '' && $configured[$entityType] !== [] && !in_array($bundle, $configured[$entityType], TRUE)) {
+      throw new \RuntimeException(sprintf(
+        'Bundle %s of %s is not indexed by Scolta. Configured bundles: %s.',
+        $bundle,
+        $entityType,
+        implode(', ', $configured[$entityType]),
+      ));
+    }
+
+    $ids = array_filter(array_map('trim', explode(',', (string) ($options['ids'] ?? ''))), 'strlen');
+    if ($ids !== []) {
+      $targets = $this->contentGatherer->publishedIds($entityType, $ids);
+      $skipped = count($ids) - count($targets);
+      if ($skipped > 0) {
+        $this->logger()->warning(sprintf('%d of the given IDs are unpublished, missing, or in a bundle Scolta does not index; they were skipped.', $skipped));
+      }
+    }
+    else {
+      $targets = $this->contentGatherer->publishedIdsInBundle($entityType, $bundle);
+    }
+
+    if ($targets === []) {
+      $this->logger()->warning('Nothing to reindex.');
+      return;
+    }
+
+    // Refused rather than queued: a change set over the threshold falls back
+    // to a full rebuild, and a full rebuild reads the timestamp manifest, so
+    // it would serve the very cached pages this command exists to refresh.
+    // Each entity contributes at least one page, so the ID count is a cheap
+    // lower bound; the exact page count is checked again below.
+    $threshold = (int) ($this->configFactory->get('scolta.settings')->get('incremental.max_changed_items')
+      ?? ScoltaRebuildWorker::DEFAULT_MAX_INCREMENTAL_ITEMS);
+    $refuse = function (int $count) use ($threshold): void {
+      throw new \RuntimeException(sprintf(
+        "%d pages exceeds the incremental threshold of %d, and a change set that large falls back to a\n"
+        . "full rebuild — which reads the timestamp manifest and would serve exactly the cached pages\n"
+        . "you are trying to refresh.\n\n"
+        . "Rebuild the whole index instead:\n"
+        . "  drush scolta:build --force\n\n"
+        . 'Or reindex in smaller slices with --ids.',
+        $count,
+        $threshold,
+      ));
+    };
+    if ($threshold > 0 && count($targets) > $threshold) {
+      $refuse(count($targets));
+    }
+
+    $storage = $this->entityTypeManager->getStorage($entityType);
+    $payloads = [];
+    $pages = 0;
+    foreach (array_chunk($targets, 50) as $chunk) {
+      // Loaded, never saved: a save would move `changed` on content nobody
+      // edited, which is the whole reason this command exists.
+      foreach ($storage->loadMultiple($chunk) as $entity) {
+        $itemIds = $this->contentGatherer->itemIdsFor($entity);
+        if ($itemIds === []) {
+          continue;
+        }
+        $pages += count($itemIds);
+        $payloads[] = [
+          'type' => 'reindex',
+          'op' => 'update',
+          'entity_type' => $entityType,
+          'entity_id' => $entity->id(),
+          'item_ids' => $itemIds,
+          'force' => TRUE,
+        ];
+      }
+    }
+
+    if ($threshold > 0 && $pages > $threshold) {
+      $refuse($pages);
+    }
+
+    $queue = $this->queueFactory->get(ScoltaRebuildWorker::QUEUE_NAME);
+    foreach ($payloads as $payload) {
+      $queue->createItem($payload);
+    }
+
+    // Deliberately does not set scolta.rebuild_requested_at: that key debounces
+    // bursts of content edits, and this is not a content edit — setting it
+    // would make the operator wait out a delay they did not cause.
+    $this->logger()->success(sprintf(
+      'Queued %d %s entities (%d pages) for reindexing. The next `drush queue:run scolta_rebuild` tick applies them.',
+      count($payloads),
+      $entityType,
+      $pages,
+    ));
   }
 
   /**
