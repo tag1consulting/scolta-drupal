@@ -92,6 +92,6 @@ pagefind:
   auto_rebuild_delay: 300
 incremental:
   enabled: true
-  max_changed_items: 100
+  max_changed_items: 1000
 cleanup:
   cron_seconds: 180

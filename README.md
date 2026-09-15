@@ -467,7 +467,7 @@ Two `scolta.settings` keys control it. They have no form field yet, so set them 
 drush config:set scolta.settings incremental.enabled false
 
 # Largest change set applied incrementally before falling back to a full
-# rebuild. Default 100. Set to 0 to remove the ceiling.
+# rebuild. Default 1000. Set to 0 to remove the ceiling.
 drush config:set scolta.settings incremental.max_changed_items 250
 ```
 

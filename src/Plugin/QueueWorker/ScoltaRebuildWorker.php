@@ -87,8 +87,33 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
 
   /**
    * Largest change set applied incrementally when config says nothing.
+   *
+   * Not the crossover — well under it. Measured against scolta-php's
+   * SyntheticCorpus (the fixture behind its IncrementalUpdateBenchmarkTest),
+   * a 20,000-page index on an M-series laptop: a full build took 52 s, and an
+   * incremental commit took 22 s of fixed cost plus ~3 ms per changed page,
+   * so the two paths cost the same at about 8,000 changed pages — 40% of the
+   * corpus. A 5,000-page index crossed over at ~46%. That fixture holds its
+   * corpus in memory, so its "full build" pays no CMS gather at all, which
+   * makes 40% a floor: on Share My Lesson's 109,308 pages the gather was
+   * 84.7% of a 2,364 s build, and an update never gathers a page it was not
+   * told about, which puts the real crossover near 90% of the corpus.
+   *
+   * What binds instead is the commit's working set, which grows with the
+   * change set rather than with the corpus: ~82 KB per changed page over a
+   * 64 MB floor, measured one change-set size per process — 142 MB at 1,000
+   * pages, 224 MB at 2,000, 480 MB at 5,000. 1,000 keeps a cron run inside a
+   * 256 MB memory_limit with Drupal's own bootstrap alongside it, and covers
+   * the bulk operations that motivated raising this from 100 (a bulk publish,
+   * a taxonomy change, an attachment-text backfill — several hundred to a
+   * couple of thousand nodes per run, every one of which used to fall back to
+   * a full rebuild of a six-figure index).
+   *
+   * A site with more headroom raises incremental.max_changed_items; the
+   * ceiling worth knowing about is LOCK_TIMEOUT, since this path holds the
+   * build lock without renewing it.
    */
-  protected const DEFAULT_MAX_INCREMENTAL_ITEMS = 100;
+  protected const DEFAULT_MAX_INCREMENTAL_ITEMS = 1000;
 
   /**
    * The build lock lease, in seconds.
