@@ -14,5 +14,6 @@ services:
       - '@scolta.index_build_runner'
       - '@queue'
       - '@entity_type.manager'
+      - '@scolta.reindexer'
     tags:
       - { name: drush.command }

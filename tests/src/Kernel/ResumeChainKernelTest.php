@@ -131,6 +131,7 @@ class ResumeChainKernelTest extends KernelTestBase {
       $this->container->get('scolta.index_build_runner'),
       $this->container->get('queue'),
       $this->container->get('entity_type.manager'),
+      $this->container->get('scolta.reindexer'),
     ) extends ScoltaCommands {
 
       /**

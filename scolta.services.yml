@@ -45,3 +45,10 @@ services:
     arguments: ['@scolta.ai_access']
     tags:
       - { name: access_check, applies_to: _scolta_ai }
+
+  # The queueing half of `drush scolta:reindex`: refresh indexed output for
+  # entities that did not change, without a save that would bump `changed`
+  # and create a revision.
+  scolta.reindexer:
+    class: Drupal\scolta\Service\ScoltaReindexer
+    arguments: ['@config.factory', '@scolta.content_gatherer', '@entity_type.manager', '@queue']

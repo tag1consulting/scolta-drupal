@@ -84,6 +84,13 @@ button rebuilds it from the browser.
 | `drush scolta:reindex <entity-type> [<bundle>]` (`sri`) | Queue entities for reindexing without re-saving them, for when an alter hook or field mapping changed but the content did not. `--ids=12,34` for specific entities. Refused above `incremental.max_changed_items`; use `drush scolta:build --force` for a whole corpus |
 | `drush scolta:inspect node 123` (`sin`) | Show what the index holds for an entity: the URL, indexed text, filters and metadata of its fragment, and of its translations |
 
+Reindexing is also available to code: `\Drupal::service('scolta.reindexer')->queue('node', $nids)`
+queues the same forced incremental requests `scolta:reindex` does, and returns
+`['entities' => int, 'pages' => int, 'skipped' => int]`. Use it instead of
+re-saving entities to make Scolta notice derived text that changed outside the
+entity — a re-extracted file attachment, a refreshed import — where a save
+would bump `changed` and, on a bundle with new revisions, create a revision.
+
 ### Scoped builds
 
 `--bundle` and `--entity-ids` narrow what a build *gathers*. They do not narrow
