@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\scolta\Plugin\QueueWorker;
 
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
@@ -206,6 +207,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     protected readonly ScoltaContentGatherer $contentGatherer,
     protected readonly QueueFactory $queueFactory,
     protected readonly IndexBuildRunner $runner,
+    protected readonly TimeInterface $time,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -226,6 +228,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       $container->get('scolta.content_gatherer'),
       $container->get('queue'),
       $container->get('scolta.index_build_runner'),
+      $container->get('datetime.time'),
     );
   }
 
@@ -246,19 +249,20 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     $requestedAt = (int) $this->state->get('scolta.rebuild_requested_at', 0);
     if ($requestedAt > 0 && $data !== self::RESUME_MARKER) {
       $delay = $this->autoRebuildDelay();
-      $remaining = ($requestedAt + $delay) - time();
+      $now = $this->time->getCurrentTime();
+      $remaining = ($requestedAt + $delay) - $now;
       // ...but never longer than MAX_DEBOUNCE_MULTIPLIER windows since the
       // oldest unserved request, or a sustained write stream would reset the
       // timer indefinitely and starve the index.
       $firstRequestedAt = (int) $this->state->get(self::FIRST_REQUEST_KEY, 0);
       $starved = $firstRequestedAt > 0
-        && time() >= $firstRequestedAt + ($delay * self::MAX_DEBOUNCE_MULTIPLIER);
+        && $now >= $firstRequestedAt + ($delay * self::MAX_DEBOUNCE_MULTIPLIER);
       if ($remaining > 0 && !$starved) {
         throw new DelayedRequeueException($remaining, sprintf('Debouncing Scolta rebuild: %d seconds until the rebuild delay elapses.', $remaining));
       }
       if ($starved) {
         $this->logger->info('Scolta rebuild debounce capped: content has changed continuously for @seconds seconds, building anyway.', [
-          '@seconds' => time() - $firstRequestedAt,
+          '@seconds' => $now - $firstRequestedAt,
         ]);
       }
     }

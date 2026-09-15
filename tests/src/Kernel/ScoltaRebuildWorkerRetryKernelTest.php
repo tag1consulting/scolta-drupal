@@ -152,6 +152,7 @@ class ScoltaRebuildWorkerRetryKernelTest extends KernelTestBase {
       $c->get('scolta.content_gatherer'),
       $c->get('queue'),
       $c->get('scolta.index_build_runner'),
+      $c->get('datetime.time'),
     ) extends ScoltaRebuildWorker {
 
       /**

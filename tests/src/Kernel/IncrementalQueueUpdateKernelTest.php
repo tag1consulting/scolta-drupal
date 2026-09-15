@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Kernel;
 
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Queue\DelayedRequeueException;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\node\Entity\Node;
 use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
-use Drupal\scolta\Service\IndexBuildRunner;
 use Drupal\Tests\node\Traits\ContentTypeCreationTrait;
 
 /**
@@ -406,12 +406,12 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
 
     // A tick that turns back at a held build lock has served nothing, so it
     // must leave the window standing rather than let the next save reopen it.
+    // KernelTestBase's lock backend never refuses, so the contention comes
+    // from a worker built on a lock that does.
     $state->set('scolta.rebuild_requested_at', time());
     $state->set(ScoltaRebuildWorker::FIRST_REQUEST_KEY, time() - ($delay * 4) - 1);
-    $lock = \Drupal::lock();
-    $this->assertTrue($lock->acquire(IndexBuildRunner::LOCK_NAME, 60));
     try {
-      $worker->processItem($item->data);
+      $this->workerWithBusyLock()->processItem($item->data);
       $this->fail('A held build lock must send the item back');
     }
     catch (DelayedRequeueException $e) {
@@ -419,7 +419,6 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
     }
     $this->assertNotNull($state->get(ScoltaRebuildWorker::FIRST_REQUEST_KEY),
       'A tick that built nothing must not reset the max-wait window');
-    $lock->release(IndexBuildRunner::LOCK_NAME);
 
     // The write stream has now outlasted the cap: the timer is as fresh as
     // ever, but the oldest unserved request is older than the allowed wait.
@@ -459,6 +458,29 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
     $this->container->get('plugin.manager.queue_worker')
       ->createInstance('scolta_rebuild')
       ->processItem($data);
+  }
+
+  /**
+   * A worker whose build lock is always held by someone else.
+   */
+  protected function workerWithBusyLock(): ScoltaRebuildWorker {
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->method('acquire')->willReturn(FALSE);
+
+    return new ScoltaRebuildWorker(
+      [],
+      'scolta_rebuild',
+      [],
+      $lock,
+      $this->container->get('config.factory'),
+      $this->container->get('state'),
+      $this->container->get('cache_tags.invalidator'),
+      $this->container->get('logger.channel.scolta'),
+      $this->container->get('scolta.content_gatherer'),
+      $this->container->get('queue'),
+      $this->container->get('scolta.index_build_runner'),
+      $this->container->get('datetime.time'),
+    );
   }
 
   /**

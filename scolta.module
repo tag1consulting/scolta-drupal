@@ -472,11 +472,12 @@ function _scolta_auto_rebuild_check(EntityInterface $entity, $op = 'update') {
     ]);
   }
 
-  \Drupal::state()->set('scolta.rebuild_requested_at', time());
+  $now = \Drupal::time()->getCurrentTime();
+  \Drupal::state()->set('scolta.rebuild_requested_at', $now);
   // The oldest unserved request caps how long the worker's debounce may hold
   // a build off; only the first change after a build opens that window.
   if (!\Drupal::state()->get(ScoltaRebuildWorker::FIRST_REQUEST_KEY)) {
-    \Drupal::state()->set(ScoltaRebuildWorker::FIRST_REQUEST_KEY, time());
+    \Drupal::state()->set(ScoltaRebuildWorker::FIRST_REQUEST_KEY, $now);
   }
   \Drupal::queue('scolta_rebuild')->createItem([
     'type' => 'auto',
