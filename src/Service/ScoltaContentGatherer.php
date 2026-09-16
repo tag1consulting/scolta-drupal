@@ -661,6 +661,19 @@ class ScoltaContentGatherer {
   }
 
   /**
+   * The entity's type key, 'node:lesson': entity type ID and bundle.
+   *
+   * Written to every fragment as the `type` meta value so a per-type ranking
+   * boost (scolta.settings: scoring.metadata_boosts) has something to key on
+   * that never collides across entity types. Same separator as itemId(). A
+   * type without bundles yields its bundle() fallback, the entity type ID
+   * ('user:user').
+   */
+  public static function typeKey(EntityInterface $entity): string {
+    return $entity->getEntityTypeId() . ':' . $entity->bundle();
+  }
+
+  /**
    * The indexed page ID for one translation of an entity.
    *
    * Namespaced with the entity type ID ('node:42', 'group:42') because entity
@@ -918,6 +931,7 @@ class ScoltaContentGatherer {
         date: date('Y-m-d', $entityTs),
         siteName: $siteName,
         language: $langcode,
+        metadata: ['type' => self::typeKey($entity)],
       );
 
       $fieldMappings = $this->configFactory->get('scolta.settings')->get('field_mappings') ?? [];

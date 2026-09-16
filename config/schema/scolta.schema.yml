@@ -196,6 +196,15 @@ scolta.settings:
             sequence:
               type: float
               label: 'Value'
+        metadata_boosts:
+          type: sequence
+          label: 'Ranking multipliers keyed by fragment meta key'
+          sequence:
+            type: sequence
+            label: 'Score multipliers keyed by exact meta value'
+            sequence:
+              type: float
+              label: 'Score multiplier'
     display:
       type: mapping
       label: 'Display configuration'

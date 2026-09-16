@@ -45,6 +45,9 @@ scoring:
   expand_subword_deny_list: []      # Words never auto-exempted from the sub-word guard: ['hot'] (stay scorable)
   recency_strategy: 'exponential'   # 'exponential', 'linear', 'step', 'none', 'custom'
   recency_curve: []                 # Custom control points: [[0, 1.0], [365, 0.0]]
+  metadata_boosts: {  }             # Score multipliers by fragment meta key, then exact value.
+                                    # Every item carries type: '<entity type>:<bundle>', e.g.
+                                    # { type: { 'node:collection': 1.4, 'node:tntl': 1.4 } }
 
 # --- Display ---
 display:
