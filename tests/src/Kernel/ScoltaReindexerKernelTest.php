@@ -197,6 +197,7 @@ class ScoltaReindexerKernelTest extends KernelTestBase {
     }
     catch (\RuntimeException $e) {
       $this->assertStringContainsString('scolta:build --force', $e->getMessage());
+      $this->assertStringContainsString('scolta_queue_full_rebuild(__FUNCTION__, TRUE)', $e->getMessage());
     }
 
     $this->assertSame(0, \Drupal::queue('scolta_rebuild')->numberOfItems(),

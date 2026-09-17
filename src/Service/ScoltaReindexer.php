@@ -99,6 +99,8 @@ class ScoltaReindexer {
         . "you are trying to refresh.\n\n"
         . "Rebuild the whole index instead:\n"
         . "  drush scolta:build --force\n\n"
+        . "From an update hook, queue it for the next cron tick instead:\n"
+        . "  return scolta_queue_full_rebuild(__FUNCTION__, TRUE);\n\n"
         . 'Or reindex in smaller slices with --ids.',
         $count,
         $threshold,
