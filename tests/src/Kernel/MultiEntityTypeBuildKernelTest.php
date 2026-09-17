@@ -196,6 +196,7 @@ class MultiEntityTypeBuildKernelTest extends KernelTestBase {
       $this->container->get('queue'),
       $this->container->get('entity_type.manager'),
       $this->container->get('scolta.reindexer'),
+      $this->container->get('router.no_access_checks'),
     );
     $commands->setLogger(new DrushLoggerManager());
     $commands->setOutput(new NullOutput());

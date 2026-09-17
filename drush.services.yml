@@ -15,5 +15,6 @@ services:
       - '@queue'
       - '@entity_type.manager'
       - '@scolta.reindexer'
+      - '@router.no_access_checks'
     tags:
       - { name: drush.command }

@@ -11,10 +11,10 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\ParamConverter\ParamNotConvertedException;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
-use Drupal\Core\Url;
 use Drupal\scolta\Cache\DrupalCacheDriver;
 use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
 use Drupal\scolta\Progress\DrushProgressReporter;
@@ -25,6 +25,9 @@ use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drupal\scolta\Service\ScoltaReindexer;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
+use Symfony\Component\Routing\Exception\MethodNotAllowedException;
+use Symfony\Component\Routing\Exception\ResourceNotFoundException;
+use Symfony\Component\Routing\Matcher\UrlMatcherInterface;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\BuildState;
@@ -79,6 +82,8 @@ class ScoltaCommands extends DrushCommands {
    *   The entity type manager, to load the entity scolta:inspect names.
    * @param \Drupal\scolta\Service\ScoltaReindexer $reindexer
    *   The reindex queueing service behind scolta:reindex.
+   * @param \Symfony\Component\Routing\Matcher\UrlMatcherInterface $router
+   *   The access-free router, to resolve a scolta:inspect path to its entity.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
@@ -94,6 +99,7 @@ class ScoltaCommands extends DrushCommands {
     private readonly QueueFactory $queueFactory,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ScoltaReindexer $reindexer,
+    private readonly UrlMatcherInterface $router,
   ) {
     parent::__construct();
   }
@@ -1053,19 +1059,18 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * The entity a path routes to, via its canonical route parameter.
+   * The entity a path routes to: the upcast entity among its route parameters.
    */
   private function entityFromUrl(string $path): EntityInterface {
-    $target = Url::fromUserInput('/' . ltrim($path, '/'));
-    if (!$target->isRouted()) {
+    try {
+      $parameters = $this->router->match('/' . ltrim($path, '/'));
+    }
+    catch (ResourceNotFoundException | MethodNotAllowedException | ParamNotConvertedException) {
       throw new \RuntimeException(sprintf('%s does not route to anything.', $path));
     }
-    foreach ($target->getRouteParameters() as $name => $value) {
-      if ($this->entityTypeManager->hasDefinition($name)) {
-        $entity = $this->entityTypeManager->getStorage($name)->load($value);
-        if ($entity !== NULL) {
-          return $entity;
-        }
+    foreach ($parameters as $parameter) {
+      if ($parameter instanceof EntityInterface) {
+        return $parameter;
       }
     }
     throw new \RuntimeException(sprintf('%s does not route to an entity.', $path));

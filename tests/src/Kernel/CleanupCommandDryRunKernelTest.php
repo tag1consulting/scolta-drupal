@@ -97,6 +97,7 @@ class CleanupCommandDryRunKernelTest extends KernelTestBase {
       \Drupal::service('queue'),
       \Drupal::service('entity_type.manager'),
       \Drupal::service('scolta.reindexer'),
+      \Drupal::service('router.no_access_checks'),
     );
 
     $logger = new DrushLoggerManager();
