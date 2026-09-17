@@ -6,7 +6,6 @@
  */
 
 use Drupal\Core\Site\Settings;
-use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\scolta\Form\ScoltaSettingsForm;
 use Drupal\user\Entity\Role;
 use Drupal\user\RoleInterface;
@@ -511,64 +510,6 @@ function scolta_reset_index_state(string $reason) {
     '@queued' => $queued
       ? t('A full rebuild is queued for the next `drush queue:run scolta_rebuild` tick.')
       : t('No rebuild was queued (auto_rebuild is off or one is already waiting).'),
-  ]);
-}
-
-/**
- * Queue a full index rebuild, optionally one that regathers every entity.
- *
- * For update hooks in consuming sites. Use this when indexed output went
- * stale because the code that produces it changed rather than the content:
- * an edited hook_scolta_content_item_alter(), a new field mapping, a changed
- * body_fields setting. Use scolta_reset_index_state() only when a scolta
- * release changed the ledger or manifest format; it empties the whole state
- * directory, renumbers every page from zero, and its state-format marker
- * makes it a no-op between format bumps.
- *
- * A queued full rebuild without $force reuses the manifest record of every
- * entity whose changed timestamp is unchanged, metadata included, so it is
- * mostly skipped when the manifest is current. With $force the timestamp
- * manifest is deleted first and the next build reloads every entity, as
- * `drush scolta:build --force` does; items whose content did not change
- * still reuse their cached tokens. Nothing else in the state directory is
- * touched.
- *
- * Known race: a build running at this moment writes its in-memory manifest
- * back over the deleted file when it finishes, and the queued rebuild then
- * runs mostly skipped. Holding the scolta_build lock for the delete would
- * not close it, since that build already has the manifest in memory; only
- * waiting for it to finish would, and an update hook must not block on a
- * build. If a deployment can overlap a build, run `drush scolta:build
- * --force` after it instead.
- *
- * @param string $reason
- *   Recorded on the queue item, e.g. __FUNCTION__ of the update hook.
- * @param bool $force
- *   Delete the timestamp manifest so the build regathers every entity.
- *
- * @return \Drupal\Core\StringTranslation\TranslatableMarkup
- *   What happened, for an update hook to return.
- *
- * @since 2.0.0
- * @stability stable
- */
-function scolta_queue_full_rebuild(string $reason, bool $force = FALSE): TranslatableMarkup {
-  $dropped = FALSE;
-  if ($force) {
-    /** @var \Drupal\scolta\Service\IndexBuildRunner $runner */
-    $runner = \Drupal::service('scolta.index_build_runner');
-    $manifest = $runner->stateDir() . '/timestamp-manifest.php';
-    $dropped = is_file($manifest) && \Drupal::service('file_system')->delete($manifest);
-  }
-
-  // A payload naming no item IDs is untargeted: the worker folds it into a
-  // full build, see ScoltaRebuildWorker::foldPayload().
-  \Drupal::queue('scolta_rebuild')->createItem(['type' => $reason]);
-
-  return t('@manifest A full rebuild is queued for the next `drush queue:run scolta_rebuild` tick; sites without that cron line should run `drush scolta:build` now.', [
-    '@manifest' => $dropped
-      ? t('Dropped the timestamp manifest so the build reloads every entity.')
-      : ($force ? t('No timestamp manifest to drop.') : t('Kept the timestamp manifest; entities whose changed timestamp is unchanged are served from it.')),
   ]);
 }
 

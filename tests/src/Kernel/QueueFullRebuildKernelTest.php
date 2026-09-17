@@ -29,7 +29,6 @@ class QueueFullRebuildKernelTest extends KernelTestBase {
   protected function setUp(): void {
     parent::setUp();
     $this->installConfig(['scolta']);
-    $this->container->get('module_handler')->loadInclude('scolta', 'install');
 
     $this->buildDir = sys_get_temp_dir() . '/scolta-queue-full-rebuild-' . uniqid();
     mkdir($this->buildDir, 0755, TRUE);
@@ -44,8 +43,7 @@ class QueueFullRebuildKernelTest extends KernelTestBase {
    */
   protected function tearDown(): void {
     if (is_dir($this->buildDir)) {
-      _scolta_empty_directory($this->buildDir);
-      rmdir($this->buildDir);
+      $this->container->get('file_system')->deleteRecursive($this->buildDir);
     }
     parent::tearDown();
   }
