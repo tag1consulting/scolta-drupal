@@ -1006,7 +1006,7 @@ class ScoltaCommands extends DrushCommands {
    * the corpus size; an earlier draft gunzipped every fragment in the index.
    */
   #[CLI\Command(name: 'scolta:inspect', aliases: ['sin'])]
-  #[CLI\Argument(name: 'url', description: 'Path of the entity, e.g. /node/123 or an alias. Omit to use --entity-type and --entity-id')]
+  #[CLI\Argument(name: 'url', description: 'Path of the entity, e.g. /node/123 or an alias; the leading slash is optional. Omit to use --entity-type and --entity-id')]
   #[CLI\Option(name: 'entity-type', description: 'Entity type ID, e.g. node. Requires --entity-id')]
   #[CLI\Option(name: 'entity-id', description: 'Entity ID. Requires --entity-type')]
   #[CLI\Usage(name: 'scolta:inspect /node/123', description: 'Show the fragment indexed for that node, and its translations')]
