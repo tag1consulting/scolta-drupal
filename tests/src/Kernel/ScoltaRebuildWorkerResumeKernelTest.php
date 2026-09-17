@@ -220,6 +220,43 @@ class ScoltaRebuildWorkerResumeKernelTest extends KernelTestBase {
   }
 
   /**
+   * A forced request stays forced across every tick of the build it starts.
+   *
+   * The request is deleted when the build starts and the marker stands for
+   * it from then on, so the flag has to survive on its own: a resumed
+   * segment that lost it would serve the manifest's cached fragments for the
+   * rest of the corpus. The flag is gone once the build completes, so the
+   * next build is an ordinary one.
+   */
+  public function testAForcedRequestStaysForcedAcrossTicks(): void {
+    $queue = \Drupal::queue('scolta_rebuild');
+    $forces = [];
+
+    $worker = $this->worker();
+    $worker->processItem(['type' => 'sml_post_update_x', 'force' => TRUE]);
+    $forces[] = $worker->forces;
+    $this->assertSame([self::MARKER], $this->queued(), 'The forced request is deleted; the marker stands for it');
+
+    $runs = 1;
+    while (ResumeChainPolicy::resumable($this->buildState()) && $runs < 10) {
+      $runs++;
+      $item = $queue->claimItem();
+      $worker = $this->worker();
+      $worker->processItem($item->data);
+      $forces[] = $worker->forces;
+      $queue->deleteItem($item);
+    }
+
+    $this->assertGreaterThan(2, $runs);
+    $this->assertSame(array_fill(0, $runs, [TRUE]), $forces, 'Every segment of a forced build runs forced');
+    $this->assertCount(10, $this->fragments());
+
+    $worker = $this->worker();
+    $worker->processItem(['type' => 'install']);
+    $this->assertSame([FALSE], $worker->forces, 'The completed build dropped the flag; the next build is unforced');
+  }
+
+  /**
    * A worker whose orchestrators yield once, built with the real container.
    *
    * @param bool $killed
@@ -252,6 +289,13 @@ class ScoltaRebuildWorkerResumeKernelTest extends KernelTestBase {
       public bool $killed = FALSE;
 
       /**
+       * The $force each segment ran with, in order.
+       *
+       * @var bool[]
+       */
+      public array $forces = [];
+
+      /**
        * {@inheritdoc}
        */
       protected function createOrchestrator(string $stateDir, string $outputDir, string $language): IndexBuildOrchestrator {
@@ -267,11 +311,12 @@ class ScoltaRebuildWorkerResumeKernelTest extends KernelTestBase {
       /**
        * {@inheritdoc}
        */
-      protected function runSegment(IndexBuildOrchestrator $orchestrator, BuildIntent $intent, array $entityTypes, array $cursors): StatusReport {
+      protected function runSegment(IndexBuildOrchestrator $orchestrator, BuildIntent $intent, array $entityTypes, array $cursors, bool $force = FALSE): StatusReport {
         if ($this->killed) {
           throw new \RuntimeException('killed');
         }
-        return parent::runSegment($orchestrator, $intent, $entityTypes, $cursors);
+        $this->forces[] = $force;
+        return parent::runSegment($orchestrator, $intent, $entityTypes, $cursors, $force);
       }
 
       /**

@@ -163,10 +163,10 @@ class ScoltaRebuildWorkerRetryKernelTest extends KernelTestBase {
       /**
        * {@inheritdoc}
        */
-      protected function runSegment(IndexBuildOrchestrator $orchestrator, BuildIntent $intent, array $entityTypes, array $cursors): StatusReport {
+      protected function runSegment(IndexBuildOrchestrator $orchestrator, BuildIntent $intent, array $entityTypes, array $cursors, bool $force = FALSE): StatusReport {
         $this->segmentRan = TRUE;
         if (!$this->fails) {
-          return parent::runSegment($orchestrator, $intent, $entityTypes, $cursors);
+          return parent::runSegment($orchestrator, $intent, $entityTypes, $cursors, $force);
         }
         return new StatusReport(
           version: '0',

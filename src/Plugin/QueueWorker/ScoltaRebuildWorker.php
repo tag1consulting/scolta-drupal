@@ -186,6 +186,17 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
   protected const RESUME_MARKER = ['op' => 'resume'];
 
   /**
+   * State key: the full build the marker stands for was requested forced.
+   *
+   * A forced request (`scolta_queue_full_rebuild($reason, TRUE)`) is folded
+   * into the build and deleted from the queue when the build starts, so the
+   * flag has to outlive the payload: a resumed or chained segment that lost
+   * it would serve every entity the manifest still covers from cache, and
+   * the tail of the build would silently be unforced.
+   */
+  protected const FORCE_KEY = 'scolta.rebuild.force';
+
+  /**
    * Whether a build segment already ran in this process.
    *
    * A segment that yielded on memory pressure leaves the heap it ran in
@@ -332,8 +343,14 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       }
       $this->deleteClaimed($claimed);
 
+      // Acting on the flag here, after the lock, is what makes a forced
+      // request race-free: a build already running does not see it, and the
+      // next one, which starts after that build wrote its manifest, does.
+      $force = !empty($changeSet['force']);
+      $force ? $this->state->set(self::FORCE_KEY, TRUE) : $this->state->delete(self::FORCE_KEY);
+
       $intent = BuildIntentFactory::fromFlags(FALSE, FALSE, $totalCount, $this->runner->memoryBudget());
-      $report = $this->runSegment($orchestrator, $intent, $entityTypes, []);
+      $report = $this->runSegment($orchestrator, $intent, $entityTypes, [], $force);
       $this->finish(TRUE, $report, $buildState, 'Search index rebuilt via queue: @pages pages in @time s.');
     }
     finally {
@@ -367,7 +384,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
   protected function resumeBuild($data, IndexBuildOrchestrator $orchestrator, BuildState $buildState, string $outputDir): void {
     $this->ensureMarker();
     $intent = BuildIntent::resume($this->runner->memoryBudget());
-    $report = $this->runSegment($orchestrator, $intent, $this->runner->entityTypes(), $this->runner->resumeCursors($orchestrator));
+    $report = $this->runSegment($orchestrator, $intent, $this->runner->entityTypes(), $this->runner->resumeCursors($orchestrator), $this->forced());
     $this->finish($data === self::RESUME_MARKER, $report, $buildState, 'Search index rebuilt via queue after resuming at segment ' . $buildState->segment() . ': @pages pages in @time s.');
   }
 
@@ -409,6 +426,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     if ($report->success) {
       $this->bumpGeneration();
       $this->state->delete(self::FAILURE_COUNT_KEY);
+      $this->state->delete(self::FORCE_KEY);
       $this->deleteMarkers();
       $this->logger->info($successMessage, [
         '@pages' => $report->pagesProcessed,
@@ -450,6 +468,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     // on: the marker goes, and the runner deletes $data as for any failure.
     $reason = $report->isMemoryAbort() ? $this->policy()->stopReason($report, $buildState) : $report->error;
     $this->state->delete(self::FAILURE_COUNT_KEY);
+    $this->state->delete(self::FORCE_KEY);
     $this->deleteMarkers();
     $this->logger->error('Queue index rebuild failed after @attempts attempts: @error', [
       '@attempts' => $report->isMemoryAbort() ? 1 : self::MAX_SEGMENT_FAILURES,
@@ -470,7 +489,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
         // a tick during a child segment still exits at the lock instead of
         // reaching the state directory and reading contention as a failure.
         return $this->runner->runDrush('scolta:build', $options, $env, fn() => $this->lock->acquire(IndexBuildRunner::LOCK_NAME, self::LOCK_TIMEOUT));
-      });
+      }, $this->forced() ? ['force' => TRUE] : []);
     }
     catch (\RuntimeException $e) {
       // Drush could not launch a child here; the marker carries the build to
@@ -491,15 +510,24 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    *   The entity types to walk, in order.
    * @param array<string, int> $cursors
    *   Entity type ID => the entity ID to resume that type's walk at.
+   * @param bool $force
+   *   Reload every entity instead of serving manifest-cached fragments.
    */
-  protected function runSegment(IndexBuildOrchestrator $orchestrator, BuildIntent $intent, array $entityTypes, array $cursors): StatusReport {
+  protected function runSegment(IndexBuildOrchestrator $orchestrator, BuildIntent $intent, array $entityTypes, array $cursors, bool $force = FALSE): StatusReport {
     $this->segmentRan = TRUE;
     // The reporter renews the build lock at every chunk boundary, so the
     // lease only has to outlive one chunk rather than the whole build, and
     // logs a progress line there so queue:run shows how far along
     // the build is.
     $reporter = new LockRenewingProgressReporter($this->lock, IndexBuildRunner::LOCK_NAME, self::LOCK_TIMEOUT, $this->logger);
-    return $this->runner->runSegment($orchestrator, $intent, $entityTypes, $cursors, $this->logger, $reporter);
+    return $this->runner->runSegment($orchestrator, $intent, $entityTypes, $cursors, $this->logger, $reporter, force: $force);
+  }
+
+  /**
+   * Whether the build the marker stands for was requested forced.
+   */
+  protected function forced(): bool {
+    return (bool) $this->state->get(self::FORCE_KEY, FALSE);
   }
 
   /**
@@ -611,10 +639,20 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     // The marker asks for a full build: the one it stood for was killed
     // before it left anything to resume, or it outlived its build's success
     // by a crash between publishing and cleanup. Either way a full build is
-    // the safe answer, and a mostly-skipped one when the manifest is current.
+    // the safe answer, and a mostly-skipped one when the manifest is current
+    // unless a request folded into it is forced.
     if (!is_array($data)) {
       $changeSet['targeted'] = FALSE;
       return;
+    }
+
+    // A forced request reindexes content that did not change. Targeted
+    // (drush scolta:reindex), the timestamp manifest is rewritten for its
+    // pages, see tryIncrementalUpdate(); untargeted
+    // (scolta_queue_full_rebuild($reason, TRUE)), the full build reloads
+    // every entity as `drush scolta:build --force` does.
+    if (!empty($data['force'])) {
+      $changeSet['force'] = TRUE;
     }
 
     $op = $data['op'] ?? '';
@@ -646,13 +684,6 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     if ($entityId === NULL) {
       $changeSet['targeted'] = FALSE;
       return;
-    }
-
-    // A forced request (drush scolta:reindex) reindexes content that did not
-    // change, so the timestamp manifest has to be rewritten too; see
-    // tryIncrementalUpdate().
-    if (!empty($data['force'])) {
-      $changeSet['force'] = TRUE;
     }
 
     $changeSet['upsert_entity_ids'][$entityType][(string) $entityId] = $entityId;

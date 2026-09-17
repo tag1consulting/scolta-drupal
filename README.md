@@ -450,7 +450,7 @@ What sits in the queue, and what the worker does with it:
 |---|---|---|
 | `{type: install}` | module install | Untargeted; forces a full build |
 | `{type: <update hook>}` | `scolta_reset_index_state()` from an update hook | Untargeted; full build |
-| `{type: <update hook>}` | `scolta_queue_full_rebuild()` from an update hook; with `$force` it also deletes the timestamp manifest | Untargeted; full build, regathering every entity when forced |
+| `{type: <update hook>, force}` | `scolta_queue_full_rebuild()` from an update hook | Untargeted; full build, reloading every entity when `force` is set, as `scolta:build --force` does |
 | `{type: request-build}` | `drush scolta:request-build` | Untargeted; full build |
 | `{type: auto, op, entity_type, entity_id, item_ids}` | entity insert, update and delete hooks | Targeted; applied incrementally to the published index |
 | `{type: reindex, op: update, entity_type, entity_id, item_ids, force: TRUE}` | `drush scolta:reindex` | Targeted; applied incrementally, and rewrites the timestamp manifest so the next full build does not serve the cached page it replaced |

@@ -7,7 +7,10 @@ namespace Drupal\Tests\scolta\Kernel;
 use Drupal\KernelTests\KernelTestBase;
 
 /**
- * scolta_queue_full_rebuild() enqueues a marker and, forced, drops the manifest.
+ * scolta_queue_full_rebuild() enqueues an untargeted request, forced or not.
+ *
+ * What the worker does with the flag is covered by
+ * ScoltaRebuildWorkerResumeKernelTest::testAForcedRequestStaysForcedAcrossTicks().
  *
  * @group scolta
  */
@@ -19,73 +22,43 @@ class QueueFullRebuildKernelTest extends KernelTestBase {
   protected static $modules = ['system', 'user', 'scolta'];
 
   /**
-   * Real build directory, outside vfsStream.
-   */
-  protected string $buildDir;
-
-  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
     $this->installConfig(['scolta']);
-
-    $this->buildDir = sys_get_temp_dir() . '/scolta-queue-full-rebuild-' . uniqid();
-    mkdir($this->buildDir, 0755, TRUE);
-    file_put_contents($this->buildDir . '/timestamp-manifest.php', '<?php return [];');
-    file_put_contents($this->buildDir . '/page-table.json', '{"node:42":0}');
-    $this->config('scolta.settings')->set('pagefind.build_dir', $this->buildDir)->save();
     \Drupal::queue('scolta_rebuild')->deleteQueue();
   }
 
   /**
-   * {@inheritdoc}
+   * The payload carries the reason and the flag; the message names the flag.
    */
-  protected function tearDown(): void {
-    if (is_dir($this->buildDir)) {
-      $this->container->get('file_system')->deleteRecursive($this->buildDir);
-    }
-    parent::tearDown();
-  }
-
-  /**
-   * Unforced: the marker is queued and the manifest is left alone.
-   */
-  public function testQueuesMarkerAndKeepsManifest(): void {
+  public function testQueuesRequestCarryingTheForceFlag(): void {
     $message = (string) scolta_queue_full_rebuild('test_reason');
-
-    $this->assertFileExists($this->buildDir . '/timestamp-manifest.php');
-    $this->assertStringContainsString('Kept the timestamp manifest', $message);
     $this->assertStringContainsString('drush queue:run scolta_rebuild', $message);
-    $this->assertMarkerQueued();
+    $this->assertStringNotContainsString('--force', $message);
+    $this->assertSame([['type' => 'test_reason', 'force' => FALSE]], $this->queued());
+
+    \Drupal::queue('scolta_rebuild')->deleteQueue();
+    $message = (string) scolta_queue_full_rebuild('test_reason', TRUE);
+    $this->assertStringContainsString('reloads every entity', $message);
+    $this->assertStringContainsString('drush scolta:build --force', $message);
+    $this->assertSame([['type' => 'test_reason', 'force' => TRUE]], $this->queued());
   }
 
   /**
-   * Forced: the manifest is deleted, nothing else in the state dir is.
+   * Every claimable payload, released again.
    */
-  public function testForceDropsOnlyTheManifest(): void {
-    $message = (string) scolta_queue_full_rebuild('test_reason', TRUE);
-
-    $this->assertFileDoesNotExist($this->buildDir . '/timestamp-manifest.php');
-    $this->assertFileExists($this->buildDir . '/page-table.json');
-    $this->assertStringContainsString('Dropped the timestamp manifest', $message);
-    $this->assertMarkerQueued();
-
-    // Forcing again with no manifest present says so and still queues.
-    $message = (string) scolta_queue_full_rebuild('test_reason', TRUE);
-    $this->assertStringContainsString('No timestamp manifest to drop', $message);
-    $this->assertSame(2, \Drupal::queue('scolta_rebuild')->numberOfItems());
-  }
-
-  /**
-   * Exactly one item is queued and it is the worker's full-rebuild marker.
-   */
-  protected function assertMarkerQueued(): void {
+  protected function queued(): array {
     $queue = \Drupal::queue('scolta_rebuild');
-    $this->assertSame(1, $queue->numberOfItems());
-    $item = $queue->claimItem();
-    $this->assertSame(['type' => 'test_reason'], $item->data, 'A payload without item IDs is what ScoltaRebuildWorker::foldPayload() treats as a full-rebuild request.');
-    $queue->releaseItem($item);
+    $items = [];
+    while (is_object($item = $queue->claimItem())) {
+      $items[] = $item;
+    }
+    foreach ($items as $item) {
+      $queue->releaseItem($item);
+    }
+    return array_map(fn($item) => $item->data, $items);
   }
 
 }
