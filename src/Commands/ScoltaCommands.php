@@ -9,7 +9,6 @@ use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityInterface;
-use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Queue\QueueFactory;
@@ -80,8 +79,6 @@ class ScoltaCommands extends DrushCommands {
    *   The entity type manager, to load the entity scolta:inspect names.
    * @param \Drupal\scolta\Service\ScoltaReindexer $reindexer
    *   The reindex queueing service behind scolta:reindex.
-   * @param \Drupal\Core\Entity\EntityTypeBundleInfoInterface $bundleInfo
-   *   The bundle info, to resolve scolta:inspect --bundle to an entity type.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
@@ -97,7 +94,6 @@ class ScoltaCommands extends DrushCommands {
     private readonly QueueFactory $queueFactory,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ScoltaReindexer $reindexer,
-    private readonly EntityTypeBundleInfoInterface $bundleInfo,
   ) {
     parent::__construct();
   }
@@ -995,7 +991,7 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Show what the index holds for an entity, by URL or by bundle and ID.
+   * Show what the index holds for an entity, by URL or by type and ID.
    *
    * A fragment file is named by a content hash, so nothing on disk maps a URL
    * to one. The join is made through two tables the build already keeps: the
@@ -1004,13 +1000,16 @@ class ScoltaCommands extends DrushCommands {
    * the corpus size; an earlier draft gunzipped every fragment in the index.
    */
   #[CLI\Command(name: 'scolta:inspect', aliases: ['sin'])]
-  #[CLI\Argument(name: 'url', description: 'Path of the entity, e.g. /node/123 or an alias. Omit to use --bundle and --entity-id')]
-  #[CLI\Option(name: 'bundle', description: 'Bundle of the entity, e.g. article. For an entity type without bundles, the entity type ID. Requires --entity-id')]
-  #[CLI\Option(name: 'entity-id', description: 'Entity ID. Requires --bundle')]
+  #[CLI\Argument(name: 'url', description: 'Path of the entity, e.g. /node/123 or an alias. Omit to use --entity-type and --entity-id')]
+  #[CLI\Option(name: 'entity-type', description: 'Entity type ID, e.g. node. Requires --entity-id')]
+  #[CLI\Option(name: 'entity-id', description: 'Entity ID. Requires --entity-type')]
   #[CLI\Usage(name: 'scolta:inspect /node/123', description: 'Show the fragment indexed for that node, and its translations')]
-  #[CLI\Usage(name: 'scolta:inspect --bundle=article --entity-id=123', description: 'The same, by bundle and ID')]
+  #[CLI\Usage(name: 'scolta:inspect --entity-type=node --entity-id=123', description: 'The same, by entity type and ID')]
   #[CLI\Usage(name: 'scolta:inspect /node/123 --format=json', description: 'The same, as JSON')]
-  public function inspect(string $url = '', array $options = ['bundle' => '', 'entity-id' => '', 'format' => 'yaml']): UnstructuredListData {
+  public function inspect(
+    string $url = '',
+    array $options = ['entity-type' => '', 'entity-id' => '', 'format' => 'yaml'],
+  ): UnstructuredListData {
     $config = $this->configFactory->get('scolta.settings');
     $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
     $location = $this->indexLocator->locate($this->resolvePath($outputDir));
@@ -1020,7 +1019,7 @@ class ScoltaCommands extends DrushCommands {
 
     $entity = $url !== ''
       ? $this->entityFromUrl($url)
-      : $this->entityFromBundle((string) $options['bundle'], (string) $options['entity-id']);
+      : $this->entityFromId((string) $options['entity-type'], (string) $options['entity-id']);
 
     $ledger = new PageTableLedger($this->runner->stateDir($this->logger()), new FilesystemDriver());
     if ($ledger->isEmpty()) {
@@ -1073,27 +1072,18 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * The entity of a bundle with an ID; the bundle names the entity type.
+   * The entity of a type with an ID.
    */
-  private function entityFromBundle(string $bundle, string $entityId): EntityInterface {
-    if ($bundle === '' || $entityId === '') {
-      throw new \RuntimeException('Pass a URL, or both --bundle and --entity-id.');
+  private function entityFromId(string $entityType, string $entityId): EntityInterface {
+    if ($entityType === '' || $entityId === '') {
+      throw new \RuntimeException('Pass a URL, or both --entity-type and --entity-id.');
     }
-    $types = [];
-    foreach ($this->bundleInfo->getAllBundleInfo() as $entityType => $bundles) {
-      if (isset($bundles[$bundle])) {
-        $types[] = $entityType;
-      }
+    if (!$this->entityTypeManager->hasDefinition($entityType)) {
+      throw new \RuntimeException(sprintf('No such entity type: %s.', $entityType));
     }
-    if ($types === []) {
-      throw new \RuntimeException(sprintf('No entity type has a bundle named %s.', $bundle));
-    }
-    if (count($types) > 1) {
-      throw new \RuntimeException(sprintf('Bundle %s exists on several entity types (%s); use the URL instead.', $bundle, implode(', ', $types)));
-    }
-    $entity = $this->entityTypeManager->getStorage($types[0])->load($entityId);
-    if ($entity === NULL || $entity->bundle() !== $bundle) {
-      throw new \RuntimeException(sprintf('No %s %s with ID %s.', $types[0], $bundle, $entityId));
+    $entity = $this->entityTypeManager->getStorage($entityType)->load($entityId);
+    if ($entity === NULL) {
+      throw new \RuntimeException(sprintf('No %s with ID %s.', $entityType, $entityId));
     }
     return $entity;
   }

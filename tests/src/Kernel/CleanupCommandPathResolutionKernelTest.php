@@ -98,7 +98,6 @@ class CleanupCommandPathResolutionKernelTest extends KernelTestBase {
       \Drupal::service('queue'),
       \Drupal::service('entity_type.manager'),
       \Drupal::service('scolta.reindexer'),
-      \Drupal::service('entity_type.bundle.info'),
     );
 
     $logger = new DrushLoggerManager();

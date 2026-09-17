@@ -115,7 +115,6 @@ class InspectCommandKernelTest extends KernelTestBase {
       $this->container->get('queue'),
       $this->container->get('entity_type.manager'),
       $this->container->get('scolta.reindexer'),
-      $this->container->get('entity_type.bundle.info'),
     );
     $commands->setLogger(new DrushLoggerManager());
     $commands->setOutput(new NullOutput());
@@ -137,12 +136,12 @@ class InspectCommandKernelTest extends KernelTestBase {
   }
 
   /**
-   * Bundle and ID name the same entity the URL does.
+   * Entity type and ID name the same entity the URL does.
    */
-  public function testByBundleAndId(): void {
+  public function testByTypeAndId(): void {
     $node = $this->nodes[0];
     $result = $this->commands()
-      ->inspect('', ['bundle' => 'article', 'entity-id' => (string) $node->id(), 'format' => 'yaml'])
+      ->inspect('', ['entity-type' => 'node', 'entity-id' => (string) $node->id(), 'format' => 'yaml'])
       ->getArrayCopy();
 
     $this->assertSame(['node:' . $node->id()], array_keys($result));
@@ -150,14 +149,14 @@ class InspectCommandKernelTest extends KernelTestBase {
   }
 
   /**
-   * An unknown bundle, a non-entity path, and a missing selector are errors.
+   * An unknown type, a missing ID, a non-entity path, and no selector are errors.
    */
   public function testBadSelectorsAreErrors(): void {
     $commands = $this->commands();
     foreach ([
-      [['bundle' => 'recipe', 'entity-id' => '1'], 'No entity type has a bundle named recipe'],
-      [['bundle' => 'article', 'entity-id' => ''], 'Pass a URL, or both'],
-      [['bundle' => 'article', 'entity-id' => '999'], 'No node article with ID 999'],
+      [['entity-type' => 'recipe', 'entity-id' => '1'], 'No such entity type: recipe'],
+      [['entity-type' => 'node', 'entity-id' => ''], 'Pass a URL, or both'],
+      [['entity-type' => 'node', 'entity-id' => '999'], 'No node with ID 999'],
     ] as [$options, $message]) {
       try {
         $commands->inspect('', $options + ['format' => 'yaml']);

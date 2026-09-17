@@ -40,7 +40,6 @@ class RequestBuildCommandKernelTest extends KernelTestBase {
       $this->container->get('queue'),
       $this->container->get('entity_type.manager'),
       $this->container->get('scolta.reindexer'),
-      $this->container->get('entity_type.bundle.info'),
     );
     $commands->setLogger(new DrushLoggerManager());
     $commands->setOutput(new NullOutput());

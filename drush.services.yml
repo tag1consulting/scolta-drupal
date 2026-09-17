@@ -15,6 +15,5 @@ services:
       - '@queue'
       - '@entity_type.manager'
       - '@scolta.reindexer'
-      - '@entity_type.bundle.info'
     tags:
       - { name: drush.command }
