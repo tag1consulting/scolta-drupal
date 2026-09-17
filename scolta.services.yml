@@ -52,3 +52,7 @@ services:
   scolta.reindexer:
     class: Drupal\scolta\Service\ScoltaReindexer
     arguments: ['@config.factory', '@scolta.content_gatherer', '@entity_type.manager', '@queue']
+  # Class-name alias so consuming sites' autowired Drush commands and
+  # services can take a ScoltaReindexer by type instead of naming
+  # '@scolta.reindexer' explicitly.
+  Drupal\scolta\Service\ScoltaReindexer: '@scolta.reindexer'
