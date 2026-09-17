@@ -31,12 +31,16 @@
 #   AI_REVIEW_MODEL_PREMIUM      — override premium model ID (full mode only)
 #   AI_REVIEW_MAX_DIFF_LINES     — skip review when diff exceeds N lines (default: 5000)
 #   AI_REVIEW_MAX_INLINE         — max inline comments per run (default: 25)
-#   AI_REVIEW_MAX_TOKENS_PER_AGENT — output token budget per LLM agent (default: 16384)
+#   AI_REVIEW_MAX_TOKENS_PER_AGENT — output token budget per LLM agent (default: 32768)
 #   AI_REVIEW_ENABLE_SUGGESTIONS — "Apply suggestion" buttons on inline comments (default: true)
 #   AI_REVIEW_PARALLEL           — parallel tiered fan-out (default: true)
 #   AI_REVIEW_IGNORE_MERGE_COMMITS — strip upstream base-branch merge commits (default: true)
 #   AI_REVIEW_FAIL_ON_FINDINGS   — exit code 2 on REQUEST_CHANGES/COMMENT, for CI gates (default: true)
-#   AI_REVIEW_MODE_DEFAULT       — default mode used when /ai-pr-review rescan fires (default: quick)
+#   AI_REVIEW_TOKEN_USAGE_DISPLAY — token-usage content in the review comment: compact/full/off (default: compact)
+#   AI_REVIEW_TOKEN_USAGE_WARN_USD — high-usage warning threshold in USD, 0 disables (default: 1.00)
+#   AI_REVIEW_MAX_COST_USD       — pre-flight cost ceiling in USD; run aborts before dispatch if the estimate exceeds it, 0 disables (default: 0)
+#   AI_REVIEW_FAIL_ON_COST_CEILING — exit code 2 (instead of 0) when the cost ceiling is exceeded (default: false)
+#   AI_REVIEW_MODE_DEFAULT       — mode for automatic review AND /ai-pr-review rescan when set (default: '' — defer to policy.yml, else quick)
 #   AI_REVIEW_FEEDBACK_LOOP      — enable learning loop (default: false; GitHub-only)
 #   AI_REVIEW_CONTEXT_ENRICHMENT — tree-sitter symbol-context injection (default: true)
 #   AI_REVIEW_CONTEXT_MAX_QUERIES — cap on symbol-lookup queries per run (default: 200)
@@ -49,76 +53,30 @@
 #   AI_REVIEW_AGENTS             — allowlist of review agents to run (comma-separated; empty = all)
 #   AI_REVIEW_EXCLUDE_AGENTS     — denylist of review agents to skip
 #
-# ── Default branch note ──────────────────────────────────────────────────────
+# ── Local deviations from the upstream template ──────────────────────────────
 #
-# issue_comment and pull_request_review_comment workflows run from the DEFAULT
-# BRANCH only.  Slash commands will not respond until this file is merged to
-# your default branch.  Since the automatic review below now uses
-# pull_request_target, the SAME IS TRUE OF IT: pull_request_target runs the
-# workflow definition from the base branch, so every job in this file is the
-# version on main and no edit to this file takes effect on a pull request
-# before it merges.  That is the point (a fork must not be able to rewrite the
-# job that holds our secrets) and it is also the gotcha: a change here is
-# tested by merging it and watching the next pull request, not by watching the
-# pull request that makes it.  The upstream template says the opposite because
-# it is written for the pull_request trigger.
+# This file is examples/workflows/pr-review.yml from tag1consulting/ai-pr-review
+# with three changes.  Everything repo-specific (which analyzers to skip, which
+# branches get a full review) lives in .github/ai-pr-review/policy.yml, so this
+# file should track upstream closely; re-diff against the template when bumping.
 #
-# ── Fork PR support (pull_request_target): ENABLED HERE ──────────────────────
-#
-# This repository is public and takes outside contributions, so the review job
-# runs on pull_request_target rather than pull_request.  The reason is that a
-# fork PR gets neither half of what this job needs: GitHub withholds repository
-# secrets from it (no API key, so the action exits 1 with "ANTHROPIC_API_KEY is
-# required"), and it downgrades GITHUB_TOKEN to read-only (so even with a key
-# the review could not be posted).  Under pull_request the job could therefore
-# only ever be red on a fork PR, which punished contributors for contributing
-# and left their code as the only code in the repo nothing reviewed.
-#
-# pull_request_target runs the workflow definition from the BASE branch with
-# base-repo secrets in scope, so the review runs on fork and internal PRs
-# alike.  What makes that safe here is an invariant the action states and
-# guards (SECURITY.md, "Security invariants"): it treats the checked-out tree
-# as data, never as code.  It runs no build, install, or test step against the
-# PR head, and the bundled analyzers read repository content rather than
-# executing it.  A regression guard (tests/python/test_security_canary.py)
-# enforces it upstream on every PR.
-#
-# The hardening that belongs on THIS side of the contract:
-#
-#   * Check out github.event.pull_request.head.sha, never head.ref.  A ref is
-#     resolved at checkout time, so a fork can push between the event and the
-#     checkout and have different code reviewed than the one the review is
-#     reported against.  A SHA cannot move.
-#   * persist-credentials: false, so the base-repo token is never written into
-#     .git/config next to fork-authored content.
-#   * Do not let fork-controlled strings pick the expensive path.  The release/
-#     branch heuristic below is gated on the PR coming from this repository;
-#     otherwise a fork could name a branch release/x and bill us for full mode.
-#
-# Two things that only show up on a real fork PR, neither of which the
-# upstream template mentions:
-#
-#   * actions/checkout refuses a fork checkout under pull_request_target unless
-#     allow-unsafe-pr-checkout is set.  See the note on that input below for
-#     why opting in is sound here.  Upstream never hit this because it dogfoods
-#     on branches of its own repository, where the gate does not apply.
-#   * A pull request opened before this change landed still has the OLD version
-#     of this file on its branch, and the pull_request trigger reads the file
-#     from the PR branch.  So such a PR fires BOTH a pull_request run (from
-#     their stale copy, secretless, fails) and a pull_request_target run (from
-#     main).  Separate workflow runs produce separate check runs and do not
-#     supersede one another, so the stale red sits beside the new green until
-#     the contributor's branch picks up this commit.  Nothing can be done from
-#     this side; the fix is a merge or rebase on their branch, after which only
-#     pull_request_target fires and there is one check again.
-#
-# Note for anyone copying the upstream template: its hardened variant also
-# restores container-action/ from the base SHA.  That step belongs to the
-# action's own repository, which vendors that directory.  Here the action is
-# referenced as tag1consulting/ai-pr-review/container-action@b284d67887a444b8b2da893f6b6635757f821a4e # main, which Actions
-# resolves from the action repository and not from this checkout, so the step
-# has nothing to restore and would fail on the missing pathspec.
-# ----------------------------------------------------------------------------
+#   1. Action refs are pinned to full commit SHAs (the semgrep CI job requires it).
+#   2. The review job runs on pull_request_target with the upstream hardened
+#      checkout, because this repo is public and takes fork PRs: under
+#      pull_request a fork gets no secrets and a read-only token, so its review
+#      could only ever be red.  The action treats the checkout as data, never
+#      code (its SECURITY.md, enforced by a canary test upstream), which is what
+#      makes running it against fork content with base-repo secrets sound.  The
+#      "Restore trusted container-action" step from upstream's hardened variant
+#      is omitted: the action is resolved from its own repository, not this
+#      checkout, so there is nothing to restore.
+#      Consequence: pull_request_target reads this file from the BASE branch, so
+#      a change here is tested by merging it and watching the next PR, not by
+#      watching the PR that makes it.  Same for the policy file.
+#   3. actions/checkout refuses fork content in a pull_request_target workspace
+#      unless allow-unsafe-pr-checkout is set.  Sound here for the reason in (2):
+#      nothing in this job executes what it checks out.  If a step is ever added
+#      that runs anything out of the workspace, that line must come out with it.
 
 name: AI PR Review
 
@@ -134,6 +92,11 @@ permissions:
   contents: read
   issues: write
   pull-requests: write
+  # checks: write is only exercised when a matched .github/ai-pr-review/
+  # policy.yml route sets 'require' (see docs/policy.md) — the container
+  # action posts the ai-pr-review/policy-gate check run in that case.
+  # Harmless to leave granted for repos not using policy.yml.
+  checks: write
 
 jobs:
   # ── Automatic PR review ────────────────────────────────────────────────────
@@ -144,39 +107,26 @@ jobs:
       github.event_name == 'pull_request_target' &&
       !github.event.pull_request.draft &&
       !contains(github.event.pull_request.labels.*.name, 'skip-ai-review')
-    runs-on: ubuntu-latest
-    # A fork PR can push as often as it likes and every push now spends API
-    # budget, so supersede an in-flight review instead of queueing beside it.
+    # Rapid back-to-back pushes to the same PR can otherwise run two review
+    # jobs concurrently, racing on the canonical-review reuse write path
+    # (docs/architecture-internals.md's "Concurrency" section) and on the
+    # summary comment upsert. Canceling the superseded run avoids both.
     concurrency:
       group: ai-review-${{ github.event.pull_request.number }}
       cancel-in-progress: true
+    runs-on: ubuntu-latest
     steps:
-      # The checkout below is the shape semgrep's pull-request-target rule
-      # flags. It is deliberate and justified line by line in the `with:`
-      # comments; the suppression is for the rule, not the reasoning.
+      # Deliberate pull_request_target checkout; see "Local deviations" above.
       # nosemgrep: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-          # Pin to the SHA the event reported, and keep the base-repo token out
-          # of the working tree. See the fork-PR notes at the top of this file.
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-          # actions/checkout refuses to place fork code in a pull_request_target
-          # workspace unless a repository opts in by name, because that is the
-          # "pwn request" shape: fork code executed with base-repo secrets in
-          # scope.  The opt-in is sound here for one reason and it is worth
-          # stating rather than assuming: nothing in this job executes what it
-          # checks out.  The only consumer of the working tree is the action,
-          # whose SECURITY.md commits to treating that tree as data and never as
-          # code, with a canary test enforcing it upstream on every one of its
-          # pull requests.  There is no build step, no install, no test runner,
-          # no script from the tree.  If a step is ever added to this job that
-          # runs anything out of the workspace, this line must come out with it.
           allow-unsafe-pr-checkout: true
 
       - name: Run AI review
-        uses: tag1consulting/ai-pr-review/container-action@b284d67887a444b8b2da893f6b6635757f821a4e # main
+        uses: tag1consulting/ai-pr-review/container-action@0252dc5edd8204c64d93c4ddab3c0a046da1c782 # v2.12.0
         env:
           FORCE_FULL_DIFF: ${{ contains(github.event.pull_request.labels.*.name, 'ai-review-rescan') }}
         with:
@@ -190,6 +140,7 @@ jobs:
           github-token: ${{ github.token }}
           pr-number: ${{ github.event.pull_request.number }}
           base-ref: ${{ github.event.pull_request.base.ref }}
+          head-ref: ${{ github.event.pull_request.head.ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
           # --- Optional repo variables (set in Settings → Variables) ---
           # AI_REVIEW_PROVIDER: LLM provider (default: anthropic)
@@ -199,28 +150,26 @@ jobs:
           # AI_REVIEW_MODEL_STANDARD / AI_REVIEW_MODEL_PREMIUM: override provider defaults
           model-standard: ${{ vars.AI_REVIEW_MODEL_STANDARD || '' }}
           model-premium: ${{ vars.AI_REVIEW_MODEL_PREMIUM || '' }}
-          # Auto-select full mode for release PRs; customize the branch pattern
-          # for your repo's convention. See README "Auto-detecting release PRs".
-          #
-          # The branch heuristic is gated on the PR originating in this
-          # repository. head.ref is a fork-authored string, and releases are cut
-          # from here, so a release/ branch on a fork is someone choosing the
-          # expensive review mode on our budget rather than a release.  The
-          # label arm stays open to forks: applying a label takes write access
-          # to this repository, which is a maintainer decision either way.
+          # Explicit signals only: the ai-review-full label always wins, then
+          # the AI_REVIEW_MODE_DEFAULT repo variable (same var the rescan
+          # slash command uses), then '' — deferring to
+          # .github/ai-pr-review/policy.yml route matching by changed-file
+          # path, base branch, or head branch (see docs/policy.md), and
+          # finally the engine's own hardcoded 'quick' default if no policy
+          # file exists. A branch-name convention like "full mode for
+          # release/* PRs" belongs in policy.yml now, not hardcoded here —
+          # see the 'routes' example in docs/policy.md.
           review-mode: >-
             ${{
               contains(github.event.pull_request.labels.*.name, 'ai-review-full') && 'full' ||
-              (github.event.pull_request.head.repo.full_name == github.repository &&
-               startsWith(github.event.pull_request.head.ref, 'release/')) && 'full' ||
-              'quick'
+              vars.AI_REVIEW_MODE_DEFAULT || ''
             }}
           # AI_REVIEW_MAX_DIFF_LINES: skip review when diff exceeds this many lines (default: 5000)
           max-diff-lines: ${{ vars.AI_REVIEW_MAX_DIFF_LINES || '5000' }}
           # AI_REVIEW_MAX_INLINE: max inline comments per run; excess goes to summary (default: 25)
           max-inline: ${{ vars.AI_REVIEW_MAX_INLINE || '25' }}
-          # AI_REVIEW_MAX_TOKENS_PER_AGENT: output token budget per LLM agent (default: 16384)
-          max-tokens-per-agent: ${{ vars.AI_REVIEW_MAX_TOKENS_PER_AGENT || '16384' }}
+          # AI_REVIEW_MAX_TOKENS_PER_AGENT: output token budget per LLM agent (default: 32768)
+          max-tokens-per-agent: ${{ vars.AI_REVIEW_MAX_TOKENS_PER_AGENT || '32768' }}
           # AI_REVIEW_ENABLE_SUGGESTIONS: "Apply suggestion" buttons on inline comments (default: true)
           enable-suggestions: ${{ vars.AI_REVIEW_ENABLE_SUGGESTIONS || 'true' }}
           # AI_REVIEW_PARALLEL: parallel tiered fan-out; set false to go sequential (default: true)
@@ -231,6 +180,26 @@ jobs:
           # gates (e.g. blocking Renovate auto-merge until the bot approves) (default: true).
           # Set AI_REVIEW_FAIL_ON_FINDINGS=false to make the review job non-blocking.
           fail-on-findings: ${{ vars.AI_REVIEW_FAIL_ON_FINDINGS || 'true' }}
+          # AI_REVIEW_TOKEN_USAGE_DISPLAY: token-usage content in the posted review
+          # comment (default: compact — a one-line cost/token/agent summary). Set to
+          # 'full' to restore the pre-#758 in-comment <details> table, or 'off' to
+          # omit token-usage content from the comment entirely. The full breakdown
+          # is always in GITHUB_STEP_SUMMARY and the CI job log regardless.
+          token-usage-display: ${{ vars.AI_REVIEW_TOKEN_USAGE_DISPLAY || 'compact' }}
+          # AI_REVIEW_TOKEN_USAGE_WARN_USD: estimated-cost threshold (USD) above which
+          # a high-usage warning line is added to the comment (default: 1.00). Set to
+          # 0 to disable.
+          token-usage-warn-usd: ${{ vars.AI_REVIEW_TOKEN_USAGE_WARN_USD || '1.00' }}
+          # AI_REVIEW_MAX_COST_USD: maximum estimated cost (USD) for a single
+          # review run (default: 0, disabled). Before any agent dispatches,
+          # the run's cost is estimated from the diff size, agent roster, and
+          # model pricing; if the estimate exceeds this, the run aborts
+          # before any LLM call. See docs/configuration.md#cost-ceiling.
+          max-cost-usd: ${{ vars.AI_REVIEW_MAX_COST_USD || '0' }}
+          # AI_REVIEW_FAIL_ON_COST_CEILING: exit code 2 instead of 0 when the
+          # cost ceiling above is exceeded (default: false — informational
+          # only). No effect when max-cost-usd is unset/0.
+          fail-on-cost-ceiling: ${{ vars.AI_REVIEW_FAIL_ON_COST_CEILING || 'false' }}
           # --- Capabilities (Python engine only — the default since v1.0.0) ---
           # AI_REVIEW_CONTEXT_ENRICHMENT: tree-sitter + ripgrep symbol-context injection
           # (default: true — matches the container image's own default, since it ships
@@ -256,28 +225,8 @@ jobs:
           # --- Analyzer / agent filtering (Python engine) ---
           # These are forwarded to rescan and review-full via the slash-commands job below
           # so both paths honor the same filtering without manual duplication.
-          #
-          # phpcs and phpstan are off by default here because ci.yml already runs
-          # both properly: `./vendor/bin/phpcs` in the lint cell of the unit
-          # matrix, and `./vendor/bin/phpstan analyse` in the phpstan job, each
-          # after a real composer install and against this repo's own config.
-          # The reviewer's copies have neither. Its phpstan sees no Drupal
-          # autoloader, so every kernel test yields "extends unknown class
-          # Drupal\KernelTests\KernelTestBase"; its phpcs ignores
-          # phpcs.xml.dist and grades against bare Drupal+DrupalPractice, so it
-          # reports rules the ruleset deliberately excludes — Drupal.Commenting
-          # is off for tests/*, and a test docblock tripped ShortNotCapital at
-          # High severity while `./vendor/bin/phpcs` was clean. On #274 that was
-          # 12 in-diff findings, all of them artifacts, plus 69 out-of-diff.
-          #
-          # semgrep moved to a real, blocking `semgrep` job in ci.yml, following
-          # phpstan and phpcs out of the reviewer: a deterministic scanner
-          # belongs in CI where its findings gate the merge, not in an advisory
-          # review that only sees changed files.
-          #
-          # Override with the AI_REVIEW_EXCLUDE_ANALYZERS repo variable.
           analyzers: ${{ vars.AI_REVIEW_ANALYZERS || '' }}
-          exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || 'phpcs,phpstan,semgrep' }}
+          exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || '' }}
           agents: ${{ vars.AI_REVIEW_AGENTS || '' }}
           exclude-agents: ${{ vars.AI_REVIEW_EXCLUDE_AGENTS || '' }}
 
@@ -294,17 +243,25 @@ jobs:
   #   /ai-pr-review help       — post the command list as a reply
   #   /ai-pr-review false-positive [F<n>] [reason]  — record a false-positive verdict
   #   /ai-pr-review wont-fix [F<n>] [reason]        — record a "won't fix" verdict
+  #   /ai-pr-review fixed [F<n>] [sha]              — mark a finding fixed (no learning-loop write, no auto-approve)
   #   /ai-pr-review feedback <text>                 — store free-form feedback
   slash-commands:
+    # author_association is unreliable on pull_request_review_comment webhooks
+    # (see #732), so it can't be the gate for inline replies. Pre-filter on it
+    # only for issue_comment (where it's reliable); let review comments through
+    # to the reusable workflow's `authorize` job, which verifies via the API.
     if: >-
       startsWith(github.event.comment.body, '/ai-pr-review') &&
-      contains(
-        fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
-        github.event.comment.author_association
-      ) &&
-      (github.event_name == 'pull_request_review_comment' ||
-       (github.event_name == 'issue_comment' && github.event.issue.pull_request))
-    uses: tag1consulting/ai-pr-review/.github/workflows/slash-commands.yml@b284d67887a444b8b2da893f6b6635757f821a4e # main
+      (
+        github.event_name == 'pull_request_review_comment' ||
+        (github.event_name == 'issue_comment' &&
+         github.event.issue.pull_request &&
+         contains(
+           fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+           github.event.comment.author_association
+         ))
+      )
+    uses: tag1consulting/ai-pr-review/.github/workflows/slash-commands.yml@0252dc5edd8204c64d93c4ddab3c0a046da1c782 # v2.12.0
     with:
       event-name: ${{ github.event_name }}
       comment-body: ${{ github.event.comment.body }}
@@ -322,7 +279,7 @@ jobs:
       provider: ${{ vars.AI_REVIEW_PROVIDER || 'anthropic' }}
       base-url: ${{ vars.AI_REVIEW_BASE_URL || '' }}
       image-tag: ${{ vars.AI_REVIEW_IMAGE_TAG || 'latest' }}
-      review-mode-default: ${{ vars.AI_REVIEW_MODE_DEFAULT || 'quick' }}
+      review-mode-default: ${{ vars.AI_REVIEW_MODE_DEFAULT || '' }}
       # --- Learning loop (Capability C) ---
       # AI_REVIEW_FEEDBACK_LOOP gates the feedback-command job which handles
       # /ai-pr-review false-positive | wont-fix | feedback | explain | revise.
@@ -332,12 +289,38 @@ jobs:
       # --- Analyzer / agent filtering (Python engine) ---
       # Forwarded to rescan and review-full to keep them in sync with the
       # main review above. Set the repo variables once, both paths stay aligned.
-      # The phpcs/phpstan/semgrep default matches the review job above; see the
-      # comment there for why. A rescan must not resurrect what the review job skips.
       analyzers: ${{ vars.AI_REVIEW_ANALYZERS || '' }}
-      exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || 'phpcs,phpstan,semgrep' }}
+      exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || '' }}
       agents: ${{ vars.AI_REVIEW_AGENTS || '' }}
       exclude-agents: ${{ vars.AI_REVIEW_EXCLUDE_AGENTS || '' }}
+      # --- Review tuning (same as the review job above) ---
+      # Forwarded to rescan and review-full so they stay in sync with the
+      # main review (issue #863).
+      max-diff-lines: ${{ vars.AI_REVIEW_MAX_DIFF_LINES || '5000' }}
+      max-inline: ${{ vars.AI_REVIEW_MAX_INLINE || '25' }}
+      ignore-merge-commits: ${{ vars.AI_REVIEW_IGNORE_MERGE_COMMITS || 'true' }}
+      context-enrichment: ${{ vars.AI_REVIEW_CONTEXT_ENRICHMENT || 'true' }}
+      model-standard: ${{ vars.AI_REVIEW_MODEL_STANDARD || '' }}
+      model-premium: ${{ vars.AI_REVIEW_MODEL_PREMIUM || '' }}
+      parallel: ${{ vars.AI_REVIEW_PARALLEL || 'true' }}
+      max-tokens-per-agent: ${{ vars.AI_REVIEW_MAX_TOKENS_PER_AGENT || '32768' }}
+      enable-suggestions: ${{ vars.AI_REVIEW_ENABLE_SUGGESTIONS || 'true' }}
+      # Deliberately 'false' here, unlike the review job above ('true'): a
+      # non-zero exit on this path fails the workflow run and misfires the
+      # failure-reaction step on a rescan that simply found something,
+      # rather than gating a required check the way it does on the review
+      # job's pull_request trigger. Set AI_REVIEW_FAIL_ON_FINDINGS=true if
+      # you want that gating behavior on rescan/review-full too.
+      fail-on-findings: ${{ vars.AI_REVIEW_FAIL_ON_FINDINGS || 'false' }}
+      feedback-loop: ${{ vars.AI_REVIEW_FEEDBACK_LOOP || 'false' }}
+      token-usage-display: ${{ vars.AI_REVIEW_TOKEN_USAGE_DISPLAY || 'compact' }}
+      token-usage-warn-usd: ${{ vars.AI_REVIEW_TOKEN_USAGE_WARN_USD || '1.00' }}
+      max-cost-usd: ${{ vars.AI_REVIEW_MAX_COST_USD || '0' }}
+      fail-on-cost-ceiling: ${{ vars.AI_REVIEW_FAIL_ON_COST_CEILING || 'false' }}
+      context-max-queries: ${{ vars.AI_REVIEW_CONTEXT_MAX_QUERIES || '200' }}
+      exclude-patterns: ${{ vars.AI_REVIEW_EXCLUDE_PATTERNS || '' }}
+      exclude-patterns-mode: ${{ vars.AI_REVIEW_EXCLUDE_PATTERNS_MODE || 'append' }}
+      analyzer-diff-scope: ${{ vars.AI_REVIEW_ANALYZER_DIFF_SCOPE || 'cap' }}
     secrets:
       # Accept either AI_REVIEW_API_KEY or ANTHROPIC_API_KEY — both work.
       api-key: ${{ secrets.AI_REVIEW_API_KEY || secrets.ANTHROPIC_API_KEY }}
