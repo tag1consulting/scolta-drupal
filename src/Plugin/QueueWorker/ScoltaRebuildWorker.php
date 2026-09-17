@@ -347,7 +347,12 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
       // request race-free: a build already running does not see it, and the
       // next one, which starts after that build wrote its manifest, does.
       $force = !empty($changeSet['force']);
-      $force ? $this->state->set(self::FORCE_KEY, TRUE) : $this->state->delete(self::FORCE_KEY);
+      if ($force) {
+        $this->state->set(self::FORCE_KEY, TRUE);
+      }
+      else {
+        $this->state->delete(self::FORCE_KEY);
+      }
 
       $intent = BuildIntentFactory::fromFlags(FALSE, FALSE, $totalCount, $this->runner->memoryBudget());
       $report = $this->runSegment($orchestrator, $intent, $entityTypes, [], $force);
