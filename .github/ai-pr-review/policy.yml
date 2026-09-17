@@ -1,0 +1,34 @@
+# AI PR Review policy for scolta-drupal.
+# Schema and precedence: https://tag1consulting.github.io/ai-pr-review/policy.html
+#
+# Loaded from the PR's BASE branch, never from the PR head: a change here
+# applies to later PRs once merged, not to the PR that makes it.
+
+version: 1
+
+policies:
+  # phpcs, phpstan and semgrep are excluded because ci.yml already runs all
+  # three as blocking jobs, after a real composer install and against this
+  # repo's own config. The reviewer's copies have neither: its phpstan sees no
+  # Drupal autoloader ("extends unknown class KernelTestBase" on every kernel
+  # test), and its phpcs ignores phpcs.xml.dist, so it reports rules the
+  # ruleset deliberately excludes. On #274 that was 12 in-diff findings, all
+  # artifacts. Applies to every tier below.
+  standard:
+    extends: quick
+    exclude-analyzers: [phpcs, phpstan, semgrep]
+
+  deep:
+    extends: full
+    exclude-analyzers: [phpcs, phpstan, semgrep]
+
+routes:
+  # Releases are prepared on release/* branches; review them in full mode.
+  # head-branch is fork-controlled, so a fork can opt into the expensive tier
+  # by naming its branch release/x. That costs one full review, cancellable
+  # with the skip-ai-review label, which is cheaper than the workflow
+  # expression that used to guard against it.
+  - when: {head-branch: 'release/*'}
+    policy: deep
+
+default: standard
