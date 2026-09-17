@@ -8,11 +8,14 @@ use Consolidation\OutputFormatters\StructuredData\UnstructuredListData;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\Core\Url;
 use Drupal\scolta\Cache\DrupalCacheDriver;
 use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
 use Drupal\scolta\Progress\DrushProgressReporter;
@@ -26,6 +29,7 @@ use Drush\Commands\DrushCommands;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\BuildState;
+use Tag1\Scolta\Index\CborDecoder;
 use Tag1\Scolta\Index\IndexBuildOrchestrator;
 use Tag1\Scolta\Index\MemoryBudget;
 use Tag1\Scolta\Index\PageTableLedger;
@@ -73,9 +77,11 @@ class ScoltaCommands extends DrushCommands {
    * @param \Drupal\Core\Queue\QueueFactory $queueFactory
    *   The queue factory.
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
-   *   The entity type manager, to resolve an entity argument to its URL.
+   *   The entity type manager, to load the entity scolta:inspect names.
    * @param \Drupal\scolta\Service\ScoltaReindexer $reindexer
    *   The reindex queueing service behind scolta:reindex.
+   * @param \Drupal\Core\Entity\EntityTypeBundleInfoInterface $bundleInfo
+   *   The bundle info, to resolve scolta:inspect --bundle to an entity type.
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
@@ -91,6 +97,7 @@ class ScoltaCommands extends DrushCommands {
     private readonly QueueFactory $queueFactory,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ScoltaReindexer $reindexer,
+    private readonly EntityTypeBundleInfoInterface $bundleInfo,
   ) {
     parent::__construct();
   }
@@ -988,23 +995,22 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Show what the built index holds for an entity.
+   * Show what the index holds for an entity, by URL or by bundle and ID.
    *
-   * A fragment is the index's own copy of a page: the URL, the indexed text,
-   * the filter values and the metadata the result list renders. Reading one
-   * answers "is this entity in the index, and with what?" without a rebuild
-   * and without the browser.
-   *
-   * Fragment files are named by a content hash, not by URL, so finding the
-   * one for an entity means decompressing fragments until its URL turns up.
-   * Fine for debugging one page; slow on a six-figure corpus over NFS.
+   * A fragment file is named by a content hash, so nothing on disk maps a URL
+   * to one. The join is made through two tables the build already keeps: the
+   * page-table ledger in the state directory (item ID → ordinal) and the
+   * pf_meta page table (ordinal → fragment hash). Three file reads, whatever
+   * the corpus size; an earlier draft gunzipped every fragment in the index.
    */
   #[CLI\Command(name: 'scolta:inspect', aliases: ['sin'])]
-  #[CLI\Argument(name: 'entityType', description: 'Entity type ID, e.g. node')]
-  #[CLI\Argument(name: 'entityId', description: 'Entity ID')]
-  #[CLI\Usage(name: 'scolta:inspect node 123', description: 'Show the fragment indexed for that node, and its translations')]
-  #[CLI\Usage(name: 'scolta:inspect node 123 --format=json', description: 'The same, as JSON')]
-  public function inspect(string $entityType, string $entityId, array $options = ['format' => 'yaml']): UnstructuredListData {
+  #[CLI\Argument(name: 'url', description: 'Path of the entity, e.g. /node/123 or an alias. Omit to use --bundle and --entity-id')]
+  #[CLI\Option(name: 'bundle', description: 'Bundle of the entity, e.g. article. For an entity type without bundles, the entity type ID. Requires --entity-id')]
+  #[CLI\Option(name: 'entity-id', description: 'Entity ID. Requires --bundle')]
+  #[CLI\Usage(name: 'scolta:inspect /node/123', description: 'Show the fragment indexed for that node, and its translations')]
+  #[CLI\Usage(name: 'scolta:inspect --bundle=article --entity-id=123', description: 'The same, by bundle and ID')]
+  #[CLI\Usage(name: 'scolta:inspect /node/123 --format=json', description: 'The same, as JSON')]
+  public function inspect(string $url = '', array $options = ['bundle' => '', 'entity-id' => '', 'format' => 'yaml']): UnstructuredListData {
     $config = $this->configFactory->get('scolta.settings');
     $outputDir = $config->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
     $location = $this->indexLocator->locate($this->resolvePath($outputDir));
@@ -1012,45 +1018,94 @@ class ScoltaCommands extends DrushCommands {
       throw new \RuntimeException(sprintf('No built index under %s. Run drush scolta:build first.', $outputDir));
     }
 
-    if (!$this->entityTypeManager->hasDefinition($entityType)) {
-      throw new \RuntimeException(sprintf('No such entity type: %s.', $entityType));
-    }
-    $entity = $this->entityTypeManager->getStorage($entityType)->load($entityId);
-    if ($entity === NULL) {
-      throw new \RuntimeException(sprintf('No %s with ID %s.', $entityType, $entityId));
-    }
-    // The URL is the only join between an entity and its fragment: nothing in
-    // the fragment carries the entity ID. Matching is anchored on the end of
-    // the URL rather than str_contains() so that /node/123 does not match
-    // /node/1234, while a translation under a language prefix still does.
-    $url = $entity->toUrl()->toString();
+    $entity = $url !== ''
+      ? $this->entityFromUrl($url)
+      : $this->entityFromBundle((string) $options['bundle'], (string) $options['entity-id']);
 
+    $ledger = new PageTableLedger($this->runner->stateDir($this->logger()), new FilesystemDriver());
+    if ($ledger->isEmpty()) {
+      throw new \RuntimeException('No page-table ledger in the build directory. Run drush scolta:build first.');
+    }
+    $metaFiles = glob(dirname($location['indexFile']) . '/pagefind.*.pf_meta') ?: [];
+    if ($metaFiles === []) {
+      throw new \RuntimeException('No pf_meta in the index. Run drush scolta:build first.');
+    }
+    $pageTable = CborDecoder::decodeArtifact($metaFiles[0])[1];
+
+    // Item IDs are 'node:42' for the source language and 'node:42-es' for a
+    // translation (ScoltaContentGatherer::itemId()).
+    $key = $entity->getEntityTypeId() . ':' . $entity->id();
     $matches = [];
-    foreach ($this->indexLocator->fragmentFiles($location) as $file) {
-      $fragment = $this->readFragment($file);
-      if ($fragment === NULL) {
+    foreach ($ledger->rowsByOrdinal() as $ordinal => $row) {
+      if ($row['id'] !== $key && !str_starts_with($row['id'], $key . '-')) {
         continue;
       }
-      if (($fragment['url'] ?? '') === $url || str_ends_with($fragment['url'] ?? '', $url)) {
-        $matches[basename($file)] = $fragment;
+      $hash = (string) ($pageTable[$ordinal][0] ?? '');
+      $fragment = $hash === '' ? NULL : $this->readFragment($location['fragmentDir'] . '/' . $hash . '.pf_fragment');
+      if ($fragment !== NULL) {
+        $matches[$row['id']] = $fragment;
       }
     }
 
     if ($matches === []) {
-      $this->logger()->warning(dt('Nothing in the index is indexed at @url. It may not be indexed, or the index may predate it.', ['@url' => $url]));
+      $this->logger()->warning(dt('Nothing in the index is indexed for @key. It may not be indexed, or the index may predate it.', ['@key' => $key]));
     }
     return new UnstructuredListData($matches);
+  }
+
+  /**
+   * The entity a path routes to, via its canonical route parameter.
+   */
+  private function entityFromUrl(string $path): EntityInterface {
+    $target = Url::fromUserInput('/' . ltrim($path, '/'));
+    if (!$target->isRouted()) {
+      throw new \RuntimeException(sprintf('%s does not route to anything.', $path));
+    }
+    foreach ($target->getRouteParameters() as $name => $value) {
+      if ($this->entityTypeManager->hasDefinition($name)) {
+        $entity = $this->entityTypeManager->getStorage($name)->load($value);
+        if ($entity !== NULL) {
+          return $entity;
+        }
+      }
+    }
+    throw new \RuntimeException(sprintf('%s does not route to an entity.', $path));
+  }
+
+  /**
+   * The entity of a bundle with an ID; the bundle names the entity type.
+   */
+  private function entityFromBundle(string $bundle, string $entityId): EntityInterface {
+    if ($bundle === '' || $entityId === '') {
+      throw new \RuntimeException('Pass a URL, or both --bundle and --entity-id.');
+    }
+    $types = [];
+    foreach ($this->bundleInfo->getAllBundleInfo() as $entityType => $bundles) {
+      if (isset($bundles[$bundle])) {
+        $types[] = $entityType;
+      }
+    }
+    if ($types === []) {
+      throw new \RuntimeException(sprintf('No entity type has a bundle named %s.', $bundle));
+    }
+    if (count($types) > 1) {
+      throw new \RuntimeException(sprintf('Bundle %s exists on several entity types (%s); use the URL instead.', $bundle, implode(', ', $types)));
+    }
+    $entity = $this->entityTypeManager->getStorage($types[0])->load($entityId);
+    if ($entity === NULL || $entity->bundle() !== $bundle) {
+      throw new \RuntimeException(sprintf('No %s %s with ID %s.', $types[0], $bundle, $entityId));
+    }
+    return $entity;
   }
 
   /**
    * Decode one fragment file: gzipped "pagefind_dcd" + JSON.
    *
    * @return array|null
-   *   The decoded fragment, or NULL when the file is not one (a stray file in
-   *   the fragment directory, or a truncated write).
+   *   The decoded fragment, or NULL when the file is missing or is not one.
    */
   private function readFragment(string $file): ?array {
-    $raw = @gzdecode((string) file_get_contents($file));
+    $raw = @gzdecode((string) @file_get_contents($file));
     if ($raw === FALSE || !str_starts_with($raw, 'pagefind_dcd')) {
       return NULL;
     }

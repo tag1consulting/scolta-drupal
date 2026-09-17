@@ -5,72 +5,96 @@ declare(strict_types=1);
 namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\node\Entity\Node;
 use Drupal\scolta\Commands\ScoltaCommands;
-use Drupal\user\Entity\User;
+use Drupal\Tests\node\Traits\ContentTypeCreationTrait;
 use Drush\Log\DrushLoggerManager;
 use Symfony\Component\Console\Output\NullOutput;
 
 /**
  * `scolta:inspect` reads back the fragment the index holds for an entity.
  *
- * Fragment files are named by a content hash, so the command finds an entity's
- * page by decoding fragments and matching their URL. Two things can go wrong
- * quietly: the gzip + "pagefind_dcd" envelope can be mis-stripped, leaving
- * nothing decodable, and matching /user/1 loosely drags in /user/12. Both are
- * asserted here.
+ * Fragment files are named by a content hash, so the command joins entity to
+ * fragment through the page-table ledger and the pf_meta page table. Both come
+ * from a real build here, because hand-written fixtures would only prove the
+ * command agrees with itself about their layout.
  *
  * The output dir is a real temp path rather than public://, because
  * KernelTestBase mounts public:// on vfsStream — see
- * CleanupCommandDryRunKernelTest.
+ * IncrementalQueueUpdateKernelTest.
  *
  * @group scolta
  */
 class InspectCommandKernelTest extends KernelTestBase {
 
+  use ContentTypeCreationTrait;
+
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta'];
+  protected static $modules = [
+    'system', 'user', 'scolta', 'node', 'filter', 'field', 'text', 'dblog',
+  ];
 
   /**
-   * A real filesystem directory standing in for the published index location.
-   *
-   * @var string
+   * Real filesystem directory holding the index and the build state.
    */
-  private string $outputDir;
+  private string $dir = '';
+
+  /**
+   * The two seeded nodes.
+   *
+   * @var \Drupal\node\Entity\Node[]
+   */
+  private array $nodes = [];
 
   /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->installConfig(['scolta']);
+    $this->installEntitySchema('node');
     $this->installEntitySchema('user');
+    $this->installSchema('node', ['node_access']);
+    $this->installSchema('dblog', ['watchdog']);
+    $this->installConfig(['scolta', 'field', 'node', 'filter']);
 
-    $this->outputDir = sys_get_temp_dir() . '/scolta-inspect-test-' . uniqid();
-    mkdir($this->outputDir . '/pagefind/fragment', 0755, TRUE);
-    file_put_contents($this->outputDir . '/pagefind/pagefind.js', '// stub');
+    $this->dir = sys_get_temp_dir() . '/scolta-inspect-test-' . uniqid();
+    mkdir($this->dir, 0755, TRUE);
     $this->config('scolta.settings')
-      ->set('pagefind.output_dir', $this->outputDir)
+      ->set('pagefind.output_dir', $this->dir . '/output')
+      ->set('pagefind.build_dir', $this->dir . '/build')
       ->save();
+
+    $this->createContentType(['type' => 'article']);
+    foreach (['zebras', 'axolotls'] as $animal) {
+      $node = Node::create([
+        'type' => 'article',
+        'title' => 'About ' . $animal,
+        'body' => [
+          'value' => 'Seeded body text about ' . $animal . ', written at length so the exporter minimum content length is comfortably cleared.',
+          'format' => 'plain_text',
+        ],
+        'status' => 1,
+      ]);
+      $node->save();
+      $this->nodes[] = $node;
+    }
+
+    \Drupal::state()->delete('scolta.rebuild_requested_at');
+    $this->container->get('plugin.manager.queue_worker')
+      ->createInstance('scolta_rebuild')
+      ->processItem(['type' => 'install']);
   }
 
   /**
-   * Write one fragment file the way PagefindFormatWriter writes it.
+   * {@inheritdoc}
    */
-  private function writeFragment(string $name, string $url, string $content): void {
-    $json = json_encode([
-      'url' => $url,
-      'content' => $content,
-      'word_count' => str_word_count($content),
-      'filters' => ['subject' => ['Math']],
-      'meta' => ['title' => $content],
-      'anchors' => [],
-    ], JSON_UNESCAPED_SLASHES);
-    file_put_contents(
-      $this->outputDir . '/pagefind/fragment/' . $name . '.pf_fragment',
-      gzencode('pagefind_dcd' . $json, 9)
-    );
+  protected function tearDown(): void {
+    if ($this->dir !== '' && is_dir($this->dir)) {
+      $this->container->get('file_system')->deleteRecursive($this->dir);
+    }
+    parent::tearDown();
   }
 
   /**
@@ -91,6 +115,7 @@ class InspectCommandKernelTest extends KernelTestBase {
       $this->container->get('queue'),
       $this->container->get('entity_type.manager'),
       $this->container->get('scolta.reindexer'),
+      $this->container->get('entity_type.bundle.info'),
     );
     $commands->setLogger(new DrushLoggerManager());
     $commands->setOutput(new NullOutput());
@@ -98,50 +123,53 @@ class InspectCommandKernelTest extends KernelTestBase {
   }
 
   /**
-   * The entity's own fragment comes back, and nothing adjacent to it.
+   * A URL resolves to its entity and returns that entity's fragment only.
    */
-  public function testEntityReturnsItsOwnFragment(): void {
-    $user = User::create(['name' => 'indexed']);
-    $user->save();
-    $url = $user->toUrl()->toString();
+  public function testByUrl(): void {
+    $node = $this->nodes[1];
+    $result = $this->commands()->inspect('/node/' . $node->id())->getArrayCopy();
 
-    $this->writeFragment('aaa', $url, 'the indexed profile');
-    $this->writeFragment('bbb', $url . '2', 'a different profile');
-    $this->writeFragment('ccc', '/lesson/photosynthesis', 'a lesson');
-
-    $result = $this->commands()->inspect('user', (string) $user->id())->getArrayCopy();
-
-    $this->assertSame(['aaa.pf_fragment'], array_keys($result));
-    $fragment = $result['aaa.pf_fragment'];
-    $this->assertSame($url, $fragment['url']);
-    $this->assertSame('the indexed profile', $fragment['content']);
-    $this->assertSame(['subject' => ['Math']], $fragment['filters']);
+    $this->assertSame(['node:' . $node->id()], array_keys($result));
+    $fragment = $result['node:' . $node->id()];
+    $this->assertSame($node->toUrl()->toString(), $fragment['url']);
+    $this->assertStringContainsString('axolotls', $fragment['content']);
+    $this->assertStringNotContainsString('zebras', $fragment['content']);
   }
 
   /**
-   * A translation under a language prefix is found alongside the original.
+   * Bundle and ID name the same entity the URL does.
    */
-  public function testTranslationUnderLanguagePrefixIsFound(): void {
-    $user = User::create(['name' => 'indexed']);
-    $user->save();
-    $url = $user->toUrl()->toString();
+  public function testByBundleAndId(): void {
+    $node = $this->nodes[0];
+    $result = $this->commands()
+      ->inspect('', ['bundle' => 'article', 'entity-id' => (string) $node->id(), 'format' => 'yaml'])
+      ->getArrayCopy();
 
-    $this->writeFragment('aaa', $url, 'the profile');
-    $this->writeFragment('bbb', '/es' . $url, 'el perfil');
-
-    $result = $this->commands()->inspect('user', (string) $user->id())->getArrayCopy();
-
-    $this->assertEqualsCanonicalizing(['aaa.pf_fragment', 'bbb.pf_fragment'], array_keys($result));
+    $this->assertSame(['node:' . $node->id()], array_keys($result));
+    $this->assertStringContainsString('zebras', $result['node:' . $node->id()]['content']);
   }
 
   /**
-   * Without a built index the command says so rather than reporting nothing.
+   * An unknown bundle, a non-entity path, and a missing selector are errors.
    */
-  public function testMissingIndexIsAnError(): void {
-    unlink($this->outputDir . '/pagefind/pagefind.js');
+  public function testBadSelectorsAreErrors(): void {
+    $commands = $this->commands();
+    foreach ([
+      [['bundle' => 'recipe', 'entity-id' => '1'], 'No entity type has a bundle named recipe'],
+      [['bundle' => 'article', 'entity-id' => ''], 'Pass a URL, or both'],
+      [['bundle' => 'article', 'entity-id' => '999'], 'No node article with ID 999'],
+    ] as [$options, $message]) {
+      try {
+        $commands->inspect('', $options + ['format' => 'yaml']);
+        $this->fail('Expected an exception: ' . $message);
+      }
+      catch (\RuntimeException $e) {
+        $this->assertStringContainsString($message, $e->getMessage());
+      }
+    }
     $this->expectException(\RuntimeException::class);
-    $this->expectExceptionMessage('No built index');
-    $this->commands()->inspect('user', '1');
+    $this->expectExceptionMessage('does not route to an entity');
+    $commands->inspect('/admin/content');
   }
 
 }
