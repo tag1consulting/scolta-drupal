@@ -112,6 +112,9 @@ scolta.settings:
         content_match_boost:
           type: float
           label: 'Content match boost'
+        title_dedup:
+          type: boolean
+          label: 'Collapse near-duplicate titles'
         recency_boost_max:
           type: float
           label: 'Recency boost maximum'

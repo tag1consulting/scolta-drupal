@@ -41,6 +41,7 @@ scoring:
   title_match_boost: 2.0
   title_all_terms_multiplier: 1.5
   content_match_boost: 0.4
+  title_dedup: false
   recency_boost_max: 0.25
   recency_half_life_days: 365
   recency_penalty_after_days: 1825

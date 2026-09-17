@@ -569,6 +569,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Boost factor for content body matches.'),
     ];
 
+    $form['scoring']['title_dedup'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Collapse near-duplicate titles'),
+      '#default_value' => $config->get('scoring.title_dedup') ?? FALSE,
+      '#description' => $this->t('Hide a result whose title nearly matches a higher-ranked one (60% word overlap). Only for sites where the same content is reachable at several URLs. Leave off when distinct pages share similar titles, such as a webinar and its recap post, or they will be hidden.'),
+    ];
+
     $form['scoring']['recency_boost_max'] = [
       '#type' => 'number',
       '#title' => $this->t('Recency boost maximum'),
@@ -1517,6 +1524,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('scoring.title_match_boost', (float) $form_state->getValue('title_match_boost'))
       ->set('scoring.title_all_terms_multiplier', (float) $form_state->getValue('title_all_terms_multiplier'))
       ->set('scoring.content_match_boost', (float) $form_state->getValue('content_match_boost'))
+      ->set('scoring.title_dedup', (bool) $form_state->getValue('title_dedup'))
       ->set('scoring.recency_boost_max', (float) $form_state->getValue('recency_boost_max'))
       ->set('scoring.recency_half_life_days', (int) $form_state->getValue('recency_half_life_days'))
       ->set('scoring.recency_penalty_after_days', (int) $form_state->getValue('recency_penalty_after_days'))

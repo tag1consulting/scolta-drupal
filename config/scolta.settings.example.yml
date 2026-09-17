@@ -26,6 +26,7 @@ scoring:
   title_match_boost: 2.0            # Boost for title matches
   title_all_terms_multiplier: 1.5   # Extra boost when ALL terms match title
   content_match_boost: 0.4          # Boost for content body matches
+  title_dedup: false                # Hide results whose title nearly matches a higher-ranked one (only for content reachable at several URLs)
   recency_boost_max: 0.25           # Max boost for recent content
   recency_half_life_days: 365       # Days for recency boost to halve
   recency_penalty_after_days: 1825  # Content older than this gets penalized

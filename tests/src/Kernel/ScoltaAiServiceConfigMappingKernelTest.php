@@ -147,6 +147,8 @@ class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
     // scolta-php version having the typed properties.
     $scoring = $this->getInstallDefaults()['scoring'];
     $this->assertTrue($scoring['specificity_weighting']);
+    // Title collapsing is opt-in; the default matches the scolta.js fallback.
+    $this->assertFalse($scoring['title_dedup']);
     $this->assertEquals(0.15, $scoring['specificity_floor']);
     $this->assertEquals(0.55, $scoring['specificity_strong_match']);
     $this->assertEquals(0.9, $scoring['specificity_cooccurrence']);
