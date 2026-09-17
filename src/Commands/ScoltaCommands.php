@@ -1047,9 +1047,17 @@ class ScoltaCommands extends DrushCommands {
       }
       $hash = (string) ($pageTable[$ordinal][0] ?? '');
       $fragment = $hash === '' ? NULL : $this->readFragment($location['fragmentDir'] . '/' . $hash . '.pf_fragment');
-      if ($fragment !== NULL) {
-        $matches[$row['id']] = $fragment;
+      if ($fragment === NULL) {
+        // The ledger says the page is indexed but the index disagrees: the
+        // two are out of step, which a plain "not indexed" would hide.
+        $this->logger()->warning(dt('@id is at ordinal @ordinal in the page-table ledger but its fragment (@hash) is missing or unreadable. Run drush scolta:build.', [
+          '@id' => $row['id'],
+          '@ordinal' => $ordinal,
+          '@hash' => $hash === '' ? 'no hash in pf_meta' : $hash,
+        ]));
+        continue;
       }
+      $matches[$row['id']] = $fragment;
     }
 
     if ($matches === []) {
