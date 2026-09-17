@@ -7,7 +7,9 @@ namespace Drupal\Tests\scolta\Kernel;
 use Drupal\KernelTests\KernelTestBase;
 
 /**
- * scolta_queue_full_rebuild() enqueues an untargeted request, forced or not.
+ * The update-hook helper enqueues an untargeted request, forced or not.
+ *
+ * Covers scolta_queue_full_rebuild().
  *
  * What the worker does with the flag is covered by
  * ScoltaRebuildWorkerResumeKernelTest::testAForcedRequestStaysForcedAcrossTicks().
