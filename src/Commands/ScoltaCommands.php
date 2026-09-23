@@ -121,7 +121,7 @@ class ScoltaCommands extends DrushCommands {
   #[CLI\Option(name: 'entity-type', description: 'Entity type(s) to index, comma-separated')]
   #[CLI\Option(name: 'bundle', description: 'Bundle to index. Scopes the build; see the help text above')]
   #[CLI\Option(name: 'entity-ids', description: 'Comma-separated entity IDs to index. Scopes the build; see the help text above. Unloadable IDs are logged and skipped. --bundle is ignored')]
-  #[CLI\Option(name: 'force', description: 'Skip fingerprint check and force a full rebuild')]
+  #[CLI\Option(name: 'force', description: 'Reload every entity and rebuild from scratch. On an unscoped, non-resumed build this also discards the page-table ledger, as --reset-ledger does, so every page is renumbered from zero and pages deleted since the last build leave no empty entries behind')]
   #[CLI\Option(name: 'memory-budget', description: 'Memory profile or byte value (e.g. conservative, 256M).')]
   #[CLI\Option(name: 'chunk-size', description: 'Pages per chunk. Overrides the profile default and config setting.')]
   #[CLI\Option(name: 'resume', description: 'Resume a previously interrupted build')]
@@ -213,6 +213,17 @@ class ScoltaCommands extends DrushCommands {
     // manifest recorded when the build was started.
     $scoped = $entityIds !== NULL || $bundle !== '';
 
+    // --force rebuilds from scratch, and the page-table ledger is part of
+    // what it rebuilds. Kept, it carried one tombstoned ordinal for every
+    // page the previous index held and this build did not yield, and the
+    // merge wrote an empty fragment for each: a site upgraded from 1.4
+    // reported 56 pages for a 38-page corpus. Not on a resume, whose chunks
+    // on disk already hold the ledger's ordinals, and not on a scoped build,
+    // where an empty ledger would let it delete the rest of the site; both
+    // refuse a reset, so --force there keeps meaning "reload every entity".
+    $resetLedger = (bool) ($options['reset-ledger'] ?? FALSE)
+      || ($force && !$resume && !$scoped);
+
     try {
       $intent = BuildIntentFactory::fromFlags(
         $resume,
@@ -220,7 +231,7 @@ class ScoltaCommands extends DrushCommands {
         $totalCount,
         $budget,
         partial: $scoped,
-        resetLedger: (bool) ($options['reset-ledger'] ?? FALSE),
+        resetLedger: $resetLedger,
       );
     }
     catch (\LogicException $e) {
