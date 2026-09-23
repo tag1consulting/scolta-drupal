@@ -428,7 +428,7 @@ The index covers every node bundle by default. `scolta.settings: entity_types` i
 drush config:set --input-format=yaml scolta.settings entity_types '{node: [], group: [community]}'
 ```
 
-Any fieldable entity type with a `changed` field works; a type with a published flag is filtered to published entities. Add the field its prose lives in to `body_fields` (for example `field_description` for groups). Every page ID is prefixed with its entity type ID (`node:42`, `node:42-es`, `group:42`), which is why node 42 and group 42 do not collide. An index built by an earlier release used bare node IDs; the update hook discards the build state and queues a rebuild, so the next build numbers every page from zero.
+Any fieldable entity type with a `changed` field works; a type with a published flag is filtered to published entities. Add the fields its prose lives in to `body_fields` (for example `field_description` for groups); every listed field holding a value is indexed, in list order, and removing a field from the list is how to keep it out of the index. Every page ID is prefixed with its entity type ID (`node:42`, `node:42-es`, `group:42`), which is why node 42 and group 42 do not collide. An index built by an earlier release used bare node IDs; the update hook discards the build state and queues a rebuild, so the next build numbers every page from zero.
 
 #### Running rebuilds: the cron line
 

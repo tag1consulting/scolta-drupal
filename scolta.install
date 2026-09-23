@@ -470,6 +470,18 @@ function scolta_update_10009() {
 }
 
 /**
+ * Every populated body field is now indexed, so queue a forced full rebuild.
+ */
+function scolta_update_10010() {
+  return t('Scolta now indexes every field in body_fields that holds a value, in list order; remove any field that should not be searched. @rebuild', [
+    // The timestamp manifest skips every entity whose changed time did not
+    // move, so without a forced build the new body text reaches only
+    // entities edited from now on.
+    '@rebuild' => scolta_queue_full_rebuild('update_10010', TRUE),
+  ]);
+}
+
+/**
  * Discard the build state and queue one full rebuild.
  *
  * For any release whose page IDs, ledger layout or manifest keys are not
