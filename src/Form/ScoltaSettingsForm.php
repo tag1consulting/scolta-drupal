@@ -339,6 +339,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t("Comma-separated language codes (e.g., en, es, fr). When multiple languages are configured, AI responses will match the language of the user's query."),
     ];
 
+    $form['ai']['auto_language_filter'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Limit search results to the page language'),
+      '#default_value' => $config->get('auto_language_filter') ?? FALSE,
+      '#description' => $this->t('On a multilingual site, search only the pages in the language of the page the visitor is on.'),
+    ];
+
     $form['ai']['max_follow_ups'] = [
       '#type' => 'number',
       '#title' => $this->t('Maximum follow-up questions'),
@@ -1496,6 +1503,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
         'trim',
         explode(',', $form_state->getValue('ai_languages') ?? 'en')
       ))) ?: ['en'])
+      ->set('auto_language_filter', (bool) $form_state->getValue('auto_language_filter'))
       ->set('max_follow_ups', (int) $form_state->getValue('max_follow_ups'))
       // Content settings.
       ->set('site_name', $form_state->getValue('site_name'))

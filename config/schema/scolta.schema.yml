@@ -35,6 +35,9 @@ scolta.settings:
       sequence:
         type: string
         label: 'Language code'
+    auto_language_filter:
+      type: boolean
+      label: 'Limit search results to the page language'
     max_follow_ups:
       type: integer
       label: 'Maximum follow-up questions'

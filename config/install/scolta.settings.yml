@@ -9,6 +9,7 @@ ai_expand_query: true
 ai_summarize: true
 ai_languages:
   - en
+auto_language_filter: false
 max_follow_ups: 3
 site_name: ''
 site_description: 'website'
