@@ -67,7 +67,7 @@ button rebuilds it from the browser.
 | Command | Description |
 |---|---|
 | `drush scolta:build` (`sb`) | Build the search index |
-| `drush scolta:build --force` | Force rebuild even if content has not changed |
+| `drush scolta:build --force` | Rebuild from scratch: reload every entity even if it has not changed, and discard the page-table ledger as `--reset-ledger` does, renumbering every page from zero. With `--resume` or `--bundle`/`--entity-ids` it only reloads every entity, since neither can take a ledger reset |
 | `drush scolta:build --resume` | Resume a previously interrupted build |
 | `drush scolta:build --restart` | Discard interrupted state and start fresh. Also discards the page-table ledger, renumbering every page from zero |
 | `drush scolta:build --reset-ledger` | Discard the page-table ledger under a plain build, renumbering every page from zero. Escape hatch for a corrupt page table (a duplicate page ordinal at the merge) without a full `--restart`. Cannot be combined with `--resume` or a scoped build |
@@ -162,6 +162,10 @@ build, without a `--restart`. It cannot be combined with `--resume` or with
 ```bash
 drush scolta:build --reset-ledger
 ```
+
+`--force` implies `--reset-ledger` on an unscoped, non-resumed build. Without
+the reset, every page deleted since the last build kept its ordinal as an empty
+fragment in the new index, and `page_count` counted it.
 
 ### Deferred finalization on very large corpora
 
