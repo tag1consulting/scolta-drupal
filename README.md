@@ -500,6 +500,8 @@ drush config:set scolta.settings max_pagefind_results 10
 
 Top-level keys (without a namespace prefix) override nested values of the same name, so both forms work. The nested path is canonical and matches the admin UI; the top-level form is convenient for one-off overrides.
 
+For boolean settings, pass `--input-format=yaml` so Drush stores a real boolean rather than a string: `drush config:set --input-format=yaml scolta.settings ai_expand_query false`. Scolta reads `"false"`, `"0"`, `"off"` and `"no"` as off either way, but other tooling that reads the stored config may not.
+
 ## External Services
 
 Scolta connects to external services under specific conditions. No data is sent automatically — all connections are triggered by admin/developer action or explicit configuration.

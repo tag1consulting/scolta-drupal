@@ -14,6 +14,7 @@ use Drupal\Core\Queue\QueueWorkerBase;
 use Drupal\Core\Queue\RequeueException;
 use Drupal\Core\Queue\DelayedRequeueException;
 use Drupal\Core\State\StateInterface;
+use Drupal\scolta\Config\BooleanSetting;
 use Drupal\scolta\Progress\LockRenewingProgressReporter;
 use Drupal\scolta\Service\IndexBuildRunner;
 use Drupal\scolta\Service\ScoltaContentGatherer;
@@ -710,7 +711,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    *   TRUE when the index was updated incrementally.
    */
   protected function tryIncrementalUpdate(array $changeSet, $config, string $stateDir, string $outputDir, string $siteName, string $language): bool {
-    if (!($config->get('incremental.enabled') ?? TRUE)) {
+    if (!BooleanSetting::coerce($config->get('incremental.enabled'), TRUE)) {
       return FALSE;
     }
 

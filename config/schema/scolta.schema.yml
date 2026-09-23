@@ -24,10 +24,10 @@ scolta.settings:
       type: string
       label: 'AI base URL'
     ai_expand_query:
-      type: boolean
+      type: scolta.boolean
       label: 'Enable AI query expansion'
     ai_summarize:
-      type: boolean
+      type: scolta.boolean
       label: 'Enable AI summarization'
     ai_languages:
       type: sequence
@@ -113,7 +113,7 @@ scolta.settings:
           type: float
           label: 'Content match boost'
         title_dedup:
-          type: boolean
+          type: scolta.boolean
           label: 'Collapse near-duplicate titles'
         recency_boost_max:
           type: float
@@ -137,7 +137,7 @@ scolta.settings:
           type: float
           label: 'Sub-word maximum corpus frequency'
         specificity_weighting:
-          type: boolean
+          type: scolta.boolean
           label: 'Specificity-weighted ranking'
         specificity_floor:
           type: float
@@ -269,16 +269,16 @@ scolta.settings:
           type: integer
           label: 'Pages per chunk (null uses profile default)'
     show_attribution:
-      type: boolean
+      type: scolta.boolean
       label: 'Show Scolta attribution on search page'
     hide_empty_facets:
-      type: boolean
+      type: scolta.boolean
       label: 'Hide facet values with zero results for the current query'
     facet_mode:
       type: string
       label: 'When the facet index loads: eager, deferred or disabled'
     sayt_enabled:
-      type: boolean
+      type: scolta.boolean
       label: 'Enable search as you type'
     sayt_min_chars:
       type: integer
@@ -290,13 +290,13 @@ scolta.settings:
       type: integer
       label: 'Maximum suggestions shown'
     sayt_recent_searches:
-      type: boolean
+      type: scolta.boolean
       label: 'Offer the visitor their own recent searches'
     sayt_max_recent:
       type: integer
       label: 'Maximum recent searches shown'
     sayt_expand:
-      type: boolean
+      type: scolta.boolean
       label: 'Enrich suggestions with AI query expansion'
     sayt_expand_per_minute:
       type: integer
@@ -318,7 +318,7 @@ scolta.settings:
           type: string
           label: 'Output directory'
         auto_rebuild:
-          type: boolean
+          type: scolta.boolean
           label: 'Rebuild the index when indexed content changes'
         auto_rebuild_delay:
           type: integer
@@ -328,7 +328,7 @@ scolta.settings:
       label: 'Incremental index update configuration'
       mapping:
         enabled:
-          type: boolean
+          type: scolta.boolean
           label: 'Update the index incrementally for small change sets'
         max_changed_items:
           type: integer
@@ -341,3 +341,10 @@ scolta.settings:
           type: integer
           label: 'Wall-clock seconds each cron run may spend deleting retired index directories (0 disables cron cleanup)'
 
+# A boolean that `drush config:set scolta.settings <key> false` stores as FALSE.
+# Core's boolean casts with (bool) on save, which turns the string "false" into
+# TRUE; see \Drupal\scolta\Config\LenientBooleanData.
+scolta.boolean:
+  type: boolean
+  label: 'Boolean'
+  class: '\Drupal\scolta\Config\LenientBooleanData'

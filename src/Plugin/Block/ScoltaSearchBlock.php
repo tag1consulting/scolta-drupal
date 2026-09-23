@@ -15,6 +15,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
 use Drupal\scolta\Access\AiAccessInterface;
+use Drupal\scolta\Config\BooleanSetting;
 use Drupal\scolta\Service\AssetDeployer;
 use Drupal\scolta\Service\IndexLocator;
 use Drupal\scolta\Service\ScoltaAiService;
@@ -180,13 +181,13 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       // entirely in js/scolta.js, deployed from the installed scolta-php.
       // Defaults repeat the install defaults so a site that never ran the
       // update hook still gets the documented behavior.
-      'saytEnabled' => (bool) ($drupalConfig->get('sayt_enabled') ?? TRUE),
+      'saytEnabled' => BooleanSetting::coerce($drupalConfig->get('sayt_enabled'), TRUE),
       'saytMinChars' => (int) ($drupalConfig->get('sayt_min_chars') ?? 2),
       'saytDebounceMs' => (int) ($drupalConfig->get('sayt_debounce_ms') ?? 150),
       'saytMaxSuggestions' => (int) ($drupalConfig->get('sayt_max_suggestions') ?? 6),
-      'saytRecentSearches' => (bool) ($drupalConfig->get('sayt_recent_searches') ?? TRUE),
+      'saytRecentSearches' => BooleanSetting::coerce($drupalConfig->get('sayt_recent_searches'), TRUE),
       'saytMaxRecent' => (int) ($drupalConfig->get('sayt_max_recent') ?? 3),
-      'saytExpand' => (bool) ($drupalConfig->get('sayt_expand') ?? TRUE),
+      'saytExpand' => BooleanSetting::coerce($drupalConfig->get('sayt_expand'), TRUE),
       'saytExpandPerMinute' => (int) ($drupalConfig->get('sayt_expand_per_minute') ?? 6),
       'saytExpansionDelayMs' => (int) ($drupalConfig->get('sayt_expansion_delay_ms') ?? 500),
       // An unrecognized action clamps to 'navigate', as the bundle does.

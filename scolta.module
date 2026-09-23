@@ -10,6 +10,7 @@ use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\Core\Url;
+use Drupal\scolta\Config\BooleanSetting;
 use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
 use Drupal\scolta\Service\AssetDeployer;
 use Tag1\Scolta\Index\RetiredIndexTrash;
@@ -432,7 +433,7 @@ function _scolta_rebuild_notice(array &$page_top, AccountInterface $current_user
  */
 function _scolta_auto_rebuild_check(EntityInterface $entity, $op = 'update') {
   $config = \Drupal::config('scolta.settings');
-  if (!$config->get('pagefind.auto_rebuild')) {
+  if (!BooleanSetting::coerce($config->get('pagefind.auto_rebuild'))) {
     return;
   }
   if (!\Drupal::service('scolta.content_gatherer')->isIndexable($entity)) {

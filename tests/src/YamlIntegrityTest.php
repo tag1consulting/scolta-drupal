@@ -106,6 +106,7 @@ class YamlIntegrityTest extends TestCase {
       'string' => 'is_string',
       'integer' => 'is_int',
       'boolean' => 'is_bool',
+      'scolta.boolean' => 'is_bool',
       'float' => fn($v) => is_float($v) || is_int($v),
       'mapping' => 'is_array',
     ];

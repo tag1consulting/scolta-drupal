@@ -11,6 +11,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler;
 use Drupal\scolta\Cache\DrupalCacheDriver;
+use Drupal\scolta\Config\BooleanSetting;
 use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
 use Tag1\Scolta\AiClient;
@@ -327,6 +328,16 @@ class ScoltaAiService extends AiServiceAdapter {
     // Remove pagefind config (not relevant to ScoltaConfig).
     unset($values['pagefind']);
 
+    // ScoltaConfig::fromArray() casts a bool-typed property with (bool), so
+    // the string "false" that a plain `drush config:set ... false` stores
+    // read as TRUE. Coerce every key that lands on a bool property here, the
+    // one place both the block's JS config and the AI endpoints are built.
+    foreach (self::booleanConfigKeys() as $key) {
+      if (array_key_exists($key, $values) && $values[$key] !== NULL) {
+        $values[$key] = BooleanSetting::coerce($values[$key]);
+      }
+    }
+
     // One resolution, shared with every surface that reports on it. The key,
     // its source and the provider that goes with it arrive together, so the
     // settings form, /health and Drush cannot describe this differently from
@@ -368,6 +379,29 @@ class ScoltaAiService extends AiServiceAdapter {
     }
 
     return ScoltaConfig::fromArray($values);
+  }
+
+  /**
+   * The snake_case settings keys that map to a bool property of ScoltaConfig.
+   *
+   * Derived by reflection, with the same key-to-property mapping fromArray()
+   * uses, so a boolean scolta-php adds is coerced without a list to update.
+   *
+   * @return string[]
+   *   Settings keys, e.g. 'ai_expand_query'.
+   */
+  private static function booleanConfigKeys(): array {
+    static $keys = NULL;
+    if ($keys === NULL) {
+      $keys = [];
+      foreach ((new \ReflectionClass(ScoltaConfig::class))->getProperties(\ReflectionProperty::IS_PUBLIC) as $property) {
+        $type = $property->getType();
+        if ($type instanceof \ReflectionNamedType && $type->getName() === 'bool') {
+          $keys[] = strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $property->getName()));
+        }
+      }
+    }
+    return $keys;
   }
 
   /**

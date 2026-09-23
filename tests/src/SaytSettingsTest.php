@@ -68,7 +68,7 @@ class SaytSettingsTest extends TestCase {
     $mapping = $schema['scolta.settings']['mapping'];
 
     $expectedTypes = [
-      'boolean' => 'boolean',
+      'boolean' => 'scolta.boolean',
       'integer' => 'integer',
       'string' => 'string',
     ];

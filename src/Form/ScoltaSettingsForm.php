@@ -16,6 +16,7 @@ use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Url;
 use Drupal\scolta\Batch\ScoltaBatchOperations;
+use Drupal\scolta\Config\BooleanSetting;
 use Drupal\scolta\Service\IndexLocator;
 use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
@@ -321,14 +322,14 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['ai']['ai_expand_query'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable AI query expansion'),
-      '#default_value' => $config->get('ai_expand_query') ?? TRUE,
+      '#default_value' => BooleanSetting::coerce($config->get('ai_expand_query'), TRUE),
       '#description' => $this->t('Use AI to expand search queries into related terms.'),
     ];
 
     $form['ai']['ai_summarize'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable AI summarization'),
-      '#default_value' => $config->get('ai_summarize') ?? TRUE,
+      '#default_value' => BooleanSetting::coerce($config->get('ai_summarize'), TRUE),
       '#description' => $this->t('Use AI to generate summaries of search results.'),
     ];
 
@@ -572,7 +573,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['scoring']['title_dedup'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Collapse near-duplicate titles'),
-      '#default_value' => $config->get('scoring.title_dedup') ?? FALSE,
+      '#default_value' => BooleanSetting::coerce($config->get('scoring.title_dedup'), FALSE),
       '#description' => $this->t('Hide a result whose title nearly matches a higher-ranked one (60% word overlap). Only for sites where the same content is reachable at several URLs. Leave off when distinct pages share similar titles, such as a webinar and its recap post, or they will be hidden.'),
     ];
 
@@ -643,7 +644,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['scoring']['specificity_weighting'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Specificity-weighted ranking'),
-      '#default_value' => $config->get('scoring.specificity_weighting') ?? TRUE,
+      '#default_value' => BooleanSetting::coerce($config->get('scoring.specificity_weighting'), TRUE),
       '#description' => $this->t('Weight each partial match by how rare its term is in the corpus, so a match on a rare intent-bearing term outranks a match on a ubiquitous one. This is what stops a common word, typed or leaked from an expansion phrase, from flooding the head of the result list. Uncheck to restore flat sub-query weighting.'),
     ];
 
@@ -888,14 +889,14 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['display']['show_attribution'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Show Scolta attribution on search page'),
-      '#default_value' => $config->get('show_attribution') ?? FALSE,
+      '#default_value' => BooleanSetting::coerce($config->get('show_attribution'), FALSE),
       '#description' => $this->t('When enabled, a "Powered by Scolta" notice is appended to the search block output.'),
     ];
 
     $form['display']['hide_empty_facets'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Hide empty facet values'),
-      '#default_value' => $config->get('hide_empty_facets') ?? TRUE,
+      '#default_value' => BooleanSetting::coerce($config->get('hide_empty_facets'), TRUE),
       '#description' => $this->t('When enabled (default), a facet value with zero results for the current query is hidden, and a filter group whose values are all zero is dropped. An active (checked) value stays visible so it can be unchecked. Disable to show every value, rendering a zero-count one as a disabled "(0)" option.'),
     ];
 
@@ -922,7 +923,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['sayt']['sayt_enabled'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable search as you type'),
-      '#default_value' => $config->get('sayt_enabled') ?? TRUE,
+      '#default_value' => BooleanSetting::coerce($config->get('sayt_enabled'), TRUE),
       '#description' => $this->t('When disabled, the search widget behaves exactly as it did before this feature existed: no dropdown, no combobox roles on the input, and nothing read from or written to browser storage.'),
     ];
 
@@ -956,7 +957,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['sayt']['sayt_recent_searches'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Offer recent searches'),
-      '#default_value' => $config->get('sayt_recent_searches') ?? TRUE,
+      '#default_value' => BooleanSetting::coerce($config->get('sayt_recent_searches'), TRUE),
       '#description' => $this->t('Suggest the visitor their own recent searches, stored in their browser. When disabled, nothing is read from or written to browser storage.'),
     ];
 
@@ -972,7 +973,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['sayt']['sayt_expand'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enrich suggestions with AI query expansion'),
-      '#default_value' => $config->get('sayt_expand') ?? TRUE,
+      '#default_value' => BooleanSetting::coerce($config->get('sayt_expand'), TRUE),
       '#description' => $this->t('Once typing settles, run one query expansion for the typed prefix and merge the documents it finds into the dropdown. Inert when AI query expansion is off or no AI provider is configured.'),
     ];
 
