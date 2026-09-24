@@ -10,7 +10,7 @@ use PHPUnit\Framework\TestCase;
  * The scolta-php floor must refuse a release this module cannot run on.
  *
  * This module required tag1/scolta-php as ^1.1.0 while
- * src/AiProvider/Amazee/DrupalConfigStorage.php declared `implements
+ * modules/scolta_ui/src/AiProvider/Amazee/DrupalConfigStorage.php declared `implements
  * ProvenanceAwareConfigStorageInterface` and typed two of its methods to
  * AmazeeConnectionSource. Neither symbol exists in the 1.1.0 release, and an
  * `implements` clause is resolved when the class is defined, not when a method
@@ -109,7 +109,7 @@ class ScoltaPhpFloorTest extends TestCase {
       }
     }
 
-    $class = new \ReflectionClass(\Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage::class);
+    $class = new \ReflectionClass(\Drupal\scolta_ui\AiProvider\Amazee\DrupalConfigStorage::class);
     $this->assertTrue(
       $class->implementsInterface('Tag1\Scolta\AiProvider\Amazee\ProvenanceAwareConfigStorageInterface'),
       'If this class no longer implements the interface, the floor may be reconsidered on its own merits.',

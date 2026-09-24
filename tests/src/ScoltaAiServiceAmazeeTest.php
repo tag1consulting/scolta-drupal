@@ -8,8 +8,8 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
-use Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\AiProvider\Amazee\BudgetExceededHandler;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use GuzzleHttp\ClientInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
@@ -169,8 +169,11 @@ class ScoltaAiServiceAmazeeTest extends TestCase {
    * Build a service instance ready to run buildConfig().
    */
   private function serviceForBuildConfig(array $settings, ?ConfigStorageInterface $storage): ScoltaAiService {
+    // buildConfig() reads the query-time object for its own settings and the
+    // build-time one for the dimension names the AI expands intent against.
     $configs = [
-      'scolta.settings' => $this->fakeConfig($settings),
+      'scolta_ui.settings' => $this->fakeConfig($settings),
+      'scolta.settings' => $this->fakeConfig([]),
       'system.site' => $this->fakeConfig(['name' => 'Test Site']),
     ];
     $configFactory = $this->createMock(ConfigFactoryInterface::class);

@@ -3,6 +3,7 @@ description: 'Configures Scolta against the content the demo_umami profile ships
 type: 'Site'
 install:
   - scolta
+  - scolta_ui
 # The recipe's own config/ directory places the search widget in Umami's
 # Highlighted region, so the corpus is searchable from every page without a
 # trip to the block layout UI.
@@ -10,11 +11,6 @@ config:
   actions:
     scolta.settings:
       simpleConfigUpdate:
-        # Umami is a recipe catalogue, and this preset is written for exactly
-        # that shape: title matches dominate, recency stays neutral.
-        preset: content_catalog
-        site_name: 'Umami Food Magazine'
-        site_description: 'food magazine'
         # Umami's articles use field_body, but its ten recipe nodes keep their
         # prose in field_recipe_instruction — without it every recipe is
         # skipped for having an empty body, which is most of the corpus.
@@ -23,6 +19,32 @@ config:
           - field_body
           - field_content
           - field_recipe_instruction
+        filter_fields:
+          - category
+          - tags
+          - difficulty
+        sortable_fields:
+          - cooking_time
+          - prep_time
+        field_mappings:
+          filters:
+            field_recipe_category: category
+            field_tags: tags
+            field_difficulty: difficulty
+          sortable:
+            field_cooking_time: cooking_time
+            field_preparation_time: prep_time
+
+    # The query-time half. Scolta ships as two modules: scolta owns what the
+    # index is built from, scolta_ui owns how it is searched and presented,
+    # and every key below moved with the tier that reads it.
+    scolta_ui.settings:
+      simpleConfigUpdate:
+        # Umami is a recipe catalogue, and this preset is written for exactly
+        # that shape: title matches dominate, recency stays neutral.
+        preset: content_catalog
+        site_name: 'Umami Food Magazine'
+        site_description: 'food magazine'
         # Umami ships every node in both languages, and the gatherer emits one
         # indexed page per translation, so both belong here.
         ai_languages:
@@ -32,25 +54,10 @@ config:
         # the request on every search. Turn on once a key is configured.
         ai_expand_query: false
         ai_summarize: false
-        filter_fields:
-          - category
-          - tags
-          - difficulty
         filter_field_descriptions:
           category: 'Course or meal type (Main courses, Desserts, Snacks, Starters, Baking)'
           tags: 'Free-form recipe and article topics (Chocolate, Vegan, Baking, Healthy, Drinks)'
           difficulty: 'How hard the recipe is to cook (easy, medium, hard)'
-        sortable_fields:
-          - cooking_time
-          - prep_time
         sortable_field_descriptions:
           cooking_time: 'Cooking time in minutes'
           prep_time: 'Preparation time in minutes'
-        field_mappings:
-          filters:
-            field_recipe_category: category
-            field_tags: tags
-            field_difficulty: difficulty
-          sortable:
-            field_cooking_time: cooking_time
-            field_preparation_time: prep_time

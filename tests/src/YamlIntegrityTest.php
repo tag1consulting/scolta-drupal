@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\scolta\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Config schema stays in sync with install defaults.
@@ -23,8 +22,8 @@ class YamlIntegrityTest extends TestCase {
   }
 
   public function testInstallConfigKeysMatchSchema(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $install = PackageManifest::settings();
+    $schema = PackageManifest::settingsSchema();
 
     $this->assertArrayHasKey('scolta.settings', $schema);
     $schemaMapping = $schema['scolta.settings']['mapping'];
@@ -47,11 +46,11 @@ class YamlIntegrityTest extends TestCase {
   }
 
   public function testScoringSubkeysMatchSchema(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $install = PackageManifest::settings();
+    $schema = PackageManifest::settingsSchema();
 
     $installScoring = $install['scoring'] ?? [];
-    $schemaScoring = $schema['scolta.settings']['mapping']['scoring']['mapping'] ?? [];
+    $schemaScoring = $schema['scolta_ui.settings']['mapping']['scoring']['mapping'] ?? [];
 
     foreach (array_keys($installScoring) as $key) {
       $this->assertArrayHasKey($key, $schemaScoring,
@@ -64,11 +63,11 @@ class YamlIntegrityTest extends TestCase {
   }
 
   public function testDisplaySubkeysMatchSchema(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $install = PackageManifest::settings();
+    $schema = PackageManifest::settingsSchema();
 
     $installDisplay = $install['display'] ?? [];
-    $schemaDisplay = $schema['scolta.settings']['mapping']['display']['mapping'] ?? [];
+    $schemaDisplay = $schema['scolta_ui.settings']['mapping']['display']['mapping'] ?? [];
 
     foreach (array_keys($installDisplay) as $key) {
       $this->assertArrayHasKey($key, $schemaDisplay,
@@ -81,8 +80,8 @@ class YamlIntegrityTest extends TestCase {
   }
 
   public function testPagefindSubkeysMatchSchema(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $install = PackageManifest::settings();
+    $schema = PackageManifest::settingsSchema();
 
     $installPagefind = $install['pagefind'] ?? [];
     $schemaPagefind = $schema['scolta.settings']['mapping']['pagefind']['mapping'] ?? [];
@@ -98,8 +97,8 @@ class YamlIntegrityTest extends TestCase {
   }
 
   public function testInstallConfigValueTypesMatchSchema(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $install = PackageManifest::settings();
+    $schema = PackageManifest::settingsSchema();
     $mapping = $schema['scolta.settings']['mapping'];
 
     $typeChecks = [

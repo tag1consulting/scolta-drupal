@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\scolta\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * The install-time Pagefind directory defaults use Drupal stream wrappers.
@@ -29,7 +28,7 @@ class ScoltaCommandsValidationTest extends TestCase {
    * The exact shipped defaults, so a stream-wrapper regression is caught.
    */
   public function testDefaultPagefindDirsArePublic(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
+    $install = PackageManifest::settings();
     $this->assertSame('public://scolta-build', $install['pagefind']['build_dir'] ?? NULL,
       'Default install config must use public://scolta-build as build_dir');
     $this->assertSame('public://scolta-pagefind', $install['pagefind']['output_dir'] ?? NULL,

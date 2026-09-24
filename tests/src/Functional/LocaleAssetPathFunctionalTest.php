@@ -7,7 +7,7 @@ namespace Drupal\Tests\scolta\Functional;
 use Drupal\Core\Logger\RfcLogLevel;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\language\Entity\ConfigurableLanguage;
-use Drupal\scolta\Service\AssetDeployer;
+use Drupal\scolta_ui\Service\AssetDeployer;
 
 /**
  * Proves a multilingual site can render pages with the search library on.
@@ -25,7 +25,7 @@ use Drupal\scolta\Service\AssetDeployer;
  * The guard needs the whole render pipeline: the failure is in asset
  * resolution during a page render, so a kernel test that never renders a
  * page would not see it. It also needs the library actually attached, hence
- * the placed search block — a page without it never resolves scolta/search
+ * the placed search block — a page without it never resolves scolta_ui/search
  * and renders fine no matter what the library says.
  *
  * Enabling locale is by itself enough to reproduce: locale's own
@@ -43,7 +43,7 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
    * {@inheritdoc}
    */
   protected static $modules = [
-    'scolta',
+    'scolta', 'scolta_ui',
     'node',
     'block',
     'language',
@@ -66,7 +66,7 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
 
     // ScoltaSearchBlock::build() returns early and attaches nothing at all
     // when no index exists, so without this fixture the block renders empty,
-    // scolta/search is never attached, and every assertion below passes
+    // scolta_ui/search is never attached, and every assertion below passes
     // against a page that was never at risk. The fake index is the whole
     // reason this test can fail.
     $outputUri = \Drupal::config('scolta.settings')->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
@@ -98,7 +98,7 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
     $this->drupalGet($node->toUrl());
     $this->assertSession()->statusCodeEquals(200);
     $this->assertArrayHasKey('scolta', $this->getDrupalSettings(),
-      'The page must actually render the search block — a page that does not attach scolta/search cannot fail this test, so it would prove nothing.');
+      'The page must actually render the search block — a page that does not attach scolta_ui/search cannot fail this test, so it would prove nothing.');
     $this->assertSession()->responseContains('scolta.js');
     $this->assertNoLocaleParseException('a page rendering the search block');
 
@@ -119,8 +119,8 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
    */
   public function testResolvedLibraryPathIsLocalAndDeployed(): void {
     $library = \Drupal::service('library.discovery')
-      ->getLibraryByName('scolta', 'search');
-    $this->assertNotFalse($library, 'The scolta/search library must exist.');
+      ->getLibraryByName('scolta_ui', 'search');
+    $this->assertNotFalse($library, 'The scolta_ui/search library must exist.');
 
     $assets = array_merge($library['js'], $library['css']);
     $this->assertCount(2, $assets, 'The search library must declare one JS and one CSS file.');
@@ -139,7 +139,7 @@ class LocaleAssetPathFunctionalTest extends BrowserTestBase {
     // followed. Comparing against the deployer's own resolution of the same
     // URI is the assertion that a hardcoded sites/default/files would fail
     // on a relocated site.
-    /** @var \Drupal\scolta\Service\AssetDeployer $deployer */
+    /** @var \Drupal\scolta_ui\Service\AssetDeployer $deployer */
     $deployer = \Drupal::service('scolta.asset_deployer');
     $expected = ltrim((string) $deployer->webPath(AssetDeployer::DIRECTORY . '/js/scolta.js'), '/');
     $this->assertSame($expected, $library['js'][0]['data'],

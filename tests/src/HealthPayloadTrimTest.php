@@ -9,11 +9,12 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
-use Drupal\scolta\Controller\HealthController;
-use Drupal\scolta\Service\IndexLocator;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Controller\HealthController;
+use Drupal\scolta_ui\Service\IndexOrigin;
+use Drupal\scolta_ui\Service\ScoltaAiService;
+use GuzzleHttp\ClientInterface;
+use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\Config\ApiKeySource;
 use Tag1\Scolta\Config\ResolvedApiKey;
 use Tag1\Scolta\Config\ScoltaConfig;
@@ -23,11 +24,11 @@ use Tag1\Scolta\Config\ScoltaConfig;
  *
  * Policy: the health route stays reachable anonymously so uptime monitors
  * always work, but the full diagnostic payload (provider, index integrity,
- * fragment counts) requires 'administer scolta'. Anonymous callers receive
+ * fragment counts) requires 'administer scolta ui'. Anonymous callers receive
  * exactly ['status' => ...].
  *
  * The real HealthController is constructed with stubbed services and a real
- * IndexLocator over a temp directory; currentUser() and config() resolve
+ * IndexOrigin over a temp directory; currentUser() and config() resolve
  * through a minimal \Drupal container installed per test.
  */
 class HealthPayloadTrimTest extends TestCase {
@@ -62,7 +63,7 @@ class HealthPayloadTrimTest extends TestCase {
   // -------------------------------------------------------------------
 
   public function testHealthRouteIsAnonymouslyReachable(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
+    $routing = PackageManifest::routes();
 
     $this->assertSame(
       'TRUE',
@@ -84,14 +85,20 @@ class HealthPayloadTrimTest extends TestCase {
    * Build a real HealthController and install its \Drupal container.
    *
    * @param bool $isAdmin
-   *   Whether the current user has 'administer scolta'.
+   *   Whether the current user has 'administer scolta ui'.
+   * @param string|null $indexOrigin
+   *   The index_origin setting; NULL searches the local index.
+   * @param int $remoteStatus
+   *   The HTTP status the remote origin answers its entry file with.
    */
-  private function createController(bool $isAdmin): HealthController {
+  private function createController(bool $isAdmin, ?string $indexOrigin = NULL, int $remoteStatus = 200): HealthController {
+    // One stub answers for both settings objects: the keys do not overlap.
     $settings = $this->createStub(ImmutableConfig::class);
     $settings->method('get')->willReturnCallback(fn (string $key) => match ($key) {
       // A plain filesystem path, so the stream wrapper manager is never
       // consulted and no bootstrap is needed to resolve it.
       'pagefind.output_dir' => $this->dir,
+      'index_origin' => $indexOrigin,
       default => NULL,
     });
     $configFactory = $this->createStub(ConfigFactoryInterface::class);
@@ -99,7 +106,7 @@ class HealthPayloadTrimTest extends TestCase {
 
     $account = $this->createStub(AccountInterface::class);
     $account->method('hasPermission')->willReturnCallback(
-      fn (string $permission) => $isAdmin && $permission === 'administer scolta'
+      fn (string $permission) => $isAdmin && $permission === 'administer scolta ui'
     );
 
     $container = new ContainerBuilder();
@@ -114,10 +121,13 @@ class HealthPayloadTrimTest extends TestCase {
       new ResolvedApiKey('', ApiKeySource::None, '')
     );
 
+    $httpClient = $this->createStub(ClientInterface::class);
+    $httpClient->method('request')->willReturn(new Response($remoteStatus));
+
     return new HealthController(
       $aiService,
-      $this->createStub(StreamWrapperManagerInterface::class),
-      new IndexLocator(),
+      new IndexOrigin($configFactory, $this->createStub(StreamWrapperManagerInterface::class)),
+      $httpClient,
       NULL,
     );
   }
@@ -192,6 +202,37 @@ class HealthPayloadTrimTest extends TestCase {
     $this->assertContains('No fragment files found', $payload['index']['integrity']['issues']);
     $this->assertArrayHasKey('status_reasons', $payload);
     $this->assertContains(HealthController::REASON_INDEX_INTEGRITY_INVALID, $payload['status_reasons']);
+  }
+
+  // -------------------------------------------------------------------
+  // Remote origin: the local directory's faults do not apply.
+  // -------------------------------------------------------------------
+
+  public function testRemoteOriginIsNotDegradedByTheEmptyLocalDirectory(): void {
+    // Nothing is written to the local output dir: a thin consumer has none.
+    $response = $this->createController(TRUE, 'https://index.example.com', 200)->handle();
+
+    $payload = json_decode((string) $response->getContent(), TRUE);
+    $this->assertSame('ok', $payload['status'], 'A reachable remote index must not report the missing local one');
+    $this->assertNotContains('index_missing', $payload['status_reasons']);
+    $this->assertSame('https://index.example.com', $payload['index_origin']);
+    $this->assertSame(['built' => TRUE, 'remote' => TRUE], $payload['index']);
+  }
+
+  public function testUnreachableRemoteOriginDegradesWithItsOwnReason(): void {
+    $response = $this->createController(TRUE, 'https://index.example.com', 404)->handle();
+
+    $payload = json_decode((string) $response->getContent(), TRUE);
+    $this->assertSame('degraded', $payload['status']);
+    $this->assertSame([HealthController::REASON_REMOTE_INDEX_UNREACHABLE], $payload['status_reasons']);
+    $this->assertFalse($payload['index_exists']);
+  }
+
+  public function testUnreachableRemoteOriginDegradesTheAnonymousStatusToo(): void {
+    $response = $this->createController(FALSE, 'https://index.example.com', 404)->handle();
+
+    $payload = json_decode((string) $response->getContent(), TRUE);
+    $this->assertSame(['status' => 'degraded'], $payload);
   }
 
 }

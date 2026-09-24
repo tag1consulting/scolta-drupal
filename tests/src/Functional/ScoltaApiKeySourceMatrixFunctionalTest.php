@@ -36,7 +36,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta'];
+  protected static $modules = ['scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
@@ -68,7 +68,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
     putenv('SCOLTA_API_KEY');
     $this->container->get('state')->delete('scolta.amazee.credentials');
 
-    $this->drupalLogin($this->drupalCreateUser(['administer scolta']));
+    $this->drupalLogin($this->drupalCreateUser(['administer scolta', 'administer scolta ui']));
   }
 
   /**
@@ -248,7 +248,7 @@ class ScoltaApiKeySourceMatrixFunctionalTest extends BrowserTestBase {
     }
 
     $this->container->get('config.factory')
-      ->getEditable('scolta.settings')
+      ->getEditable('scolta_ui.settings')
       ->set('ai_provider', $provider)
       ->save();
 

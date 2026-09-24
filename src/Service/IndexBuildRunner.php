@@ -75,17 +75,26 @@ class IndexBuildRunner {
 
   /**
    * The site name recorded on each indexed page.
+   *
+   * Site_name and ai_languages are dual-lifecycle keys: scolta_ui owns and
+   * edits them, but a build bakes both into the index. They are read from
+   * scolta_ui.settings by config name rather than through that module, the
+   * same way IndexOrigin reads pagefind.output_dir the other way: Drupal
+   * config is global, so this works with or without scolta_ui installed, and
+   * a backend-only site falls back to the Drupal site name and English.
    */
   public function siteName(): string {
-    return $this->configFactory->get('scolta.settings')->get('site_name')
+    return $this->configFactory->get('scolta_ui.settings')->get('site_name')
       ?: ($this->configFactory->get('system.site')->get('name') ?? '');
   }
 
   /**
    * The stemming language.
+   *
+   * @see self::siteName()
    */
   public function language(): string {
-    return $this->configFactory->get('scolta.settings')->get('ai_languages')[0] ?? 'en';
+    return ($this->configFactory->get('scolta_ui.settings')->get('ai_languages') ?? [])[0] ?? 'en';
   }
 
   /**

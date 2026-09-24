@@ -70,17 +70,31 @@ REQUIRED_PATHS=(
   "scolta.info.yml"
   "scolta.install"
   "scolta.module"
-  "scolta.libraries.yml"
   "scolta.routing.yml"
   "scolta.services.yml"
   "scolta.permissions.yml"
   "scolta.links.menu.yml"
   "scolta.api.php"
   "drush.services.yml"
-  "js/scolta-drupal-bridge.js"
   "config/install/scolta.settings.yml"
   "config/schema/scolta.schema.yml"
   "config/scolta.settings.example.yml"
+  # The frontend module ships from this same package, so a tarball that
+  # carries only the backend is exactly the "dead module" this list exists
+  # to catch -- a site that enables scolta_ui gets a module that is not there.
+  "modules/scolta_ui/scolta_ui.info.yml"
+  "modules/scolta_ui/scolta_ui.install"
+  "modules/scolta_ui/scolta_ui.module"
+  "modules/scolta_ui/scolta_ui.libraries.yml"
+  "modules/scolta_ui/scolta_ui.routing.yml"
+  "modules/scolta_ui/scolta_ui.services.yml"
+  "modules/scolta_ui/scolta_ui.permissions.yml"
+  "modules/scolta_ui/scolta_ui.links.menu.yml"
+  "modules/scolta_ui/drush.services.yml"
+  "modules/scolta_ui/js/scolta-drupal-bridge.js"
+  "modules/scolta_ui/config/install/scolta_ui.settings.yml"
+  "modules/scolta_ui/config/schema/scolta_ui.schema.yml"
+  "modules/scolta_ui/config/scolta_ui.settings.example.yml"
 )
 
 # Fail-closed top-level allowlist, derived from the current clean archive.
@@ -95,11 +109,12 @@ ALLOWED_TOP_LEVEL=(
   "composer.json"
   "config"
   "drush.services.yml"
-  "js"
+  # The frontend module. scolta and scolta_ui ship from this one package, so
+  # the tarball drupal.org serves has to carry both halves.
+  "modules"
   "scolta.api.php"
   "scolta.info.yml"
   "scolta.install"
-  "scolta.libraries.yml"
   "scolta.links.menu.yml"
   "scolta.module"
   "scolta.permissions.yml"

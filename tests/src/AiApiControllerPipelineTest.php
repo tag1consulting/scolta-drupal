@@ -84,8 +84,8 @@ namespace {
 namespace Drupal\scolta\Tests {
 
   use Drupal\Core\Flood\FloodInterface;
-  use Drupal\scolta\Controller\AiApiControllerBase;
-  use Drupal\scolta\Service\ScoltaAiService;
+  use Drupal\scolta_ui\Controller\AiApiControllerBase;
+  use Drupal\scolta_ui\Service\ScoltaAiService;
   use PHPUnit\Framework\TestCase;
   use Psr\Log\AbstractLogger;
   use Symfony\Component\DependencyInjection\Container;

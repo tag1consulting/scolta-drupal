@@ -16,7 +16,7 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'node', 'block'];
+  protected static $modules = ['scolta', 'scolta_ui', 'node', 'block'];
 
   /**
    * {@inheritdoc}
@@ -134,7 +134,7 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
     $user = $this->drupalCreateUser(['use scolta ai']);
     $this->drupalLogin($user);
 
-    $this->config('scolta.settings')->set('max_follow_ups', 0)->save();
+    $this->config('scolta_ui.settings')->set('max_follow_ups', 0)->save();
 
     $response = $this->makeJsonPost('/api/scolta/v1/followup', [
       'messages' => [

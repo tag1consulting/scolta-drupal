@@ -58,7 +58,7 @@ class BrowserConfigParityFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'node', 'block'];
+  protected static $modules = ['scolta', 'scolta_ui', 'node', 'block'];
 
   /**
    * {@inheritdoc}

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use Tag1\Scolta\AiClient;
 
 /**
@@ -34,14 +34,14 @@ class AmazeeModelKeySeparationKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->installConfig(['scolta']);
+    $this->installConfig(['scolta', 'scolta_ui']);
   }
 
   private const GATEWAY_ALIAS = 'claude-4-5-sonnet';
@@ -142,7 +142,7 @@ class AmazeeModelKeySeparationKernelTest extends KernelTestBase {
     $this->setModels(AiClient::DEFAULT_MODEL, '', '', '');
 
     $this->persistResolvedModels(self::GATEWAY_ALIAS, self::GATEWAY_EXPANSION_ALIAS);
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
 
     $this->assertSame(self::GATEWAY_ALIAS, $config->get('amazee_model'));
     $this->assertSame(self::GATEWAY_EXPANSION_ALIAS, $config->get('amazee_expansion_model'));
@@ -162,7 +162,7 @@ class AmazeeModelKeySeparationKernelTest extends KernelTestBase {
     $this->setModels(self::ADMIN_CHOICE, self::ADMIN_EXPANSION_CHOICE, '', '');
 
     $this->persistResolvedModels(self::GATEWAY_ALIAS, self::GATEWAY_EXPANSION_ALIAS);
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
 
     $this->assertSame(self::ADMIN_CHOICE, $config->get('ai_model'), 'ai_model must never be overwritten');
     $this->assertSame(
@@ -181,7 +181,7 @@ class AmazeeModelKeySeparationKernelTest extends KernelTestBase {
     $this->setModels(AiClient::DEFAULT_MODEL, '', self::GATEWAY_ALIAS, self::GATEWAY_EXPANSION_ALIAS);
 
     $this->persistResolvedModels('', '');
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
 
     $this->assertSame(self::GATEWAY_ALIAS, $config->get('amazee_model'));
     $this->assertSame(self::GATEWAY_EXPANSION_ALIAS, $config->get('amazee_expansion_model'));
@@ -220,7 +220,7 @@ class AmazeeModelKeySeparationKernelTest extends KernelTestBase {
    * passes 'anthropic'.
    */
   private function setModels(string $aiModel, string $aiExpansionModel, string $amazeeModel, string $amazeeExpansionModel, string $provider = 'amazee'): void {
-    \Drupal::configFactory()->getEditable('scolta.settings')
+    \Drupal::configFactory()->getEditable('scolta_ui.settings')
       ->set('ai_provider', $provider)
       ->set('ai_model', $aiModel)
       ->set('ai_expansion_model', $aiExpansionModel)

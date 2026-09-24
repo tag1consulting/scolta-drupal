@@ -40,7 +40,7 @@ class ScoltaContentGathererCacheTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'node', 'field', 'filter'];
+  protected static $modules = ['scolta', 'scolta_ui', 'node', 'field', 'filter'];
 
   /**
    * {@inheritdoc}

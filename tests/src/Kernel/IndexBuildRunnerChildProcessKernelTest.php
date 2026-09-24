@@ -24,7 +24,7 @@ class IndexBuildRunnerChildProcessKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta', 'scolta_ui'];
 
   /**
    * The env and exit code round-trip through a real child process.

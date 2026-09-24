@@ -4,22 +4,9 @@ services:
     arguments: ['scolta']
 
   # Each service is also aliased by class name so consuming sites' autowired
-  # Drush commands and services can take it by type.
-  scolta.amazee_config_storage:
-    class: Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage
-    arguments: ['@state']
-  Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage: '@scolta.amazee_config_storage'
-
-  scolta.amazee_budget_handler:
-    class: Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler
-    arguments: ['@messenger', '@state']
-  Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler: '@scolta.amazee_budget_handler'
-
-  scolta.ai_service:
-    class: Drupal\scolta\Service\ScoltaAiService
-    arguments: ['@http_client', '@config.factory', '@logger.channel.scolta', '@scolta.amazee_budget_handler', '@scolta.amazee_config_storage', '@?ai.provider', '@cache.default']
-  Drupal\scolta\Service\ScoltaAiService: '@scolta.ai_service'
-
+  # Drush commands and services can take it by type. The frontend services
+  # (the AI tier, the asset deployer, AI access) moved to scolta_ui and are
+  # aliased there.
   scolta.content_gatherer:
     class: Drupal\scolta\Service\ScoltaContentGatherer
     arguments: ['@entity_type.manager', '@database', '@module_handler', '@config.factory', '@entity.memory_cache']
@@ -35,27 +22,6 @@ services:
     class: Drupal\scolta\Service\IndexBuildRunner
     arguments: ['@config.factory', '@file_system', '@stream_wrapper_manager', '@scolta.content_gatherer']
   Drupal\scolta\Service\IndexBuildRunner: '@scolta.index_build_runner'
-
-  # Copies the scolta-php browser bundle from vendor/ into
-  # public://scolta-assets. Runs at install and on every cache rebuild;
-  # copies only files that differ from the vendored canonical.
-  scolta.asset_deployer:
-    class: Drupal\scolta\Service\AssetDeployer
-    arguments: ['@file_system', '@logger.channel.scolta', '@stream_wrapper_manager']
-  Drupal\scolta\Service\AssetDeployer: '@scolta.asset_deployer'
-
-  # Decorate this to narrow who reaches the AI features. Both the block that
-  # advertises them and the routes that serve them ask it.
-  scolta.ai_access:
-    class: Drupal\scolta\Access\AiAccess
-  Drupal\scolta\Access\AiAccess: '@scolta.ai_access'
-
-  scolta.ai_feature_access_check:
-    class: Drupal\scolta\Access\AiFeatureAccessCheck
-    arguments: ['@scolta.ai_access']
-    tags:
-      - { name: access_check, applies_to: _scolta_ai }
-  Drupal\scolta\Access\AiFeatureAccessCheck: '@scolta.ai_feature_access_check'
 
   # The queueing half of `drush scolta:reindex`: refresh indexed output for
   # entities that did not change, without a save that would bump `changed`

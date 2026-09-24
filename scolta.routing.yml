@@ -1,11 +1,3 @@
-scolta.settings.amazee:
-  path: '/admin/config/search/scolta/amazee'
-  defaults:
-    _form: '\Drupal\scolta\Form\AmazeeSettingsForm'
-    _title: 'Amazee.ai Configuration'
-  requirements:
-    _permission: 'administer scolta'
-
 scolta.dismiss_rebuild_notice:
   path: '/admin/config/search/scolta/dismiss-rebuild-notice'
   defaults:
@@ -16,51 +8,10 @@ scolta.dismiss_rebuild_notice:
     _csrf_token: 'TRUE'
   methods: [GET]
 
-scolta.settings:
-  path: '/admin/config/search/scolta'
+scolta.index_settings:
+  path: '/admin/config/search/scolta/index'
   defaults:
-    _form: '\Drupal\scolta\Form\ScoltaSettingsForm'
-    _title: 'Scolta Settings'
+    _form: '\Drupal\scolta\Form\ScoltaIndexSettingsForm'
+    _title: 'Scolta index settings'
   requirements:
     _permission: 'administer scolta'
-
-# The permission is the role-level rule and is left as the plain requirement
-# it has always been. `_scolta_ai` adds the per-feature rule the block is
-# built from — the config flags, plus anything a site has decorated onto
-# scolta.ai_access — so the endpoint refuses whatever the markup withheld.
-scolta.expand:
-  path: '/api/scolta/v1/expand-query'
-  defaults:
-    _controller: '\Drupal\scolta\Controller\ExpandQueryController::handle'
-  methods: [POST]
-  requirements:
-    _permission: 'use scolta ai'
-    _scolta_ai: 'expand'
-
-scolta.summarize:
-  path: '/api/scolta/v1/summarize'
-  defaults:
-    _controller: '\Drupal\scolta\Controller\SummarizeController::handle'
-  methods: [POST]
-  requirements:
-    _permission: 'use scolta ai'
-    _scolta_ai: 'summarize'
-
-scolta.followup:
-  path: '/api/scolta/v1/followup'
-  defaults:
-    _controller: '\Drupal\scolta\Controller\FollowUpController::handle'
-  methods: [POST]
-  requirements:
-    _permission: 'use scolta ai'
-    _scolta_ai: 'follow_up'
-
-# Reachable anonymously so uptime monitors always work; the controller
-# returns status-only unless the caller has 'administer scolta'.
-scolta.health:
-  path: '/api/scolta/v1/health'
-  defaults:
-    _controller: '\Drupal\scolta\Controller\HealthController::handle'
-  methods: [GET]
-  requirements:
-    _access: 'TRUE'

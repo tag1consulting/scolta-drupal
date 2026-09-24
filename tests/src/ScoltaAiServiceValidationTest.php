@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\scolta\Tests;
 
 use Drupal\Core\Site\Settings;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
 

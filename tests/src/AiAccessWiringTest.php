@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace Drupal\scolta\Tests;
 
 use Drupal\Core\Session\AccountInterface;
-use Drupal\scolta\Access\AiAccess;
+use Drupal\scolta_ui\Access\AiAccess;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Pins the wiring that makes scolta.ai_access the single AI access decision.
@@ -36,7 +35,7 @@ class AiAccessWiringTest extends TestCase {
    * alone.
    */
   public function testRouteAccessCheckIsTagged(): void {
-    $services = Yaml::parseFile($this->moduleRoot . '/scolta.services.yml')['services'];
+    $services = PackageManifest::services();
 
     $this->assertArrayHasKey('scolta.ai_feature_access_check', $services);
     $this->assertContains(
@@ -50,7 +49,7 @@ class AiAccessWiringTest extends TestCase {
    * Every AI route carries both the permission and the feature requirement.
    */
   public function testAiRoutesCarryBothRequirements(): void {
-    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
+    $routing = PackageManifest::routes();
 
     $expected = [
       'scolta.expand' => 'expand',
