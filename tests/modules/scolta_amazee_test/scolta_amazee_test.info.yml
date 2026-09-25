@@ -1,0 +1,6 @@
+name: 'Scolta Amazee.ai test'
+type: module
+description: 'Answers the Amazee.ai control plane and gateway from canned responses, so the connect flow runs offline.'
+package: Testing
+dependencies:
+  - scolta:scolta

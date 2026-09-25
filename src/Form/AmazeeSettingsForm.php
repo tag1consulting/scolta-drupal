@@ -7,13 +7,10 @@ namespace Drupal\scolta\Form;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage;
-use Drupal\scolta\Cache\DrupalCacheDriver;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeAccountUpgrader;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeApiException;
-use Tag1\Scolta\AiProvider\Amazee\AmazeeClient;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeConnectionSource;
-use Tag1\Scolta\AiProvider\Amazee\AmazeeModelResolver;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeTrialProvisioner;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 
@@ -43,13 +40,18 @@ use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 class AmazeeSettingsForm extends FormBase {
 
   /**
-   * Neither private nor readonly, both deliberately.
+   * Every property is a container service, and neither private nor readonly.
    *
-   * FormBase brings in DependencySerializationTrait, and a cached form is
-   * unserialized by reassigning its service properties. That reassignment
-   * cannot reach a private property and cannot write a readonly one at all —
-   * a readonly property would raise "Cannot modify readonly property" on the
-   * first rebuild of a cached form. See https://www.drupal.org/node/3110266.
+   * All three follow from caching: a rebuilt form is cached, which serializes
+   * the form object. FormBase brings in DependencySerializationTrait, which
+   * replaces each property holding a container service with its service id on
+   * serialize and reassigns the service on unserialize. Anything that is not a
+   * service is serialized as is, and these collaborators wrap the Guzzle
+   * client, whose handler stack holds closures, so an object built with `new`
+   * fails with "Serialization of 'Closure' is not allowed". The reassignment
+   * cannot reach a private property and cannot write a readonly one, which
+   * would raise "Cannot modify readonly property". See
+   * https://www.drupal.org/node/3110266.
    */
   public function __construct(
     protected DrupalConfigStorage $storage,
@@ -62,17 +64,14 @@ class AmazeeSettingsForm extends FormBase {
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
-    $httpClient = $container->get('http_client');
-    $storage = $container->get('scolta.amazee_config_storage');
-    $amazeeClient = new AmazeeClient(httpClient: $httpClient);
     return new static(
-      $storage,
-      new AmazeeTrialProvisioner($amazeeClient, $storage, NULL, new AmazeeModelResolver($amazeeClient)),
-      new AmazeeAccountUpgrader($amazeeClient, $storage),
+      $container->get('scolta.amazee_config_storage'),
+      $container->get('scolta.amazee_trial_provisioner'),
+      $container->get('scolta.amazee_account_upgrader'),
       // Reads/clears the same re-authentication marker the admin notice and
-      // /health observe, over the default cache bin ScoltaAiService records it
-      // in. A successful reconnect clears it so the prompt goes away.
-      new KeyExpiryRecovery($storage, new DrupalCacheDriver($container->get('cache.default'))),
+      // /health observe. A successful reconnect clears it so the prompt goes
+      // away.
+      $container->get('scolta.amazee_key_expiry_recovery'),
     );
   }
 
@@ -399,7 +398,9 @@ class AmazeeSettingsForm extends FormBase {
         $this->messenger()->addStatus($this->t('Connected to Amazee.ai. The demo is active.'));
       }
 
-      $form_state->setRebuild(TRUE);
+      // The action is complete: land on the main settings page, where the AI
+      // features this connection enables are switched on.
+      $form_state->setRedirect('scolta.settings');
     }
     catch (AmazeeApiException $e) {
       // The demo is one-time. A refusal here is most often "already used", and
@@ -412,6 +413,7 @@ class AmazeeSettingsForm extends FormBase {
       $this->messenger()->addWarning($this->t(
         'The free demo can only be used once per site. If this site has already used it, continue under "Enter your Amazee credentials" below: sign in with your email address and we will set up your account.',
       ));
+      $form_state->setRebuild(TRUE);
     }
   }
 
@@ -464,12 +466,13 @@ class AmazeeSettingsForm extends FormBase {
       // prompt so the admin notice and /health recover.
       $this->keyRecovery->clearUpgradeNeeded();
       $this->selectAmazeeProvider();
-      $form_state->set('amazee_step', 'start');
-      $form_state->setRebuild(TRUE);
       $this->messenger()->addStatus($this->t('Successfully connected to Amazee.ai.'));
+      $form_state->setRedirect('scolta.settings');
     }
     catch (AmazeeApiException $e) {
       $this->messenger()->addError($this->t('Connection failed: @error', ['@error' => $e->getMessage()]));
+      // Stay on the region step, with the error beside it.
+      $form_state->setRebuild(TRUE);
     }
   }
 
@@ -496,9 +499,8 @@ class AmazeeSettingsForm extends FormBase {
    */
   public function submitDisconnect(array &$form, FormStateInterface $form_state): void {
     $this->storage->clear();
-    $form_state->set('amazee_step', 'start');
-    $form_state->setRebuild(TRUE);
     $this->messenger()->addStatus($this->t('Disconnected from Amazee.ai.'));
+    $form_state->setRedirect('scolta.settings.amazee');
   }
 
   /**
