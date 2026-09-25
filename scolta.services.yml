@@ -10,6 +10,45 @@ services:
     arguments: ['@state']
   Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage: '@scolta.amazee_config_storage'
 
+  # The Amazee.ai connect flow's collaborators. Services rather than objects
+  # built in AmazeeSettingsForm::create(): a rebuilt form is cached, and
+  # DependencySerializationTrait can only swap out properties that are
+  # container services. Built with `new`, they carried the Guzzle client, whose
+  # handler stack holds closures, into serialize().
+  scolta.amazee_client:
+    class: Tag1\Scolta\AiProvider\Amazee\AmazeeClient
+    # AmazeeClient's own default base URL; positional because the client is
+    # its second argument.
+    arguments: ['https://api.amazee.ai', '@http_client']
+  Tag1\Scolta\AiProvider\Amazee\AmazeeClient: '@scolta.amazee_client'
+
+  scolta.amazee_model_resolver:
+    class: Tag1\Scolta\AiProvider\Amazee\AmazeeModelResolver
+    arguments: ['@scolta.amazee_client']
+  Tag1\Scolta\AiProvider\Amazee\AmazeeModelResolver: '@scolta.amazee_model_resolver'
+
+  scolta.amazee_trial_provisioner:
+    class: Tag1\Scolta\AiProvider\Amazee\AmazeeTrialProvisioner
+    arguments: ['@scolta.amazee_client', '@scolta.amazee_config_storage', null, '@scolta.amazee_model_resolver']
+  Tag1\Scolta\AiProvider\Amazee\AmazeeTrialProvisioner: '@scolta.amazee_trial_provisioner'
+
+  scolta.amazee_account_upgrader:
+    class: Tag1\Scolta\AiProvider\Amazee\AmazeeAccountUpgrader
+    arguments: ['@scolta.amazee_client', '@scolta.amazee_config_storage']
+  Tag1\Scolta\AiProvider\Amazee\AmazeeAccountUpgrader: '@scolta.amazee_account_upgrader'
+
+  # The default bin, where ScoltaAiService records the re-authentication
+  # marker the admin notice and /health observe.
+  scolta.amazee_cache_driver:
+    class: Drupal\scolta\Cache\DrupalCacheDriver
+    arguments: ['@cache.default']
+  Drupal\scolta\Cache\DrupalCacheDriver: '@scolta.amazee_cache_driver'
+
+  scolta.amazee_key_expiry_recovery:
+    class: Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery
+    arguments: ['@scolta.amazee_config_storage', '@scolta.amazee_cache_driver']
+  Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery: '@scolta.amazee_key_expiry_recovery'
+
   scolta.amazee_budget_handler:
     class: Drupal\scolta\AiProvider\Amazee\BudgetExceededHandler
     arguments: ['@messenger', '@state']

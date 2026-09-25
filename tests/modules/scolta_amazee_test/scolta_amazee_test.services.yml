@@ -1,0 +1,4 @@
+services:
+  scolta_amazee_test.http_client:
+    class: GuzzleHttp\Client
+    factory: ['Drupal\scolta_amazee_test\FakeAmazeeHttpClient', 'create']
