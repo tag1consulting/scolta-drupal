@@ -15,14 +15,16 @@ config:
         preset: content_catalog
         site_name: 'Umami Food Magazine'
         site_description: 'food magazine'
-        # Umami's articles use field_body, but its ten recipe nodes keep their
-        # prose in field_recipe_instruction — without it every recipe is
-        # skipped for having an empty body, which is most of the corpus.
+        # Umami's articles use field_body; its recipe nodes spread their prose
+        # over field_recipe_instruction, field_summary and field_ingredients,
+        # and every field holding a value is indexed, in this order, so a
+        # summary word ("easy") or an ingredient finds the recipe. Umami has
+        # no body or field_content, so they are left out here.
         body_fields:
-          - body
           - field_body
-          - field_content
           - field_recipe_instruction
+          - field_summary
+          - field_ingredients
         # Umami ships every node in both languages, and the gatherer emits one
         # indexed page per translation, so both belong here.
         ai_languages:

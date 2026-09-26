@@ -426,7 +426,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Body content fields'),
       '#default_value' => implode(', ', $config->get('body_fields') ?? []),
-      '#description' => $this->t('Comma-separated entity fields searched for body text, in precedence order — the first one holding a value on a given translation is indexed. Content with none of these fields is skipped entirely, so add any bundle-specific field here (e.g. <code>body, field_body, field_content, field_recipe_instruction</code>). Leave empty to fall back to <code>body, field_body, field_content</code>.'),
+      '#description' => $this->t('Comma-separated entity fields searched for body text. Every one holding a value on a given translation is indexed, in this order. To leave a field out of the index, remove it from this list. Content with none of these fields is skipped entirely, so add any bundle-specific field here (e.g. <code>body, field_body, field_content, field_recipe_instruction</code>). Leave empty to fall back to <code>body, field_body, field_content</code>.'),
     ];
 
     $form['content']['sortable_fields'] = [

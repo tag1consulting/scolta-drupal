@@ -844,10 +844,11 @@ class ScoltaContentGatherer {
   }
 
   /**
-   * The entity fields to search for body content, in precedence order.
+   * The entity fields to search for body content.
    *
    * @return string[]
-   *   Field names; the first one holding a value on a given translation wins.
+   *   Field names. Every one holding a value on a given translation is
+   *   indexed, in this order.
    */
   private function bodyFields(): array {
     $configured = $this->configFactory->get('scolta.settings')->get('body_fields');
@@ -855,6 +856,38 @@ class ScoltaContentGatherer {
     // A site that has never saved the setting, or has emptied it, still needs
     // the historical defaults rather than an index of nothing.
     return array_filter($configured ?: ['body', 'field_body', 'field_content']);
+  }
+
+  /**
+   * The plain text of every item in a body field, one blank line apart.
+   *
+   * Every item, not just the first: a multi-value field such as Umami's
+   * field_ingredients holds one ingredient per item.
+   *
+   * @param \Drupal\Core\Field\FieldItemListInterface $items
+   *   The field's items on one translation.
+   *
+   * @return string
+   *   The text, or '' when no item holds any.
+   */
+  private function fieldText(FieldItemListInterface $items): string {
+    $texts = [];
+    foreach ($items as $item) {
+      if ($item instanceof TextItemBase) {
+        // ->processed runs text format filters; PlainTextOutput decodes HTML
+        // entities. Cast to string: ->processed returns FilteredMarkup, not a
+        // plain string. Fall back to ->value if the text format is
+        // misconfigured.
+        $text = PlainTextOutput::renderFromHtml((string) $item->processed) ?: PlainTextOutput::renderFromHtml((string) $item->value);
+      }
+      else {
+        $text = (string) ($item->getValue()['value'] ?? '');
+      }
+      if (trim($text) !== '') {
+        $texts[] = $text;
+      }
+    }
+    return implode("\n\n", $texts);
   }
 
   /**
@@ -887,28 +920,26 @@ class ScoltaContentGatherer {
         continue;
       }
 
-      // Extract body content from the first configured field that has a
-      // value. The list is configurable because bundles do not agree on where
-      // their prose lives: Umami's recipe nodes carry theirs in
+      // Extract body content from the configured fields, in list order. The
+      // list is configurable because bundles do not agree on where their
+      // prose lives: Umami's recipe nodes carry theirs in
       // field_recipe_instruction, and with a hardcoded list every recipe fell
-      // out of the index at the empty-body check below without a word.
-      $body = '';
+      // out of the index at the empty-body check below without a word. Every
+      // field holding a value is indexed, because a bundle's prose often spans
+      // several (a recipe's summary, ingredients and instructions). A field
+      // that should not be searched is left out of the list.
+      $parts = [];
       foreach ($this->bodyFields() as $field) {
-        if ($translation->hasField($field) && !$translation->get($field)->isEmpty()) {
-          $item = $translation->get($field)->first();
-          if ($item instanceof TextItemBase) {
-            // ->processed runs text format filters; PlainTextOutput
-            // decodes HTML entities. Cast to string: ->processed
-            // returns FilteredMarkup, not a plain string.
-            // Fall back to ->value if the text format is misconfigured.
-            $body = PlainTextOutput::renderFromHtml((string) $item->processed) ?: PlainTextOutput::renderFromHtml((string) $item->value);
-          }
-          else {
-            $body = $item->value;
-          }
-          break;
+        if (!$translation->hasField($field) || $translation->get($field)->isEmpty()) {
+          continue;
         }
+        $text = $this->fieldText($translation->get($field));
+        if ($text === '') {
+          continue;
+        }
+        $parts[] = $text;
       }
+      $body = implode("\n\n", $parts);
 
       if (empty($body)) {
         continue;
