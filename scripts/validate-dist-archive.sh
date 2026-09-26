@@ -58,9 +58,6 @@ EXCLUDED_PATHS=(
   "CLAUDE.md"
   "MAINTAINING.md"
   "scripts"
-  # Development and demo aid: applying it rewrites scolta.settings and places a
-  # block, which is not something a release tarball should offer a live site.
-  "recipes"
 )
 
 # Committed runtime assets that MUST be present in the archive. A broken or
@@ -81,6 +78,10 @@ REQUIRED_PATHS=(
   "config/install/scolta.settings.yml"
   "config/schema/scolta.schema.yml"
   "config/scolta.settings.example.yml"
+  # A recipe is applied on a live site with `drush recipe`, so it has to ship
+  # in the archive Composer installs from. It was export-ignored once, and
+  # every dist install since #232 came without it.
+  "recipes/scolta_umami/recipe.yml"
 )
 
 # Fail-closed top-level allowlist, derived from the current clean archive.
@@ -96,6 +97,7 @@ ALLOWED_TOP_LEVEL=(
   "config"
   "drush.services.yml"
   "js"
+  "recipes"
   "scolta.api.php"
   "scolta.info.yml"
   "scolta.install"
