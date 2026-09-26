@@ -13,6 +13,9 @@
         "php": ">=8.3",
         "tag1/scolta-php": "^2.0.0@dev"
     },
+    "conflict": {
+        "twig/twig": "3.30.0"
+    },
     "suggest": {
         "drupal/ai": "For enhanced multi-provider AI support via the Drupal AI Initiative module (48+ providers, Key module integration, rate limiting, token tracking)"
     },

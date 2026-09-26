@@ -453,6 +453,23 @@ function scolta_update_10008() {
 }
 
 /**
+ * Add auto_language_filter to scolta.settings, off.
+ *
+ * The key was read (ScoltaConfig::fromArray() takes the whole settings array)
+ * but never declared, so config validation could not type it and the
+ * settings form had no field for it. Leaves a value a site already set.
+ */
+function scolta_update_10009() {
+  $config = \Drupal::configFactory()->getEditable('scolta.settings');
+  if ($config->get('auto_language_filter') === NULL) {
+    $config->set('auto_language_filter', FALSE)->save();
+    return t('Added auto_language_filter to scolta.settings, off.');
+  }
+  $config->set('auto_language_filter', filter_var($config->get('auto_language_filter'), FILTER_VALIDATE_BOOLEAN))->save();
+  return t('auto_language_filter was already set; kept it and stored it as a boolean.');
+}
+
+/**
  * Discard the build state and queue one full rebuild.
  *
  * For any release whose page IDs, ledger layout or manifest keys are not
