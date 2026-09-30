@@ -363,6 +363,61 @@ class ScoltaSettingsForm extends ConfigFormBase {
     ];
     $form['ai']['api_key_status'] = $apiKeyStatus;
 
+    // ── Chat Section ──
+    $form['chat'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Chat'),
+      '#open' => (bool) $config->get('chat_enabled'),
+      '#description' => $this->t('A conversation with the site that answers from its own pages and cites them. Place the Scolta Chat block to show it; visitors need the "Use Scolta AI features" permission.'),
+    ];
+
+    $form['chat']['chat_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Turn the chat on'),
+      '#default_value' => (bool) ($config->get('chat_enabled') ?? FALSE),
+    ];
+
+    $form['chat']['chat_page_context'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Include the page being read'),
+      '#default_value' => (bool) ($config->get('chat_page_context') ?? TRUE),
+      '#description' => $this->t('Sends the relevant parts of the page the visitor is reading to your AI provider with each question, so a question like "what does this page say about fees?" can be answered.'),
+    ];
+
+    $form['chat']['chat_handoff'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Open the chat from the search page'),
+      '#default_value' => (bool) ($config->get('chat_handoff') ?? TRUE),
+      '#description' => $this->t('A follow up typed under the AI overview on the search page opens the chat, which carries on from that search.'),
+    ];
+
+    $form['chat']['chat_max_tokens'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Longest answer (tokens)'),
+      '#default_value' => $config->get('chat_max_tokens') ?? 700,
+      '#min' => 100,
+      '#max' => 4000,
+      '#description' => $this->t('About 250 words fits in 700 tokens. Default: 700.'),
+    ];
+
+    $form['chat']['chat_top_chars'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Excerpt budget (characters)'),
+      '#default_value' => $config->get('chat_top_chars') ?? 6000,
+      '#min' => 500,
+      '#max' => 30000,
+      '#description' => $this->t('Characters of page excerpts sent with each question, shared by the five most relevant pages. Default: 6000.'),
+    ];
+
+    $form['chat']['chat_broad_chars'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Page list budget (characters)'),
+      '#default_value' => $config->get('chat_broad_chars') ?? 2500,
+      '#min' => 0,
+      '#max' => 10000,
+      '#description' => $this->t('Characters for up to 25 more pages sent as a title and one line each, so questions like "which pages cover HIPAA?" can be answered. Default: 2500.'),
+    ];
+
     // ── Content Section ──
     $form['content'] = [
       '#type' => 'details',
@@ -1505,6 +1560,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ))) ?: ['en'])
       ->set('auto_language_filter', (bool) $form_state->getValue('auto_language_filter'))
       ->set('max_follow_ups', (int) $form_state->getValue('max_follow_ups'))
+      // Chat.
+      ->set('chat_enabled', (bool) $form_state->getValue('chat_enabled'))
+      ->set('chat_page_context', (bool) $form_state->getValue('chat_page_context'))
+      ->set('chat_handoff', (bool) $form_state->getValue('chat_handoff'))
+      ->set('chat_max_tokens', (int) $form_state->getValue('chat_max_tokens'))
+      ->set('chat_top_chars', (int) $form_state->getValue('chat_top_chars'))
+      ->set('chat_broad_chars', (int) $form_state->getValue('chat_broad_chars'))
       // Content settings.
       ->set('site_name', $form_state->getValue('site_name'))
       ->set('site_description', $form_state->getValue('site_description'))

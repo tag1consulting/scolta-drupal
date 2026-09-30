@@ -258,6 +258,45 @@ scolta.settings:
     prompt_follow_up:
       type: string
       label: 'Custom follow-up prompt'
+    chat_enabled:
+      type: boolean
+      label: 'Turn the chat on'
+    chat_top_results:
+      type: integer
+      label: 'Pages sent with excerpts on each chat turn'
+    chat_top_chars:
+      type: integer
+      label: 'Characters of excerpt across those pages'
+    chat_broad_results:
+      type: integer
+      label: 'Further pages sent with a title and one line'
+    chat_broad_chars:
+      type: integer
+      label: 'Characters for those pages together'
+    chat_page_context:
+      type: boolean
+      label: 'Send the relevant parts of the page being read'
+    chat_page_chars:
+      type: integer
+      label: 'Characters of the page being read'
+    chat_max_tokens:
+      type: integer
+      label: 'Longest chat answer in tokens'
+    chat_thread_ttl:
+      type: integer
+      label: 'Seconds a chat thread lives without use'
+    chat_handoff:
+      type: boolean
+      label: 'Open the chat from the search page follow up'
+    prompt_chat:
+      type: string
+      label: 'Custom chat answer prompt'
+    prompt_chat_plan:
+      type: string
+      label: 'Custom chat planning prompt'
+    prompt_chat_fold:
+      type: string
+      label: 'Custom chat summary prompt'
     memory_budget:
       type: mapping
       label: 'Memory budget configuration'
