@@ -83,6 +83,58 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
    * {@inheritdoc}
    */
   public function build(): array {
+    $notBuilt = $this->indexNotBuilt();
+    if ($notBuilt !== NULL) {
+      return $notBuilt;
+    }
+
+    [$scoltaSettings, $access] = $this->browserSettings();
+    $config = $this->aiService->getConfig();
+
+    $markup = '<div id="scolta-search"></div>';
+    if ($config->showAttribution) {
+      $markup .= '<p class="scolta-attribution">' . $this->t('Powered by Scolta') . '</p>';
+    }
+
+    $build = [
+      '#markup' => $markup,
+      '#attached' => [
+        'library' => [
+          'scolta/search',
+          'scolta/drupal_bridge',
+        ],
+        'drupalSettings' => [
+          'scolta' => $scoltaSettings,
+        ],
+      ],
+      '#cache' => [
+        // config:system.site covers the site-name fallback in drupalSettings;
+        // the language context covers currentLanguage.
+        'tags' => ['config:scolta.settings', 'config:system.site', 'scolta_search_index'],
+        'contexts' => ['languages:language_content'],
+      ],
+    ];
+
+    // The two flags are an access answer now, so this block is cached on
+    // whatever that answer was read from. The shipped rule adds the
+    // user.permissions context; a decorator that varies per user adds its own,
+    // and without this the first visitor's answer would be served to the next.
+    $cacheability = CacheableMetadata::createFromRenderArray($build);
+    foreach ($access as $result) {
+      $cacheability->addCacheableDependency($result);
+    }
+    $cacheability->applyTo($build);
+
+    return $build;
+  }
+
+  /**
+   * The render array for a site whose index is not built yet, or NULL.
+   *
+   * An administrator gets a notice with a link to build it; everyone else
+   * gets nothing, since there is nothing to search.
+   */
+  protected function indexNotBuilt(): ?array {
     // Resolve the Pagefind output directory to a web-accessible URL.
     $drupalConfig = $this->configFactory->get('scolta.settings');
     $outputDir = $drupalConfig->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
@@ -98,29 +150,40 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
         // Fall through with unresolved URI.
       }
     }
-    $indexExists = $this->indexLocator->exists($resolvedDir);
-
-    if (!$indexExists) {
-      // Output differs by the 'administer scolta' permission, so the render
-      // cache must vary on permissions.
-      $cache = [
-        'tags' => ['scolta_search_index'],
-        'contexts' => ['user.permissions'],
-      ];
-      if ($this->currentUser->hasPermission('administer scolta')) {
-        $notice = $this->t(
-          '<p><strong>Scolta:</strong> Search index has not been built yet.</p><p><a href=":url">Build now &rarr;</a> or run <code>drush scolta:build</code></p>',
-          [':url' => Url::fromRoute('scolta.settings')->toString()]
-        );
-        return [
-          '#markup' => '<div class="messages messages--warning">' . $notice . '</div>',
-          '#cache' => $cache,
-        ];
-      }
-      // Hide search block for non-admins when index is missing.
-      return ['#cache' => $cache];
+    if ($this->indexLocator->exists($resolvedDir)) {
+      return NULL;
     }
 
+    // Output differs by the 'administer scolta' permission, so the render
+    // cache must vary on permissions.
+    $cache = [
+      'tags' => ['scolta_search_index'],
+      'contexts' => ['user.permissions'],
+    ];
+    if ($this->currentUser->hasPermission('administer scolta')) {
+      $notice = $this->t(
+        '<p><strong>Scolta:</strong> Search index has not been built yet.</p><p><a href=":url">Build now &rarr;</a> or run <code>drush scolta:build</code></p>',
+        [':url' => Url::fromRoute('scolta.settings')->toString()]
+      );
+      return [
+        '#markup' => '<div class="messages messages--warning">' . $notice . '</div>',
+        '#cache' => $cache,
+      ];
+    }
+    // Hide search block for non-admins when index is missing.
+    return ['#cache' => $cache];
+  }
+
+  /**
+   * The window.scolta settings for this visitor, with their access results.
+   *
+   * @return array{0: array, 1: \Drupal\Core\Access\AccessResultInterface[]}
+   *   The drupalSettings.scolta array and the access results the render
+   *   cache must depend on.
+   */
+  protected function browserSettings(): array {
+    $drupalConfig = $this->configFactory->get('scolta.settings');
+    $outputDir = $drupalConfig->get('pagefind.output_dir') ?? 'public://scolta-pagefind';
     $config = $this->aiService->getConfig();
 
     $pagefindPath = $this->resolvePagefindUrl($outputDir);
@@ -193,40 +256,7 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       'saytSuggestionAction' => $drupalConfig->get('sayt_suggestion_action') === 'search' ? 'search' : 'navigate',
     ];
 
-    $markup = '<div id="scolta-search"></div>';
-    if ($config->showAttribution) {
-      $markup .= '<p class="scolta-attribution">' . $this->t('Powered by Scolta') . '</p>';
-    }
-
-    $build = [
-      '#markup' => $markup,
-      '#attached' => [
-        'library' => [
-          'scolta/search',
-          'scolta/drupal_bridge',
-        ],
-        'drupalSettings' => [
-          'scolta' => $scoltaSettings,
-        ],
-      ],
-      '#cache' => [
-        // config:system.site covers the site-name fallback in drupalSettings;
-        // the language context covers currentLanguage.
-        'tags' => ['config:scolta.settings', 'config:system.site', 'scolta_search_index'],
-        'contexts' => ['languages:language_content'],
-      ],
-    ];
-
-    // The two flags are an access answer now, so this block is cached on
-    // whatever that answer was read from. The shipped rule adds the
-    // user.permissions context; a decorator that varies per user adds its own,
-    // and without this the first visitor's answer would be served to the next.
-    $cacheability = CacheableMetadata::createFromRenderArray($build);
-    $cacheability->addCacheableDependency($expandAccess);
-    $cacheability->addCacheableDependency($summarizeAccess);
-    $cacheability->applyTo($build);
-
-    return $build;
+    return [$scoltaSettings, [$expandAccess, $summarizeAccess]];
   }
 
   /**
