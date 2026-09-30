@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Kernel;
 
+use Drupal\Core\Form\FormState;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\StringTranslation\TranslationInterface;
 use Drupal\KernelTests\KernelTestBase;
@@ -365,6 +366,62 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
     else {
       $this->assertSame(['ai_base_url'], $errors, "URL '{$url}' must set an error on ai_base_url");
     }
+  }
+
+  // -------------------------------------------------------------------
+  // Chat settings.
+  // -------------------------------------------------------------------
+
+  public function testChatSettingsRoundTripThroughTheForm(): void {
+    $this->installConfig(['system']);
+    $this->assertFalse($this->config('scolta.settings')->get('chat_enabled'), 'The chat is off at install');
+
+    $formState = (new FormState())->setValues([
+      'chat_enabled' => 1,
+      // NULL unchecks a checkbox in a programmatic submission.
+      'chat_page_context' => NULL,
+      'chat_handoff' => 1,
+      'chat_max_tokens' => 500,
+      'chat_top_chars' => 4000,
+      'chat_broad_chars' => 1500,
+    ]);
+    $this->container->get('form_builder')->submitForm(ScoltaSettingsForm::class, $formState);
+    $this->assertSame([], $formState->getErrors());
+
+    $saved = $this->config('scolta.settings');
+    $this->assertTrue($saved->get('chat_enabled'));
+    $this->assertFalse($saved->get('chat_page_context'));
+    $this->assertSame(500, $saved->get('chat_max_tokens'));
+
+    $chat = $this->realGetConfig($saved->get())->normalizedChat();
+    $this->assertTrue($chat['enabled']);
+    $this->assertFalse($chat['pageContext']);
+    $this->assertTrue($chat['handoff']);
+    $this->assertSame([500, 4000, 1500], [$chat['maxTokens'], $chat['topChars'], $chat['broadChars']]);
+    // Keys the form does not show keep their install values.
+    $this->assertSame(
+      [5, 25, 3000, 86400],
+      [$chat['topResults'], $chat['broadResults'], $chat['pageChars'], $chat['threadTtl']],
+    );
+  }
+
+  public function testChatUpdateHookAddsDefaultsAndKeepsSetValues(): void {
+    $this->container->get('module_handler')->loadInclude('scolta', 'install');
+    $config = $this->config('scolta.settings');
+    foreach (array_keys($this->getInstallDefaults()) as $key) {
+      if (str_starts_with($key, 'chat_') || str_starts_with($key, 'prompt_chat')) {
+        $config->clear($key);
+      }
+    }
+    $config->set('chat_max_tokens', 900)->save();
+
+    scolta_update_10010();
+
+    $updated = $this->config('scolta.settings');
+    $this->assertFalse($updated->get('chat_enabled'));
+    $this->assertSame(900, $updated->get('chat_max_tokens'), 'A value a site already set is kept');
+    $this->assertSame(25, $updated->get('chat_broad_results'));
+    $this->assertSame('', $updated->get('prompt_chat_fold'));
   }
 
   /**

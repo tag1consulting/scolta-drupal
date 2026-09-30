@@ -217,6 +217,13 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
    * @return array{status: int, body: array|null}
    */
   protected function makeJsonPost(string $path, array $data): array {
+    $server = ['CONTENT_TYPE' => 'application/json'];
+    // The chat routes also require Drupal's CSRF header from a session.
+    if (str_contains($path, '/chat/')) {
+      $this->drupalGet('session/token');
+      $server['HTTP_X_CSRF_TOKEN'] = $this->getSession()->getPage()->getContent();
+    }
+
     $url = $this->getAbsoluteUrl($path);
     $session = $this->getSession();
     $session->getDriver()->getClient()->request(
@@ -224,7 +231,7 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
       $url,
       [],
       [],
-      ['CONTENT_TYPE' => 'application/json'],
+      $server,
       json_encode($data),
     );
     return [

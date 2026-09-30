@@ -59,6 +59,11 @@ interface AiAccessInterface {
   public const FEATURE_FOLLOW_UP = 'follow_up';
 
   /**
+   * The chat: every route under /api/scolta/v1/chat/.
+   */
+  public const FEATURE_CHAT = 'chat';
+
+  /**
    * Every feature this service answers for.
    *
    * The route requirements name these strings, so an implementation can tell
@@ -68,6 +73,7 @@ interface AiAccessInterface {
     self::FEATURE_EXPAND,
     self::FEATURE_SUMMARIZE,
     self::FEATURE_FOLLOW_UP,
+    self::FEATURE_CHAT,
   ];
 
   /**

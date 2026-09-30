@@ -55,6 +55,59 @@ scolta.followup:
     _permission: 'use scolta ai'
     _scolta_ai: 'follow_up'
 
+# The chat. Same permission and feature check as the AI endpoints above.
+# _csrf_request_header_token covers requests that carry a session (signed in
+# users); an anonymous visitor has none, and every chat handler also requires
+# the X-Scolta-Chat header, which a cross site form cannot send. no_cache keeps
+# the responses out of the page caches.
+scolta.chat_plan:
+  path: '/api/scolta/v1/chat/plan'
+  defaults:
+    _controller: '\Drupal\scolta\Controller\ChatPlanController::handle'
+  methods: [POST]
+  requirements:
+    _permission: 'use scolta ai'
+    _scolta_ai: 'chat'
+    _csrf_request_header_token: 'TRUE'
+  options:
+    no_cache: TRUE
+
+scolta.chat_turn:
+  path: '/api/scolta/v1/chat/turn'
+  defaults:
+    _controller: '\Drupal\scolta\Controller\ChatTurnController::handle'
+  methods: [POST]
+  requirements:
+    _permission: 'use scolta ai'
+    _scolta_ai: 'chat'
+    _csrf_request_header_token: 'TRUE'
+  options:
+    no_cache: TRUE
+
+scolta.chat_fold:
+  path: '/api/scolta/v1/chat/fold'
+  defaults:
+    _controller: '\Drupal\scolta\Controller\ChatFoldController::handle'
+  methods: [POST]
+  requirements:
+    _permission: 'use scolta ai'
+    _scolta_ai: 'chat'
+    _csrf_request_header_token: 'TRUE'
+  options:
+    no_cache: TRUE
+
+scolta.chat_thread:
+  path: '/api/scolta/v1/chat/thread'
+  defaults:
+    _controller: '\Drupal\scolta\Controller\ChatThreadController::handle'
+  methods: [GET, DELETE]
+  requirements:
+    _permission: 'use scolta ai'
+    _scolta_ai: 'chat'
+    _csrf_request_header_token: 'TRUE'
+  options:
+    no_cache: TRUE
+
 # Reachable anonymously so uptime monitors always work; the controller
 # returns status-only unless the caller has 'administer scolta'.
 scolta.health:

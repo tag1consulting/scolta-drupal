@@ -14,6 +14,7 @@ use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Tag1\Scolta\Cache\CacheDriverInterface;
 use Tag1\Scolta\Cache\NullCacheDriver;
@@ -22,16 +23,18 @@ use Tag1\Scolta\Http\AiEndpointHandler;
 use Tag1\Scolta\Prompt\PromptEnricherInterface;
 
 /**
- * Shared request pipeline for the three AI API controllers.
+ * Shared request pipeline for the AI API and chat controllers.
  *
  * ExpandQueryController, SummarizeController, and FollowUpController were
  * ~95% identical (constructor, create(), JSON decode, flood/error shape,
- * cache resolution). This base owns the whole request flow; subclasses
- * implement invokeHandler() to call the right AiEndpointHandler method.
+ * cache resolution). This base owns the whole request flow; the AI
+ * controllers implement invokeHandler() to call the right
+ * AiEndpointHandler method, and the chat controllers override respond().
  *
  * Request flow: flood check (per-IP + global, fail closed 429) →
- * parseJsonBody() (shared scolta-php decode + 400 shape) → invokeHandler()
- * → shared success/error/limit response mapping.
+ * parseJsonBody() when expectsBody() (shared scolta-php decode + 400 shape)
+ * → respond(), by default invokeHandler() → shared success/error/limit
+ * response mapping.
  *
  * @since 1.0.4
  * @stability experimental
@@ -85,22 +88,46 @@ abstract class AiApiControllerBase extends ControllerBase {
   abstract protected function invokeHandler(AiEndpointHandler $handler, array $body): array;
 
   /**
-   * Handle an AI API request.
+   * Handle an AI API request: flood, then the JSON body, then respond().
    */
-  public function handle(Request $request): JsonResponse {
+  public function handle(Request $request): Response {
     if (!$this->floodAllows($request)) {
       return new JsonResponse(['error' => 'Too many requests. Try again later.'], 429);
     }
 
-    $parsed = $this->parseJsonBody((string) $request->getContent());
-    if (!$parsed['ok']) {
-      return new JsonResponse(['error' => $parsed['error']], $parsed['status']);
+    $body = [];
+    if ($this->expectsBody($request)) {
+      $parsed = $this->parseJsonBody((string) $request->getContent());
+      if (!$parsed['ok']) {
+        return new JsonResponse(['error' => $parsed['error']], $parsed['status']);
+      }
+      $body = $parsed['data'];
     }
 
+    return $this->respond($request, $body);
+  }
+
+  /**
+   * Whether the request carries a JSON body. Every AI endpoint is a POST.
+   */
+  protected function expectsBody(Request $request): bool {
+    return TRUE;
+  }
+
+  /**
+   * Answer a request that passed the flood check and body parsing.
+   */
+  protected function respond(Request $request, array $body): Response {
     $config  = $this->aiService->getConfig();
     $handler = $this->createHandler($this->aiService, $config);
-    $result  = $this->invokeHandler($handler, $parsed['data']);
 
+    return $this->jsonResult($this->invokeHandler($handler, $body));
+  }
+
+  /**
+   * A handler result (ok/data/status/error[/limit] shape) as JSON.
+   */
+  protected function jsonResult(array $result): JsonResponse {
     if ($result['ok']) {
       return new JsonResponse($result['data']);
     }
