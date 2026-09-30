@@ -23,16 +23,18 @@ use Tag1\Scolta\Http\AiEndpointHandler;
 use Tag1\Scolta\Prompt\PromptEnricherInterface;
 
 /**
- * Shared request pipeline for the three AI API controllers.
+ * Shared request pipeline for the AI API and chat controllers.
  *
  * ExpandQueryController, SummarizeController, and FollowUpController were
  * ~95% identical (constructor, create(), JSON decode, flood/error shape,
- * cache resolution). This base owns the whole request flow; subclasses
- * implement invokeHandler() to call the right AiEndpointHandler method.
+ * cache resolution). This base owns the whole request flow; the AI
+ * controllers implement invokeHandler() to call the right
+ * AiEndpointHandler method, and the chat controllers override respond().
  *
  * Request flow: flood check (per-IP + global, fail closed 429) →
- * parseJsonBody() (shared scolta-php decode + 400 shape) → invokeHandler()
- * → shared success/error/limit response mapping.
+ * parseJsonBody() when expectsBody() (shared scolta-php decode + 400 shape)
+ * → respond(), by default invokeHandler() → shared success/error/limit
+ * response mapping.
  *
  * @since 1.0.4
  * @stability experimental

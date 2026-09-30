@@ -27,8 +27,9 @@ use Tag1\Scolta\Http\ChatEndpointHandler;
  * Everything the chat decides (validation, prompts, context, fold, cache,
  * sources) is scolta-php's; this class resolves who is asking and what the
  * request carried. The owner is the user id, or for an anonymous visitor a
- * token in the scolta_chat cookie, set on the first successful chat
- * response and scoped to the chat routes, so no session is started.
+ * token in the scolta_chat cookie, renewed on every successful chat
+ * response and scoped to the directory the chat routes are served under, so
+ * no session is started.
  *
  * @since 2.0.0
  * @stability experimental
@@ -91,7 +92,10 @@ abstract class ChatControllerBase extends AiApiControllerBase {
 
     $response = $this->invokeChat($handler, $owner, $body, $request->headers->get('X-Scolta-Chat') === '1', $request);
 
-    $cookie = $owner->cookie($request->isSecure(), $config->normalizedChat()['threadTtl']);
+    // The routes sit side by side, so the directory of this one is the path
+    // the browser sends the cookie back on, base path and language prefix
+    // included.
+    $cookie = $owner->cookie($request->isSecure(), $config->normalizedChat()['threadTtl'], dirname($request->getBaseUrl() . $request->getPathInfo()));
     if ($cookie !== NULL && $response->isSuccessful()) {
       $response->headers->setCookie(Cookie::create(
         $cookie['name'],

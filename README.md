@@ -271,7 +271,7 @@ Each question ranks pages in the visitor's browser with the search index and sen
 
 Access is the **Use Scolta AI features** permission, as for AI overviews: signed in users have it at install and anonymous visitors do not until you grant it. An anonymous visitor's conversation is kept by a `scolta_chat` cookie that only the chat routes see, so chatting starts no session and leaves the page cache alone. Conversations live in the expirable key value store for a day without use (`chat_thread_ttl`).
 
-One chat message makes up to three AI requests (the query expansion or follow up planning, the answer and the summary of older messages), all counted against the AI rate limits below, so a visitor asks about 20 chat questions a minute on the default per-IP limit of 60.
+One chat message makes up to three AI requests (the query expansion or follow up planning, the answer and the summary of older messages), all counted against the AI rate limits below, so a visitor asks about 20 chat questions a minute on the default per-IP limit of 60. Opening the chat (which restores the conversation) and starting a new chat count one request each.
 
 ## Tuning search breadth
 

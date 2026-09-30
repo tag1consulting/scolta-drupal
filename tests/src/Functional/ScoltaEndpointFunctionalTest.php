@@ -188,7 +188,14 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
     $turn = $this->chatRequest('POST', 'turn', [
       'message' => 'What does GDPR say about breach notification?',
       'needs_search' => TRUE,
-      'pages' => [['tier' => 1, 'title' => 'GDPR', 'url' => $this->getAbsoluteUrl('/gdpr'), 'excerpt' => 'Notify within 72 hours.']],
+      'pages' => [
+        [
+          'tier' => 1,
+          'title' => 'GDPR',
+          'url' => $this->getAbsoluteUrl('/gdpr'),
+          'excerpt' => 'Notify within 72 hours.',
+        ],
+      ],
     ], ['HTTP_X_SCOLTA_CHAT' => '1', 'HTTP_ACCEPT' => 'text/event-stream']);
 
     $this->assertSame(200, $turn['status']);
@@ -215,7 +222,11 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
     $history = $this->chatRequest('GET', 'thread', NULL, ['HTTP_X_SCOLTA_CHAT' => '1']);
     $this->assertSame($threadId, $history['body']['thread_id']);
     $this->assertCount(2, $history['body']['messages']);
-    $this->assertNull($this->chatCookie($history['headers']), 'A known visitor gets no new cookie');
+    $this->assertSame(
+      strtok($cookie, ';'),
+      strtok((string) $this->chatCookie($history['headers']), ';'),
+      'A known visitor keeps their token, and the cookie is renewed'
+    );
 
     // Another visitor with the same thread id reads nothing.
     $this->getSession()->getDriver()->getClient()->getCookieJar()->clear();

@@ -548,13 +548,13 @@ namespace Drupal\scolta\Tests {
       $aiService = $this->createStub(ScoltaAiService::class);
       $aiService->method('getConfig')->willReturn(ScoltaConfig::fromArray(['chat_enabled' => TRUE]));
       return new RecordingChatController(
-            $aiService,
-            $this->createStub(EventDispatcherInterface::class),
-            $flood,
-            NULL,
-            NULL,
-            $this->createStub(ThreadStoreInterface::class),
-        );
+        $aiService,
+        $this->createStub(EventDispatcherInterface::class),
+        $flood,
+        NULL,
+        NULL,
+        $this->createStub(ThreadStoreInterface::class),
+      );
     }
 
     public function testChatControllersGoThroughFloodAndParsingLikeTheRest(): void {
@@ -584,7 +584,7 @@ namespace Drupal\scolta\Tests {
       $this->assertSame([[], TRUE], [$controller->invocations[1]['body'], $controller->invocations[1]['chatHeader']]);
     }
 
-    public function testAnAnonymousVisitorGetsAScopedCookieOnceAndKeepsTheirThreads(): void {
+    public function testAnAnonymousVisitorGetsAScopedCookieRenewedOnEveryResponse(): void {
       $controller = $this->createChatController(new RecordingFlood());
 
       $first = $controller->handle(Request::create('https://example.com/api/scolta/v1/chat/thread', 'GET'));
@@ -600,13 +600,26 @@ namespace Drupal\scolta\Tests {
       $this->assertSame(86400, $cookie->getMaxAge());
 
       $again = Request::create('https://example.com/api/scolta/v1/chat/thread', 'GET', [], ['scolta_chat' => $cookie->getValue()]);
-      $this->assertSame([], $controller->handle($again)->headers->getCookies(), 'A known visitor gets no new cookie');
+      $renewed = $controller->handle($again)->headers->getCookies();
+      $this->assertSame($cookie->getValue(), $renewed[0]->getValue(), 'A known visitor keeps their token, with a fresh lifetime');
       $thread = ChatOwner::newThreadId();
       $this->assertSame(
         $controller->invocations[0]['owner']->threadKey($thread),
         $controller->invocations[1]['owner']->threadKey($thread),
         'The cookie is what identifies the owner'
       );
+    }
+
+    public function testTheCookiePathFollowsABasePathAndLanguagePrefix(): void {
+      $controller = $this->createChatController(new RecordingFlood());
+      $request = Request::create('https://example.com/drupal/it/api/scolta/v1/chat/thread', 'GET', [], [], [], [
+        'SCRIPT_NAME' => '/drupal/index.php',
+        'SCRIPT_FILENAME' => '/var/www/html/drupal/index.php',
+      ]);
+
+      $cookie = $controller->handle($request)->headers->getCookies()[0];
+
+      $this->assertSame('/drupal/it/api/scolta/v1/chat', $cookie->getPath());
     }
 
     public function testASignedInUserOwnsTheirThreadsByIdAndGetsNoCookie(): void {

@@ -197,12 +197,6 @@ class BrowserConfigParityFunctionalTest extends BrowserTestBase {
   }
 
   /**
-   * Renders a node page carrying the search block and returns drupalSettings.
-   *
-   * @return array
-   *   The `scolta` key of the page's drupalSettings JSON.
-   */
-  /**
    * The chat block's `chat` settings match what scolta-chat.js reads.
    *
    * Both ways: every cfg.<key> the widget reads is emitted, endpoints
@@ -239,6 +233,12 @@ class BrowserConfigParityFunctionalTest extends BrowserTestBase {
     $this->assertStringContainsString('/scolta-assets/vendor/deep-chat/deepChat.bundle.js', $chat['deepChatPath']);
   }
 
+  /**
+   * Renders a node page carrying the search block and returns drupalSettings.
+   *
+   * @return array
+   *   The `scolta` key of the page's drupalSettings JSON.
+   */
   private function renderAndExtractDrupalSettings(): array {
     $this->drupalCreateContentType(['type' => 'page']);
     $node = $this->drupalCreateNode([

@@ -640,11 +640,21 @@ class ScoltaAiService extends AiServiceAdapter {
       if (!in_array(AiProviderCapability::StreamChatOutput, $provider->getSupportedCapabilities(), TRUE)) {
         return NULL;
       }
-      $input->setStreamedOutput(TRUE);
-      $provider->streamedOutput(TRUE);
+      // Drupal AI 1.2 moved the switch to the input and 2.0 drops the
+      // provider's; before 1.2 only the provider has one. The provider is a
+      // proxy that forwards through __call(), so method_exists() cannot see it.
+      if (method_exists($input, 'setStreamedOutput')) {
+        $input->setStreamedOutput(TRUE);
+      }
+      elseif (is_callable([$provider, 'streamedOutput'])) {
+        $provider->streamedOutput(TRUE);
+      }
+      else {
+        return NULL;
+      }
       $normalized = $provider->chat($input, $model, ['scolta'])->getNormalized();
     }
-    catch (\Exception $e) {
+    catch (\Throwable $e) {
       $this->logger->warning('Drupal AI module stream failed, falling back: @msg', ['@msg' => $e->getMessage()]);
       return NULL;
     }

@@ -368,7 +368,6 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
     }
   }
 
-
   // -------------------------------------------------------------------
   // Chat settings.
   // -------------------------------------------------------------------
@@ -400,7 +399,10 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
     $this->assertTrue($chat['handoff']);
     $this->assertSame([500, 4000, 1500], [$chat['maxTokens'], $chat['topChars'], $chat['broadChars']]);
     // Keys the form does not show keep their install values.
-    $this->assertSame([5, 25, 3000, 86400], [$chat['topResults'], $chat['broadResults'], $chat['pageChars'], $chat['threadTtl']]);
+    $this->assertSame(
+      [5, 25, 3000, 86400],
+      [$chat['topResults'], $chat['broadResults'], $chat['pageChars'], $chat['threadTtl']],
+    );
   }
 
   public function testChatUpdateHookAddsDefaultsAndKeepsSetValues(): void {

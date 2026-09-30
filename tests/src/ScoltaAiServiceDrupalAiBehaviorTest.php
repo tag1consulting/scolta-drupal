@@ -65,6 +65,7 @@ namespace Drupal\scolta\Tests {
   use Drupal\ai\Enum\AiProviderCapability;
   use Drupal\scolta\Service\ScoltaAiService;
   use PHPUnit\Framework\TestCase;
+  use Psr\Log\NullLogger;
   use Tag1\Scolta\Config\ScoltaConfig;
   use Tag1\Scolta\Service\AiServiceAdapter;
 
@@ -298,12 +299,12 @@ namespace Drupal\scolta\Tests {
     /**
      * A provider manager whose provider streams $chunks when it can.
      */
-    private function streamingManager(array $chunks, bool $canStream): object {
-      return new class($chunks, $canStream) {
+    private function streamingManager(array $chunks, bool $canStream, ?\Throwable $failure = NULL): object {
+      return new class($chunks, $canStream, $failure) {
         public ?object $input = NULL;
         public bool $providerStreamed = FALSE;
 
-        public function __construct(private array $chunks, private bool $canStream) {}
+        public function __construct(private array $chunks, private bool $canStream, public ?\Throwable $failure) {}
 
         public function getDefaultProviderForOperationType(string $operationType): array {
           return ['provider_id' => 'openai', 'model_id' => 'gpt-test'];
@@ -326,6 +327,9 @@ namespace Drupal\scolta\Tests {
 
             public function chat(object $input, mixed $model, array $tags): object {
               $this->manager->input = $input;
+              if ($this->manager->failure !== NULL) {
+                throw $this->manager->failure;
+              }
               $chunks = $this->manager->chunks();
               return new class($chunks) {
 
@@ -368,6 +372,7 @@ namespace Drupal\scolta\Tests {
     private function streamingService(object $manager, string $provider): ScoltaAiService {
       $service = $this->serviceWithManager($manager);
       (new \ReflectionProperty(AiServiceAdapter::class, 'config'))->setValue($service, ScoltaConfig::fromArray(['ai_provider' => $provider]));
+      (new \ReflectionProperty(ScoltaAiService::class, 'logger'))->setValue($service, new NullLogger());
       return $service;
     }
 
@@ -375,11 +380,12 @@ namespace Drupal\scolta\Tests {
       $manager = $this->streamingManager(['The page ', '', 'says 72 hours.'], TRUE);
       $service = $this->streamingService($manager, 'drupal_ai');
 
-      $pieces = $this->invoke($service, 'tryFrameworkConversationStream', ['sys', [['role' => 'user', 'content' => 'hi']], 700]);
+      $messages = [['role' => 'user', 'content' => 'hi']];
+      $pieces = $this->invoke($service, 'tryFrameworkConversationStream', ['sys', $messages, 700]);
 
       $this->assertSame(['The page ', 'says 72 hours.'], iterator_to_array($pieces, FALSE));
       $this->assertTrue($manager->input->streamed, 'The chat input asks for streamed output');
-      $this->assertTrue($manager->providerStreamed);
+      $this->assertFalse($manager->providerStreamed, 'The provider switch, deprecated since Drupal AI 1.2, is left alone');
     }
 
     public function testStreamHookReturnsNullForOtherProviders(): void {
@@ -393,6 +399,13 @@ namespace Drupal\scolta\Tests {
 
       $this->assertNull($this->invoke($service, 'tryFrameworkConversationStream', ['sys', [], 700]));
       $this->assertNull($manager->input, 'No chat call is made; the one piece path answers instead');
+    }
+
+    public function testStreamHookFallsBackWhenTheProviderThrowsAnError(): void {
+      $manager = $this->streamingManager(['x'], TRUE, new \Error('Call to undefined method'));
+      $service = $this->streamingService($manager, 'drupal_ai');
+
+      $this->assertNull($this->invoke($service, 'tryFrameworkConversationStream', ['sys', [], 700]));
     }
 
   }

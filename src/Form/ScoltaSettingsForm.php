@@ -406,7 +406,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('chat_top_chars') ?? 6000,
       '#min' => 500,
       '#max' => 30000,
-      '#description' => $this->t('Characters of page excerpts sent with each question, shared by the five most relevant pages. Default: 6000.'),
+      '#description' => $this->t('Characters of page excerpts sent with each question, shared by the most relevant pages. Default: 6000.'),
     ];
 
     $form['chat']['chat_broad_chars'] = [
@@ -415,7 +415,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('chat_broad_chars') ?? 2500,
       '#min' => 0,
       '#max' => 10000,
-      '#description' => $this->t('Characters for up to 25 more pages sent as a title and one line each, so questions like "which pages cover HIPAA?" can be answered. Default: 2500.'),
+      '#description' => $this->t('Characters for more pages sent as a title and one line each, so questions like "which pages cover HIPAA?" can be answered. Default: 2500.'),
     ];
 
     // ── Content Section ──
