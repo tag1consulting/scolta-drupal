@@ -85,14 +85,20 @@ namespace Drupal\scolta\Tests {
 
   use Drupal\Core\Flood\FloodInterface;
   use Drupal\scolta\Controller\AiApiControllerBase;
+  use Drupal\scolta\Controller\ChatControllerBase;
   use Drupal\scolta\Service\ScoltaAiService;
   use PHPUnit\Framework\TestCase;
   use Psr\Log\AbstractLogger;
   use Symfony\Component\DependencyInjection\Container;
+  use Symfony\Component\HttpFoundation\JsonResponse;
   use Symfony\Component\HttpFoundation\Request;
+  use Symfony\Component\HttpFoundation\Response;
   use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
   use Tag1\Scolta\Config\ScoltaConfig;
+  use Tag1\Scolta\Chat\ChatOwner;
+  use Tag1\Scolta\Chat\ThreadStoreInterface;
   use Tag1\Scolta\Http\AiEndpointHandler;
+  use Tag1\Scolta\Http\ChatEndpointHandler;
 
   /**
    * A concrete AiApiControllerBase whose invokeHandler() is controllable.
@@ -240,6 +246,45 @@ namespace Drupal\scolta\Tests {
   }
 
   /**
+   * A chat controller that records what reached it.
+   */
+  final class RecordingChatController extends ChatControllerBase {
+
+    /**
+     * Every invokeChat() call: owner, body and header flag.
+     *
+     * @var array<int, array>
+     */
+    public array $invocations = [];
+
+    /**
+     * {@inheritdoc}
+     */
+    protected function invokeChat(ChatEndpointHandler $handler, ChatOwner $owner, array $body, bool $chatHeader, Request $request): Response {
+      $this->invocations[] = ['owner' => $owner, 'body' => $body, 'chatHeader' => $chatHeader];
+      return new JsonResponse(['ok' => TRUE]);
+    }
+
+  }
+
+  /**
+   * The current user, signed in or not.
+   */
+  final class FixedAccount {
+
+    public function __construct(private int $uid) {}
+
+    public function isAuthenticated(): bool {
+      return $this->uid > 0;
+    }
+
+    public function id(): int {
+      return $this->uid;
+    }
+
+  }
+
+  /**
    * A logger channel factory that always returns the same logger.
    */
   final class SingleLoggerFactory {
@@ -292,6 +337,7 @@ namespace Drupal\scolta\Tests {
       $container = new Container();
       $container->set('config.factory', $configFactory);
       $container->set('logger.factory', $loggerFactory);
+      $container->set('current_user', new FixedAccount(0));
       \Drupal::setContainer($container);
     }
 
@@ -489,6 +535,89 @@ namespace Drupal\scolta\Tests {
       $this->assertSame(404, $response->getStatusCode());
       $this->assertSame(['error' => 'Feature disabled'], json_decode((string) $response->getContent(), TRUE));
       $this->assertSame([], $this->logger->records, 'A failure result without an exception must not log');
+    }
+
+    // -------------------------------------------------------------------
+    // Chat controllers.
+    // -------------------------------------------------------------------
+
+    /**
+     * Build a chat controller under test.
+     */
+    private function createChatController(FloodInterface $flood): RecordingChatController {
+      $aiService = $this->createStub(ScoltaAiService::class);
+      $aiService->method('getConfig')->willReturn(ScoltaConfig::fromArray(['chat_enabled' => TRUE]));
+      return new RecordingChatController(
+            $aiService,
+            $this->createStub(EventDispatcherInterface::class),
+            $flood,
+            NULL,
+            NULL,
+            $this->createStub(ThreadStoreInterface::class),
+        );
+    }
+
+    public function testChatControllersGoThroughFloodAndParsingLikeTheRest(): void {
+      $flood = new RecordingFlood();
+      $flood->answers['scolta.ai_api_ip'] = FALSE;
+      $throttled = $this->createChatController($flood);
+      $this->assertSame(429, $throttled->handle($this->request('{"message":"x"}'))->getStatusCode());
+      $this->assertSame([], $throttled->invocations);
+
+      $controller = $this->createChatController(new RecordingFlood());
+      $this->assertSame(400, $controller->handle($this->request('{not json'))->getStatusCode());
+      $this->assertSame([], $controller->invocations, 'A malformed body never reaches the chat handler');
+
+      $controller->handle($this->request('{"message":"Any fines?"}'));
+      $this->assertSame(['message' => 'Any fines?'], $controller->invocations[0]['body']);
+    }
+
+    public function testChatReadsWithoutABodyAndPassesTheHeaderFlag(): void {
+      $controller = $this->createChatController(new RecordingFlood());
+
+      $controller->handle(Request::create('/api/scolta/v1/chat/thread', 'GET'));
+      $withHeader = Request::create('/api/scolta/v1/chat/thread', 'DELETE');
+      $withHeader->headers->set('X-Scolta-Chat', '1');
+      $controller->handle($withHeader);
+
+      $this->assertSame([[], FALSE], [$controller->invocations[0]['body'], $controller->invocations[0]['chatHeader']]);
+      $this->assertSame([[], TRUE], [$controller->invocations[1]['body'], $controller->invocations[1]['chatHeader']]);
+    }
+
+    public function testAnAnonymousVisitorGetsAScopedCookieOnceAndKeepsTheirThreads(): void {
+      $controller = $this->createChatController(new RecordingFlood());
+
+      $first = $controller->handle(Request::create('https://example.com/api/scolta/v1/chat/thread', 'GET'));
+      $cookies = $first->headers->getCookies();
+      $this->assertCount(1, $cookies);
+      $cookie = $cookies[0];
+      $this->assertSame('scolta_chat', $cookie->getName());
+      $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', (string) $cookie->getValue());
+      $this->assertSame('/api/scolta/v1/chat', $cookie->getPath());
+      $this->assertTrue($cookie->isHttpOnly());
+      $this->assertTrue($cookie->isSecure());
+      $this->assertSame('lax', $cookie->getSameSite());
+      $this->assertSame(86400, $cookie->getMaxAge());
+
+      $again = Request::create('https://example.com/api/scolta/v1/chat/thread', 'GET', [], ['scolta_chat' => $cookie->getValue()]);
+      $this->assertSame([], $controller->handle($again)->headers->getCookies(), 'A known visitor gets no new cookie');
+      $thread = ChatOwner::newThreadId();
+      $this->assertSame(
+        $controller->invocations[0]['owner']->threadKey($thread),
+        $controller->invocations[1]['owner']->threadKey($thread),
+        'The cookie is what identifies the owner'
+      );
+    }
+
+    public function testASignedInUserOwnsTheirThreadsByIdAndGetsNoCookie(): void {
+      \Drupal::getContainer()->set('current_user', new FixedAccount(7));
+      $controller = $this->createChatController(new RecordingFlood());
+
+      $response = $controller->handle(Request::create('/api/scolta/v1/chat/thread', 'GET'));
+
+      $this->assertSame([], $response->headers->getCookies());
+      $thread = ChatOwner::newThreadId();
+      $this->assertSame(ChatOwner::forUser(7)->threadKey($thread), $controller->invocations[0]['owner']->threadKey($thread));
     }
 
   }

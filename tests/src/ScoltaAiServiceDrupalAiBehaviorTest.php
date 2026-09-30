@@ -29,7 +29,30 @@ namespace Drupal\ai\OperationType\Chat {
      */
     class ChatInput {
 
+      public bool $streamed = FALSE;
+
       public function __construct(public array $messages = []) {}
+
+      public function setStreamedOutput(bool $streamed): void {
+        $this->streamed = $streamed;
+      }
+
+    }
+
+  }
+
+}
+
+namespace Drupal\ai\Enum {
+
+  if (!enum_exists(AiProviderCapability::class)) {
+
+    /**
+     * Test stub for the AI module's provider capability enum.
+     */
+    enum AiProviderCapability: string {
+
+      case StreamChatOutput = 'stream_chat_output';
 
     }
 
@@ -39,8 +62,11 @@ namespace Drupal\ai\OperationType\Chat {
 
 namespace Drupal\scolta\Tests {
 
+  use Drupal\ai\Enum\AiProviderCapability;
   use Drupal\scolta\Service\ScoltaAiService;
   use PHPUnit\Framework\TestCase;
+  use Tag1\Scolta\Config\ScoltaConfig;
+  use Tag1\Scolta\Service\AiServiceAdapter;
 
   /**
    * Behavioral tests for the Drupal AI module dispatch in ScoltaAiService.
@@ -263,6 +289,110 @@ namespace Drupal\scolta\Tests {
 
       $this->expectException(\RuntimeException::class);
       $this->invoke($service, 'conversationViaDrupalAi', ['system', [], 512]);
+    }
+
+    // -----------------------------------------------------------------
+    // tryFrameworkConversationStream()
+    // -----------------------------------------------------------------
+
+    /**
+     * A provider manager whose provider streams $chunks when it can.
+     */
+    private function streamingManager(array $chunks, bool $canStream): object {
+      return new class($chunks, $canStream) {
+        public ?object $input = NULL;
+        public bool $providerStreamed = FALSE;
+
+        public function __construct(private array $chunks, private bool $canStream) {}
+
+        public function getDefaultProviderForOperationType(string $operationType): array {
+          return ['provider_id' => 'openai', 'model_id' => 'gpt-test'];
+        }
+
+        public function createInstance(mixed $pluginId): object {
+          return new class($this) {
+
+            public function __construct(private object $manager) {}
+
+            public function getSupportedCapabilities(): array {
+              return $this->manager->canStream() ? [AiProviderCapability::StreamChatOutput] : [];
+            }
+
+            public function setConfiguration(array $configuration): void {}
+
+            public function streamedOutput(bool $streamed = TRUE): void {
+              $this->manager->providerStreamed = $streamed;
+            }
+
+            public function chat(object $input, mixed $model, array $tags): object {
+              $this->manager->input = $input;
+              $chunks = $this->manager->chunks();
+              return new class($chunks) {
+
+                public function __construct(private array $chunks) {}
+
+                public function getNormalized(): iterable {
+                  foreach ($this->chunks as $text) {
+                    yield new class($text) {
+
+                      public function __construct(private string $text) {}
+
+                      public function getText(): string {
+                        return $this->text;
+                      }
+
+                    };
+                  }
+                }
+
+              };
+            }
+
+          };
+        }
+
+        public function canStream(): bool {
+          return $this->canStream;
+        }
+
+        public function chunks(): array {
+          return $this->chunks;
+        }
+
+      };
+    }
+
+    /**
+     * A service with a manager and the given provider selected.
+     */
+    private function streamingService(object $manager, string $provider): ScoltaAiService {
+      $service = $this->serviceWithManager($manager);
+      (new \ReflectionProperty(AiServiceAdapter::class, 'config'))->setValue($service, ScoltaConfig::fromArray(['ai_provider' => $provider]));
+      return $service;
+    }
+
+    public function testStreamHookStreamsThroughDrupalAi(): void {
+      $manager = $this->streamingManager(['The page ', '', 'says 72 hours.'], TRUE);
+      $service = $this->streamingService($manager, 'drupal_ai');
+
+      $pieces = $this->invoke($service, 'tryFrameworkConversationStream', ['sys', [['role' => 'user', 'content' => 'hi']], 700]);
+
+      $this->assertSame(['The page ', 'says 72 hours.'], iterator_to_array($pieces, FALSE));
+      $this->assertTrue($manager->input->streamed, 'The chat input asks for streamed output');
+      $this->assertTrue($manager->providerStreamed);
+    }
+
+    public function testStreamHookReturnsNullForOtherProviders(): void {
+      $service = $this->streamingService($this->streamingManager(['x'], TRUE), 'anthropic');
+      $this->assertNull($this->invoke($service, 'tryFrameworkConversationStream', ['sys', [], 700]));
+    }
+
+    public function testStreamHookReturnsNullWhenTheProviderCannotStream(): void {
+      $manager = $this->streamingManager(['x'], FALSE);
+      $service = $this->streamingService($manager, 'drupal_ai');
+
+      $this->assertNull($this->invoke($service, 'tryFrameworkConversationStream', ['sys', [], 700]));
+      $this->assertNull($manager->input, 'No chat call is made; the one piece path answers instead');
     }
 
   }

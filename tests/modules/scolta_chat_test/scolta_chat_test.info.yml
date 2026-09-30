@@ -1,0 +1,6 @@
+name: 'Scolta chat test'
+type: module
+description: 'Answers every chat model call from a script, so the chat runs offline and without Drupal AI.'
+package: Testing
+dependencies:
+  - scolta:scolta

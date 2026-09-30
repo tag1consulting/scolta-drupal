@@ -14,6 +14,7 @@ use Drupal\scolta\Service\ScoltaAiService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Tag1\Scolta\Cache\CacheDriverInterface;
 use Tag1\Scolta\Cache\NullCacheDriver;
@@ -85,22 +86,46 @@ abstract class AiApiControllerBase extends ControllerBase {
   abstract protected function invokeHandler(AiEndpointHandler $handler, array $body): array;
 
   /**
-   * Handle an AI API request.
+   * Handle an AI API request: flood, then the JSON body, then respond().
    */
-  public function handle(Request $request): JsonResponse {
+  public function handle(Request $request): Response {
     if (!$this->floodAllows($request)) {
       return new JsonResponse(['error' => 'Too many requests. Try again later.'], 429);
     }
 
-    $parsed = $this->parseJsonBody((string) $request->getContent());
-    if (!$parsed['ok']) {
-      return new JsonResponse(['error' => $parsed['error']], $parsed['status']);
+    $body = [];
+    if ($this->expectsBody($request)) {
+      $parsed = $this->parseJsonBody((string) $request->getContent());
+      if (!$parsed['ok']) {
+        return new JsonResponse(['error' => $parsed['error']], $parsed['status']);
+      }
+      $body = $parsed['data'];
     }
 
+    return $this->respond($request, $body);
+  }
+
+  /**
+   * Whether the request carries a JSON body. Every AI endpoint is a POST.
+   */
+  protected function expectsBody(Request $request): bool {
+    return TRUE;
+  }
+
+  /**
+   * Answer a request that passed the flood check and body parsing.
+   */
+  protected function respond(Request $request, array $body): Response {
     $config  = $this->aiService->getConfig();
     $handler = $this->createHandler($this->aiService, $config);
-    $result  = $this->invokeHandler($handler, $parsed['data']);
 
+    return $this->jsonResult($this->invokeHandler($handler, $body));
+  }
+
+  /**
+   * A handler result (ok/data/status/error[/limit] shape) as JSON.
+   */
+  protected function jsonResult(array $result): JsonResponse {
     if ($result['ok']) {
       return new JsonResponse($result['data']);
     }
