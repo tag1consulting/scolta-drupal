@@ -915,8 +915,11 @@ class ScoltaContentGatherer {
       }
 
       if ($entityTs === 0) {
+        // Cast both branches: getChangedTime() has no declared return type
+        // and some implementations (group's Group entity) return the raw
+        // string from storage, which date() rejects under strict_types.
         $entityTs = $translation instanceof EntityChangedInterface
-          ? $translation->getChangedTime()
+          ? (int) $translation->getChangedTime()
           : (int) ($translation->get('changed')->value ?? 0);
       }
 
