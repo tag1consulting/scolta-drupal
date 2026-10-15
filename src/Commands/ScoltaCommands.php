@@ -880,9 +880,9 @@ class ScoltaCommands extends DrushCommands {
       $status['pagefind_index']['built'] = FALSE;
     }
 
-    // AI provider. Routing only goes through the Drupal AI module when the
-    // admin explicitly selected 'drupal_ai' AND the module is installed —
-    // mirror that here instead of reporting on module presence alone.
+    // AI provider. Routing only goes through the Drupal AI or AI Providers API
+    // module when the admin explicitly selected it AND it is usable — mirror
+    // that here instead of reporting on module presence alone.
     //
     // No coalescing to a provider nobody chose: an empty value means AI is
     // off, and a status command has to report that rather than name Anthropic.
@@ -901,6 +901,16 @@ class ScoltaCommands extends DrushCommands {
         'provider' => 'drupal_ai',
         'routing' => 'built-in client',
         'note' => 'drupal_ai selected but AI module not installed — falling back to built-in client.',
+      ];
+    }
+    elseif ($provider === 'ai_providers_api' && $this->aiService->isAiProvidersApiReady()) {
+      $providerRow = ['provider' => 'ai_providers_api', 'routing' => 'AI Providers API module'];
+    }
+    elseif ($provider === 'ai_providers_api') {
+      $providerRow = [
+        'provider' => 'ai_providers_api',
+        'routing' => NULL,
+        'note' => 'ai_providers_api selected but not usable — AI features are off.',
       ];
     }
     else {

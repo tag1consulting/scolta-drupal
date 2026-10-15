@@ -8,6 +8,12 @@ scolta.settings:
     ai_provider:
       type: string
       label: 'AI provider'
+    ai_providers_api_provider:
+      type: string
+      label: 'AI Providers API provider ID'
+    ai_providers_api_expansion_provider:
+      type: string
+      label: 'AI Providers API expansion provider ID'
     ai_model:
       type: string
       label: 'AI model'

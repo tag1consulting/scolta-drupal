@@ -158,4 +158,32 @@ class HealthStatusReasonsTest extends TestCase {
     $this->assertSame('degraded', $shaped['status']);
   }
 
+  // -------------------------------------------------------------------
+  // configuredByFramework().
+  // -------------------------------------------------------------------
+
+  public function testFrameworkProviderClearsTheMissingKeyFault(): void {
+    $report = $this->reasonsReport(['ai_key_missing']);
+    $report['ai_auth_failing'] = FALSE;
+
+    $shaped = HealthController::configuredByFramework($report, 'ai-providers-api');
+
+    $this->assertSame('ok', $shaped['status']);
+    $this->assertSame([], $shaped['status_reasons']);
+    $this->assertSame('ai-providers-api', $shaped['ai_provider']);
+    $this->assertTrue($shaped['ai_configured']);
+    $this->assertTrue($shaped['ai_usable']);
+  }
+
+  public function testFrameworkProviderKeepsOtherFaults(): void {
+    $report = $this->reasonsReport(['index_missing', 'ai_key_missing']);
+    $report['ai_auth_failing'] = TRUE;
+
+    $shaped = HealthController::configuredByFramework($report, 'drupal-ai');
+
+    $this->assertSame('degraded', $shaped['status']);
+    $this->assertSame(['index_missing'], $shaped['status_reasons']);
+    $this->assertFalse($shaped['ai_usable']);
+  }
+
 }

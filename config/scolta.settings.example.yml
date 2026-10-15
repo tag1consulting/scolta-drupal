@@ -8,9 +8,14 @@
 #   - settings.php: $settings['scolta.api_key'] = 'sk-ant-...';
 
 # --- AI Provider ---
-ai_provider: ''                     # '' (none, AI off), 'anthropic', 'openai', 'amazee' or 'drupal_ai'.
+ai_provider: ''                     # '' (none, AI off), 'anthropic', 'openai', 'amazee', 'drupal_ai'
+                                    # or 'ai_providers_api'.
                                     # No default: until a provider is selected, AI features are off
                                     # and search works exactly as it does now.
+ai_providers_api_provider: ''       # AI Providers API provider ID, e.g. 'claude' or 'ollama'.
+                                    # Only used when ai_provider is 'ai_providers_api'.
+ai_providers_api_expansion_provider: ''  # Optional AI Providers API provider ID for query expansion
+                                    # only. Empty uses ai_providers_api_provider.
 ai_model: 'claude-sonnet-4-5-20250929'  # Model for expansion/summarization
 ai_base_url: ''                     # Custom API endpoint (leave empty for defaults)
 ai_expand_query: true               # Enable AI query expansion
