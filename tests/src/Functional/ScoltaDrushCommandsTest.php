@@ -26,7 +26,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta'];
+  protected static $modules = ['scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
@@ -44,14 +44,27 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
       'build_directory',
       'build',
       'pagefind_index',
-      'ai_provider',
       'cache',
     ] as $section) {
       $this->assertArrayHasKey($section, $status,
         "scolta:status must report the {$section} section");
     }
+    // The AI tier reports from scolta_ui's own command, so a backend-only
+    // site's status says nothing about a tier it does not run.
+    $this->assertArrayNotHasKey('ai_provider', $status);
     // Groupings are nested maps, not flattened lines.
     $this->assertFalse($status['pagefind_index']['built']);
+    $this->assertIsInt($status['cache']['generation']);
+  }
+
+  /**
+   * The scolta:ai-status command emits the AI tier's report as YAML or JSON.
+   */
+  public function testAiStatusReportsTheProvider(): void {
+    $this->drush('scolta:ai-status');
+    $status = Yaml::parse($this->getOutput());
+    $this->assertIsArray($status, 'scolta:ai-status must emit parseable YAML');
+    $this->assertArrayHasKey('ai_provider', $status);
     $this->assertIsInt($status['cache']['generation']);
     // A fresh site has no recorded Amazee auth failure, but the field must be
     // reported so an operator does not have to check /health separately to
@@ -59,6 +72,10 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
     $this->assertArrayHasKey('auth_failing', $status['ai_provider']);
     $this->assertFalse($status['ai_provider']['auth_failing']);
     $this->assertNull($status['ai_provider']['auth_failing_since']);
+
+    $this->drush('scolta:ai-status', [], ['format' => 'json']);
+    $json = json_decode($this->getOutput(), TRUE);
+    $this->assertArrayHasKey('api_key', $json['ai_provider']);
   }
 
   /**
@@ -110,7 +127,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
   }
 
   /**
-   * scolta:status reports a recorded Amazee auth failure.
+   * scolta:ai-status reports a recorded Amazee auth failure.
    *
    * Writes the same cache marker KeyExpiryRecovery records on an
    * authentication rejection, under the bare key documented in
@@ -120,7 +137,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
   public function testStatusReportsARecordedAuthFailure(): void {
     $this->container->get('cache.default')->set('scolta_amazee_auth_failure', time());
 
-    $this->drush('scolta:status');
+    $this->drush('scolta:ai-status');
     $status = Yaml::parse($this->getOutput());
 
     $this->assertTrue($status['ai_provider']['auth_failing']);
@@ -153,7 +170,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
    */
   public function testStatusAliasResolves(): void {
     $this->drush('sst');
-    $this->assertStringContainsString('ai_provider:', $this->getOutput(),
+    $this->assertStringContainsString('pagefind_index:', $this->getOutput(),
       'The sst alias must invoke scolta:status');
   }
 

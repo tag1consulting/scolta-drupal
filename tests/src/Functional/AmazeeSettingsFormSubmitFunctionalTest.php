@@ -22,7 +22,7 @@ class AmazeeSettingsFormSubmitFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'scolta_amazee_test'];
+  protected static $modules = ['scolta_ui', 'scolta_amazee_test'];
 
   /**
    * {@inheritdoc}
@@ -37,7 +37,7 @@ class AmazeeSettingsFormSubmitFunctionalTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->drupalLogin($this->drupalCreateUser(['administer scolta']));
+    $this->drupalLogin($this->drupalCreateUser(['administer scolta ui']));
   }
 
   /**
@@ -50,7 +50,7 @@ class AmazeeSettingsFormSubmitFunctionalTest extends BrowserTestBase {
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->addressEquals(self::SETTINGS_PATH);
     $this->assertSession()->pageTextContains('Connected to Amazee.ai. The demo is active. AI model set to claude-sonnet-4-5.');
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $this->assertSame('amazee', $config->get('ai_provider'));
     $this->assertSame('claude-sonnet-4-5', $config->get('amazee_model'));
     $this->assertSame('claude-haiku-4-5', $config->get('amazee_expansion_model'));
@@ -79,7 +79,7 @@ class AmazeeSettingsFormSubmitFunctionalTest extends BrowserTestBase {
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->addressEquals(self::SETTINGS_PATH);
     $this->assertSession()->pageTextContains('Successfully connected to Amazee.ai.');
-    $this->assertSame('amazee', $this->config('scolta.settings')->get('ai_provider'));
+    $this->assertSame('amazee', $this->config('scolta_ui.settings')->get('ai_provider'));
   }
 
   /**

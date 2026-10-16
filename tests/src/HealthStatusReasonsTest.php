@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Tests;
 
-use Drupal\scolta\Controller\HealthController;
+use Drupal\scolta_ui\Controller\HealthController;
 use PHPUnit\Framework\TestCase;
 
 /**

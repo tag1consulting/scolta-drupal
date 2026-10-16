@@ -22,10 +22,13 @@ parameters:
   reportUnmatchedIgnoredErrors: false
   paths:
     - src
+    - modules
   # Classes under src call module-file functions. In the isolated CI run
-  # nothing loads scolta.module, so PHPStan needs it for symbol discovery.
+  # nothing loads scolta.module or scolta_ui.module, so PHPStan needs them
+  # for symbol discovery.
   scanFiles:
     - scolta.module
+    - modules/scolta_ui/scolta_ui.module
   excludePaths:
     # `paths` above says src, but a path argument on the command line replaces
     # it, and `ddev phpstan` always passes one (the module directory). These
@@ -37,6 +40,7 @@ parameters:
     - vendor/*
     # Drush commands require drush/drush which is not a dev dependency.
     - src/Commands/ScoltaCommands.php
+    - modules/scolta_ui/src/Commands/ScoltaUiCommands.php
     # search_api is no longer a dependency; this stub exists only for update 10008.
     - src/Plugin/search_api/backend/ScoltaBackend.php
   ignoreErrors:

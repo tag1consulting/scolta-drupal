@@ -1,0 +1,60 @@
+# Route names keep the `scolta.` prefix although they are defined here. The
+# paths are the documented API surface and must not move, and a site that
+# builds a link or a decorator against a route name should not have to care
+# which of the two modules now owns it.
+scolta.settings:
+  path: '/admin/config/search/scolta'
+  defaults:
+    _form: '\Drupal\scolta_ui\Form\ScoltaSettingsForm'
+    _title: 'Scolta Settings'
+  requirements:
+    _permission: 'administer scolta ui'
+
+scolta.settings.amazee:
+  path: '/admin/config/search/scolta/amazee'
+  defaults:
+    _form: '\Drupal\scolta_ui\Form\AmazeeSettingsForm'
+    _title: 'Amazee.ai Configuration'
+  requirements:
+    _permission: 'administer scolta ui'
+
+# The permission is the role-level rule and is left as the plain requirement
+# it has always been. `_scolta_ai` adds the per-feature rule the block is
+# built from — the config flags, plus anything a site has decorated onto
+# scolta.ai_access — so the endpoint refuses whatever the markup withheld.
+scolta.expand:
+  path: '/api/scolta/v1/expand-query'
+  defaults:
+    _controller: '\Drupal\scolta_ui\Controller\ExpandQueryController::handle'
+  methods: [POST]
+  requirements:
+    _permission: 'use scolta ai'
+    _scolta_ai: 'expand'
+
+scolta.summarize:
+  path: '/api/scolta/v1/summarize'
+  defaults:
+    _controller: '\Drupal\scolta_ui\Controller\SummarizeController::handle'
+  methods: [POST]
+  requirements:
+    _permission: 'use scolta ai'
+    _scolta_ai: 'summarize'
+
+scolta.followup:
+  path: '/api/scolta/v1/followup'
+  defaults:
+    _controller: '\Drupal\scolta_ui\Controller\FollowUpController::handle'
+  methods: [POST]
+  requirements:
+    _permission: 'use scolta ai'
+    _scolta_ai: 'follow_up'
+
+# Reachable anonymously so uptime monitors always work; the controller
+# returns status-only unless the caller has 'administer scolta ui'.
+scolta.health:
+  path: '/api/scolta/v1/health'
+  defaults:
+    _controller: '\Drupal\scolta_ui\Controller\HealthController::handle'
+  methods: [GET]
+  requirements:
+    _access: 'TRUE'

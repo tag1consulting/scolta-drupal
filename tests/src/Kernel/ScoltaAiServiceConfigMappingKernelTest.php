@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\Config\ScoltaConfig;
 
@@ -34,15 +34,15 @@ class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
    *
    * The top-level-key-precedence tests below write keys like
-   * title_match_boost directly onto scolta.settings, which the schema only
+   * title_match_boost directly onto scolta_ui.settings, which the schema only
    * declares nested under scoring.* and display.* — exactly the state
-   * `drush config:set scolta.settings title_match_boost 3.0` produces on a
+   * `drush config:set scolta_ui.settings title_match_boost 3.0` produces on a
    * real site, since Drupal does not enforce config schema on save outside
    * a checked test environment. buildConfig()'s precedence logic exists
    * specifically to handle that state, so this test needs to be able to
@@ -55,7 +55,7 @@ class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->installConfig(['scolta']);
+    $this->installConfig(['scolta', 'scolta_ui']);
   }
 
   /**
@@ -67,10 +67,10 @@ class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
   }
 
   /**
-   * Build a real ScoltaAiService over the given full scolta.settings state.
+   * Build a real ScoltaAiService over the given full scolta_ui.settings state.
    *
    * $drupalConfig is the array a test built by copying and mutating the
-   * install defaults, exactly as a real scolta.settings config object would
+   * install defaults, exactly as a real scolta_ui.settings config object would
    * hold it — Config::setData() replaces the whole config with it in one
    * call. The API key reaches the client through SCOLTA_API_KEY, the highest
    * -precedence explicit-key source resolveApiKey() reads (see
@@ -78,7 +78,7 @@ class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
    * not injection into the config array the way the old simulation did it.
    */
   private function realGetConfig(array $drupalConfig, string $apiKey = 'test-key'): ScoltaConfig {
-    $this->config('scolta.settings')->setData($drupalConfig)->save();
+    $this->config('scolta_ui.settings')->setData($drupalConfig)->save();
     putenv('SCOLTA_API_KEY=' . $apiKey);
 
     $service = new ScoltaAiService(
@@ -94,7 +94,7 @@ class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
    * Load the install defaults as if they came from Drupal config.
    */
   private function getInstallDefaults(): array {
-    $file = dirname(__DIR__, 3) . '/config/install/scolta.settings.yml';
+    $file = dirname(__DIR__, 3) . '/modules/scolta_ui/config/install/scolta_ui.settings.yml';
     return Yaml::parseFile($file);
   }
 
@@ -271,12 +271,12 @@ class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
    * A top-level key set via drush config:set must not be overwritten by
    * display.* when both are present.
    *
-   * Regression for: drush config:set scolta.settings max_pagefind_results 10
+   * Regression for: drush config:set scolta_ui.settings max_pagefind_results 10
    * being silently overridden by display.max_pagefind_results.
    */
   public function testTopLevelDisplayKeyTakesPrecedenceOverNested(): void {
     $drupalConfig = $this->getInstallDefaults();
-    // Simulate: drush config:set scolta.settings max_pagefind_results 10
+    // Simulate: drush config:set scolta_ui.settings max_pagefind_results 10
     $drupalConfig['max_pagefind_results'] = 10;
     // display.max_pagefind_results defaults to 50 from install config.
 
@@ -288,7 +288,7 @@ class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
 
   public function testTopLevelScoringKeyTakesPrecedenceOverNested(): void {
     $drupalConfig = $this->getInstallDefaults();
-    // Simulate: drush config:set scolta.settings title_match_boost 3.0
+    // Simulate: drush config:set scolta_ui.settings title_match_boost 3.0
     $drupalConfig['title_match_boost'] = 3.0;
     // scoring.title_match_boost defaults to 2.0.
 

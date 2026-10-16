@@ -1,0 +1,5 @@
+services:
+  scolta_legacy_enricher_test.subscriber:
+    class: Drupal\scolta_legacy_enricher_test\EventSubscriber\LegacyEnrichSubscriber
+    tags:
+      - { name: event_subscriber }

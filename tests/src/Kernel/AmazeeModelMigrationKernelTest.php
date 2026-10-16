@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\scolta\Form\ScoltaSettingsForm;
+use Drupal\scolta_ui\Form\ScoltaSettingsForm;
 
 /**
  * Functional coverage for scolta_update_10003().
@@ -33,14 +33,14 @@ class AmazeeModelMigrationKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->installConfig(['scolta']);
+    $this->installConfig(['scolta', 'scolta_ui']);
   }
 
   private const GATEWAY_ALIAS = 'claude-4-5-sonnet';
@@ -55,7 +55,7 @@ class AmazeeModelMigrationKernelTest extends KernelTestBase {
     $this->simulatePreFixSite(self::GATEWAY_ALIAS, self::GATEWAY_EXPANSION_ALIAS);
 
     $message = (string) $this->runMigration();
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
 
     $this->assertSame(self::GATEWAY_ALIAS, $config->get('amazee_model'));
     $this->assertSame(self::GATEWAY_EXPANSION_ALIAS, $config->get('amazee_expansion_model'));
@@ -80,7 +80,7 @@ class AmazeeModelMigrationKernelTest extends KernelTestBase {
     $this->simulatePreFixSite(self::ADMIN_CHOICE, '');
 
     $this->runMigration();
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
 
     $this->assertSame(
       self::ADMIN_CHOICE,
@@ -95,7 +95,7 @@ class AmazeeModelMigrationKernelTest extends KernelTestBase {
    */
   public function testAlreadyMigratedSiteIsLeftAlone(): void {
     $this->storeAmazeeCredentials();
-    $config = \Drupal::configFactory()->getEditable('scolta.settings');
+    $config = \Drupal::configFactory()->getEditable('scolta_ui.settings');
     $config
       ->set('ai_model', self::ADMIN_CHOICE)
       ->set('amazee_model', self::GATEWAY_ALIAS)
@@ -104,8 +104,8 @@ class AmazeeModelMigrationKernelTest extends KernelTestBase {
 
     $this->runMigration();
 
-    $this->assertSame(self::ADMIN_CHOICE, $this->config('scolta.settings')->get('ai_model'));
-    $this->assertSame(self::GATEWAY_ALIAS, $this->config('scolta.settings')->get('amazee_model'));
+    $this->assertSame(self::ADMIN_CHOICE, $this->config('scolta_ui.settings')->get('ai_model'));
+    $this->assertSame(self::GATEWAY_ALIAS, $this->config('scolta_ui.settings')->get('amazee_model'));
   }
 
   /**
@@ -116,7 +116,7 @@ class AmazeeModelMigrationKernelTest extends KernelTestBase {
     $this->simulatePreFixSite(ScoltaSettingsForm::DEFAULT_AI_MODEL, '');
 
     $this->runMigration();
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
 
     $this->assertSame(ScoltaSettingsForm::DEFAULT_AI_MODEL, $config->get('ai_model'));
     $this->assertSame('', $config->get('amazee_model'), 'Nothing was resolved, so nothing moves');
@@ -133,7 +133,7 @@ class AmazeeModelMigrationKernelTest extends KernelTestBase {
     $this->simulatePreFixSite(ScoltaSettingsForm::DEFAULT_AI_MODEL, '');
 
     $this->runMigration();
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
 
     $this->assertSame('', $config->get('amazee_model'));
     $this->assertSame('', $config->get('amazee_expansion_model'));
@@ -147,11 +147,11 @@ class AmazeeModelMigrationKernelTest extends KernelTestBase {
     $this->simulatePreFixSite(self::GATEWAY_ALIAS, self::GATEWAY_EXPANSION_ALIAS);
 
     $this->runMigration();
-    $after = $this->config('scolta.settings')->getRawData();
+    $after = $this->config('scolta_ui.settings')->getRawData();
 
     $this->runMigration();
 
-    $this->assertSame($after, $this->config('scolta.settings')->getRawData());
+    $this->assertSame($after, $this->config('scolta_ui.settings')->getRawData());
   }
 
   // -------------------------------------------------------------------------
@@ -181,7 +181,7 @@ class AmazeeModelMigrationKernelTest extends KernelTestBase {
    * Recreate a site installed before the gateway keys existed.
    */
   private function simulatePreFixSite(string $aiModel, string $aiExpansionModel): void {
-    \Drupal::configFactory()->getEditable('scolta.settings')
+    \Drupal::configFactory()->getEditable('scolta_ui.settings')
       ->set('ai_model', $aiModel)
       ->set('ai_expansion_model', $aiExpansionModel)
       ->clear('amazee_model')

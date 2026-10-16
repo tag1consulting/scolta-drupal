@@ -664,7 +664,7 @@ class ScoltaContentGatherer {
    * The entity's type key, 'node:lesson': entity type ID and bundle.
    *
    * Written to every fragment as the `type` meta value so a per-type ranking
-   * boost (scolta.settings: scoring.metadata_boosts) has something to key on
+   * boost (scolta_ui.settings: scoring.metadata_boosts) has something to key on
    * that never collides across entity types. Same separator as itemId(). A
    * type without bundles yields its bundle() fallback, the entity type ID
    * ('user:user').

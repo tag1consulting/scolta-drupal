@@ -32,7 +32,7 @@ class CleanupCommandPathResolutionKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta', 'scolta_ui'];
 
   /**
    * A real filesystem directory standing in for the published index location.
@@ -87,8 +87,6 @@ class CleanupCommandPathResolutionKernelTest extends KernelTestBase {
     $commands = new ScoltaCommands(
       \Drupal::service('config.factory'),
       \Drupal::service('state'),
-      \Drupal::service('cache.default'),
-      \Drupal::service('scolta.ai_service'),
       \Drupal::service('stream_wrapper_manager'),
       \Drupal::service('scolta.content_gatherer'),
       \Drupal::service('file_system'),
