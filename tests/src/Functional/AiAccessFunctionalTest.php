@@ -30,6 +30,33 @@ use Drupal\user\RoleInterface;
 class AiAccessFunctionalTest extends BrowserTestBase {
 
   /**
+   * The chat block and routes follow the same permission as the AI features.
+   */
+  public function testChatFollowsThePermission(): void {
+    $this->config('scolta.settings')->set('chat_enabled', TRUE)->save();
+    $this->drupalPlaceBlock('scolta_chat', ['region' => 'content']);
+    $node = $this->drupalCreateNode(['type' => 'page', 'status' => 1]);
+
+    $this->drupalGet($node->toUrl());
+    $this->assertArrayNotHasKey('chat', $this->getDrupalSettings()['scolta'] ?? [], 'No chat is offered to a visitor who cannot use it');
+    $this->assertSession()->elementNotExists('css', '.scolta-chat-mount');
+    $this->assertSame(403, $this->postJson('/api/scolta/v1/chat/plan'));
+
+    user_role_grant_permissions(RoleInterface::ANONYMOUS_ID, ['use scolta ai']);
+    $this->drupalGet($node->toUrl());
+    $chat = $this->getDrupalSettings()['scolta']['chat'] ?? NULL;
+    $this->assertIsArray($chat, 'A permitted visitor is offered the chat');
+    $this->assertArrayNotHasKey('csrf', $chat, 'An anonymous visitor has no session, so no CSRF token route');
+    $this->assertSession()->elementExists('css', '.scolta-chat-mount');
+    // Past routing, the handler answers: 400 for a body with no message.
+    $this->assertSame(400, $this->postJson('/api/scolta/v1/chat/plan', ['HTTP_X_SCOLTA_CHAT' => '1']));
+
+    $this->drupalLogin($this->drupalCreateUser());
+    $this->drupalGet($node->toUrl());
+    $this->assertSame('X-CSRF-Token', $this->getDrupalSettings()['scolta']['chat']['csrf']['header'] ?? NULL);
+  }
+
+  /**
    * {@inheritdoc}
    */
   protected static $modules = ['scolta', 'node', 'block'];
@@ -174,18 +201,20 @@ class AiAccessFunctionalTest extends BrowserTestBase {
    *
    * @param string $path
    *   The endpoint path.
+   * @param array $server
+   *   Extra server parameters, such as request headers.
    *
    * @return int
    *   The HTTP status code.
    */
-  private function postJson(string $path): int {
+  private function postJson(string $path, array $server = []): int {
     $session = $this->getSession();
     $session->getDriver()->getClient()->request(
       'POST',
       $this->getAbsoluteUrl($path),
       [],
       [],
-      ['CONTENT_TYPE' => 'application/json'],
+      $server + ['CONTENT_TYPE' => 'application/json'],
       json_encode(['query' => 'test', 'context' => 'test'])
     );
 

@@ -47,6 +47,10 @@ class AssetDeployer {
     'css/scolta.css' => 'css/scolta.css',
     'wasm/scolta_core.js' => 'wasm/scolta_core.js',
     'wasm/scolta_core_bg.wasm' => 'wasm/scolta_core_bg.wasm',
+    'js/scolta-chat.js' => 'js/scolta-chat.js',
+    'css/scolta-chat.css' => 'css/scolta-chat.css',
+    'vendor/deep-chat/deepChat.bundle.js' => 'vendor/deep-chat/deepChat.bundle.js',
+    'vendor/deep-chat/LICENSE' => 'vendor/deep-chat/LICENSE',
   ];
 
   public function __construct(

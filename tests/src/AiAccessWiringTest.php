@@ -56,6 +56,10 @@ class AiAccessWiringTest extends TestCase {
       'scolta.expand' => 'expand',
       'scolta.summarize' => 'summarize',
       'scolta.followup' => 'follow_up',
+      'scolta.chat_plan' => 'chat',
+      'scolta.chat_turn' => 'chat',
+      'scolta.chat_fold' => 'chat',
+      'scolta.chat_thread' => 'chat',
     ];
 
     foreach ($expected as $route => $feature) {
@@ -71,6 +75,20 @@ class AiAccessWiringTest extends TestCase {
         "Route {$route} must name the feature it serves"
       );
     }
+  }
+
+  /**
+   * The chat routes add Drupal's CSRF header check and stay out of caches.
+   */
+  public function testChatRoutesRequireTheCsrfHeaderAndAreNeverCached(): void {
+    $routing = Yaml::parseFile($this->moduleRoot . '/scolta.routing.yml');
+
+    foreach (['scolta.chat_plan', 'scolta.chat_turn', 'scolta.chat_fold', 'scolta.chat_thread'] as $route) {
+      $this->assertSame('TRUE', $routing[$route]['requirements']['_csrf_request_header_token'] ?? NULL, "{$route} must check the CSRF header for session requests");
+      $this->assertTrue($routing[$route]['options']['no_cache'] ?? FALSE, "{$route} must never be page cached");
+      $this->assertStringStartsWith('/api/scolta/v1/chat/', $routing[$route]['path']);
+    }
+    $this->assertSame(['GET', 'DELETE'], $routing['scolta.chat_thread']['methods']);
   }
 
   /**

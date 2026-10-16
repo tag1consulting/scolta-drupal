@@ -83,6 +83,12 @@ services:
     arguments: ['@file_system', '@logger.channel.scolta', '@stream_wrapper_manager']
   Drupal\scolta\Service\AssetDeployer: '@scolta.asset_deployer'
 
+  # Chat threads, per owner, in the expirable key value store.
+  scolta.chat_thread_store:
+    class: Drupal\scolta\Service\ScoltaChatThreadStore
+    arguments: ['@keyvalue.expirable']
+  Drupal\scolta\Service\ScoltaChatThreadStore: '@scolta.chat_thread_store'
+
   # Decorate this to narrow who reaches the AI features. Both the block that
   # advertises them and the routes that serve them ask it.
   scolta.ai_access:

@@ -17,6 +17,18 @@ ai_expand_query: true               # Enable AI query expansion
 ai_summarize: true                  # Enable AI result summarization
 max_follow_ups: 3                   # Max follow-up questions per session (0 to disable)
 
+# --- Chat (place the Scolta Chat block to show it) ---
+chat_enabled: false                 # Off until turned on
+chat_top_results: 5                 # Pages sent with excerpts per question (1 to 10)
+chat_top_chars: 6000                # Characters of excerpt across those pages
+chat_broad_results: 25              # Further pages sent as a title and one line (0 to 50)
+chat_broad_chars: 2500              # Characters for those pages together
+chat_page_context: true             # Send the relevant parts of the page being read to the AI provider
+chat_page_chars: 3000               # Characters of that page
+chat_max_tokens: 700                # Longest answer
+chat_thread_ttl: 86400              # Seconds a conversation (and its cookie) lives without use
+chat_handoff: true                  # A search page follow up opens the chat
+
 # --- Site Identity (used in AI prompts) ---
 site_name: ''                       # Leave empty to use Drupal site name
 site_description: 'website'         # Brief description for AI context
@@ -85,6 +97,9 @@ flood:                              # Rate limiting for the anonymous AI endpoin
 prompt_expand_query: ''
 prompt_summarize: ''
 prompt_follow_up: ''
+prompt_chat: ''
+prompt_chat_plan: ''
+prompt_chat_fold: ''
 
 # --- Pagefind ---
 pagefind:

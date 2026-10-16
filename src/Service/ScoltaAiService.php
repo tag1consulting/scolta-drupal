@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Service;
 
+use Drupal\ai\Enum\AiProviderCapability;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\Core\Cache\CacheBackendInterface;
@@ -615,6 +616,72 @@ class ScoltaAiService extends AiServiceAdapter {
    * See messageViaDrupalAi() for details on the service-layer approach.
    */
   protected function conversationViaDrupalAi(string $systemPrompt, array $messages, int $maxTokens): string {
+    [$provider, $input, $model] = $this->drupalAiChat($systemPrompt, $messages, $maxTokens);
+    $response = $provider->chat($input, $model, ['scolta']);
+
+    return $response->getNormalized()->getText();
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Streams through Drupal AI when 'drupal_ai' is the selected provider and
+   * the site's default chat provider declares streamed output; otherwise
+   * returns NULL and the adapter falls back to tryFrameworkConversation(),
+   * which answers in one piece.
+   */
+  protected function tryFrameworkConversationStream(string $systemPrompt, array $messages, int $maxTokens): ?iterable {
+    if ($this->getConfig()->aiProvider !== 'drupal_ai' || !$this->hasDrupalAiModule() || !enum_exists(AiProviderCapability::class)) {
+      return NULL;
+    }
+
+    try {
+      [$provider, $input, $model] = $this->drupalAiChat($systemPrompt, $messages, $maxTokens);
+      if (!in_array(AiProviderCapability::StreamChatOutput, $provider->getSupportedCapabilities(), TRUE)) {
+        return NULL;
+      }
+      // Drupal AI 1.2 moved the switch to the input and 2.0 drops the
+      // provider's; before 1.2 only the provider has one. The provider is a
+      // proxy that forwards through __call(), so method_exists() cannot see it.
+      if (method_exists($input, 'setStreamedOutput')) {
+        $input->setStreamedOutput(TRUE);
+      }
+      elseif (is_callable([$provider, 'streamedOutput'])) {
+        $provider->streamedOutput(TRUE);
+      }
+      else {
+        return NULL;
+      }
+      $normalized = $provider->chat($input, $model, ['scolta'])->getNormalized();
+    }
+    catch (\Throwable $e) {
+      $this->logger->warning('Drupal AI module stream failed, falling back: @msg', ['@msg' => $e->getMessage()]);
+      return NULL;
+    }
+
+    // A provider may still answer in one message.
+    if (!is_iterable($normalized)) {
+      return [$normalized->getText()];
+    }
+
+    return (static function () use ($normalized): \Generator {
+      foreach ($normalized as $chunk) {
+        $text = $chunk->getText();
+        if ($text !== '') {
+          yield $text;
+        }
+      }
+    })();
+  }
+
+  /**
+   * The default chat provider, the input and the model for one conversation.
+   *
+   * @return array
+   *   The provider with max_tokens set, the ChatInput and the model id. Not
+   *   typed further: drupal/ai is optional, so its classes may not exist.
+   */
+  protected function drupalAiChat(string $systemPrompt, array $messages, int $maxTokens): array {
     /** @var \Drupal\ai\AiProviderPluginManager $pluginManager */
     $pluginManager = $this->aiProviderManager;
 
@@ -630,15 +697,12 @@ class ScoltaAiService extends AiServiceAdapter {
       $chatMessages[] = new ChatMessage($msg['role'], $msg['content']);
     }
 
-    $input = new ChatInput($chatMessages);
-
     $provider = $pluginManager->createInstance($default['provider_id']);
     // See messageViaDrupalAi(): max_tokens goes through setConfiguration(), not
     // the chat() $tags argument (#163 review).
     $provider->setConfiguration(['max_tokens' => $maxTokens]);
-    $response = $provider->chat($input, $default['model_id'] ?? '', ['scolta']);
 
-    return $response->getNormalized()->getText();
+    return [$provider, new ChatInput($chatMessages), $default['model_id'] ?? ''];
   }
 
   /**

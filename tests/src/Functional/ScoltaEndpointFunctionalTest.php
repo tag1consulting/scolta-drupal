@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\scolta\Functional;
 
 use Drupal\Tests\BrowserTestBase;
+use Drupal\user\RoleInterface;
 
 /**
  * Tests the Scolta API endpoints with real HTTP requests.
@@ -16,7 +17,7 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'node', 'block'];
+  protected static $modules = ['scolta', 'scolta_chat_test', 'node', 'block'];
 
   /**
    * {@inheritdoc}
@@ -144,6 +145,167 @@ class ScoltaEndpointFunctionalTest extends BrowserTestBase {
       ],
     ]);
     $this->assertEquals(429, $response['status']);
+  }
+
+  /**
+   * The chat answers only when on, to a permitted visitor, with its headers.
+   *
+   * Signed in visitors carry a session, so Drupal's CSRF header is required
+   * on top of X-Scolta-Chat; anonymous visitors have no session and rely on
+   * X-Scolta-Chat, which the handler requires of everyone. scolta_chat_test
+   * answers the model calls, and no Drupal AI module is installed.
+   */
+  public function testChatFollowsTheSwitchThePermissionAndTheHeaders(): void {
+    $this->drupalLogin($this->drupalCreateUser([]));
+    $token = $this->csrfToken();
+    $both = ['HTTP_X_SCOLTA_CHAT' => '1', 'HTTP_X_CSRF_TOKEN' => $token];
+
+    $this->assertSame(404, $this->chatRequest('POST', 'plan', ['message' => 'x'], $both)['status'], 'The chat is off at install');
+
+    $this->config('scolta.settings')->set('chat_enabled', TRUE)->save();
+    $this->assertSame(403, $this->chatRequest('POST', 'plan', ['message' => 'x'], ['HTTP_X_SCOLTA_CHAT' => '1'])['status'], "A session without Drupal's CSRF header is refused");
+    $plan = $this->chatRequest('POST', 'plan', ['message' => 'Any fines?'], $both);
+    $this->assertSame(200, $plan['status']);
+    $this->assertSame('planned query', $plan['body']['query']);
+
+    $this->drupalLogout();
+    $this->assertSame(403, $this->chatRequest('POST', 'plan', ['message' => 'x'], ['HTTP_X_SCOLTA_CHAT' => '1'])['status'], 'Anonymous visitors lack the permission at install');
+
+    user_role_grant_permissions(RoleInterface::ANONYMOUS_ID, ['use scolta ai']);
+    $missing = $this->chatRequest('POST', 'plan', ['message' => 'x'], []);
+    $this->assertSame(403, $missing['status']);
+    $this->assertSame('Missing X-Scolta-Chat header', $missing['body']['error']);
+  }
+
+  /**
+   * An anonymous chat streams, owns its thread by cookie and starts no session.
+   */
+  public function testAnonymousChatStreamsWithAScopedCookieAndNoSession(): void {
+    $this->config('scolta.settings')->set('chat_enabled', TRUE)->save();
+    user_role_grant_permissions(RoleInterface::ANONYMOUS_ID, ['use scolta ai']);
+    $sessionsBefore = $this->sessionCount();
+
+    $turn = $this->chatRequest('POST', 'turn', [
+      'message' => 'What does GDPR say about breach notification?',
+      'needs_search' => TRUE,
+      'pages' => [
+        [
+          'tier' => 1,
+          'title' => 'GDPR',
+          'url' => $this->getAbsoluteUrl('/gdpr'),
+          'excerpt' => 'Notify within 72 hours.',
+        ],
+      ],
+    ], ['HTTP_X_SCOLTA_CHAT' => '1', 'HTTP_ACCEPT' => 'text/event-stream']);
+
+    $this->assertSame(200, $turn['status']);
+    $this->assertStringContainsString('text/event-stream', $turn['headers']['content-type'][0] ?? '');
+    $events = $this->parseEvents($turn['raw']);
+    $this->assertSame(['thread', 'delta', 'delta', 'sources', 'done'], array_column($events, 0));
+    $this->assertSame("[[1]]({$this->getAbsoluteUrl('/gdpr')}).\nSecond line.", $events[2][1]['text'], 'A newline in model text stays inside one event');
+    $this->assertSame([['n' => 1, 'title' => 'GDPR', 'url' => $this->getAbsoluteUrl('/gdpr')]], $events[3][1]['pages']);
+    $threadId = $events[0][1]['thread_id'];
+
+    $cookie = $this->chatCookie($turn['headers']);
+    $this->assertNotNull($cookie, 'The first chat response sets the owner cookie');
+    $this->assertMatchesRegularExpression('/^scolta_chat=[0-9a-f]{64};/', $cookie);
+    $this->assertStringContainsString('path=/api/scolta/v1/chat', $cookie);
+    $this->assertStringContainsStringIgnoringCase('httponly', $cookie);
+    $this->assertStringContainsStringIgnoringCase('samesite=lax', $cookie);
+    $this->assertStringContainsStringIgnoringCase('max-age=86400', $cookie);
+
+    foreach ($turn['headers']['set-cookie'] ?? [] as $header) {
+      $this->assertStringNotContainsString('SESS', $header, 'No session cookie for an anonymous chat');
+    }
+    $this->assertSame($sessionsBefore, $this->sessionCount());
+
+    $history = $this->chatRequest('GET', 'thread', NULL, ['HTTP_X_SCOLTA_CHAT' => '1']);
+    $this->assertSame($threadId, $history['body']['thread_id']);
+    $this->assertCount(2, $history['body']['messages']);
+    $this->assertSame(
+      strtok($cookie, ';'),
+      strtok((string) $this->chatCookie($history['headers']), ';'),
+      'A known visitor keeps their token, and the cookie is renewed'
+    );
+
+    // Another visitor with the same thread id reads nothing.
+    $this->getSession()->getDriver()->getClient()->getCookieJar()->clear();
+    $stranger = $this->chatRequest('GET', 'thread', NULL, ['HTTP_X_SCOLTA_CHAT' => '1'], '?thread_id=' . $threadId);
+    $this->assertSame([], $stranger['body']['messages']);
+
+    // Page responses never carry the chat cookie.
+    $this->drupalGet('<front>');
+    $this->assertNull($this->chatCookie(array_change_key_case($this->getSession()->getResponseHeaders())));
+  }
+
+  /**
+   * A chat request with raw access to the response.
+   *
+   * @return array{status: int, body: array|null, raw: string, headers: array<string, string[]>}
+   *   Status, decoded body, raw body and lower-cased headers.
+   */
+  protected function chatRequest(string $method, string $route, ?array $data, array $server, string $query = ''): array {
+    $session = $this->getSession();
+    $session->getDriver()->getClient()->request(
+      $method,
+      $this->getAbsoluteUrl('/api/scolta/v1/chat/' . $route . $query),
+      [],
+      [],
+      $server + ['CONTENT_TYPE' => 'application/json'],
+      $data === NULL ? NULL : json_encode($data),
+    );
+    $raw = $session->getPage()->getContent();
+
+    return [
+      'status' => $session->getStatusCode(),
+      'body' => json_decode($raw, TRUE),
+      'raw' => $raw,
+      'headers' => array_change_key_case($session->getResponseHeaders()),
+    ];
+  }
+
+  /**
+   * The scolta_chat Set-Cookie header, if a response has one.
+   */
+  protected function chatCookie(array $headers): ?string {
+    foreach ($headers['set-cookie'] ?? [] as $header) {
+      if (str_starts_with($header, 'scolta_chat=')) {
+        return $header;
+      }
+    }
+    return NULL;
+  }
+
+  /**
+   * Parse a text/event-stream body into [event, data] pairs.
+   */
+  protected function parseEvents(string $raw): array {
+    $events = [];
+    foreach (array_filter(explode("\n\n", $raw)) as $block) {
+      if (preg_match('/^event: (\w+)\ndata: (.*)$/s', $block, $m)) {
+        $events[] = [$m[1], json_decode($m[2], TRUE)];
+      }
+    }
+    return $events;
+  }
+
+  /**
+   * Stored sessions; the table only exists once a session has been written.
+   */
+  protected function sessionCount(): int {
+    $database = \Drupal::database();
+    if (!$database->schema()->tableExists('sessions')) {
+      return 0;
+    }
+    return (int) $database->select('sessions')->countQuery()->execute()->fetchField();
+  }
+
+  /**
+   * The CSRF token for the signed in user's session.
+   */
+  protected function csrfToken(): string {
+    $this->drupalGet('session/token');
+    return $this->getSession()->getPage()->getContent();
   }
 
   /**

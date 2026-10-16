@@ -263,6 +263,16 @@ $settings['scolta.api_key'] = 'sk-ant-...';
 
 Select **Anthropic (Claude)** or **OpenAI** in Scolta's AI provider settings to use this path.
 
+## Chat
+
+The chat is a conversation with the site that answers from its own pages and cites them, with a launcher in the corner of the page. It is off until you turn it on under **Chat** on the settings form, and it shows wherever you place the **Scolta Chat** block (Block Layout, category Search). It needs the search index built and uses the same AI provider as search; Drupal AI stays optional, and with it selected answers stream through it when the provider can stream.
+
+Each question ranks pages in the visitor's browser with the search index and sends them with the question, so an answer can cite them. With **Include the page being read** on, the parts of the current page most relevant to the question go too, so "what does this page say about fees?" works; that text is sent to your AI provider with each question. A follow up typed under the AI overview on the search page opens the chat with that search (**Open the chat from the search page**).
+
+Access is the **Use Scolta AI features** permission, as for AI overviews: signed in users have it at install and anonymous visitors do not until you grant it. An anonymous visitor's conversation is kept by a `scolta_chat` cookie that only the chat routes see, so chatting starts no session and leaves the page cache alone. Conversations live in the expirable key value store for a day without use (`chat_thread_ttl`).
+
+One chat message makes up to three AI requests (the query expansion or follow up planning, the answer and the summary of older messages), all counted against the AI rate limits below, so a visitor asks about 20 chat questions a minute on the default per-IP limit of 60. Opening the chat (which restores the conversation) and starting a new chat count one request each.
+
 ## Tuning search breadth
 
 **Getting fewer results than you expect on a recipe, product, or catalog site?** Go to *Administration > Configuration > Search and Metadata > Scolta AI Search*, open the **Site Type** section, choose the **Recipe & Content Catalog** preset, save, and rebuild the index (`drush scolta:build`).
@@ -418,7 +428,7 @@ Visit *Administration > Configuration > Search and Metadata > Scolta AI Search* 
 
 #### AI endpoint rate limiting
 
-The AI API endpoints (`/api/scolta/v1/expand-query`, `/api/scolta/v1/summarize`, `/api/scolta/v1/followup`) make cost-bearing LLM calls. They require the **Use Scolta AI features** permission, which is granted to authenticated users at install; flood limits apply to every caller regardless. The **Rate Limiting** section of the settings form configures per-IP and site-wide flood thresholds (defaults: 60 requests/minute per IP, 1000 requests/minute site-wide); requests beyond a threshold are rejected with HTTP 429 before any AI work happens. Set a limit to 0 to disable that layer.
+The AI API endpoints (`/api/scolta/v1/expand-query`, `/api/scolta/v1/summarize`, `/api/scolta/v1/followup` and the chat routes under `/api/scolta/v1/chat/`) make cost-bearing LLM calls. They require the **Use Scolta AI features** permission, which is granted to authenticated users at install; flood limits apply to every caller regardless. A chat message costs up to three requests (see [Chat](#chat)). The **Rate Limiting** section of the settings form configures per-IP and site-wide flood thresholds (defaults: 60 requests/minute per IP, 1000 requests/minute site-wide); requests beyond a threshold are rejected with HTTP 429 before any AI work happens. Set a limit to 0 to disable that layer.
 
 #### Indexing more than one entity type
 
@@ -516,7 +526,7 @@ Scolta connects to external services under specific conditions. No data is sent 
 ### AI Provider APIs (Drupal AI module or built-in)
 
 **When:** A visitor performs a search and AI features are enabled. Which provider receives the data depends on the Scolta AI provider setting.
-**What is sent:** The user's search query text and selected page content excerpts (for result summarization) are sent to the configured provider's API endpoint.
+**What is sent:** The user's search query text and selected page content excerpts (for result summarization) are sent to the configured provider's API endpoint. With the chat on, each chat message, the earlier messages of that conversation and excerpts of the pages it found are sent too, and with **Include the page being read** on, the most relevant parts of the page the visitor has open.
 **Providers:**
 
 - **Drupal AI module** — Scolta routes requests through the [Drupal AI module](https://www.drupal.org/project/ai), which supports 48+ providers. Review the terms and privacy policy of the provider configured in the Drupal AI module.

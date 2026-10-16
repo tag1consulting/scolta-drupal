@@ -31,3 +31,18 @@ drupal_bridge:
     - core/drupal
     - core/drupalSettings
     - scolta/search
+
+# The chat widget. It ranks pages with Scolta.createRetriever(), so it needs
+# the search bundle, and it reads window.scolta, which the bridge sets. The
+# deep-chat bundle it renders with is deliberately not listed: the widget
+# imports it from drupalSettings.scolta.chat.deepChatPath when the browser is
+# idle or the launcher is approached, never on page load.
+chat:
+  js:
+    public://scolta-assets/js/scolta-chat.js: { minified: false }
+  css:
+    theme:
+      public://scolta-assets/css/scolta-chat.css: {}
+  dependencies:
+    - scolta/search
+    - scolta/drupal_bridge

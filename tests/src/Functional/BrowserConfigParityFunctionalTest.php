@@ -197,6 +197,43 @@ class BrowserConfigParityFunctionalTest extends BrowserTestBase {
   }
 
   /**
+   * The chat block's `chat` settings match what scolta-chat.js reads.
+   *
+   * Both ways: every cfg.<key> the widget reads is emitted, endpoints
+   * included, and nothing emitted goes unread. Rendered for a signed in user,
+   * so the adapter-only csrf key is present too.
+   */
+  public function testEmittedChatConfigMatchesWhatTheChatWidgetReads(): void {
+    $this->config('scolta.settings')->set('chat_enabled', TRUE)->save();
+    $this->drupalLogin($this->drupalCreateUser());
+    $this->drupalCreateContentType(['type' => 'page']);
+    $node = $this->drupalCreateNode(['type' => 'page', 'title' => 'Chat', 'status' => 1]);
+    $this->drupalPlaceBlock('scolta_chat', ['region' => 'content']);
+
+    $this->drupalGet($node->toUrl());
+    $settings = $this->getDrupalSettings()['scolta'] ?? [];
+    $this->assertArrayHasKey('chat', $settings, 'The chat block attached no chat settings.');
+    $this->assertArrayHasKey('pagefindPath', $settings, 'The chat block carries the search settings the retriever needs.');
+
+    $path = \Composer\InstalledVersions::getInstallPath('tag1/scolta-php') . '/assets/js/scolta-chat.js';
+    $source = file_get_contents($path);
+    $this->assertNotFalse($source, "Unable to read the chat widget at {$path}");
+    preg_match_all('/\bcfg\.([A-Za-z]+)\b/', $source, $m);
+    $read = array_values(array_unique($m[1]));
+    preg_match_all('/\bcfg\.endpoints\.([A-Za-z]+)\b/', $source, $e);
+
+    $chat = $settings['chat'];
+    foreach ($read as $key) {
+      $this->assertArrayHasKey($key, $chat, "scolta-chat.js reads cfg.{$key} but ScoltaChatBlock does not emit it.");
+    }
+    foreach (array_keys($chat) as $key) {
+      $this->assertContains($key, $read, "ScoltaChatBlock emits {$key} but scolta-chat.js never reads it.");
+    }
+    $this->assertEqualsCanonicalizing(array_values(array_unique($e[1])), array_keys($chat['endpoints']));
+    $this->assertStringContainsString('/scolta-assets/vendor/deep-chat/deepChat.bundle.js', $chat['deepChatPath']);
+  }
+
+  /**
    * Renders a node page carrying the search block and returns drupalSettings.
    *
    * @return array
