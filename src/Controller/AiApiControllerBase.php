@@ -195,8 +195,8 @@ abstract class AiApiControllerBase extends ControllerBase {
    *
    * The handler degrades a provider failure (timeout, 529, rejected key) to
    * an HTTP 200 degraded response and reports the exception only through
-   * this logger, so it must be the site's channel rather than the trait's
-   * NullLogger default or the failure never reaches watchdog.
+   * this logger, so it must be the site's channel or the failure never
+   * reaches watchdog.
    */
   protected function resolveLogger(): LoggerInterface {
     return $this->getLogger('scolta');
