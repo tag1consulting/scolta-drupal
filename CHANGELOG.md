@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ## [Unreleased]
 
+### Fixed
+- **AI provider failures on the expand, summarize and follow-up endpoints are logged to the `scolta` channel.** `AiApiControllerBase` built its `AiEndpointHandler` through scolta-php's `AiControllerTrait::createHandler()`, which passed no logger, so the handler's `catch` blocks (`Scolta summarization failed`, `Scolta query expansion failed`, `Scolta follow-up failed`) wrote to a `NullLogger` while the endpoint answered HTTP 200 `{degraded: true}`. On sharemylesson.com a summarize call failed in the browser with nothing in watchdog, so a provider timeout, a 529 or a rejected API key could not be told apart. The base controller now overrides the trait's new `resolveLogger()` hook with `$this->getLogger('scolta')`, with the exception in the log context for dblog backtraces. Requires scolta-php with `AiControllerTrait::resolveLogger()` (tag1consulting/scolta-php, unreleased after 2.0.0-dev).
+
 ### Added
 - **Every `scolta.*` service now has a class-name alias** (`Drupal\scolta\Service\ScoltaReindexer: '@scolta.reindexer'` and so on), so a consuming site's autowired Drush command or service can type-hint the class and let the container resolve it; before this, `Cannot autowire service "Drupal\scolta\Service\ScoltaReindexer"` unless `@scolta.reindexer` was wired explicitly.
 - **`scoring.title_dedup` setting and a "Collapse near-duplicate titles" checkbox on the settings form, default off.** Exposes scolta-php's new opt-in for `deduplicateByTitle()`, which previously ran unconditionally and hid distinct pages with similar titles (a webinar and its recap post). Install config ships `false` to match the scolta.js fallback.
