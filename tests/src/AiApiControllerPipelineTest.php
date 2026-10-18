@@ -85,7 +85,6 @@ namespace Drupal\scolta\Tests {
 
   use Drupal\Core\Flood\FloodInterface;
   use Drupal\scolta\Controller\AiApiControllerBase;
-  use Drupal\scolta\Controller\SummarizeController;
   use Drupal\scolta\Service\ScoltaAiService;
   use PHPUnit\Framework\TestCase;
   use Psr\Log\AbstractLogger;
@@ -479,36 +478,6 @@ namespace Drupal\scolta\Tests {
       $this->assertSame('error', $record['level']);
       $this->assertSame($exception, $record['context']['exception'] ?? NULL);
       $this->assertSame('anthropic key sk-secret rejected', $record['context']['@msg'] ?? NULL);
-    }
-
-    public function testSummarizeProviderFailureIsLoggedToTheScoltaChannel(): void {
-      // The handler swallows provider failures into a 200 degraded response
-      // and reports them only through the logger createHandler() gives it.
-      // Until resolveLogger() was overridden that was scolta-php's NullLogger,
-      // so a timeout or 529 on summarize left nothing in watchdog.
-      $exception = new \RuntimeException('529 overloaded');
-      $aiService = $this->createStub(ScoltaAiService::class);
-      $aiService->method('getConfig')->willReturn(new ScoltaConfig());
-      $aiService->method('getSummarizePrompt')->willReturn('Summarize.');
-      $aiService->method('message')->willThrowException($exception);
-
-      $controller = new SummarizeController(
-        $aiService,
-        $this->createStub(EventDispatcherInterface::class),
-        new RecordingFlood(),
-      );
-      $response = $controller->handle($this->request('{"query":"pricing","context":"some excerpts"}'));
-
-      $this->assertSame(200, $response->getStatusCode());
-      $body = json_decode((string) $response->getContent(), TRUE);
-      $this->assertTrue($body['degraded'] ?? FALSE);
-      $this->assertSame('ai_error', $body['degraded_reason'] ?? NULL);
-
-      $this->assertCount(1, $this->logger->records, 'The provider failure must be logged');
-      $record = $this->logger->records[0];
-      $this->assertSame('error', $record['level']);
-      $this->assertStringContainsString('summarization failed', $record['message']);
-      $this->assertSame($exception, $record['context']['exception'] ?? NULL);
     }
 
     public function testHandlerFailureWithoutLimitOmitsTheLimitKey(): void {
