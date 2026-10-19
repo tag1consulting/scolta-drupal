@@ -130,6 +130,7 @@ jobs:
         env:
           FORCE_FULL_DIFF: ${{ contains(github.event.pull_request.labels.*.name, 'ai-review-rescan') }}
         with:
+          approval-ceiling: ${{ vars.AI_REVIEW_APPROVAL_CEILING || 'request-changes' }}
           # AI_REVIEW_IMAGE_TAG: container image tag (default: latest)
           # Set to 'dev' to dogfood pre-release builds, or pin to a release
           # tag (e.g. '1.6.0') for reproducibility.
@@ -263,6 +264,7 @@ jobs:
       )
     uses: tag1consulting/ai-pr-review/.github/workflows/slash-commands.yml@ef8ae600a86707cb297d53a79c978bb91e789465 # v2.12.0
     with:
+      approval-ceiling: ${{ vars.AI_REVIEW_APPROVAL_CEILING || 'request-changes' }}
       event-name: ${{ github.event_name }}
       comment-body: ${{ github.event.comment.body }}
       comment-id: ${{ github.event.comment.id }}
