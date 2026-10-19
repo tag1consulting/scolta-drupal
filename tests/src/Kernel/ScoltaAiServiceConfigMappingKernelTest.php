@@ -117,6 +117,27 @@ class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
     $this->assertEquals('website', $config->siteDescription);
   }
 
+  /**
+   * A Claude expansion model is dropped on a provider that cannot serve it.
+   */
+  public function testClaudeExpansionModelIsIgnoredOnOtherProviders(): void {
+    $drupalConfig = $this->getInstallDefaults();
+
+    $drupalConfig['ai_provider'] = 'openai';
+    $drupalConfig['ai_model'] = 'gpt-4o';
+    $config = $this->realGetConfig($drupalConfig);
+    $this->assertSame('', $config->aiExpansionModel, 'The shipped Haiku default must not reach OpenAI');
+
+    $drupalConfig['ai_expansion_model'] = 'gpt-4o-mini';
+    $config = $this->realGetConfig($drupalConfig);
+    $this->assertSame('gpt-4o-mini', $config->aiExpansionModel, 'A non-Claude choice is kept');
+
+    $drupalConfig['ai_provider'] = 'anthropic';
+    $drupalConfig['ai_expansion_model'] = 'claude-haiku-5-5';
+    $config = $this->realGetConfig($drupalConfig);
+    $this->assertSame('claude-haiku-5-5', $config->aiExpansionModel, 'Anthropic keeps the Claude default');
+  }
+
   public function testScoringConfigFlattensCorrectly(): void {
     $drupalConfig = $this->getInstallDefaults();
     $config = $this->realGetConfig($drupalConfig);

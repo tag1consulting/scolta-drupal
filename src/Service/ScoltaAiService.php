@@ -362,6 +362,19 @@ class ScoltaAiService extends AiServiceAdapter {
       }
     }
 
+    // The shipped expansion default is a Claude ID. On a direct provider
+    // other than Anthropic it would be sent to an API that does not know it,
+    // so it is dropped and expansion runs on ai_model, as an empty value
+    // does. The Amazee gateway is exempt: its expansion model was just taken
+    // from amazee_expansion_model, a gateway alias that may well start with
+    // 'claude-'. An operator who picked a non-Claude expansion model for
+    // such a provider keeps it.
+    if (!$resolved->isAmazee()
+      && ($values['ai_provider'] ?? '') !== 'anthropic'
+      && str_starts_with((string) ($values['ai_expansion_model'] ?? ''), 'claude-')) {
+      $values['ai_expansion_model'] = '';
+    }
+
     // Site name fallback to Drupal site name.
     if (empty($values['site_name'])) {
       $values['site_name'] = $this->configFactory->get('system.site')->get('name') ?? '';

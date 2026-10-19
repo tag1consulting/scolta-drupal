@@ -309,7 +309,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Expansion Model'),
       '#default_value' => $config->get('ai_expansion_model') ?? self::DEFAULT_AI_EXPANSION_MODEL,
-      '#description' => $this->t('Optional model for query expansion only. Leave blank to use AI Model for all operations. Example: claude-haiku-5-5'),
+      '#description' => $this->t('Model for query expansion only; defaults to claude-haiku-5-5. It must belong to the selected provider: a Claude ID is ignored on other providers. Leave blank to use AI Model for expansion too.'),
       '#states' => [
         'invisible' => [
           ':input[name="ai_provider"]' => ['value' => 'drupal_ai'],
