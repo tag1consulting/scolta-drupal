@@ -47,7 +47,7 @@ class AmazeeModelKeySeparationKernelTest extends KernelTestBase {
   private const GATEWAY_ALIAS = 'claude-4-5-sonnet';
   private const GATEWAY_EXPANSION_ALIAS = 'claude-3-5-haiku';
   private const ADMIN_CHOICE = 'claude-opus-4-1-20250805';
-  private const ADMIN_EXPANSION_CHOICE = 'claude-haiku-4-5-20251001';
+  private const ADMIN_EXPANSION_CHOICE = 'gpt-4o-mini';
 
   // ---------------------------------------------------------------------------
   // What reaches the AI client.

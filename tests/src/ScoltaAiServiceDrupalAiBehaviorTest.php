@@ -145,7 +145,7 @@ namespace Drupal\scolta\Tests {
     public function testMessageUnpacksProviderIdStringToCreateInstance(): void {
       $manager = $this->fakeManager([
         'provider_id' => 'anthropic',
-        'model_id' => 'claude-sonnet-4-5-20250929',
+        'model_id' => 'claude-sonnet-5-5',
       ]);
       $service = $this->serviceWithManager($manager);
 
@@ -161,13 +161,13 @@ namespace Drupal\scolta\Tests {
     public function testMessagePassesResolvedModelIdToChat(): void {
       $manager = $this->fakeManager([
         'provider_id' => 'anthropic',
-        'model_id' => 'claude-sonnet-4-5-20250929',
+        'model_id' => 'claude-sonnet-5-5',
       ]);
       $service = $this->serviceWithManager($manager);
 
       $this->invoke($service, 'messageViaDrupalAi', ['system', 'user', 321]);
 
-      $this->assertSame('claude-sonnet-4-5-20250929', $manager->chatCalls[0]['model']);
+      $this->assertSame('claude-sonnet-5-5', $manager->chatCalls[0]['model']);
       // max_tokens is applied via setConfiguration(), not the chat() $tags arg.
       $this->assertSame(['max_tokens' => 321], $manager->setConfigurationCalls[0]);
       $this->assertSame(['scolta'], $manager->chatCalls[0]['tags']);
@@ -176,7 +176,7 @@ namespace Drupal\scolta\Tests {
     public function testMessageRequestsChatOperationType(): void {
       $manager = $this->fakeManager([
         'provider_id' => 'anthropic',
-        'model_id' => 'claude-sonnet-4-5-20250929',
+        'model_id' => 'claude-sonnet-5-5',
       ]);
       $service = $this->serviceWithManager($manager);
 
@@ -219,7 +219,7 @@ namespace Drupal\scolta\Tests {
     public function testConversationUnpacksProviderIdStringToCreateInstance(): void {
       $manager = $this->fakeManager([
         'provider_id' => 'anthropic',
-        'model_id' => 'claude-sonnet-4-5-20250929',
+        'model_id' => 'claude-sonnet-5-5',
       ]);
       $service = $this->serviceWithManager($manager);
 
@@ -228,7 +228,7 @@ namespace Drupal\scolta\Tests {
 
       $this->assertSame('GENERATED_TEXT', $result);
       $this->assertSame(['anthropic'], $manager->createInstanceArgs);
-      $this->assertSame('claude-sonnet-4-5-20250929', $manager->chatCalls[0]['model']);
+      $this->assertSame('claude-sonnet-5-5', $manager->chatCalls[0]['model']);
       $this->assertSame('chat', $manager->requestedOperationType);
       // max_tokens is applied via setConfiguration(), not the chat() $tags arg.
       $this->assertSame(['max_tokens' => 321], $manager->setConfigurationCalls[0]);

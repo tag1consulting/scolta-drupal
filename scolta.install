@@ -470,6 +470,37 @@ function scolta_update_10009() {
 }
 
 /**
+ * Move sites still on the dated Claude 4.5 defaults to the current ones.
+ *
+ * Only a value that still equals the default a previous release shipped is
+ * rewritten (`claude-sonnet-4-5-20250929` for ai_model, and the matching
+ * `claude-haiku-4-5-20251001` for ai_expansion_model), so a site whose
+ * operator chose another model keeps it. Both replacement values are the
+ * constants the settings form and config/install now ship.
+ */
+function scolta_update_10010() {
+  $config = \Drupal::configFactory()->getEditable('scolta.settings');
+  $rewrites = [
+    'ai_model' => ['claude-sonnet-4-5-20250929', ScoltaSettingsForm::DEFAULT_AI_MODEL],
+    'ai_expansion_model' => ['claude-haiku-4-5-20251001', ScoltaSettingsForm::DEFAULT_AI_EXPANSION_MODEL],
+  ];
+  $changed = [];
+  foreach ($rewrites as $key => [$stale, $current]) {
+    if (($config->get($key) ?? '') === $stale) {
+      $config->set($key, $current);
+      $changed[] = "$key from $stale to $current";
+    }
+  }
+  if ($changed === []) {
+    return t('No scolta.settings model is on a dated Claude 4.5 default; nothing changed.');
+  }
+  $config->save();
+  return t('Moved scolta.settings onto the current default models: @changes.', [
+    '@changes' => implode('; ', $changed),
+  ]);
+}
+
+/**
  * Discard the build state and queue one full rebuild.
  *
  * For any release whose page IDs, ledger layout or manifest keys are not

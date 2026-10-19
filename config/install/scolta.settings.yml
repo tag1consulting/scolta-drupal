@@ -1,7 +1,7 @@
 preset: none
 ai_provider: ''
-ai_model: 'claude-sonnet-4-5-20250929'
-ai_expansion_model: ''
+ai_model: 'claude-sonnet-5-5'
+ai_expansion_model: 'claude-haiku-5-5'
 amazee_model: ''
 amazee_expansion_model: ''
 ai_base_url: ''

@@ -109,7 +109,7 @@ class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
     // The shipped install defaults select no provider. AI is off on a fresh
     // install until an operator picks one, and in particular is not Anthropic.
     $this->assertSame('', $config->aiProvider);
-    $this->assertEquals('claude-sonnet-4-5-20250929', $config->aiModel);
+    $this->assertEquals('claude-sonnet-5-5', $config->aiModel);
     $this->assertEquals('test-key', $config->aiApiKey);
     $this->assertTrue($config->aiExpandQuery);
     $this->assertTrue($config->aiSummarize);
@@ -218,7 +218,7 @@ class ScoltaAiServiceConfigMappingKernelTest extends KernelTestBase {
     // and an unselected provider is reported rather than filled in.
     $this->assertSame('', $clientConfig['provider']);
     $this->assertEquals('my-api-key', $clientConfig['api_key']);
-    $this->assertEquals('claude-sonnet-4-5-20250929', $clientConfig['model']);
+    $this->assertEquals('claude-sonnet-5-5', $clientConfig['model']);
     // Empty base_url should not be included.
     $this->assertArrayNotHasKey('base_url', $clientConfig);
   }

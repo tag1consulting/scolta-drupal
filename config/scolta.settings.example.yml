@@ -11,7 +11,8 @@
 ai_provider: ''                     # '' (none, AI off), 'anthropic', 'openai', 'amazee' or 'drupal_ai'.
                                     # No default: until a provider is selected, AI features are off
                                     # and search works exactly as it does now.
-ai_model: 'claude-sonnet-4-5-20250929'  # Model for expansion/summarization
+ai_model: 'claude-sonnet-5-5'            # Model for summarize and follow-up
+ai_expansion_model: 'claude-haiku-5-5'  # Model for query expansion (blank: use ai_model)
 ai_base_url: ''                     # Custom API endpoint (leave empty for defaults)
 ai_expand_query: true               # Enable AI query expansion
 ai_summarize: true                  # Enable AI result summarization

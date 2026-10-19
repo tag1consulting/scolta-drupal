@@ -75,7 +75,7 @@ class ScoltaSettingsFormFunctionalTest extends BrowserTestBase {
     $this->assertNotEmpty($this->assertSession()->fieldExists('prompt_follow_up')->getValue());
 
     $this->submitForm([
-      'ai_model' => 'claude-sonnet-4-5-20250929',
+      'ai_model' => 'claude-sonnet-5-5',
       'site_name' => 'Test Site',
       'site_description' => 'a test website',
       'title_match_boost' => '2.0',

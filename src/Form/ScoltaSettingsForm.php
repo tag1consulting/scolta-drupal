@@ -20,6 +20,7 @@ use Drupal\scolta\Service\IndexLocator;
 use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Tag1\Scolta\AiClient;
 use Tag1\Scolta\AiProvider\Amazee\ConfigStorageInterface;
 use Tag1\Scolta\Config\ApiKeySource;
 use Tag1\Scolta\Config\MemoryBudgetConfig;
@@ -37,12 +38,22 @@ class ScoltaSettingsForm extends ConfigFormBase {
   /**
    * The default AI model shipped in config/install/scolta.settings.yml.
    *
-   * Equal to AiClient::DEFAULT_MODEL, which ScoltaAiService::modelIsResolved()
-   * treats as "no gateway model resolved yet" and scolta_update_10003() resets
-   * ai_model to when it migrates a gateway alias out of it, so the literal
-   * must stay in sync with the install config.
+   * Read from scolta-php so the two packages cannot drift: the library's
+   * AiClient falls back to this model when none is configured, and
+   * ScoltaAiService::modelIsResolved() treats it as "no gateway model
+   * resolved yet". scolta_update_10003() resets ai_model to it when it
+   * migrates a gateway alias out of it. The install config must carry the
+   * same literal; ModelDefaultBumpKernelTest asserts that.
    */
-  public const DEFAULT_AI_MODEL = 'claude-sonnet-4-5-20250929';
+  public const DEFAULT_AI_MODEL = AiClient::DEFAULT_MODEL;
+
+  /**
+   * The default query-expansion model shipped in config/install.
+   *
+   * Expansion is a short, structured call, so the cheapest current model is
+   * the right default; summarize and follow-up stay on DEFAULT_AI_MODEL.
+   */
+  public const DEFAULT_AI_EXPANSION_MODEL = 'claude-haiku-5-5';
 
   /**
    * The Scolta AI service.
@@ -286,7 +297,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('AI Model'),
       '#default_value' => $config->get('ai_model') ?? self::DEFAULT_AI_MODEL,
-      '#description' => $this->t('Model identifier for summarize and follow-up (e.g., claude-sonnet-4-5-20250929, gpt-4o).'),
+      '#description' => $this->t('Model identifier for summarize and follow-up (e.g., claude-sonnet-5-5, gpt-4o).'),
       '#states' => [
         'invisible' => [
           ':input[name="ai_provider"]' => ['value' => 'drupal_ai'],
@@ -297,8 +308,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $form['ai']['ai_expansion_model'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Expansion Model'),
-      '#default_value' => $config->get('ai_expansion_model') ?? '',
-      '#description' => $this->t('Optional model for query expansion only. Leave blank to use AI Model for all operations. Example: claude-haiku-4-5-20251001'),
+      '#default_value' => $config->get('ai_expansion_model') ?? self::DEFAULT_AI_EXPANSION_MODEL,
+      '#description' => $this->t('Optional model for query expansion only. Leave blank to use AI Model for all operations. Example: claude-haiku-5-5'),
       '#states' => [
         'invisible' => [
           ':input[name="ai_provider"]' => ['value' => 'drupal_ai'],

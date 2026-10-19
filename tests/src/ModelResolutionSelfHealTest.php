@@ -23,8 +23,8 @@ use Tag1\Scolta\Exception\ApiKeyMissingException;
  * resolved model names in two steps. If the /model/info step fails, credentials
  * are stored with no resolved model: AutoProvisioner::ensureAiAvailable() then
  * no-opped forever on the stored creds, and createClient() fell back to the
- * shipped dated default (claude-sonnet-4-5-20250929), which the Amazee LiteLLM
- * gateway rejects with HTTP 400 — so summarize silently returned nothing and
+ * shipped provider-native default (AiClient::DEFAULT_MODEL), which the Amazee
+ * LiteLLM gateway rejects with HTTP 400 — so summarize silently returned nothing and
  * expand ran unexpanded, permanently.
  *
  * ScoltaAiService now (a) passes a hasResolvedModels predicate so the library
@@ -44,9 +44,12 @@ class ModelResolutionSelfHealTest extends TestCase {
   private const MODEL_INFO_RESPONSE = '{"data": [{"model_name": "claude-sonnet-4-5"}, {"model_name": "claude-haiku-4-5"}]}';
 
   /**
-   * The dated default shipped in config — what the gateway rejects with 400.
+   * The default shipped in config — what the gateway rejects with 400.
+   *
+   * ScoltaSettingsForm::DEFAULT_AI_MODEL is this same constant, but that form
+   * class needs drupal/core, which the unit vendor lacks.
    */
-  private const DATED_DEFAULT = 'claude-sonnet-4-5-20250929';
+  private const DATED_DEFAULT = AiClient::DEFAULT_MODEL;
 
   // -------------------------------------------------------------------------
   // The predicate: it must report FALSE for the dated default (the no-op trap).
@@ -76,8 +79,8 @@ class ModelResolutionSelfHealTest extends TestCase {
       $this->invokePredicate('claude-4-5-sonnet'),
       'A genuinely resolved model name (what onModelsResolved persists) is resolved.'
     );
-    // The dated-default literal in the predicate must equal AiClient's default.
-    $this->assertSame(self::DATED_DEFAULT, AiClient::DEFAULT_MODEL);
+    // The library default is a provider-native ID, never a gateway alias.
+    $this->assertStringStartsWith('claude-', AiClient::DEFAULT_MODEL);
   }
 
   // -------------------------------------------------------------------------
