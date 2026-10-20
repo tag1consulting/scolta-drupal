@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Cache;
 
+use Drupal\Core\Cache\Cache;
+use Drupal\Core\Cache\CacheableDependencyInterface;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Tag1\Scolta\Cache\CacheDriverInterface;
 
@@ -20,14 +22,17 @@ class DrupalCacheDriver implements CacheDriverInterface {
    *
    * @param \Drupal\Core\Cache\CacheBackendInterface $cache
    *   The bin to read and write.
-   * @param string[] $tags
-   *   Cache tags applied to every entry written through this driver, so
-   *   Drupal's own tag invalidation (a config save, a cache rebuild) retires
-   *   them without any Scolta-specific bookkeeping.
+   * @param \Drupal\Core\Cache\CacheableDependencyInterface|null $cacheability
+   *   When given, every entry is written with its tags and max-age instead of
+   *   the caller's TTL, and is not written at all when the max-age is 0 or
+   *   any cache context is set (the key cannot vary by context). The AI
+   *   controllers share one object between this driver and the prompt
+   *   enricher, so what PromptEnrichEvent subscribers declare is what the
+   *   response is cached with.
    */
   public function __construct(
     private readonly CacheBackendInterface $cache,
-    private readonly array $tags = [],
+    private readonly ?CacheableDependencyInterface $cacheability = NULL,
   ) {}
 
   /**
@@ -42,7 +47,17 @@ class DrupalCacheDriver implements CacheDriverInterface {
    * {@inheritdoc}
    */
   public function set(string $key, mixed $value, int $ttlSeconds): void {
-    $this->cache->set($key, $value, time() + $ttlSeconds, $this->tags);
+    if ($this->cacheability === NULL) {
+      $this->cache->set($key, $value, time() + $ttlSeconds);
+      return;
+    }
+
+    $maxAge = $this->cacheability->getCacheMaxAge();
+    if ($maxAge === 0 || $this->cacheability->getCacheContexts() !== []) {
+      return;
+    }
+    $expire = $maxAge === Cache::PERMANENT ? time() + $ttlSeconds : time() + $maxAge;
+    $this->cache->set($key, $value, $expire, $this->cacheability->getCacheTags());
   }
 
 }

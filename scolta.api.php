@@ -57,3 +57,35 @@ function hook_scolta_content_item_alter(\Tag1\Scolta\Export\ContentItem &$item, 
 /**
  * @} End of "addtogroup hooks".
  */
+
+/**
+ * @defgroup scolta_events Events
+ * @{
+ * Events dispatched by the Scolta module.
+ *
+ * \Drupal\scolta\Event\PromptEnrichEvent fires before each AI prompt
+ * (expand_query, summarize, follow_up) is sent to the provider. A subscriber
+ * may rewrite the prompt and, because the event is also the cacheability of
+ * the response about to be cached, must declare what its contribution
+ * depends on, as a render array would:
+ *
+ * @code
+ * public function onPromptEnrich(PromptEnrichEvent $event): void {
+ *   if ($event->getPromptName() !== 'summarize') {
+ *     return;
+ *   }
+ *   $policy = $this->entityTypeManager->getStorage('node')->load(42);
+ *   $event->setResolvedPrompt($event->getResolvedPrompt() . "\n\n" . $policy->body->value);
+ *   // Retire cached summaries when the policy node is saved.
+ *   $event->addCacheableDependency($policy);
+ *   // Or, for a prompt that must not be reused at all:
+ *   // $event->mergeCacheMaxAge(0);
+ * }
+ * @endcode
+ *
+ * The event arrives seeded with the module's own tags and the configured AI
+ * cache TTL as max-age. Tags accumulate and mergeCacheMaxAge() takes the
+ * minimum; setCacheMaxAge() overrides. Cache contexts cannot be honoured
+ * (the key is query and generation only) and make the response uncacheable.
+ * @}
+ */

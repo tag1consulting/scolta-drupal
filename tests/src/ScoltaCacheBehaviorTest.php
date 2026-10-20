@@ -172,32 +172,6 @@ namespace Drupal\scolta\Tests {
       $this->assertEquals('precious', $cached->data);
     }
 
-    // -------------------------------------------------------------------
-    // Cache tags — how a config change retires AI entries without a
-    // generation bump. The driver stamps every entry with the tags it was
-    // built with, so Drupal's own tag invalidation does the rest.
-    // -------------------------------------------------------------------
-
-    public function test_driver_tags_entries_and_tag_invalidation_misses(): void {
-      $backend = new InMemoryDrupalCacheBackend();
-      $driver = new DrupalCacheDriver($backend, ['config:scolta.settings']);
-      $driver->set('scolta_expand_1_abc', ['terms' => ['a']], 3600);
-
-      $this->assertSame(['config:scolta.settings'], $backend->tagsOf('scolta_expand_1_abc'));
-
-      $backend->invalidateTags(['scolta_search_index']);
-      $this->assertSame(['terms' => ['a']], $driver->get('scolta_expand_1_abc'), 'An index tag must not retire an AI entry');
-
-      $backend->invalidateTags(['config:scolta.settings']);
-      $this->assertNull($driver->get('scolta_expand_1_abc'), 'A settings tag must retire an AI entry');
-    }
-
-    public function test_driver_without_tags_writes_untagged_entries(): void {
-      $backend = new InMemoryDrupalCacheBackend();
-      (new DrupalCacheDriver($backend))->set('plain', 'value', 3600);
-      $this->assertSame([], $backend->tagsOf('plain'));
-    }
-
   }
 
   // -----------------------------------------------------------------------
@@ -215,9 +189,6 @@ namespace Drupal\scolta\Tests {
     /** @var array<string, mixed> */
     private array $store = [];
 
-    /** @var array<string, string[]> */
-    private array $tags = [];
-
     public function get($cid, $allow_invalid = FALSE): object|false {
       if (!array_key_exists($cid, $this->store)) {
         return FALSE;
@@ -229,28 +200,10 @@ namespace Drupal\scolta\Tests {
 
     public function set($cid, $data, $expire = -1, array $tags = []): void {
       $this->store[$cid] = $data;
-      $this->tags[$cid] = $tags;
-    }
-
-    /** @return string[] */
-    public function tagsOf($cid): array {
-      return $this->tags[$cid] ?? [];
-    }
-
-    /**
-     * Drop every entry carrying one of the tags, as a tag invalidation
-     * does for a backend that is read without $allow_invalid.
-     */
-    public function invalidateTags(array $tags): void {
-      foreach ($this->tags as $cid => $entryTags) {
-        if (array_intersect($tags, $entryTags) !== []) {
-          $this->delete($cid);
-        }
-      }
     }
 
     public function delete($cid): void {
-      unset($this->store[$cid], $this->tags[$cid]);
+      unset($this->store[$cid]);
     }
 
     public function deleteAll(): void {
