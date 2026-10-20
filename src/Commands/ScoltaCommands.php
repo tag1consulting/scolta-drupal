@@ -454,8 +454,6 @@ class ScoltaCommands extends DrushCommands {
     $this->assertIndexUsable($outputDir);
 
     $fragments = glob($outputDir . '/pagefind/fragment/*.pf_fragment') ?: [];
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->state->set('scolta.generation', $generation + 1);
     $this->logger()->success('Index built: {pages} pages on disk{via}.', [
       'pages' => count($fragments),
       'via' => $chained ? ' (completed across resume segments)' : ' (finalized in a fresh process)',
@@ -469,8 +467,6 @@ class ScoltaCommands extends DrushCommands {
   private function reportBuildSuccess($report, string $outputDir): void {
     $this->assertIndexUsable($outputDir);
 
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->state->set('scolta.generation', $generation + 1);
     $this->logger()->success('Index built: {pages} pages in {time}s ({mem} peak RAM).', [
       'pages' => $report->pagesProcessed,
       'time' => $report->durationSeconds,
@@ -586,8 +582,6 @@ class ScoltaCommands extends DrushCommands {
     $report       = $orchestrator->finalize($budget, $this->logger());
 
     if ($report->success) {
-      $generation = $this->state->get('scolta.generation', 0);
-      $this->state->set('scolta.generation', $generation + 1);
       $this->logger()->success('Index finalized: {pages} pages in {time}s ({mem} peak RAM).', [
         'pages' => $report->pagesProcessed,
         'time' => $report->durationSeconds,
@@ -723,6 +717,13 @@ class ScoltaCommands extends DrushCommands {
    * scolta.generation counter in their cache key, so bumping the generation
    * orphans all existing entries; the resolved-prompt entries use known
    * fixed keys and are deleted directly.
+   *
+   * This command is the only thing that bumps the generation. A scolta.settings
+   * or system.site save retires the AI entries through their cache tags, and
+   * index builds do not touch them at all (see
+   * AiApiControllerBase::CACHE_TAGS), so this is for everything else: a new
+   * scolta-php whose default prompts changed, or a site-specific prompt
+   * enricher whose output changed.
    */
   #[CLI\Command(name: 'scolta:clear-cache', aliases: ['scc'])]
   public function clearCache(): void {

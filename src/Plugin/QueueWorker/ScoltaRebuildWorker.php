@@ -429,7 +429,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     }
 
     if ($report->success) {
-      $this->bumpGeneration();
+      $this->invalidateSearchIndexCaches();
       $this->state->delete(self::FAILURE_COUNT_KEY);
       $this->state->delete(self::FORCE_KEY);
       $this->deleteMarkers();
@@ -794,7 +794,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     // entities, and pruning would drop the manifest entry of every other one.
     $manifest?->saveWithoutPruning();
 
-    $this->bumpGeneration();
+    $this->invalidateSearchIndexCaches();
 
     $this->logger->info('Search index updated incrementally: @updated pages updated, @deleted deleted, @fragments fragments, @chunks chunks rewritten in @time s (tombstones @tombstones%).', [
       '@updated' => $result->pagesUpdated,
@@ -823,11 +823,17 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
   }
 
   /**
-   * Bump the generation counter so cached AI responses refresh.
+   * Retire render caches that embed the index: the search block's.
+   *
+   * Cached AI responses are deliberately left alone. Until 2.0 every build,
+   * the hourly incremental update included, also bumped scolta.generation,
+   * which prefixes every expand/summarize cache key, so the 30-day AI cache
+   * lived for about an hour on a busy site and repeat queries went back to
+   * the provider each time. An expansion depends on the query and the
+   * prompt, not the index; a summary's key hashes the excerpts the browser
+   * sent, which already change when the index does.
    */
-  protected function bumpGeneration(): void {
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->state->set('scolta.generation', $generation + 1);
+  protected function invalidateSearchIndexCaches(): void {
     $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
   }
 

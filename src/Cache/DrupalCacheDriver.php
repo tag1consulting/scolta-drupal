@@ -15,8 +15,19 @@ use Tag1\Scolta\Cache\CacheDriverInterface;
  */
 class DrupalCacheDriver implements CacheDriverInterface {
 
+  /**
+   * Constructs the driver.
+   *
+   * @param \Drupal\Core\Cache\CacheBackendInterface $cache
+   *   The bin to read and write.
+   * @param string[] $tags
+   *   Cache tags applied to every entry written through this driver, so
+   *   Drupal's own tag invalidation (a config save, a cache rebuild) retires
+   *   them without any Scolta-specific bookkeeping.
+   */
   public function __construct(
     private readonly CacheBackendInterface $cache,
+    private readonly array $tags = [],
   ) {}
 
   /**
@@ -31,7 +42,7 @@ class DrupalCacheDriver implements CacheDriverInterface {
    * {@inheritdoc}
    */
   public function set(string $key, mixed $value, int $ttlSeconds): void {
-    $this->cache->set($key, $value, time() + $ttlSeconds);
+    $this->cache->set($key, $value, time() + $ttlSeconds, $this->tags);
   }
 
 }

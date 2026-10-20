@@ -51,6 +51,20 @@ abstract class AiApiControllerBase extends ControllerBase {
    */
   protected const FLOOD_GLOBAL_EVENT = 'scolta.ai_api_global';
 
+  /**
+   * Cache tags on every cached AI response.
+   *
+   * The system prompt an expansion or summary was generated with is built
+   * from scolta.settings (prompt overrides, languages, sortable and filter
+   * field descriptions, model) and, when no site name is configured, from
+   * system.site. Neither is part of the cache key, so a change to either
+   * must retire the entries, and tagging them is what does it. The index
+   * itself is not an input: an expansion depends on the query alone, and a
+   * summary's key already hashes the excerpts the browser sent, which change
+   * with the index.
+   */
+  public const CACHE_TAGS = ['config:scolta.settings', 'config:system.site'];
+
   public function __construct(
     protected readonly ScoltaAiService $aiService,
     protected readonly EventDispatcherInterface $eventDispatcher,
@@ -170,12 +184,16 @@ abstract class AiApiControllerBase extends ControllerBase {
    */
   protected function resolveCache(int $cacheTtl): CacheDriverInterface {
     return ($cacheTtl > 0 && $this->cache !== NULL)
-      ? new DrupalCacheDriver($this->cache)
+      ? new DrupalCacheDriver($this->cache, self::CACHE_TAGS)
       : new NullCacheDriver();
   }
 
   /**
    * {@inheritdoc}
+   *
+   * The generation is a manual kill switch, bumped only by
+   * `drush scolta:clear-cache`. Index builds, full or incremental, leave it
+   * alone: see CACHE_TAGS for why they do not need to.
    */
   protected function getCacheGeneration(): int {
     return $this->state !== NULL
