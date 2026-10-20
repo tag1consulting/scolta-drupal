@@ -25,6 +25,7 @@ use Tag1\Scolta\Config\AmazeeCredentials;
 use Tag1\Scolta\Config\ApiKeyResolver;
 use Tag1\Scolta\Config\ResolvedApiKey;
 use Tag1\Scolta\Config\ScoltaConfig;
+use Tag1\Scolta\Exception\ApiKeyMissingException;
 use Tag1\Scolta\Service\AiServiceAdapter;
 
 /**
@@ -33,7 +34,7 @@ use Tag1\Scolta\Service\AiServiceAdapter;
  * Registered as the 'scolta.ai_service' service. Controllers and
  * commands use this instead of constructing AiClient directly.
  *
- * Supports a three-path AI strategy:
+ * Supports a four-path AI strategy:
  * 1. Amazee.ai (opt-in): When the operator has selected 'amazee' as the AI
  *    provider AND a connection is stored in Drupal State, buildConfig()
  *    injects the Amazee LiteLLM token, the gateway-scoped model alias from
@@ -47,7 +48,12 @@ use Tag1\Scolta\Service\AiServiceAdapter;
  *    as the provider, tryFrameworkAi() routes through the Drupal AI module's
  *    plugin manager. Amazee credentials are NOT injected in this path —
  *    the Drupal AI module manages its own provider, key, and model.
- * 3. Built-in AiClient (fallback): When neither of the above applies, direct
+ * 3. AI Providers API module (opt-in): When the admin explicitly selects
+ *    'ai_providers_api', tryFrameworkAi() routes through that module's
+ *    AiService with the provider chosen in 'ai_providers_api_provider', or
+ *    for query expansion in 'ai_providers_api_expansion_provider' when set.
+ *    There is no fallback to the built-in AiClient.
+ * 4. Built-in AiClient (fallback): When none of the above applies, direct
  *    HTTP calls are made with the configured provider and API key.
  */
 class ScoltaAiService extends AiServiceAdapter {
@@ -128,6 +134,18 @@ class ScoltaAiService extends AiServiceAdapter {
   private ?object $aiProviderManager;
 
   /**
+   * The AI Providers API module's AI service, when installed.
+   *
+   * @var \Drupal\ai_providers_api\AiServiceInterface|null
+   */
+  private ?object $aiProvidersApi;
+
+  /**
+   * The operation of the messageForOperation() call in progress, if any.
+   */
+  private ?string $operation = NULL;
+
+  /**
    * Constructs the service.
    *
    * The Drupal state service is not a parameter: Amazee.ai credentials live in
@@ -143,6 +161,7 @@ class ScoltaAiService extends AiServiceAdapter {
     ?ConfigStorageInterface $amazeeConfigStorage = NULL,
     ?object $aiProviderManager = NULL,
     ?CacheBackendInterface $cache = NULL,
+    ?object $aiProvidersApi = NULL,
   ) {
     $this->httpClient = $httpClient;
     $this->configFactory = $configFactory;
@@ -151,6 +170,7 @@ class ScoltaAiService extends AiServiceAdapter {
     $this->amazeeConfigStorage = $amazeeConfigStorage;
     $this->aiProviderManager = $aiProviderManager;
     $this->cache = $cache;
+    $this->aiProvidersApi = $aiProvidersApi;
 
     parent::__construct($this->buildConfig());
 
@@ -534,14 +554,93 @@ class ScoltaAiService extends AiServiceAdapter {
   }
 
   /**
+   * Check if the AI Providers API module is available.
+   *
+   * @since 2.0.0
+   * @stability experimental
+   */
+  public function hasAiProvidersApiModule(): bool {
+    return $this->aiProvidersApi !== NULL;
+  }
+
+  /**
+   * The AI Providers API providers enabled in that module's settings.
+   *
+   * @return array<string, string|\Stringable>
+   *   Provider names keyed by provider ID; empty without the module.
+   *
+   * @since 2.0.0
+   * @stability experimental
+   */
+  public function getAiProvidersApiProviders(): array {
+    return $this->aiProvidersApi?->getEnabledProviders() ?? [];
+  }
+
+  /**
+   * The AI Providers API provider ID selected in the Scolta settings.
+   *
+   * @since 2.0.0
+   * @stability experimental
+   */
+  public function getAiProvidersApiProviderId(): string {
+    $providerId = $this->configFactory->get('scolta.settings')->get('ai_providers_api_provider');
+    return is_string($providerId) ? $providerId : '';
+  }
+
+  /**
+   * The AI Providers API provider ID for query expansion, if not the main one.
+   *
+   * @since 2.0.0
+   * @stability experimental
+   */
+  public function getAiProvidersApiExpansionProviderId(): string {
+    $providerId = $this->configFactory->get('scolta.settings')->get('ai_providers_api_expansion_provider');
+    return is_string($providerId) ? $providerId : '';
+  }
+
+  /**
+   * Whether the selected AI Providers API provider is installed and enabled.
+   *
+   * @since 2.0.0
+   * @stability experimental
+   */
+  public function isAiProvidersApiReady(): bool {
+    return array_key_exists($this->getAiProvidersApiProviderId(), $this->getAiProvidersApiProviders());
+  }
+
+  /**
    * {@inheritdoc}
    *
-   * Only routes through the Drupal AI module when the admin has explicitly
-   * selected 'drupal_ai' as the provider. Merely having the module installed
-   * does not change routing — this prevents Amazee.ai and other built-in
-   * providers from being silently hijacked by the Drupal AI module.
+   * Records the operation, which the base class does not pass to
+   * tryFrameworkAi(), so query expansion through the AI Providers API module
+   * can use the expansion provider.
+   *
+   * @since 2.0.0
+   * @stability experimental
+   */
+  public function messageForOperation(string $operation, string $systemPrompt, string $userMessage, int $maxTokens = 512): string {
+    $this->operation = $operation;
+    try {
+      return parent::messageForOperation($operation, $systemPrompt, $userMessage, $maxTokens);
+    }
+    finally {
+      $this->operation = NULL;
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Only routes through the Drupal AI or AI Providers API module when the
+   * admin has explicitly selected it as the provider. Merely having the module
+   * installed does not change routing — this prevents Amazee.ai and other
+   * built-in providers from being silently hijacked by it.
    */
   protected function tryFrameworkAi(string $systemPrompt, string $userMessage, int $maxTokens): ?string {
+    if ($this->getConfig()->aiProvider === 'ai_providers_api') {
+      return $this->messageViaAiProvidersApi($systemPrompt, $userMessage, $maxTokens);
+    }
+
     if ($this->getConfig()->aiProvider !== 'drupal_ai') {
       return NULL;
     }
@@ -565,10 +664,15 @@ class ScoltaAiService extends AiServiceAdapter {
   /**
    * {@inheritdoc}
    *
-   * Only routes through the Drupal AI module when the admin has explicitly
-   * selected 'drupal_ai' as the provider. See tryFrameworkAi() for rationale.
+   * Only routes through the Drupal AI or AI Providers API module when the
+   * admin has explicitly selected it as the provider. See tryFrameworkAi()
+   * for rationale.
    */
   protected function tryFrameworkConversation(string $systemPrompt, array $messages, int $maxTokens): ?string {
+    if ($this->getConfig()->aiProvider === 'ai_providers_api') {
+      return $this->conversationViaAiProvidersApi($systemPrompt, $messages, $maxTokens);
+    }
+
     if ($this->getConfig()->aiProvider !== 'drupal_ai') {
       return NULL;
     }
@@ -652,6 +756,63 @@ class ScoltaAiService extends AiServiceAdapter {
     $response = $provider->chat($input, $default['model_id'] ?? '', ['scolta']);
 
     return $response->getNormalized()->getText();
+  }
+
+  /**
+   * Send a single message via the AI Providers API module.
+   *
+   * @throws \Tag1\Scolta\Exception\ApiKeyMissingException
+   *   When the AI Providers API is not usable.
+   */
+  protected function messageViaAiProvidersApi(string $systemPrompt, string $userMessage, int $maxTokens): string {
+    $providerId = $this->readyAiProvidersApiProviderId();
+    $expansionProviderId = $this->getAiProvidersApiExpansionProviderId();
+    if ($this->operation === 'expand_query' && $expansionProviderId !== '') {
+      $providerId = $expansionProviderId;
+    }
+
+    return $this->aiProvidersApi->prompt($providerId, $userMessage, [
+      'system' => $systemPrompt,
+      'max_tokens' => $maxTokens,
+    ]);
+  }
+
+  /**
+   * Send a multi-turn conversation via the AI Providers API module.
+   *
+   * The last message is sent as the prompt and the ones before it as history.
+   *
+   * @throws \Tag1\Scolta\Exception\ApiKeyMissingException
+   *   When the AI Providers API is not usable.
+   */
+  protected function conversationViaAiProvidersApi(string $systemPrompt, array $messages, int $maxTokens): string {
+    $providerId = $this->readyAiProvidersApiProviderId();
+
+    $last = array_pop($messages);
+    if (($last['role'] ?? NULL) !== 'user') {
+      throw new \RuntimeException('A conversation sent through the AI Providers API module must end with a user message.');
+    }
+
+    return $this->aiProvidersApi->prompt($providerId, $last['content'], [
+      'system' => $systemPrompt,
+      'history' => $messages,
+      'max_tokens' => $maxTokens,
+    ]);
+  }
+
+  /**
+   * The selected AI Providers API provider ID.
+   *
+   * @throws \Tag1\Scolta\Exception\ApiKeyMissingException
+   *   When the AI Providers API is not usable.
+   */
+  private function readyAiProvidersApiProviderId(): string {
+    if ($this->isAiProvidersApiReady()) {
+      return $this->getAiProvidersApiProviderId();
+    }
+
+    $this->logger->warning('AI Providers API selected but not usable. AI features are off.');
+    throw new ApiKeyMissingException('AI Providers API selected but not usable.');
   }
 
   /**

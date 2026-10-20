@@ -56,7 +56,7 @@ services:
 
   scolta.ai_service:
     class: Drupal\scolta\Service\ScoltaAiService
-    arguments: ['@http_client', '@config.factory', '@logger.channel.scolta', '@scolta.amazee_budget_handler', '@scolta.amazee_config_storage', '@?ai.provider', '@cache.default']
+    arguments: ['@http_client', '@config.factory', '@logger.channel.scolta', '@scolta.amazee_budget_handler', '@scolta.amazee_config_storage', '@?ai.provider', '@cache.default', '@?Drupal\ai_providers_api\AiServiceInterface']
   Drupal\scolta\Service\ScoltaAiService: '@scolta.ai_service'
 
   scolta.content_gatherer:

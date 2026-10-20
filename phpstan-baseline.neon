@@ -115,6 +115,18 @@ parameters:
 			path: src/Service/ScoltaAiService.php
 
 		-
+			message: '#^Call to method getEnabledProviders\(\) on an unknown class Drupal\\ai_providers_api\\AiServiceInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Service/ScoltaAiService.php
+
+		-
+			message: '#^Call to method prompt\(\) on an unknown class Drupal\\ai_providers_api\\AiServiceInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Service/ScoltaAiService.php
+
+		-
 			message: '#^Instantiated class Drupal\\ai\\OperationType\\Chat\\ChatInput not found\.$#'
 			identifier: class.notFound
 			count: 2
@@ -130,6 +142,12 @@ parameters:
 			message: '#^PHPDoc tag @var for variable \$pluginManager contains unknown class Drupal\\ai\\AiProviderPluginManager\.$#'
 			identifier: class.notFound
 			count: 2
+			path: src/Service/ScoltaAiService.php
+
+		-
+			message: '#^Property Drupal\\scolta\\Service\\ScoltaAiService\:\:\$aiProvidersApi has unknown class Drupal\\ai_providers_api\\AiServiceInterface as its type\.$#'
+			identifier: class.notFound
+			count: 1
 			path: src/Service/ScoltaAiService.php
 
 		-

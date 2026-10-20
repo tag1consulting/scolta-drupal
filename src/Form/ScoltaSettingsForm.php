@@ -241,6 +241,9 @@ class ScoltaSettingsForm extends ConfigFormBase {
     if ($this->aiService->hasDrupalAiModule()) {
       $providerOptions['drupal_ai'] = $this->t('Drupal AI module');
     }
+    if ($this->aiService->hasAiProvidersApiModule()) {
+      $providerOptions['ai_providers_api'] = $this->t('AI Providers API module');
+    }
 
     $form['ai']['ai_provider'] = [
       '#type' => 'select',
@@ -293,16 +296,51 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ],
     ];
 
+    if ($this->aiService->hasAiProvidersApiModule()) {
+      $aiProvidersApiVisible = [':input[name="ai_provider"]' => ['value' => 'ai_providers_api']];
+      $form['ai']['ai_providers_api_provider'] = [
+        '#type' => 'select',
+        '#title' => $this->t('AI Providers API provider'),
+        '#options' => $this->aiService->getAiProvidersApiProviders(),
+        '#empty_option' => $this->t('- Select a provider -'),
+        '#empty_value' => '',
+        '#default_value' => $this->aiService->getAiProvidersApiProviderId(),
+        '#description' => $this->t('One of the providers enabled in the <a href="@url">AI Providers API settings</a>, where its API key and model are configured. Model, API key, and base URL fields below are hidden when this provider is selected.', [
+          '@url' => Url::fromRoute('entity.ai_providers_api_provider.collection')->toString(),
+        ]),
+        '#states' => [
+          'visible' => $aiProvidersApiVisible,
+          'required' => $aiProvidersApiVisible,
+        ],
+      ];
+      $form['ai']['ai_providers_api_expansion_provider'] = [
+        '#type' => 'select',
+        '#title' => $this->t('AI Providers API expansion provider'),
+        '#options' => $this->aiService->getAiProvidersApiProviders(),
+        '#empty_option' => $this->t('- Use the provider above -'),
+        '#empty_value' => '',
+        '#default_value' => $this->aiService->getAiProvidersApiExpansionProviderId(),
+        '#description' => $this->t('Optional provider for query expansion only, e.g. one with a faster model. Leave blank to use the provider above for all operations.'),
+        '#states' => [
+          'visible' => $aiProvidersApiVisible,
+        ],
+      ];
+    }
+
+    $builtInClientStates = [
+      'invisible' => [
+        [':input[name="ai_provider"]' => ['value' => 'drupal_ai']],
+        'or',
+        [':input[name="ai_provider"]' => ['value' => 'ai_providers_api']],
+      ],
+    ];
+
     $form['ai']['ai_model'] = [
       '#type' => 'textfield',
       '#title' => $this->t('AI Model'),
       '#default_value' => $config->get('ai_model') ?? self::DEFAULT_AI_MODEL,
       '#description' => $this->t('Model identifier for summarize and follow-up (e.g., claude-sonnet-5-5, gpt-4o).'),
-      '#states' => [
-        'invisible' => [
-          ':input[name="ai_provider"]' => ['value' => 'drupal_ai'],
-        ],
-      ],
+      '#states' => $builtInClientStates,
     ];
 
     $form['ai']['ai_expansion_model'] = [
@@ -310,11 +348,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#title' => $this->t('Expansion Model'),
       '#default_value' => $config->get('ai_expansion_model') ?? self::DEFAULT_AI_EXPANSION_MODEL,
       '#description' => $this->t('Model for query expansion only; defaults to claude-haiku-5-5. It must belong to the selected provider: a Claude ID is ignored on other providers. Leave blank to use AI Model for expansion too.'),
-      '#states' => [
-        'invisible' => [
-          ':input[name="ai_provider"]' => ['value' => 'drupal_ai'],
-        ],
-      ],
+      '#states' => $builtInClientStates,
     ];
 
     $form['ai']['ai_base_url'] = [
@@ -322,11 +356,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#title' => $this->t('AI Base URL'),
       '#default_value' => $config->get('ai_base_url') ?? '',
       '#description' => $this->t('Override the default API URL. Leave blank to use provider defaults.'),
-      '#states' => [
-        'invisible' => [
-          ':input[name="ai_provider"]' => ['value' => 'drupal_ai'],
-        ],
-      ],
+      '#states' => $builtInClientStates,
     ];
 
     $form['ai']['ai_expand_query'] = [
@@ -367,11 +397,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     ];
 
     $apiKeyStatus = $this->buildApiKeyStatus();
-    $apiKeyStatus['#states'] = [
-      'invisible' => [
-        ':input[name="ai_provider"]' => ['value' => 'drupal_ai'],
-      ],
-    ];
+    $apiKeyStatus['#states'] = $builtInClientStates;
     $form['ai']['api_key_status'] = $apiKeyStatus;
 
     // ── Content Section ──
@@ -1251,6 +1277,16 @@ class ScoltaSettingsForm extends ConfigFormBase {
         $items[] = $this->t('AI provider: Drupal AI module selected but not installed — falling back to built-in AiClient. Install the AI module (ai:ai) or select a different provider.');
       }
     }
+    elseif ($activeProvider === 'ai_providers_api') {
+      if ($this->aiService->isAiProvidersApiReady()) {
+        $items[] = $this->t('AI provider: AI Providers API module (@provider).', [
+          '@provider' => $this->aiService->getAiProvidersApiProviders()[$this->aiService->getAiProvidersApiProviderId()],
+        ]);
+      }
+      else {
+        $items[] = $this->t('AI provider: AI Providers API module selected but not usable — AI features are off. Install the module (ai_providers_api) and select one of its enabled providers above.');
+      }
+    }
     else {
       $items[] = $this->t('AI provider: Built-in AiClient (@provider). <a href="@url">Install the Drupal AI module</a> for 48+ provider support with Key module integration.', [
         '@provider' => $activeProvider,
@@ -1427,6 +1463,11 @@ class ScoltaSettingsForm extends ConfigFormBase {
       }
     }
 
+    if ($form_state->getValue('ai_provider') === 'ai_providers_api'
+      && !array_key_exists($form_state->getValue('ai_providers_api_provider') ?? '', $this->aiService->getAiProvidersApiProviders())) {
+      $form_state->setErrorByName('ai_providers_api_provider', $this->t('Select the AI Providers API provider Scolta should use.'));
+    }
+
     if ($this->entityTypesFromForm($form_state) === []) {
       $form_state->setErrorByName('entity_types', $this->t('Select at least one entity type to index.'));
     }
@@ -1505,6 +1546,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $configSave
       // AI settings.
       ->set('ai_provider', $form_state->getValue('ai_provider'))
+      ->set('ai_providers_api_provider', $form_state->getValue('ai_providers_api_provider') ?? '')
+      ->set('ai_providers_api_expansion_provider', $form_state->getValue('ai_providers_api_expansion_provider') ?? '')
       ->set('ai_model', $form_state->getValue('ai_model'))
       ->set('ai_expansion_model', $form_state->getValue('ai_expansion_model') ?? '')
       ->set('ai_base_url', $form_state->getValue('ai_base_url'))

@@ -126,12 +126,16 @@ class HealthController extends ControllerBase {
     $result = $checker->check();
 
     // Drupal-specific: override AI provider only when the admin has explicitly
-    // selected 'drupal_ai' AND the module is installed. Merely having the AI
-    // module installed does not change routing (see ScoltaAiService), so the
-    // health report must not claim it does.
-    if ($scoltaConfig->aiProvider === 'drupal_ai' && $this->aiService->hasDrupalAiModule()) {
-      $result['ai_provider'] = 'drupal-ai';
-      $result['ai_configured'] = TRUE;
+    // selected 'drupal_ai' or 'ai_providers_api' AND it can serve requests.
+    // Merely having a module installed does not change routing (see
+    // ScoltaAiService), so the health report must not claim it does.
+    $frameworkProvider = match (TRUE) {
+      $scoltaConfig->aiProvider === 'drupal_ai' && $this->aiService->hasDrupalAiModule() => 'drupal-ai',
+      $scoltaConfig->aiProvider === 'ai_providers_api' && $this->aiService->isAiProvidersApiReady() => 'ai-providers-api',
+      default => NULL,
+    };
+    if ($frameworkProvider !== NULL) {
+      $result = self::configuredByFramework($result, $frameworkProvider);
     }
 
     // Drupal-specific: index detail enrichment. The shared locator decides
@@ -190,6 +194,35 @@ class HealthController extends ControllerBase {
     }
 
     return new JsonResponse($result);
+  }
+
+  /**
+   * Reports AI as configured by a provider that manages its own credentials.
+   *
+   * @param array<string, mixed> $result
+   *   Payload from HealthChecker::check().
+   * @param string $provider
+   *   The provider name to report, e.g. 'drupal-ai'.
+   *
+   * @return array<string, mixed>
+   *   The payload without the 'ai_key_missing' fault.
+   *
+   * @since 2.0.0
+   * @stability experimental
+   */
+  public static function configuredByFramework(array $result, string $provider): array {
+    $result['ai_provider'] = $provider;
+    $result['ai_configured'] = TRUE;
+    $result['ai_usable'] = ($result['ai_auth_failing'] ?? FALSE) !== TRUE;
+
+    if (array_key_exists('status_reasons', $result) && is_array($result['status_reasons'])) {
+      $result['status_reasons'] = array_values(array_diff($result['status_reasons'], ['ai_key_missing']));
+      if (count($result['status_reasons']) === 0 && ($result['status'] ?? NULL) === 'degraded') {
+        $result['status'] = 'ok';
+      }
+    }
+
+    return $result;
   }
 
   /**

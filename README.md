@@ -249,6 +249,21 @@ Scolta will use the Drupal AI module's configured default provider and model. Th
 
 **Moving from Amazee.ai:** If your site is on the Amazee.ai gateway and you want to switch to the Drupal AI module, install `drupal/ai`, configure a provider there, then change the dropdown in Scolta settings. Saving the change removes the stored Amazee.ai connection, so nothing of it is left to shadow the provider you selected; to go back, select Amazee.ai again and complete the connect flow.
 
+### AI Providers API module
+
+Sites using the [AI Providers API](https://www.drupal.org/project/ai_providers_api) module can route Scolta through one of its providers (Claude, OpenAI or an OpenAI-compatible gateway, Gemini, Ollama, or a custom plugin).
+
+**Setup:**
+
+```bash
+composer require drupal/ai_providers_api
+drush en ai_providers_api
+```
+
+Add a provider at *Administration > Configuration > Web services > AI providers* (`/admin/ai-providers/settings`). Then select **AI Providers API module** as the AI Provider in Scolta settings, and pick the provider below it. Optionally pick an **AI Providers API expansion provider** to run query expansion through a different provider, e.g. one with a faster model; left blank, the main provider handles every operation.
+
+Scolta uses that provider's configured API key and model; the model, API key, expansion model, and base URL fields in Scolta's settings are hidden. Unlike the Drupal AI module path, there is no fallback to the built-in client: if the module is uninstalled or the provider is disabled, AI features are off until it is fixed.
+
 ### Built-in providers (standalone)
 
 For simple setups or sites without the Drupal AI module, Scolta can make direct HTTP calls to Anthropic or OpenAI with an API key configured via environment variable or `settings.php`:

@@ -501,6 +501,19 @@ function scolta_update_10010() {
 }
 
 /**
+ * Add the AI Providers API provider settings to scolta.settings.
+ */
+function scolta_update_10011() {
+  $config = \Drupal::configFactory()->getEditable('scolta.settings');
+  foreach (['ai_providers_api_provider', 'ai_providers_api_expansion_provider'] as $key) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, '');
+    }
+  }
+  $config->save();
+}
+
+/**
  * Discard the build state and queue one full rebuild.
  *
  * For any release whose page IDs, ledger layout or manifest keys are not

@@ -14,7 +14,8 @@
         "tag1/scolta-php": "^2.0.0@dev"
     },
     "suggest": {
-        "drupal/ai": "For enhanced multi-provider AI support via the Drupal AI Initiative module (48+ providers, Key module integration, rate limiting, token tracking)"
+        "drupal/ai": "For enhanced multi-provider AI support via the Drupal AI Initiative module (48+ providers, Key module integration, rate limiting, token tracking)",
+        "drupal/ai_providers_api": "To route AI requests through an AI Providers API provider plugin (Claude, OpenAI, Gemini, Ollama)"
     },
     "require-dev": {
         "composer/installers": "^2",
