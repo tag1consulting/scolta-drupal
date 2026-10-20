@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\scolta\Commands;
 
 use Consolidation\OutputFormatters\StructuredData\UnstructuredListData;
-use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityInterface;
@@ -15,12 +14,10 @@ use Drupal\Core\ParamConverter\ParamNotConvertedException;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
-use Drupal\scolta\Cache\DrupalCacheDriver;
 use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
 use Drupal\scolta\Progress\DrushProgressReporter;
 use Drupal\scolta\Service\IndexBuildRunner;
 use Drupal\scolta\Service\IndexLocator;
-use Drupal\scolta\Service\ScoltaAiService;
 use Drupal\scolta\Service\ScoltaContentGatherer;
 use Drupal\scolta\Service\ScoltaReindexer;
 use Drush\Attributes as CLI;
@@ -28,7 +25,6 @@ use Drush\Commands\DrushCommands;
 use Symfony\Component\Routing\Exception\MethodNotAllowedException;
 use Symfony\Component\Routing\Exception\ResourceNotFoundException;
 use Symfony\Component\Routing\Matcher\UrlMatcherInterface;
-use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\CborDecoder;
@@ -38,8 +34,6 @@ use Tag1\Scolta\Index\PageTableLedger;
 use Tag1\Scolta\Index\ResumeChainRunner;
 use Tag1\Scolta\Index\RetiredIndexTrash;
 use Tag1\Scolta\Index\StatusReport;
-use Tag1\Scolta\Prompt\DefaultPrompts;
-use Tag1\Scolta\SetupCheck;
 use Tag1\Scolta\Storage\FilesystemDriver;
 
 /**
@@ -47,9 +41,11 @@ use Tag1\Scolta\Storage\FilesystemDriver;
  *
  * Commands: scolta:build gathers content and builds the search index in
  * PHP; scolta:finalize merges committed chunks into the final index;
- * scolta:clear-cache clears the expansion/summary caches; scolta:cleanup
- * deletes retired index (.scolta-trash-*) directories; scolta:status reports
- * index, build directory and AI provider state.
+ * scolta:cleanup deletes retired index (.scolta-trash-*) directories;
+ * scolta:status reports index and build directory state. The AI tier's
+ * commands (clear-cache, check-setup, cache-prompts, ai-status) belong to
+ * scolta_ui, so a site with only one of the two modules gets exactly the
+ * commands it can run.
  */
 class ScoltaCommands extends DrushCommands {
 
@@ -60,10 +56,6 @@ class ScoltaCommands extends DrushCommands {
    *   The config factory.
    * @param \Drupal\Core\State\StateInterface $state
    *   The state service.
-   * @param \Drupal\Core\Cache\CacheBackendInterface $cache
-   *   The default cache backend.
-   * @param \Drupal\scolta\Service\ScoltaAiService $aiService
-   *   The Scolta AI service.
    * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $streamWrapperManager
    *   The stream wrapper manager.
    * @param \Drupal\scolta\Service\ScoltaContentGatherer $contentGatherer
@@ -88,8 +80,6 @@ class ScoltaCommands extends DrushCommands {
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
     private readonly StateInterface $state,
-    private readonly CacheBackendInterface $cache,
-    private readonly ScoltaAiService $aiService,
     private readonly StreamWrapperManagerInterface $streamWrapperManager,
     private readonly ScoltaContentGatherer $contentGatherer,
     private readonly FileSystemInterface $fileSystem,
@@ -142,9 +132,6 @@ class ScoltaCommands extends DrushCommands {
   ): void {
     $config = $this->configFactory->get('scolta.settings');
     $this->buildWithPhpIndexer($options, $config, (bool) $options['force']);
-
-    $this->logger()->notice('Caching resolved prompts...');
-    $this->cacheResolvedPrompts();
   }
 
   /**
@@ -581,7 +568,7 @@ class ScoltaCommands extends DrushCommands {
       'out'   => $resolvedOutputDir,
     ]);
 
-    $language     = $config->get('ai_languages')[0] ?? 'en';
+    $language     = $this->runner->language();
     $orchestrator = new IndexBuildOrchestrator($resolvedStateDir, $resolvedOutputDir, NULL, $language);
     $report       = $orchestrator->finalize($budget, $this->logger());
 
@@ -598,31 +585,6 @@ class ScoltaCommands extends DrushCommands {
     else {
       $this->logger()->error('Finalize failed: {error}', ['error' => $report->error ?? 'unknown']);
     }
-  }
-
-  /**
-   * Pre-resolve and cache all prompt templates.
-   *
-   * Stores resolved prompts in Drupal's cache so API endpoints can
-   * read them without resolving on every request.
-   */
-  private function cacheResolvedPrompts(): void {
-    $config = $this->aiService->getConfig();
-    $siteName = $config->siteName;
-    $siteDescription = $config->siteDescription;
-
-    $prompts = [
-      'expand_query' => DefaultPrompts::resolve(DefaultPrompts::EXPAND_QUERY, $siteName, $siteDescription),
-      'summarize' => DefaultPrompts::resolve(DefaultPrompts::SUMMARIZE, $siteName, $siteDescription),
-      'follow_up' => DefaultPrompts::resolve(DefaultPrompts::FOLLOW_UP, $siteName, $siteDescription),
-    ];
-
-    $cacheTtl = $config->cacheTtl > 0 ? $config->cacheTtl : 2592000;
-    foreach ($prompts as $name => $resolved) {
-      $this->cache->set("scolta.prompt.{$name}", $resolved, time() + $cacheTtl);
-    }
-
-    $this->logger()->success('Cached resolved prompts for: ' . implode(', ', array_keys($prompts)));
   }
 
   /**
@@ -716,69 +678,9 @@ class ScoltaCommands extends DrushCommands {
   }
 
   /**
-   * Clear Scolta caches (expansion and summary).
+   * Show Scolta status: build directory, index, cache generation.
    *
-   * Scolta shares the cache.default bin with every other module, so wiping
-   * the bin is off limits. AI expansion/summary entries embed the
-   * scolta.generation counter in their cache key, so bumping the generation
-   * orphans all existing entries; the resolved-prompt entries use known
-   * fixed keys and are deleted directly.
-   */
-  #[CLI\Command(name: 'scolta:clear-cache', aliases: ['scc'])]
-  public function clearCache(): void {
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->state->set('scolta.generation', $generation + 1);
-
-    $this->cache->deleteMultiple([
-      'scolta.prompt.expand_query',
-      'scolta.prompt.summarize',
-      'scolta.prompt.follow_up',
-    ]);
-
-    $this->logger()->success('Scolta caches cleared (generation bumped, resolved prompts deleted).');
-  }
-
-  /**
-   * Verify Scolta dependencies and configuration.
-   *
-   * Checks PHP version, runtime requirements, and AI key.
-   */
-  #[CLI\Command(name: 'scolta:check-setup', aliases: ['scs'])]
-  public function checkSetup(): void {
-    $results = SetupCheck::run(
-      aiApiKey: $this->aiService->getApiKey(),
-      // The AI-key row names the source and reports an overridden Amazee.ai
-      // credential, from the same resolution the settings form and /health
-      // read (scolta-php#252).
-      resolvedKey: $this->aiService->resolveApiKey(),
-    );
-
-    foreach ($results as $r) {
-      $icon = match ($r['status']) {
-        'pass' => '[OK]',
-        'warn' => '[!!]',
-        'fail' => '[FAIL]',
-        default => '[??]',
-      };
-      $method = match ($r['status']) {
-        'fail' => 'error',
-        'warn' => 'warning',
-        default => 'notice',
-      };
-      $this->logger()->$method("{$icon} {$r['name']}: {$r['message']}");
-    }
-
-    $exit = SetupCheck::exitCode($results);
-    if ($exit === 0) {
-      $this->logger()->success('All critical checks passed.');
-    }
-    else {
-      $this->logger()->error('One or more critical checks failed.');
-    }
-  }
-
-  /**
-   * Show Scolta status: build directory, index, AI provider, cache.
+   * The AI tier reports separately, from scolta_ui's `scolta:ai-status`.
    *
    * Returns the structured data rather than printing it, so Drush's output
    * formatters offer --format=json and friends; the default stays YAML so the
@@ -879,55 +781,6 @@ class ScoltaCommands extends DrushCommands {
     else {
       $status['pagefind_index']['built'] = FALSE;
     }
-
-    // AI provider. Routing only goes through the Drupal AI module when the
-    // admin explicitly selected 'drupal_ai' AND the module is installed —
-    // mirror that here instead of reporting on module presence alone.
-    //
-    // No coalescing to a provider nobody chose: an empty value means AI is
-    // off, and a status command has to report that rather than name Anthropic.
-    $provider = $config->get('ai_provider') ?? '';
-    if ($provider === '') {
-      $providerRow = [
-        'provider' => NULL,
-        'note' => 'None selected — AI features are off (search is unaffected).',
-      ];
-    }
-    elseif ($provider === 'drupal_ai' && $this->aiService->hasDrupalAiModule()) {
-      $providerRow = ['provider' => 'drupal_ai', 'routing' => 'Drupal AI module'];
-    }
-    elseif ($provider === 'drupal_ai') {
-      $providerRow = [
-        'provider' => 'drupal_ai',
-        'routing' => 'built-in client',
-        'note' => 'drupal_ai selected but AI module not installed — falling back to built-in client.',
-      ];
-    }
-    else {
-      $providerRow = ['provider' => $provider, 'routing' => 'built-in client'];
-    }
-    // The source and the description come from the same resolution the client
-    // uses, so `status` cannot claim Amazee.ai while an explicit key serves
-    // every request (scolta-php#252).
-    $resolvedKey = $this->aiService->resolveApiKey();
-    $providerRow['api_key'] = [
-      'source' => $resolvedKey->source->value,
-      'description' => $resolvedKey->describe(),
-    ];
-
-    // The same cache marker /health reads via HealthChecker, so a provider
-    // whose stored credentials are being rejected is reported here too rather
-    // than only surfacing once someone happens to check /health. A cached
-    // marker, not a live probe — see KeyExpiryRecovery and
-    // docs/HEALTH_REFERENCE.md in scolta-php.
-    $cacheDriver = new DrupalCacheDriver($this->cache);
-    $authFailing = (bool) $cacheDriver->get(KeyExpiryRecovery::CACHE_KEY_AUTH_FAILURE);
-    $providerRow['auth_failing'] = $authFailing;
-    $providerRow['auth_failing_since'] = $authFailing
-      ? (($since = KeyExpiryRecovery::readFailureTimestamp($cacheDriver)) !== NULL ? date('c', $since) : NULL)
-      : NULL;
-
-    $status['ai_provider'] = $providerRow;
 
     // Generation counter.
     $status['cache'] = [

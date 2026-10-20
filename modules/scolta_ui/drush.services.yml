@@ -1,0 +1,10 @@
+services:
+  scolta_ui.commands:
+    class: Drupal\scolta_ui\Commands\ScoltaUiCommands
+    arguments:
+      - '@config.factory'
+      - '@state'
+      - '@cache.default'
+      - '@scolta.ai_service'
+    tags:
+      - { name: drush.command }

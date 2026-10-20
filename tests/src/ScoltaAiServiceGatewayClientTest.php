@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\scolta\Tests;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -70,7 +70,7 @@ class ScoltaAiServiceGatewayClientTest extends TestCase {
    */
   private function serviceWith(object $editable): ScoltaAiService {
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
-    $configFactory->method('getEditable')->with('scolta.settings')->willReturn($editable);
+    $configFactory->method('getEditable')->with('scolta_ui.settings')->willReturn($editable);
 
     $ref = new \ReflectionClass(ScoltaAiService::class);
     $service = $ref->newInstanceWithoutConstructor();
@@ -88,7 +88,7 @@ class ScoltaAiServiceGatewayClientTest extends TestCase {
   }
 
   /**
-   * A spy standing in for the editable scolta.settings config object.
+   * A spy standing in for the editable scolta_ui.settings config object.
    */
   private function spyEditableConfig(): object {
     return new class() {

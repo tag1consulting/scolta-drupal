@@ -8,7 +8,7 @@ use Drupal\Tests\BrowserTestBase;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Smoke-tests every route defined in scolta.routing.yml.
+ * Smoke-tests every route either module defines.
  *
  * Reads the routing file at runtime so any newly-added route is automatically
  * covered on the next CI run — no manual test-list updates needed. This is
@@ -28,7 +28,7 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'node', 'block'];
+  protected static $modules = ['scolta', 'scolta_ui', 'node', 'block'];
 
   /**
    * {@inheritdoc}
@@ -49,6 +49,7 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
     parent::setUp();
     $this->adminUser = $this->drupalCreateUser([
       'administer scolta',
+      'administer scolta ui',
       'use scolta ai',
       'access administration pages',
     ]);
@@ -173,11 +174,14 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
    *   Route name => [path, permission].
    */
   private function loadRoutes(string $method): array {
-    // tests/src/Functional is three levels below the module root.
-    $routingFile = dirname(__DIR__, 3) . '/scolta.routing.yml';
-    $this->assertFileExists($routingFile, 'scolta.routing.yml not found at module root');
-
-    $routing = Yaml::parseFile($routingFile);
+    // tests/src/Functional is three levels below the package root, and both
+    // modules' routes are in scope: this class installs the two of them.
+    $root = dirname(__DIR__, 3);
+    $routing = [];
+    foreach (['/scolta.routing.yml', '/modules/scolta_ui/scolta_ui.routing.yml'] as $file) {
+      $this->assertFileExists($root . $file);
+      $routing += Yaml::parseFile($root . $file);
+    }
     $routes = [];
 
     foreach ($routing as $routeName => $def) {
@@ -201,7 +205,7 @@ class RouteSmokeFunctionalTest extends BrowserTestBase {
 
     $this->assertNotEmpty(
       $routes,
-      "No {$method} routes found in scolta.routing.yml — the YAML parser may have failed."
+      "No {$method} routes found in either routing file — the YAML parser may have failed."
     );
     return $routes;
   }

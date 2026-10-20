@@ -6,7 +6,7 @@ namespace Drupal\scolta\Tests;
 
 use Drupal\Core\Site\Settings;
 use Drupal\Core\State\StateInterface;
-use Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage;
+use Drupal\scolta_ui\AiProvider\Amazee\DrupalConfigStorage;
 use PHPUnit\Framework\TestCase;
 use Tag1\Scolta\AiProvider\Amazee\AmazeeConnectionSource;
 

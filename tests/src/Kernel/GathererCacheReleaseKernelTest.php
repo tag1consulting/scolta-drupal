@@ -28,7 +28,7 @@ class GathererCacheReleaseKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta', 'node', 'field', 'filter', 'text'];
+  protected static $modules = ['system', 'user', 'scolta', 'scolta_ui', 'node', 'field', 'filter', 'text'];
 
   /**
    * {@inheritdoc}
