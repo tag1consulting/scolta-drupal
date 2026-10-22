@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\scolta\Controller;
 
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Flood\FloodInterface;
@@ -50,6 +51,34 @@ abstract class AiApiControllerBase extends ControllerBase {
    * Flood event name for the site-wide threshold.
    */
   protected const FLOOD_GLOBAL_EVENT = 'scolta.ai_api_global';
+
+  /**
+   * Cache tags every cached AI response starts with.
+   *
+   * The system prompt an expansion or summary was generated with is built
+   * from scolta.settings (prompt overrides, languages, sortable and filter
+   * field descriptions, model) and, when no site name is configured, from
+   * system.site. Neither is part of the cache key, so a change to either
+   * must retire the entries, and tagging them is what does it. The index
+   * itself is not an input: an expansion depends on the query alone, and a
+   * summary's key already hashes the excerpts the browser sent, which change
+   * with the index.
+   *
+   * These seed the PromptEnrichEvent, whose subscribers add what their own
+   * contributions to the prompt depend on; see $requestCacheability.
+   */
+  public const CACHE_TAGS = ['config:scolta.settings', 'config:system.site'];
+
+  /**
+   * Cacheability of the AI response this request is generating.
+   *
+   * Seeded in handle() from CACHE_TAGS and the configured TTL, refined by
+   * PromptEnrichEvent subscribers through the enricher, and read by the
+   * cache driver when the response is written. One object, shared by both,
+   * is what lets the event's declaration reach the cache entry: scolta-php's
+   * AiEndpointHandler only ever hands the driver a key, a value and a TTL.
+   */
+  protected ?CacheableMetadata $requestCacheability = NULL;
 
   public function __construct(
     protected readonly ScoltaAiService $aiService,
@@ -98,9 +127,12 @@ abstract class AiApiControllerBase extends ControllerBase {
       return new JsonResponse(['error' => $parsed['error']], $parsed['status']);
     }
 
-    $config  = $this->aiService->getConfig();
+    $config = $this->aiService->getConfig();
+    $this->requestCacheability = (new CacheableMetadata())
+      ->setCacheTags(self::CACHE_TAGS)
+      ->setCacheMaxAge($config->cacheTtl);
     $handler = $this->createHandler($this->aiService, $config);
-    $result  = $this->invokeHandler($handler, $parsed['data']);
+    $result = $this->invokeHandler($handler, $parsed['data']);
 
     if ($result['ok']) {
       return new JsonResponse($result['data']);
@@ -170,12 +202,16 @@ abstract class AiApiControllerBase extends ControllerBase {
    */
   protected function resolveCache(int $cacheTtl): CacheDriverInterface {
     return ($cacheTtl > 0 && $this->cache !== NULL)
-      ? new DrupalCacheDriver($this->cache)
+      ? new DrupalCacheDriver($this->cache, $this->requestCacheability)
       : new NullCacheDriver();
   }
 
   /**
    * {@inheritdoc}
+   *
+   * The generation is a manual kill switch, bumped only by
+   * `drush scolta:clear-cache`. Index builds, full or incremental, leave it
+   * alone: see CACHE_TAGS for why they do not need to.
    */
   protected function getCacheGeneration(): int {
     return $this->state !== NULL
@@ -187,7 +223,7 @@ abstract class AiApiControllerBase extends ControllerBase {
    * {@inheritdoc}
    */
   protected function resolveEnricher(): PromptEnricherInterface {
-    return new EventDrivenEnricher($this->eventDispatcher);
+    return new EventDrivenEnricher($this->eventDispatcher, $this->requestCacheability);
   }
 
   /**

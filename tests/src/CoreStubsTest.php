@@ -384,10 +384,98 @@ namespace Drupal\Core\Block {
 }
 
 namespace Drupal\Core\Cache {
+    if (!class_exists(Cache::class)) {
+        class Cache {
+            const PERMANENT = -1;
+        }
+    }
+    if (!interface_exists(CacheableDependencyInterface::class)) {
+        interface CacheableDependencyInterface {
+            public function getCacheContexts();
+            public function getCacheTags();
+            public function getCacheMaxAge();
+        }
+    }
+    if (!interface_exists(RefinableCacheableDependencyInterface::class)) {
+        interface RefinableCacheableDependencyInterface extends CacheableDependencyInterface {
+            public function addCacheContexts(array $cache_contexts);
+            public function addCacheTags(array $cache_tags);
+            public function mergeCacheMaxAge($max_age);
+            public function addCacheableDependency($other_object);
+        }
+    }
+    if (!trait_exists(RefinableCacheableDependencyTrait::class)) {
+        trait RefinableCacheableDependencyTrait {
+            protected $cacheContexts = [];
+            protected $cacheTags = [];
+            protected $cacheMaxAge = Cache::PERMANENT;
+
+            public function getCacheContexts() {
+                return $this->cacheContexts;
+            }
+
+            public function getCacheTags() {
+                return $this->cacheTags;
+            }
+
+            public function getCacheMaxAge() {
+                return $this->cacheMaxAge;
+            }
+
+            public function addCacheContexts(array $cache_contexts) {
+                $this->cacheContexts = array_values(array_unique(array_merge($this->cacheContexts, $cache_contexts)));
+                return $this;
+            }
+
+            public function addCacheTags(array $cache_tags) {
+                $this->cacheTags = array_values(array_unique(array_merge($this->cacheTags, $cache_tags)));
+                return $this;
+            }
+
+            public function mergeCacheMaxAge($max_age) {
+                if ($this->cacheMaxAge === Cache::PERMANENT) {
+                    $this->cacheMaxAge = $max_age;
+                }
+                elseif ($max_age !== Cache::PERMANENT) {
+                    $this->cacheMaxAge = min($this->cacheMaxAge, $max_age);
+                }
+                return $this;
+            }
+
+            public function addCacheableDependency($other_object) {
+                if ($other_object instanceof CacheableDependencyInterface) {
+                    $this->addCacheContexts($other_object->getCacheContexts());
+                    $this->addCacheTags($other_object->getCacheTags());
+                    $this->mergeCacheMaxAge($other_object->getCacheMaxAge());
+                }
+                else {
+                    $this->cacheMaxAge = 0;
+                }
+                return $this;
+            }
+        }
+    }
     if (!class_exists(CacheableMetadata::class)) {
-        class CacheableMetadata {
+        class CacheableMetadata implements RefinableCacheableDependencyInterface {
+            use RefinableCacheableDependencyTrait;
+
             private array $tags = [];
             private array $contexts = [];
+
+            public function setCacheTags(array $cache_tags) {
+                $this->cacheTags = $cache_tags;
+                return $this;
+            }
+
+            public function setCacheContexts(array $cache_contexts) {
+                $this->cacheContexts = $cache_contexts;
+                return $this;
+            }
+
+            public function setCacheMaxAge($max_age) {
+                $this->cacheMaxAge = $max_age;
+                return $this;
+            }
 
             public static function createFromRenderArray(array $build) {
                 $metadata = new self();

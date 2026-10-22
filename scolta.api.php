@@ -57,3 +57,34 @@ function hook_scolta_content_item_alter(\Tag1\Scolta\Export\ContentItem &$item, 
 /**
  * @} End of "addtogroup hooks".
  */
+
+/**
+ * @defgroup scolta_events Events
+ * @{
+ * Events dispatched by the Scolta module.
+ *
+ * \Drupal\scolta\Event\PromptEnrichEvent fires before each AI prompt
+ * (expand_query, summarize, follow_up) is sent to the provider. A subscriber
+ * may rewrite the prompt:
+ *
+ * @code
+ * public function onPromptEnrich(PromptEnrichEvent $event): void {
+ *   if ($event->getPromptName() !== 'summarize') {
+ *     return;
+ *   }
+ *   $policy = $this->entityTypeManager->getStorage('node')->load(42);
+ *   $event->setResolvedPrompt($event->getResolvedPrompt() . "\n\n" . $policy->body->value);
+ * }
+ * @endcode
+ *
+ * The final prompt text is part of the AI response cache key, so this is
+ * all a subscriber usually needs: when the policy text changes, the next
+ * request misses and a fresh summary is generated. The event is also the
+ * response's cacheability, seeded with the module's own tags and the
+ * configured TTL as max-age, for the unusual cases: mergeCacheMaxAge(0) for
+ * a response that must never be reused, mergeCacheMaxAge($seconds) for a
+ * shorter life, addCacheableDependency($policy) to reclaim the stale entry
+ * when the node is saved instead of waiting for its TTL. Cache contexts make
+ * the response uncacheable; the prompt text already carries any variation.
+ * @}
+ */

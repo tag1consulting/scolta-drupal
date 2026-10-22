@@ -119,10 +119,10 @@ namespace Drupal\scolta\Tests {
     }
 
     // -------------------------------------------------------------------
-    // Generation bump — the invalidation mechanism scolta:clear-cache and
-    // the rebuild paths rely on. Entries cached at generation N must not
-    // be served at generation N+1, and the shared backend keeps every
-    // foreign entry: nothing may call deleteAll() on the bin.
+    // Generation bump — the invalidation mechanism scolta:clear-cache
+    // relies on. Entries cached at generation N must not be served at
+    // generation N+1, and the shared backend keeps every foreign entry:
+    // nothing may call deleteAll() on the bin.
     // -------------------------------------------------------------------
 
     public function test_generation_bump_invalidates_cached_ai_entries(): void {
