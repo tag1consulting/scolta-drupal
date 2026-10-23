@@ -1,0 +1,19 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/HEAD/core/assets/schemas/v1/metadata.schema.json
+name: Section
+status: stable
+props:
+  type: object
+  properties:
+    background:
+      type: string
+      title: Background
+      enum:
+        - plain
+        - accent-panel
+      examples:
+        - plain
+slots:
+  header:
+    title: Header
+  content:
+    title: Content
