@@ -1,0 +1,37 @@
+<?php
+
+/**
+ * @file
+ * Hooks the view mode rendering tests observe the gatherer through.
+ */
+
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Access\AccessResultInterface;
+use Drupal\Core\Entity\Display\EntityViewDisplayInterface;
+use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Session\AccountInterface;
+use Drupal\node\NodeInterface;
+
+/**
+ * Implements hook_entity_field_access().
+ *
+ * Only an authenticated user may view field_staff_note.
+ */
+function scolta_view_mode_test_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResultInterface {
+  return AccessResult::forbiddenIf($operation === 'view' && $field_definition->getName() === 'field_staff_note' && $account->isAnonymous())
+    ->cachePerUser();
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_view() for node entities.
+ *
+ * Records the theme each render runs in, and fails the render of any
+ * translation whose title asks for it.
+ */
+function scolta_view_mode_test_node_view(array &$build, NodeInterface $node, EntityViewDisplayInterface $display, string $view_mode): void {
+  \Drupal::state()->set('scolta_view_mode_test.theme', \Drupal::theme()->getActiveTheme()->getName());
+  if (str_contains((string) $node->label(), 'Render failure')) {
+    throw new \RuntimeException('A broken formatter on ' . $node->language()->getId());
+  }
+}

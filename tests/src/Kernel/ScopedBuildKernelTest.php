@@ -58,7 +58,7 @@ class ScopedBuildKernelTest extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installSchema('node', ['node_access']);
     $this->installSchema('dblog', ['watchdog']);
-    $this->installConfig(['scolta', 'field', 'node', 'filter']);
+    $this->installConfig(['system', 'scolta', 'field', 'node', 'filter']);
 
     // scolta-php's FilesystemDriver rejects stream-wrapper URIs, and
     // KernelTestBase mounts public:// on vfsStream whose realpath() is itself

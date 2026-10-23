@@ -80,12 +80,9 @@ scolta.settings:
         sequence:
           type: string
           label: 'Bundle'
-    body_fields:
-      type: sequence
-      label: 'Body content fields'
-      sequence:
-        type: string
-        label: 'Entity field name holding body content'
+    view_mode:
+      type: string
+      label: 'View mode each entity is rendered in for the index; a bundle without that display uses its default display'
     field_mappings:
       type: mapping
       label: 'Automatic field-to-dimension mappings'

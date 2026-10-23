@@ -496,7 +496,7 @@ function _scolta_auto_rebuild_check(EntityInterface $entity, $op = 'update') {
  * hook_post_update_NAME() alike. Use this when indexed output went stale
  * because the code that produces it changed rather than the content: an
  * edited hook_scolta_content_item_alter(), a new field mapping, a changed
- * body_fields setting. Use scolta_reset_index_state() only when a scolta
+ * view_mode setting. Use scolta_reset_index_state() only when a scolta
  * release changed the ledger or manifest format; it empties the whole state
  * directory, renumbers every page from zero, and its state-format marker
  * makes it a no-op between format bumps.
