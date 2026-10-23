@@ -7,6 +7,7 @@ namespace Drupal\scolta\Form;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Entity\ContentEntityTypeInterface;
+use Drupal\Core\Entity\EntityDisplayRepositoryInterface;
 use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
@@ -119,6 +120,13 @@ class ScoltaSettingsForm extends ConfigFormBase {
   protected EntityTypeBundleInfoInterface $bundleInfo;
 
   /**
+   * The entity display repository, for the view modes the index can use.
+   *
+   * @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface
+   */
+  protected EntityDisplayRepositoryInterface $entityDisplayRepository;
+
+  /**
    * Constructs a ScoltaSettingsForm object.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -144,6 +152,8 @@ class ScoltaSettingsForm extends ConfigFormBase {
    *   a different AI provider.
    * @param \Drupal\Core\Entity\EntityTypeBundleInfoInterface $bundleInfo
    *   The entity type bundle info service.
+   * @param \Drupal\Core\Entity\EntityDisplayRepositoryInterface $entityDisplayRepository
+   *   The entity display repository.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
@@ -157,6 +167,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     ScoltaContentGatherer $contentGatherer,
     ConfigStorageInterface $amazeeConfigStorage,
     EntityTypeBundleInfoInterface $bundleInfo,
+    EntityDisplayRepositoryInterface $entityDisplayRepository,
   ) {
     parent::__construct($configFactory, $typedConfigManager);
     $this->aiService = $aiService;
@@ -168,6 +179,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
     $this->contentGatherer = $contentGatherer;
     $this->amazeeConfigStorage = $amazeeConfigStorage;
     $this->bundleInfo = $bundleInfo;
+    $this->entityDisplayRepository = $entityDisplayRepository;
   }
 
   /**
@@ -186,6 +198,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       $container->get('scolta.content_gatherer'),
       $container->get('scolta.amazee_config_storage'),
       $container->get('entity_type.bundle.info'),
+      $container->get('entity_display.repository'),
     );
   }
 
@@ -433,11 +446,22 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ];
     }
 
-    $form['content']['body_fields'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Body content fields'),
-      '#default_value' => implode(', ', $config->get('body_fields') ?? []),
-      '#description' => $this->t('Comma-separated entity fields searched for body text, in precedence order — the first one holding a value on a given translation is indexed. Content with none of these fields is skipped entirely, so add any bundle-specific field here (e.g. <code>body, field_body, field_content, field_recipe_instruction</code>). Leave empty to fall back to <code>body, field_body, field_content</code>.'),
+    // search_index and default are always offered, defined or not: a bundle
+    // without the configured display falls back to default, so both are
+    // valid on every site, and they are the install and update values.
+    $viewModes = ['search_index', 'default', $config->get('view_mode') ?: 'search_index'];
+    foreach (array_keys($configuredTypes) as $typeId) {
+      if ($this->entityTypeManager->hasDefinition($typeId)) {
+        $viewModes = array_merge($viewModes, array_keys($this->entityDisplayRepository->getViewModes($typeId)));
+      }
+    }
+    $viewModes = array_unique($viewModes);
+    $form['content']['view_mode'] = [
+      '#type' => 'select',
+      '#title' => $this->t('View mode'),
+      '#options' => array_combine($viewModes, $viewModes),
+      '#default_value' => $config->get('view_mode') ?: 'search_index',
+      '#description' => $this->t('Each entity is indexed as it renders in this view mode, as the anonymous user would see it. A bundle with no enabled display for the view mode is indexed as it renders in its <code>default</code> display. Changing this requires a full rebuild.'),
     ];
 
     $form['content']['sortable_fields'] = [
@@ -1520,10 +1544,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       ->set('site_name', $form_state->getValue('site_name'))
       ->set('site_description', $form_state->getValue('site_description'))
       ->set('entity_types', $this->entityTypesFromForm($form_state))
-      ->set('body_fields', array_values(array_filter(array_map(
-        'trim',
-        explode(',', $form_state->getValue('body_fields') ?? '')
-      ))))
+      ->set('view_mode', $form_state->getValue('view_mode'))
       ->set('sortable_fields', array_values(array_filter(array_map(
         'trim',
         explode(',', $form_state->getValue('sortable_fields') ?? '')

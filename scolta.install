@@ -375,18 +375,14 @@ function scolta_update_10005() {
 }
 
 /**
- * Seed the body_fields setting with the previously hardcoded field list.
+ * Formerly seeded body_fields; superseded by scolta_update_10011().
+ *
+ * The setting is gone: each entity is indexed as it renders in a view mode.
+ * Seeding it would only write an undeclared key for scolta_update_10011() to
+ * clear.
  */
 function scolta_update_10006() {
-  $config = \Drupal::configFactory()->getEditable('scolta.settings');
-
-  if ($config->get('body_fields')) {
-    return t('body_fields already set; left alone.');
-  }
-
-  $config->set('body_fields', ['body', 'field_body', 'field_content'])->save();
-
-  return t('Added the body_fields setting, seeded with the field list that used to be hardcoded in ScoltaContentGatherer (body, field_body, field_content), so indexing behaviour is unchanged. Add bundle-specific fields at /admin/config/search/scolta — content with none of the listed fields is skipped, which is how Umami recipe nodes went unindexed.');
+  return t('Nothing to do: body_fields is superseded by the view_mode setting, which scolta_update_10011() sets.');
 }
 
 /**
@@ -497,6 +493,26 @@ function scolta_update_10010() {
   $config->save();
   return t('Moved scolta.settings onto the current default models: @changes.', [
     '@changes' => implode('; ', $changed),
+  ]);
+}
+
+/**
+ * Index each entity as rendered in a view mode instead of from body_fields.
+ *
+ * The gatherer took text from the first non-empty field in body_fields and
+ * skipped any entity whose prose lived elsewhere. It now renders each
+ * translation in scolta.settings view_mode, falling back to a bundle's
+ * default display, so every entity is reindexed: forced, because the
+ * timestamp manifest would otherwise reuse every unchanged entity's old text.
+ */
+function scolta_update_10011() {
+  \Drupal::configFactory()->getEditable('scolta.settings')
+    ->clear('body_fields')
+    ->set('view_mode', 'search_index')
+    ->save();
+
+  return t('The search index now holds each entity as it renders in the search_index view mode, or in its default display for a bundle without an enabled search_index display; body_fields is removed. Check what that display shows for each indexed bundle, and change the view mode at Administration › Configuration › Search and metadata › Scolta (/admin/config/search/scolta). @queued', [
+    '@queued' => scolta_queue_full_rebuild(__FUNCTION__, TRUE),
   ]);
 }
 

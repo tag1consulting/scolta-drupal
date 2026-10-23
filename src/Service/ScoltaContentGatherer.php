@@ -16,7 +16,12 @@ use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
-use Drupal\text\Plugin\Field\FieldType\TextItemBase;
+use Drupal\Core\Render\RendererInterface;
+use Drupal\Core\Session\AccountSwitcherInterface;
+use Drupal\Core\Session\AnonymousUserSession;
+use Drupal\Core\Theme\ThemeInitializationInterface;
+use Drupal\Core\Theme\ThemeManagerInterface;
+use Psr\Log\LoggerInterface;
 use Tag1\Scolta\Export\ContentItem;
 use Tag1\Scolta\Index\CachedContentReference;
 use Tag1\Scolta\Index\PhpIndexer;
@@ -80,6 +85,16 @@ class ScoltaContentGatherer {
    * @param \Drupal\Core\Cache\MemoryCache\MemoryCacheInterface $entityMemoryCache
    *   The process-local entity cache (entity.memory_cache), emptied after each
    *   batch that loaded entities.
+   * @param \Drupal\Core\Render\RendererInterface $renderer
+   *   Renders each translation in the configured view mode.
+   * @param \Drupal\Core\Session\AccountSwitcherInterface $accountSwitcher
+   *   Renders as the anonymous user, whoever runs the build.
+   * @param \Drupal\Core\Theme\ThemeManagerInterface $themeManager
+   *   Holds the active theme, switched to the default theme for each render.
+   * @param \Drupal\Core\Theme\ThemeInitializationInterface $themeInitialization
+   *   Builds the default theme to render in.
+   * @param \Psr\Log\LoggerInterface $logger
+   *   The scolta logger channel, for translations that fail to render.
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -87,6 +102,11 @@ class ScoltaContentGatherer {
     private readonly ModuleHandlerInterface $moduleHandler,
     private readonly ConfigFactoryInterface $configFactory,
     private readonly MemoryCacheInterface $entityMemoryCache,
+    private readonly RendererInterface $renderer,
+    private readonly AccountSwitcherInterface $accountSwitcher,
+    private readonly ThemeManagerInterface $themeManager,
+    private readonly ThemeInitializationInterface $themeInitialization,
+    private readonly LoggerInterface $logger,
   ) {}
 
   /**
@@ -844,25 +864,64 @@ class ScoltaContentGatherer {
   }
 
   /**
-   * The entity fields to search for body content, in precedence order.
+   * The view mode each entity is rendered in for the index.
    *
-   * @return string[]
-   *   Field names; the first one holding a value on a given translation wins.
+   * A bundle without an enabled display for it renders with its default
+   * display (EntityViewDisplay::collectRenderDisplays()).
    */
-  private function bodyFields(): array {
-    $configured = $this->configFactory->get('scolta.settings')->get('body_fields');
+  private function viewMode(): string {
+    return (string) ($this->configFactory->get('scolta.settings')->get('view_mode') ?: 'search_index');
+  }
 
-    // A site that has never saved the setting, or has emptied it, still needs
-    // the historical defaults rather than an index of nothing.
-    return array_filter($configured ?: ['body', 'field_body', 'field_content']);
+  /**
+   * The plain text of one translation as it renders in the view mode.
+   *
+   * Rendered as the anonymous user, so a field anonymous visitors may not
+   * view is never indexed whoever runs the build (drush, cron, an admin's
+   * batch), and in the site's default theme, so the front end theme's
+   * templates and components apply under the admin theme or on the CLI.
+   *
+   * @param \Drupal\Core\Entity\FieldableEntityInterface $translation
+   *   The translation to render.
+   * @param string $langcode
+   *   Its language.
+   *
+   * @return string
+   *   The rendered text, whitespace collapsed; '' when it renders nothing.
+   */
+  private function renderedText(FieldableEntityInterface $translation, string $langcode): string {
+    $previousTheme = $this->themeManager->getActiveTheme();
+    $this->accountSwitcher->switchTo(new AnonymousUserSession());
+    try {
+      $defaultTheme = (string) $this->configFactory->get('system.theme')->get('default');
+      $this->themeManager->setActiveTheme($this->themeInitialization->getActiveThemeByName($defaultTheme));
+
+      $build = $this->entityTypeManager->getViewBuilder($translation->getEntityTypeId())
+        ->view($translation, $this->viewMode(), $langcode);
+      // Without keys nothing is written to the render cache: a full build
+      // would otherwise leave one entry per entity that no page request reads.
+      unset($build['#cache']['keys']);
+      $html = (string) $this->renderer->renderInIsolation($build);
+    }
+    finally {
+      $this->themeManager->setActiveTheme($previousTheme);
+      $this->accountSwitcher->switchBack();
+    }
+
+    // Script and style bodies are code, not prose. Adjacent tags separate
+    // words, as tags do in core search and Search API: compact templates emit
+    // "</h3><p>" side by side, and stripping the tags alone glues the words.
+    $html = preg_replace('#<(script|style)\b[^>]*>.*?</\1\s*>#is', '', $html) ?? '';
+    $text = PlainTextOutput::renderFromHtml(str_replace('><', '> <', $html));
+    return trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
   }
 
   /**
    * Build the ContentItems for one entity — the single conversion pipeline.
    *
-   * Yields every translation as a separate indexed page, renders body text
-   * through the field's text format (->processed), applies the configured
-   * field_mappings, and invokes hook_scolta_content_item_alter(). Every
+   * Yields every translation as a separate indexed page, its text rendered in
+   * the configured view mode, applies the configured field_mappings, and
+   * invokes hook_scolta_content_item_alter(). Every
    * gathering entry point (gather(), gatherByIds()) funnels through here.
    *
    * @param \Drupal\Core\Entity\FieldableEntityInterface $entity
@@ -887,30 +946,24 @@ class ScoltaContentGatherer {
         continue;
       }
 
-      // Extract body content from the first configured field that has a
-      // value. The list is configurable because bundles do not agree on where
-      // their prose lives: Umami's recipe nodes carry theirs in
-      // field_recipe_instruction, and with a hardcoded list every recipe fell
-      // out of the index at the empty-body check below without a word.
-      $body = '';
-      foreach ($this->bodyFields() as $field) {
-        if ($translation->hasField($field) && !$translation->get($field)->isEmpty()) {
-          $item = $translation->get($field)->first();
-          if ($item instanceof TextItemBase) {
-            // ->processed runs text format filters; PlainTextOutput
-            // decodes HTML entities. Cast to string: ->processed
-            // returns FilteredMarkup, not a plain string.
-            // Fall back to ->value if the text format is misconfigured.
-            $body = PlainTextOutput::renderFromHtml((string) $item->processed) ?: PlainTextOutput::renderFromHtml((string) $item->value);
-          }
-          else {
-            $body = $item->value;
-          }
-          break;
-        }
+      // The text is what the view mode shows, as Drupal's search module and
+      // Search API index it, so prose in any field or in a component tree
+      // (Canvas pages) is found without naming where each bundle keeps it.
+      try {
+        $body = $this->renderedText($translation, (string) $langcode);
+      }
+      catch (\Throwable $e) {
+        // One broken template or formatter must not stop the whole build.
+        $this->logger->warning('Skipped @type @id (@langcode) in the index: rendering it failed: @message', [
+          '@type' => $entity->getEntityTypeId(),
+          '@id' => $entity->id(),
+          '@langcode' => $langcode,
+          '@message' => $e->getMessage(),
+        ]);
+        continue;
       }
 
-      if (empty($body)) {
+      if ($body === '') {
         continue;
       }
 
