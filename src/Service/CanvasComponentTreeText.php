@@ -131,9 +131,17 @@ final class CanvasComponentTreeText {
     try {
       $values = $source->getResolvedExplicitInput($item->getUuid(), $item, $host);
     }
-    catch (\Throwable) {
+    catch (\Throwable $e) {
       // An input that cannot be evaluated renders as an error for editors and
-      // as nothing for visitors, so it contributes nothing here either.
+      // as nothing for visitors, so it contributes nothing here either. It is
+      // logged, so a page indexed without some of its text can be traced.
+      \Drupal::logger('scolta')->warning('Could not read the inputs of component @uuid (@component) on @type @id for the search index: @message', [
+        '@uuid' => $item->getUuid(),
+        '@component' => $item->getComponentId(),
+        '@type' => $host->getEntityTypeId(),
+        '@id' => $host->id(),
+        '@message' => $e->getMessage(),
+      ]);
       return [];
     }
 
