@@ -430,19 +430,6 @@ drush config:set --input-format=yaml scolta.settings entity_types '{node: [], gr
 
 Any fieldable entity type with a `changed` field works; a type with a published flag is filtered to published entities. Add the field its prose lives in to `body_fields` (for example `field_description` for groups). Every page ID is prefixed with its entity type ID (`node:42`, `node:42-es`, `group:42`), which is why node 42 and group 42 do not collide. An index built by an earlier release used bare node IDs; the update hook discards the build state and queues a rebuild, so the next build numbers every page from zero.
 
-#### Indexing Canvas pages
-
-Pages built with [Canvas](https://www.drupal.org/project/canvas) are the `canvas_page` entity type. Add it to `entity_types` and they are indexed like nodes, translations, incremental updates and removals included:
-
-```bash
-drush config:set --input-format=yaml scolta.settings entity_types '{node: [], canvas_page: []}'
-drush scolta:build
-```
-
-A Canvas page has no body field: its text is in the inputs of the components placed on it. When none of the configured `body_fields` holds a value and the entity has a Canvas component tree, the gatherer reads the tree instead, in page order (each component's own text, then the components in its slots, slots in the order the component declares them). It takes the text a visitor reads: headings, rich text (markup stripped), card text, quotes and link labels. It leaves out what a visitor never reads: pick-list values such as CSS classes and heading levels, URLs and image sources (any prop with a JSON schema `format`), images and other object props, UUID-shaped IDs, and the props Canvas itself does not treat as prose. Block components are skipped. Only the live, published revision is indexed, never a workspace draft or an unsaved Canvas auto-save. The page's URL is its alias when it has one.
-
-Nothing changes on a site without Canvas, and Canvas is not a dependency. The tests that exercise Canvas pages (`CanvasPageGatherKernelTest`, `CanvasPageIncrementalKernelTest`) skip when Canvas is not installed; CI does not install it, so run them locally after adding `drupal/canvas` to the test project.
-
 #### Running rebuilds: the cron line
 
 Rebuilds — the install-time build, auto-rebuild requests from content edits, `drush scolta:request-build`, and the rebuild an update hook queues when the index format changes — sit in the `scolta_rebuild` queue until something runs it. **Drupal cron does not.** Run the queue from an external cron line, every minute, in every environment that should index:
