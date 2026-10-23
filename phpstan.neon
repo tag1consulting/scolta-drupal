@@ -53,3 +53,8 @@ parameters:
     # cannot find them. Guarded by hasDefinition() at runtime.
     - identifier: class.notFound
       path: scolta.install
+    # Canvas is optional and not a dev dependency, so its classes cannot be
+    # resolved here. Only this class names them, and the gatherer calls it
+    # only when the canvas module is enabled.
+    - identifier: class.notFound
+      path: src/Service/CanvasComponentTreeText.php

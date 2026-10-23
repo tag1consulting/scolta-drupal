@@ -911,6 +911,10 @@ class ScoltaContentGatherer {
       }
 
       if (empty($body)) {
+        $body = $this->componentTreeText($translation);
+      }
+
+      if (empty($body)) {
         continue;
       }
 
@@ -972,6 +976,32 @@ class ScoltaContentGatherer {
     }
 
     return [$items, $entityTs];
+  }
+
+  /**
+   * The text of the first Canvas component tree on a translation.
+   *
+   * A Canvas page has no body field: its text lives in the inputs of the
+   * components placed on it. Consulted only after the configured body fields
+   * came up empty, and only when Canvas is enabled, so nothing changes for a
+   * site without it.
+   *
+   * @param \Drupal\Core\Entity\FieldableEntityInterface $translation
+   *   The translation being indexed.
+   *
+   * @return string
+   *   The page's reader-visible text, or '' when it has none.
+   */
+  private function componentTreeText(FieldableEntityInterface $translation): string {
+    if (!$this->moduleHandler->moduleExists('canvas')) {
+      return '';
+    }
+    foreach ($translation->getFieldDefinitions() as $name => $definition) {
+      if ($definition->getType() === 'component_tree' && !$translation->get($name)->isEmpty()) {
+        return CanvasComponentTreeText::extract($translation->get($name), $translation);
+      }
+    }
+    return '';
   }
 
   /**
