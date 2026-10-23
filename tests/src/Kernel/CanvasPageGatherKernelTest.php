@@ -8,12 +8,13 @@ use Drupal\Tests\user\Traits\UserCreationTrait;
 use Drupal\Tests\workspaces\Kernel\WorkspaceTestTrait;
 
 /**
- * Canvas pages are gathered from their component trees.
+ * Canvas pages are gathered as they render, like any other entity.
  *
  * A Canvas page has no body field; its text is the inputs of the components
- * placed on it. Before this, the gatherer's body field lookup found nothing
- * and dropped every Canvas page as empty, so a page built in Canvas could not
- * be found in search at all.
+ * placed on it. The gatherer's old body field lookup found nothing and
+ * dropped every Canvas page as empty. Rendering the page in the configured
+ * view mode (Canvas computes the display from its components field) yields
+ * its text with no Canvas specific code.
  *
  * @group scolta
  */
@@ -61,7 +62,7 @@ class CanvasPageGatherKernelTest extends CanvasPageKernelTestBase {
     // The section's header slot renders before its content slot, whatever
     // order the field stores them in; root components follow in field order.
     $this->assertSame(
-      "Results for the year\n\nRevenue\n\nRevenue rose to 1.2 billion.\n\nFull results\n\nWhat the chief executive said",
+      "Results for the year Revenue Revenue rose to 1.2 billion. Full results What the chief executive said",
       $item->bodyHtml,
     );
 
