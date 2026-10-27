@@ -898,8 +898,9 @@ class ScoltaContentGatherer {
 
       $build = $this->entityTypeManager->getViewBuilder($translation->getEntityTypeId())
         ->view($translation, $this->viewMode(), $langcode);
-      // Without keys nothing is written to the render cache: a full build
-      // would otherwise leave one entry per entity that no page request reads.
+      // Without keys there is no render cache entry for the entity itself: a
+      // full build would otherwise leave one per entity that no page request
+      // reads.
       unset($build['#cache']['keys']);
       $html = (string) $this->renderer->renderInIsolation($build);
     }

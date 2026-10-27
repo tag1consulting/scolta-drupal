@@ -229,7 +229,7 @@ class ViewModeKernelTest extends KernelTestBase {
   }
 
   /**
-   * A gather leaves no render cache entries behind.
+   * A gather leaves no render cache entry for the entity itself.
    */
   public function testAGatherWritesNothingToTheRenderCache(): void {
     $node = $this->createArticle();
