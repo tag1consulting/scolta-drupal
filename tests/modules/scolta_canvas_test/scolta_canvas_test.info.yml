@@ -1,7 +1,0 @@
-name: 'Scolta Canvas test'
-type: module
-description: 'Provides single-directory components with text, pick-list, URL and ID props, for indexing Canvas pages.'
-package: Testing
-dependencies:
-  - canvas:canvas
-  - scolta:scolta
