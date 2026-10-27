@@ -494,9 +494,11 @@ function scolta_update_10010() {
 /**
  * Index each entity as rendered in a view mode.
  *
- * Each translation renders in scolta.settings view_mode, falling back to a
- * bundle's default display, so every entity is reindexed: forced, because the
- * timestamp manifest would otherwise reuse every unchanged entity's old text.
+ * Sets scolta.settings view_mode to search_index and removes the field list
+ * setting the gatherer no longer reads. Each translation now renders in that
+ * view mode, falling back to a bundle's default display, so its indexed text
+ * can change and every entity is reindexed: forced, because the timestamp
+ * manifest would otherwise reuse every unchanged entity's old text.
  */
 function scolta_update_10011() {
   \Drupal::configFactory()->getEditable('scolta.settings')
