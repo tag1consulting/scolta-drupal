@@ -375,14 +375,9 @@ function scolta_update_10005() {
 }
 
 /**
- * Formerly seeded body_fields; superseded by scolta_update_10011().
- *
- * The setting is gone: each entity is indexed as it renders in a view mode.
- * Seeding it would only write an undeclared key for scolta_update_10011() to
- * clear.
+ * Intentionally empty; superseded by scolta_update_10011().
  */
 function scolta_update_10006() {
-  return t('Nothing to do: body_fields is superseded by the view_mode setting, which scolta_update_10011() sets.');
 }
 
 /**
@@ -497,12 +492,10 @@ function scolta_update_10010() {
 }
 
 /**
- * Index each entity as rendered in a view mode instead of from body_fields.
+ * Index each entity as rendered in a view mode.
  *
- * The gatherer took text from the first non-empty field in body_fields and
- * skipped any entity whose prose lived elsewhere. It now renders each
- * translation in scolta.settings view_mode, falling back to a bundle's
- * default display, so every entity is reindexed: forced, because the
+ * Each translation renders in scolta.settings view_mode, falling back to a
+ * bundle's default display, so every entity is reindexed: forced, because the
  * timestamp manifest would otherwise reuse every unchanged entity's old text.
  */
 function scolta_update_10011() {
@@ -511,7 +504,7 @@ function scolta_update_10011() {
     ->set('view_mode', 'search_index')
     ->save();
 
-  return t('The search index now holds each entity as it renders in the search_index view mode, or in its default display for a bundle without an enabled search_index display; body_fields is removed. Check what that display shows for each indexed bundle, and change the view mode at Administration › Configuration › Search and metadata › Scolta (/admin/config/search/scolta). @queued', [
+  return t('The search index now holds each entity as it renders in the search_index view mode, or in its default display for a bundle without an enabled search_index display. Check what that display shows for each indexed bundle, and change the view mode at Administration › Configuration › Search and metadata › Scolta (/admin/config/search/scolta). @queued', [
     '@queued' => scolta_queue_full_rebuild(__FUNCTION__, TRUE),
   ]);
 }
