@@ -17,12 +17,9 @@ use Drupal\Tests\user\Traits\UserCreationTrait;
 /**
  * Each entity is indexed as it renders in the configured view mode.
  *
- * ScoltaContentGatherer used to take text from the first non-empty field in a
- * configured list, so an entity whose prose lived anywhere else (a Canvas
- * page's component tree, a recipe's instructions field) was dropped as empty.
- * It now renders each translation the way Drupal's search module and Search
- * API do: in the view_mode setting, falling back to the bundle's default
- * display, as the anonymous user, in the site's default theme.
+ * ScoltaContentGatherer renders each translation the way Drupal's search module
+ * and Search API do: in the view_mode setting, falling back to the bundle's
+ * default display, as the anonymous user, in the site's default theme.
  *
  * @group scolta
  */
@@ -252,7 +249,7 @@ class ViewModeKernelTest extends KernelTestBase {
   }
 
   /**
-   * The update hook drops body_fields, sets the view mode, forces a rebuild.
+   * The update hook drops the field list, sets view_mode, forces a rebuild.
    */
   public function testUpdateHookMovesSitesToTheViewMode(): void {
     // Written to storage directly, as an earlier release left it: the key is
