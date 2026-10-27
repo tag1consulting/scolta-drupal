@@ -252,8 +252,8 @@ class ViewModeKernelTest extends KernelTestBase {
    * Drops the retired field list setting, sets view_mode, forces a rebuild.
    */
   public function testUpdateHookMovesSitesToTheViewMode(): void {
-    // Written to storage directly, as an earlier release left it: the key is
-    // no longer in the schema, so a config save would refuse it.
+    // Written to storage directly, as an unreleased build of main left it: the
+    // key is no longer in the schema, so a config save would refuse it.
     $storage = $this->container->get('config.storage');
     $settings = $storage->read('scolta.settings');
     unset($settings['view_mode']);
