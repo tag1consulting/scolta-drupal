@@ -438,7 +438,7 @@ The index covers every node bundle by default. `scolta.settings: entity_types` i
 drush config:set --input-format=yaml scolta.settings entity_types '{node: [], group: [community]}'
 ```
 
-Any fieldable entity type with a `changed` field works; a type with a published flag is filtered to published entities. Its text is whatever its display for the configured view mode shows, as for nodes. Every page ID is prefixed with its entity type ID (`node:42`, `node:42-es`, `group:42`), which is why node 42 and group 42 do not collide. An index built by an earlier release used bare node IDs; the update hook discards the build state and queues a rebuild, so the next build numbers every page from zero.
+Any fieldable entity type with a `changed` field works; a type with a published flag is filtered to published entities. Its text is whatever its display for the configured view mode shows, as for nodes. [Canvas](https://www.drupal.org/project/canvas) pages, for example, need only `canvas_page` in `entity_types`; text in the props of Canvas code components is not indexed, because those render in the browser. Every page ID is prefixed with its entity type ID (`node:42`, `node:42-es`, `group:42`), which is why node 42 and group 42 do not collide. An index built by an earlier release used bare node IDs; the update hook discards the build state and queues a rebuild, so the next build numbers every page from zero.
 
 #### Running rebuilds: the cron line
 
@@ -453,19 +453,6 @@ A tick that finds a build running exits at the build lock in about a second, so 
 A deploy does not need to run `drush scolta:build`. Content edits are applied incrementally, and a release that changes the index format queues its own full rebuild from its update hook and says so in its release notes. Pass `--force` to a hand-run `drush scolta:build` when a deploy changed `view_mode`, a display the index renders, or `field_mappings`: the timestamp manifest skips every entity whose changed time is unchanged, so a plain build re-gathers nothing for a config-only change. `drush scolta:build --entity-type=node,group` overrides the configured list for one run; `--bundle` and `--entity-ids` need a single `--entity-type`.
 
 Sites without a drush cron of any kind keep the settings form's *Index now*, which builds in a batch of web requests.
-
-#### Indexing Canvas pages
-
-Pages built with [Canvas](https://www.drupal.org/project/canvas) are the `canvas_page` entity type. Add it to `entity_types` and they are indexed like nodes, translations, incremental updates and removals included; nothing else needs configuring:
-
-```bash
-drush config:set --input-format=yaml scolta.settings entity_types '{node: [], canvas_page: []}'
-drush scolta:build
-```
-
-A Canvas page renders its component tree whichever view mode is asked for, because Canvas computes the page's display rather than storing one, so the index holds the page's text in page order with markup, CSS classes, URLs and image sources stripped. Only the live, published revision is indexed, never a workspace draft. Text entered in the props of Canvas code components (JavaScript components) is not indexed: they render in the browser, and the server rendered HTML carries their props as a JSON attribute rather than as text.
-
-Canvas is not a dependency, and nothing in this module is specific to it. The tests that exercise Canvas pages (`CanvasPageGatherKernelTest`, `CanvasPageIncrementalKernelTest`) skip when Canvas is not installed; CI does not install it, so run them locally after adding `drupal/canvas` to the test project.
 
 What sits in the queue, and what the worker does with it:
 
