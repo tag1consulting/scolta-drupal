@@ -59,8 +59,8 @@ class ViewModeKernelTest extends KernelTestBase {
       ->setComponent('field_teaser_line', ['type' => 'string'])
       ->setComponent('field_staff_note', ['type' => 'string'])
       ->save();
-    // Drupal 10 ships this view mode with the node module; 11 moved it to
-    // search_node.
+    // Drupal before 11.4 ships this view mode with the node module; 11.4 moved
+    // it to search_node.
     if (!EntityViewMode::load('node.search_index')) {
       EntityViewMode::create(['id' => 'node.search_index', 'targetEntityType' => 'node', 'label' => 'Search index'])->save();
     }
