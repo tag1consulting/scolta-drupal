@@ -506,7 +506,7 @@ function scolta_update_10011() {
     ->set('view_mode', 'search_index')
     ->save();
 
-  return t('The search index now holds each entity as it renders in the search_index view mode, or in its default display for a bundle without an enabled search_index display. Check what that display shows for each indexed bundle, and change the view mode at Administration › Configuration › Search and metadata › Scolta (/admin/config/search/scolta). @queued', [
+  return t('Once the queued rebuild runs, the search index holds each entity as it renders in the search_index view mode, or in its default display for a bundle without an enabled search_index display. Check what that display shows for each indexed bundle, and change the view mode at Administration › Configuration › Search and metadata › Scolta (/admin/config/search/scolta). @queued', [
     '@queued' => scolta_queue_full_rebuild(__FUNCTION__, TRUE),
   ]);
 }
