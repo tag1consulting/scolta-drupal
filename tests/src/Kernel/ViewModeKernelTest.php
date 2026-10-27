@@ -19,7 +19,7 @@ use Drupal\Tests\user\Traits\UserCreationTrait;
  *
  * ScoltaContentGatherer renders each translation the way Drupal's search module
  * and Search API do: in the view_mode setting, falling back to the bundle's
- * default display, as the anonymous user, in the site's default theme.
+ * default display, as the anonymous user.
  *
  * @group scolta
  */
