@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ## [Unreleased]
 
+### Fixed
+- **A queue tick refused the state-directory build lock is requeued for 60 s instead of being counted as a failed segment (`ScoltaRebuildWorker::finish()`).** On Kubernetes a deploy that kills a build mid-merge leaves a lock record whose heartbeat stays fresh for `BuildState::STALE_LOCK_SECONDS`, and the Drupal lock that normally turns a tick back at the door does not survive the pod replacement, so every tick in that five-minute window reached the orchestrator and was refused. Three refusals exhausted `MAX_SEGMENT_FAILURES`, the marker was deleted, and the resumable build was abandoned for a fresh full one (sharemylesson.com, 2026-10-28). Requires scolta-php with `StatusReport::isLockContention()` (tag1consulting/scolta-php#389).
+
 ### Added
 - **Every `scolta.*` service now has a class-name alias** (`Drupal\scolta\Service\ScoltaReindexer: '@scolta.reindexer'` and so on), so a consuming site's autowired Drush command or service can type-hint the class and let the container resolve it; before this, `Cannot autowire service "Drupal\scolta\Service\ScoltaReindexer"` unless `@scolta.reindexer` was wired explicitly.
 - **`scoring.title_dedup` setting and a "Collapse near-duplicate titles" checkbox on the settings form, default off.** Exposes scolta-php's new opt-in for `deduplicateByTitle()`, which previously ran unconditionally and hid distinct pages with similar titles (a webinar and its recap post). Install config ships `false` to match the scolta.js fallback.

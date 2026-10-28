@@ -412,6 +412,18 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    *   still in progress or completed: it goes back for the next run.
    */
   protected function finish(bool $dataCovered, StatusReport $report, BuildState $buildState, string $successMessage): void {
+    if ($report->isLockContention()) {
+      // Refused the state-directory lock, not failed: nothing ran and the
+      // build on disk is untouched. This is what a deploy mid-build looks
+      // like to the tick that follows it — the killed process's lock record
+      // stays live for BuildState::STALE_LOCK_SECONDS, and the Drupal lock
+      // that normally turns such a tick back at the door does not survive a
+      // pod replacement. Counting it as a segment failure spent the retry
+      // budget inside that window and gave up on a resumable build; coming
+      // back later is all that is needed. The payload goes back unchanged,
+      // so the marker (or the request) is still there for the next tick.
+      throw new DelayedRequeueException(60, 'Scolta build lock held by another process; the next cron run retries. ' . ($report->error ?? ''));
+    }
     if (!$report->success && $report->isMemoryAbort() && $report->chunksWritten > 0) {
       $chained = $this->chain($buildState, $report);
       if ($chained === NULL) {
