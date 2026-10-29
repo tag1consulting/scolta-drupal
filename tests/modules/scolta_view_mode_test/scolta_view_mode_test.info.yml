@@ -1,0 +1,7 @@
+name: 'Scolta view mode test'
+type: module
+description: 'Field access, render failures and theme probes for the view mode rendering tests.'
+package: Testing
+dependencies:
+  - drupal:node
+  - scolta:scolta

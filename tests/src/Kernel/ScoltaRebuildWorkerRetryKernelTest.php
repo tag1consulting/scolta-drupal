@@ -52,7 +52,7 @@ class ScoltaRebuildWorkerRetryKernelTest extends KernelTestBase {
     $this->installEntitySchema('node');
     $this->installEntitySchema('user');
     $this->installSchema('node', ['node_access']);
-    $this->installConfig(['scolta', 'field', 'node', 'filter']);
+    $this->installConfig(['system', 'scolta', 'field', 'node', 'filter']);
 
     $this->indexRoot = sys_get_temp_dir() . '/scolta-retry-' . uniqid();
     mkdir($this->indexRoot, 0755, TRUE);

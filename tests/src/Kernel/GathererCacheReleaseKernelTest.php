@@ -37,7 +37,7 @@ class GathererCacheReleaseKernelTest extends KernelTestBase {
     parent::setUp();
     $this->installEntitySchema('node');
     $this->installEntitySchema('user');
-    $this->installConfig(['scolta', 'field', 'node', 'filter']);
+    $this->installConfig(['system', 'scolta', 'field', 'node', 'filter']);
     $this->installSchema('node', ['node_access']);
     $this->createContentType(['type' => 'article']);
   }

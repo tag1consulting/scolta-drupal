@@ -62,7 +62,7 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installSchema('node', ['node_access']);
     $this->installSchema('dblog', ['watchdog']);
-    $this->installConfig(['scolta', 'field', 'node', 'filter']);
+    $this->installConfig(['system', 'scolta', 'field', 'node', 'filter']);
 
     // KernelTestBase mounts public:// on a vfsStream virtual filesystem, and
     // its own realpath() is a vfs:// URI — still stream-wrapper syntax, which

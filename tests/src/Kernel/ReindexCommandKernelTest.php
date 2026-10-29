@@ -41,7 +41,7 @@ class ReindexCommandKernelTest extends KernelTestBase {
     $this->installEntitySchema('node');
     $this->installEntitySchema('user');
     $this->installSchema('node', ['node_access']);
-    $this->installConfig(['scolta', 'field', 'node', 'filter']);
+    $this->installConfig(['system', 'scolta', 'field', 'node', 'filter']);
 
     $this->createContentType(['type' => 'article']);
   }
