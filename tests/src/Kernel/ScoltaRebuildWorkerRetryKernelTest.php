@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Kernel;
 
+use Drupal\Core\Queue\DelayedRequeueException;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\node\Entity\Node;
 use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
@@ -133,9 +134,33 @@ class ScoltaRebuildWorkerRetryKernelTest extends KernelTestBase {
   }
 
   /**
+   * A tick refused the build lock is retried later, not counted as a failure.
+   *
+   * The sequence this guards (sharemylesson.com, 2026-10-28): a deploy killed
+   * the build mid-merge, the replacement pod could not take the state lock
+   * until the dead process's heartbeat went stale, and three ticks inside
+   * that window exhausted the retry budget — so the resumable build was given
+   * up on and a fresh full build ran instead.
+   */
+  public function testATickRefusedTheBuildLockIsRequeuedWithoutSpendingARetry(): void {
+    \Drupal::state()->set(self::FAILURE_KEY, 2);
+
+    try {
+      $this->worker(lockHeld: TRUE)->processItem(self::MARKER);
+      $this->fail('A refused tick must ask to be run again later.');
+    }
+    catch (DelayedRequeueException $e) {
+      $this->assertStringContainsString('build lock held', $e->getMessage());
+    }
+
+    $this->assertSame(2, (int) \Drupal::state()->get(self::FAILURE_KEY), 'A refusal is not a failed segment');
+    $this->assertSame([self::MARKER], $this->queued(), 'The marker still stands for the next tick');
+  }
+
+  /**
    * A worker whose segment fails on something that is not memory pressure.
    */
-  protected function worker(bool $fails = TRUE): ScoltaRebuildWorker {
+  protected function worker(bool $fails = TRUE, bool $lockHeld = FALSE): ScoltaRebuildWorker {
     \Drupal::state()->delete('scolta.rebuild_requested_at');
     $c = $this->container;
     $definition = $c->get('plugin.manager.queue_worker')->getDefinition('scolta_rebuild');
@@ -161,10 +186,31 @@ class ScoltaRebuildWorkerRetryKernelTest extends KernelTestBase {
       public bool $fails = TRUE;
 
       /**
+       * Whether the segment reports that another process holds the lock.
+       */
+      public bool $lockHeld = FALSE;
+
+      /**
        * {@inheritdoc}
        */
       protected function runSegment(IndexBuildOrchestrator $orchestrator, BuildIntent $intent, array $entityTypes, array $cursors, bool $force = FALSE): StatusReport {
         $this->segmentRan = TRUE;
+        if ($this->lockHeld) {
+          return new StatusReport(
+            version: '0',
+            pagefindVersion: '0',
+            resolvedIndexer: 'test',
+            pagesProcessed: 0,
+            chunksWritten: 0,
+            peakMemoryBytes: 0,
+            memoryBudgetBytes: 0,
+            durationSeconds: 0.1,
+            outputDir: '',
+            success: FALSE,
+            error: 'Failed to re-acquire build lock for resume — another build is running. Lock held by pid 4242 on host cli-old.',
+            lockHeld: TRUE,
+          );
+        }
         if (!$this->fails) {
           return parent::runSegment($orchestrator, $intent, $entityTypes, $cursors, $force);
         }
@@ -185,6 +231,7 @@ class ScoltaRebuildWorkerRetryKernelTest extends KernelTestBase {
 
     };
     $worker->fails = $fails;
+    $worker->lockHeld = $lockHeld;
     return $worker;
   }
 
