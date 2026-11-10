@@ -54,6 +54,13 @@ class ScoltaUiCommands extends DrushCommands {
    * scolta.generation counter in their cache key, so bumping the generation
    * orphans all existing entries; the resolved-prompt entries use known
    * fixed keys and are deleted directly.
+   *
+   * This command is the only thing that bumps the generation. A
+   * scolta_ui.settings, scolta.settings or system.site save retires the AI
+   * entries through their cache tags, and index builds do not touch them at
+   * all (see AiApiControllerBase::CACHE_TAGS), so this is for everything
+   * else: a new scolta-php whose default prompts changed, or a site-specific
+   * prompt enricher whose output changed.
    */
   #[CLI\Command(name: 'scolta:clear-cache', aliases: ['scc'])]
   public function clearCache(): void {

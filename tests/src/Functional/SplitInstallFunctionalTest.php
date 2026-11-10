@@ -56,7 +56,7 @@ class SplitInstallFunctionalTest extends BrowserTestBase {
     $this->assertSession()->statusCodeEquals(200);
 
     // Both halves of the settings object exist and neither holds the other's
-    // keys — the property scolta_update_10011() gives an upgrading site, here
+    // keys — the property scolta_update_10012() gives an upgrading site, here
     // asserted for a fresh one.
     $backend = $this->config('scolta.settings');
     $frontend = $this->config('scolta_ui.settings');

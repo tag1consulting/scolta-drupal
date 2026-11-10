@@ -62,7 +62,7 @@ class ResumeChainKernelTest extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installSchema('node', ['node_access']);
     $this->installSchema('dblog', ['watchdog']);
-    $this->installConfig(['scolta', 'field', 'node', 'filter']);
+    $this->installConfig(['system', 'scolta', 'field', 'node', 'filter']);
 
     // scolta-php's FilesystemDriver rejects the vfs:// URIs KernelTestBase
     // mounts public:// on; see ScopedBuildKernelTest.

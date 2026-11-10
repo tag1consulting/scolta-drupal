@@ -11,14 +11,6 @@ config:
   actions:
     scolta.settings:
       simpleConfigUpdate:
-        # Umami's articles use field_body, but its ten recipe nodes keep their
-        # prose in field_recipe_instruction — without it every recipe is
-        # skipped for having an empty body, which is most of the corpus.
-        body_fields:
-          - body
-          - field_body
-          - field_content
-          - field_recipe_instruction
         filter_fields:
           - category
           - tags

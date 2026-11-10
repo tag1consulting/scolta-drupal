@@ -412,6 +412,18 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    *   still in progress or completed: it goes back for the next run.
    */
   protected function finish(bool $dataCovered, StatusReport $report, BuildState $buildState, string $successMessage): void {
+    if ($report->isLockContention()) {
+      // Refused the state-directory lock, not failed: nothing ran and the
+      // build on disk is untouched. This is what a deploy mid-build looks
+      // like to the tick that follows it — the killed process's lock record
+      // stays live for BuildState::STALE_LOCK_SECONDS, and the Drupal lock
+      // that normally turns such a tick back at the door does not survive a
+      // pod replacement. Counting it as a segment failure spent the retry
+      // budget inside that window and gave up on a resumable build; coming
+      // back later is all that is needed. The payload goes back unchanged,
+      // so the marker (or the request) is still there for the next tick.
+      throw new DelayedRequeueException(60, 'Scolta build lock held by another process; the next cron run retries. ' . ($report->error ?? ''));
+    }
     if (!$report->success && $report->isMemoryAbort() && $report->chunksWritten > 0) {
       $chained = $this->chain($buildState, $report);
       if ($chained === NULL) {
@@ -429,7 +441,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     }
 
     if ($report->success) {
-      $this->bumpGeneration();
+      $this->invalidateSearchIndexCaches();
       $this->state->delete(self::FAILURE_COUNT_KEY);
       $this->state->delete(self::FORCE_KEY);
       $this->deleteMarkers();
@@ -794,7 +806,7 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
     // entities, and pruning would drop the manifest entry of every other one.
     $manifest?->saveWithoutPruning();
 
-    $this->bumpGeneration();
+    $this->invalidateSearchIndexCaches();
 
     $this->logger->info('Search index updated incrementally: @updated pages updated, @deleted deleted, @fragments fragments, @chunks chunks rewritten in @time s (tombstones @tombstones%).', [
       '@updated' => $result->pagesUpdated,
@@ -823,11 +835,17 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
   }
 
   /**
-   * Bump the generation counter so cached AI responses refresh.
+   * Retire render caches that embed the index: the search block's.
+   *
+   * Cached AI responses are deliberately left alone. Until 2.0 every build,
+   * the hourly incremental update included, also bumped scolta.generation,
+   * which prefixes every expand/summarize cache key, so the 30-day AI cache
+   * lived for about an hour on a busy site and repeat queries went back to
+   * the provider each time. An expansion depends on the query and the
+   * prompt, not the index; a summary's key hashes the excerpts the browser
+   * sent, which already change when the index does.
    */
-  protected function bumpGeneration(): void {
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->state->set('scolta.generation', $generation + 1);
+  protected function invalidateSearchIndexCaches(): void {
     $this->cacheTagsInvalidator->invalidateTags(['scolta_search_index']);
   }
 

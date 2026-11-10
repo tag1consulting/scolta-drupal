@@ -11,7 +11,7 @@ use Drupal\user\Entity\Role;
 use Drupal\user\RoleInterface;
 
 /**
- * Runs scolta_update_10011() against a pre-split site and checks the result.
+ * Runs scolta_update_10012() against a pre-split site and checks the result.
  *
  * The partition itself is proved statically over the schemas, in
  * \Drupal\scolta\Tests\ScoltaConfigPartitionTest. What cannot be proved that
@@ -29,7 +29,7 @@ use Drupal\user\RoleInterface;
  * - Access preserved. A role that could administer Scolta before can still
  *   reach the settings screen afterwards, through the new permission.
  *
- * Most tests call scolta_update_10011() directly. The ones that check the
+ * Most tests call scolta_update_10012() directly. The ones that check the
  * hooks before it applying the split first instead set scolta's schema back
  * and run update.php, so the hooks run in the order a real upgrade runs them.
  *
@@ -99,7 +99,7 @@ class ConfigSplitUpdateFunctionalTest extends BrowserTestBase {
    * Build-time values, also non-default, which must not move.
    */
   private const BACKEND_FIXTURE = [
-    'body_fields' => ['field_body', 'field_summary'],
+    'view_mode' => 'teaser',
     'sortable_fields' => ['date', 'title'],
     'filter_fields' => ['topic'],
     'field_mappings' => ['sortable' => ['field_date' => 'date'], 'filters' => []],
@@ -128,7 +128,7 @@ class ConfigSplitUpdateFunctionalTest extends BrowserTestBase {
    * Runs the split update the way `drush updatedb` would.
    */
   private function runSplitUpdate() {
-    return $this->runUpdate('scolta_update_10011');
+    return $this->runUpdate('scolta_update_10012');
   }
 
   /**
@@ -296,7 +296,7 @@ class ConfigSplitUpdateFunctionalTest extends BrowserTestBase {
     $this->runUpdates();
 
     $this->assertTrue(\Drupal::moduleHandler()->moduleExists('scolta_ui'));
-    $this->assertSame(10011, \Drupal::service('update.update_hook_registry')->getInstalledVersion('scolta'));
+    $this->assertSame(10012, \Drupal::service('update.update_hook_registry')->getInstalledVersion('scolta'));
     $this->assertSame('Fixture Site', $this->config('scolta_ui.settings')->get('site_name'));
     $this->assertNull($this->config('scolta.settings')->get('site_name'));
     $this->assertFalse(
@@ -405,7 +405,7 @@ class ConfigSplitUpdateFunctionalTest extends BrowserTestBase {
    *
    * On a site that set the key before it was declared, the value sits in
    * scolta.settings, possibly as the string the old config could not type.
-   * 10009 runs before 10011, so it has to move it across, then type it.
+   * 10009 runs before 10012, so it has to move it across, then type it.
    */
   public function testAutoLanguageFilterUpdateAppliesTheSplitFirst(): void {
     $this->simulatePreSplitSite();

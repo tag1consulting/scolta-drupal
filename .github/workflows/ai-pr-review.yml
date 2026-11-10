@@ -1,4 +1,4 @@
-# AI PR Review — unified single-file setup (container-action variant)
+# AI PR Review: unified single-file setup (container-action variant)
 #
 # Copy this file to .github/workflows/ai-pr-review.yml in your repo.
 #
@@ -13,10 +13,10 @@
 #
 # ── Secrets ──────────────────────────────────────────────────────────────────
 #
-#   AI_REVIEW_API_KEY  (or ANTHROPIC_API_KEY) — your LLM provider API key.
+#   AI_REVIEW_API_KEY  (or ANTHROPIC_API_KEY): your LLM provider API key.
 #     The workflow accepts either name, so existing secrets work without rename.
 #
-#   GH_TOKEN  — a PAT with repo scope (classic) or pull_requests:write +
+#   GH_TOKEN: a PAT with repo scope (classic) or pull_requests:write +
 #     metadata:read (fine-grained).  Required ONLY for the dismiss command's
 #     resolveReviewThread GraphQL mutation.  Omit it if you do not use dismiss.
 #     GITHUB_TOKEN cannot be used here because GitHub blocks the resolveReviewThread
@@ -24,34 +24,35 @@
 #
 # ── Optional repo variables (Settings → Variables) ───────────────────────────
 #
-#   AI_REVIEW_PROVIDER           — LLM provider (default: anthropic)
-#   AI_REVIEW_BASE_URL           — custom endpoint for openai-compatible/bedrock-proxy
-#   AI_REVIEW_IMAGE_TAG          — container image tag (default: latest)
-#   AI_REVIEW_MODEL_STANDARD     — override standard model ID
-#   AI_REVIEW_MODEL_PREMIUM      — override premium model ID (full mode only)
-#   AI_REVIEW_MAX_DIFF_LINES     — skip review when diff exceeds N lines (default: 5000)
-#   AI_REVIEW_MAX_INLINE         — max inline comments per run (default: 25)
-#   AI_REVIEW_MAX_TOKENS_PER_AGENT — output token budget per LLM agent (default: 32768)
-#   AI_REVIEW_ENABLE_SUGGESTIONS — "Apply suggestion" buttons on inline comments (default: true)
-#   AI_REVIEW_PARALLEL           — parallel tiered fan-out (default: true)
-#   AI_REVIEW_IGNORE_MERGE_COMMITS — strip upstream base-branch merge commits (default: true)
-#   AI_REVIEW_FAIL_ON_FINDINGS   — exit code 2 on REQUEST_CHANGES/COMMENT, for CI gates (default: true)
-#   AI_REVIEW_TOKEN_USAGE_DISPLAY — token-usage content in the review comment: compact/full/off (default: compact)
-#   AI_REVIEW_TOKEN_USAGE_WARN_USD — high-usage warning threshold in USD, 0 disables (default: 1.00)
-#   AI_REVIEW_MAX_COST_USD       — pre-flight cost ceiling in USD; run aborts before dispatch if the estimate exceeds it, 0 disables (default: 0)
-#   AI_REVIEW_FAIL_ON_COST_CEILING — exit code 2 (instead of 0) when the cost ceiling is exceeded (default: false)
-#   AI_REVIEW_MODE_DEFAULT       — mode for automatic review AND /ai-pr-review rescan when set (default: '' — defer to policy.yml, else quick)
-#   AI_REVIEW_FEEDBACK_LOOP      — enable learning loop (default: false; GitHub-only)
-#   AI_REVIEW_CONTEXT_ENRICHMENT — tree-sitter symbol-context injection (default: true)
-#   AI_REVIEW_CONTEXT_MAX_QUERIES — cap on symbol-lookup queries per run (default: 200)
-#   AI_REVIEW_SARIF_PATHS        — comma-separated SARIF 2.1.0 paths to merge as findings
-#   AI_REVIEW_EXCLUDE_PATTERNS   — comma-separated glob patterns to exclude from the diff
-#   AI_REVIEW_EXCLUDE_PATTERNS_MODE — 'append' (default) or 'replace' for exclude-patterns
-#   AI_REVIEW_ANALYZER_DIFF_SCOPE — how out-of-diff analyzer findings are handled (default: cap)
-#   AI_REVIEW_ANALYZERS          — allowlist of static analyzers to run (comma-separated; empty = all)
-#   AI_REVIEW_EXCLUDE_ANALYZERS  — denylist of analyzers to skip (e.g. 'phpstan,phpcs')
-#   AI_REVIEW_AGENTS             — allowlist of review agents to run (comma-separated; empty = all)
-#   AI_REVIEW_EXCLUDE_AGENTS     — denylist of review agents to skip
+#   AI_REVIEW_PROVIDER: LLM provider (default: anthropic)
+#   AI_REVIEW_BASE_URL: custom endpoint for openai-compatible/bedrock-proxy
+#   AI_REVIEW_IMAGE_TAG: container image tag (default: latest)
+#   AI_REVIEW_MODEL_STANDARD: override standard model ID
+#   AI_REVIEW_MODEL_PREMIUM: override premium model ID (full mode only)
+#   AI_REVIEW_MAX_DIFF_LINES: skip review when diff exceeds N lines (default: 5000)
+#   AI_REVIEW_MAX_INLINE: max inline comments per run (default: 25)
+#   AI_REVIEW_MAX_TOKENS_PER_AGENT: output token budget per LLM agent (default: 32768)
+#   AI_REVIEW_ENABLE_SUGGESTIONS: "Apply suggestion" buttons on inline comments (default: true)
+#   AI_REVIEW_PARALLEL: parallel tiered fan-out (default: true)
+#   AI_REVIEW_IGNORE_MERGE_COMMITS: strip upstream base-branch merge commits (default: true)
+#   AI_REVIEW_FAIL_ON_FINDINGS: exit code 2 on REQUEST_CHANGES/COMMENT, for CI gates (default: true)
+#   AI_REVIEW_SLASH_FAIL_ON_FINDINGS: same gate for rescan and review-full (default: false)
+#   AI_REVIEW_TOKEN_USAGE_DISPLAY: token-usage content in the review comment: compact/full/off (default: compact)
+#   AI_REVIEW_TOKEN_USAGE_WARN_USD: high-usage warning threshold in USD, 0 disables (default: 1.00)
+#   AI_REVIEW_MAX_COST_USD: pre-flight cost ceiling in USD; run aborts before dispatch if the estimate exceeds it, 0 disables (default: 0)
+#   AI_REVIEW_FAIL_ON_COST_CEILING: exit code 2 (instead of 0) when the cost ceiling is exceeded (default: false)
+#   AI_REVIEW_MODE_DEFAULT: mode for automatic review AND /ai-pr-review rescan when set (default: '', defer to policy.yml, else quick)
+#   AI_REVIEW_FEEDBACK_LOOP: enable learning loop (default: false)
+#   AI_REVIEW_CONTEXT_ENRICHMENT: tree-sitter symbol-context injection (default: true)
+#   AI_REVIEW_CONTEXT_MAX_QUERIES: cap on symbol-lookup queries per run (default: 200)
+#   AI_REVIEW_SARIF_PATHS: comma-separated SARIF 2.1.0 paths to merge as findings
+#   AI_REVIEW_EXCLUDE_PATTERNS: comma-separated glob patterns to exclude from the diff
+#   AI_REVIEW_EXCLUDE_PATTERNS_MODE: 'append' (default) or 'replace' for exclude-patterns
+#   AI_REVIEW_ANALYZER_DIFF_SCOPE: how out-of-diff analyzer findings are handled (default: cap)
+#   AI_REVIEW_ANALYZERS: allowlist of static analyzers to run (comma-separated; empty = all)
+#   AI_REVIEW_EXCLUDE_ANALYZERS: denylist of analyzers to skip (e.g. 'phpstan,phpcs')
+#   AI_REVIEW_AGENTS: allowlist of review agents to run (comma-separated; empty = all)
+#   AI_REVIEW_EXCLUDE_AGENTS: denylist of review agents to skip
 #
 # ── Local deviations from the upstream template ──────────────────────────────
 #
@@ -93,7 +94,7 @@ permissions:
   issues: write
   pull-requests: write
   # checks: write is only exercised when a matched .github/ai-pr-review/
-  # policy.yml route sets 'require' (see docs/policy.md) — the container
+  # policy.yml route sets 'require' (see docs/policy.md): the container
   # action posts the ai-pr-review/policy-gate check run in that case.
   # Harmless to leave granted for repos not using policy.yml.
   checks: write
@@ -126,14 +127,14 @@ jobs:
           allow-unsafe-pr-checkout: true
 
       - name: Run AI review
-        uses: tag1consulting/ai-pr-review/container-action@ef8ae600a86707cb297d53a79c978bb91e789465 # v2.12.0
+        uses: tag1consulting/ai-pr-review/container-action@e2ca89badf9fd2539189326e2ed874c38aeee247 # v2.24.0
         env:
           FORCE_FULL_DIFF: ${{ contains(github.event.pull_request.labels.*.name, 'ai-review-rescan') }}
         with:
           approval-ceiling: ${{ vars.AI_REVIEW_APPROVAL_CEILING || 'request-changes' }}
           # AI_REVIEW_IMAGE_TAG: container image tag (default: latest)
           # Set to 'dev' to dogfood pre-release builds, or pin to a release
-          # tag (e.g. '1.6.0') for reproducibility.
+          # tag (e.g. '2.24.0') for reproducibility.
           image-tag: ${{ vars.AI_REVIEW_IMAGE_TAG || 'latest' }}
           # --- Provider ---
           # Set AI_REVIEW_API_KEY (or ANTHROPIC_API_KEY) as a repository secret.
@@ -153,13 +154,13 @@ jobs:
           model-premium: ${{ vars.AI_REVIEW_MODEL_PREMIUM || '' }}
           # Explicit signals only: the ai-review-full label always wins, then
           # the AI_REVIEW_MODE_DEFAULT repo variable (same var the rescan
-          # slash command uses), then '' — deferring to
-          # .github/ai-pr-review/policy.yml route matching by changed-file
+          # slash command uses), then '', deferring to
+          # .ai-pr-review/policy.yml route matching by changed-file
           # path, base branch, or head branch (see docs/policy.md), and
           # finally the engine's own hardcoded 'quick' default if no policy
           # file exists. A branch-name convention like "full mode for
-          # release/* PRs" belongs in policy.yml now, not hardcoded here —
-          # see the 'routes' example in docs/policy.md.
+          # release/* PRs" belongs in policy.yml now, not hardcoded here.
+          # See the 'routes' example in docs/policy.md.
           review-mode: >-
             ${{
               contains(github.event.pull_request.labels.*.name, 'ai-review-full') && 'full' ||
@@ -182,11 +183,17 @@ jobs:
           # Set AI_REVIEW_FAIL_ON_FINDINGS=false to make the review job non-blocking.
           fail-on-findings: ${{ vars.AI_REVIEW_FAIL_ON_FINDINGS || 'true' }}
           # AI_REVIEW_TOKEN_USAGE_DISPLAY: token-usage content in the posted review
-          # comment (default: compact — a one-line cost/token/agent summary). Set to
+          # comment (default: compact, a one-line cost/token/agent summary). Set to
           # 'full' to restore the pre-#758 in-comment <details> table, or 'off' to
           # omit token-usage content from the comment entirely. The full breakdown
           # is always in GITHUB_STEP_SUMMARY and the CI job log regardless.
           token-usage-display: ${{ vars.AI_REVIEW_TOKEN_USAGE_DISPLAY || 'compact' }}
+          # AI_REVIEW_SUPPRESS_WALKTHROUGH: set to 'true' to leave the per-file
+          # Walkthrough table out of the summary comment (default: 'false').
+          suppress-walkthrough: ${{ vars.AI_REVIEW_SUPPRESS_WALKTHROUGH || 'false' }}
+          # AI_REVIEW_FINDING_BADGES: set to 'false' to hide the evidence label and score
+          # that follow each finding (default: 'true').
+          finding-badges: ${{ vars.AI_REVIEW_FINDING_BADGES || 'true' }}
           # AI_REVIEW_TOKEN_USAGE_WARN_USD: estimated-cost threshold (USD) above which
           # a high-usage warning line is added to the comment (default: 1.00). Set to
           # 0 to disable.
@@ -198,18 +205,23 @@ jobs:
           # before any LLM call. See docs/configuration.md#cost-ceiling.
           max-cost-usd: ${{ vars.AI_REVIEW_MAX_COST_USD || '0' }}
           # AI_REVIEW_FAIL_ON_COST_CEILING: exit code 2 instead of 0 when the
-          # cost ceiling above is exceeded (default: false — informational
+          # cost ceiling above is exceeded (default: false, informational
           # only). No effect when max-cost-usd is unset/0.
           fail-on-cost-ceiling: ${{ vars.AI_REVIEW_FAIL_ON_COST_CEILING || 'false' }}
-          # --- Capabilities (Python engine only — the default since v1.0.0) ---
+          cost-ceiling-unpriced: ${{ vars.AI_REVIEW_COST_CEILING_UNPRICED || 'warn' }}
+          # --- Capabilities (Python engine only: the default since v1.0.0) ---
           # AI_REVIEW_CONTEXT_ENRICHMENT: tree-sitter + ripgrep symbol-context injection
-          # (default: true — matches the container image's own default, since it ships
+          # (default: true, matches the container image's own default, since it ships
           # both tree-sitter-language-pack and ripgrep). Set to false to disable.
           context-enrichment: ${{ vars.AI_REVIEW_CONTEXT_ENRICHMENT || 'true' }}
           # AI_REVIEW_CONTEXT_MAX_QUERIES: cap on ripgrep symbol-lookup queries per run,
           # shared across all agents (default: 200). Increase if logs show
           # "context enrichment: max_queries=N reached; remaining symbols skipped".
           context-max-queries: ${{ vars.AI_REVIEW_CONTEXT_MAX_QUERIES || '200' }}
+          # AI_REVIEW_POLICY_SOURCE: where policy.yml is read from ('base-ref' or
+          # 'workspace'). Default 'base-ref'. See docs/policy.md before setting
+          # 'workspace'.
+          policy-source: ${{ vars.AI_REVIEW_POLICY_SOURCE || 'base-ref' }}
           # AI_REVIEW_SARIF_PATHS: comma-separated SARIF 2.1.0 file paths to merge as findings
           # Example: 'results/codeql.sarif,results/trivy.sarif'
           sarif-paths: ${{ vars.AI_REVIEW_SARIF_PATHS || '' }}
@@ -236,16 +248,16 @@ jobs:
   # The review job above is skipped on those events.
   #
   # Supported commands (post as a PR comment):
-  #   /ai-pr-review rescan     — force full diff, re-run review
-  #   /ai-pr-review review-full — run in full mode (all agents)
-  #   /ai-pr-review skip       — add skip-ai-review label to suppress next review
-  #   /ai-pr-review dismiss    — reply to an inline finding to dismiss it
-  #   /ai-pr-review dismiss F<n> — dismiss a body-level finding by its stable ID
-  #   /ai-pr-review help       — post the command list as a reply
-  #   /ai-pr-review false-positive [F<n>] [reason]  — record a false-positive verdict
-  #   /ai-pr-review wont-fix [F<n>] [reason]        — record a "won't fix" verdict
-  #   /ai-pr-review fixed [F<n>] [sha]              — mark a finding fixed (no learning-loop write, no auto-approve)
-  #   /ai-pr-review feedback <text>                 — store free-form feedback
+  #   /ai-pr-review rescan: force full diff, re-run review
+  #   /ai-pr-review review-full: run in full mode (all agents)
+  #   /ai-pr-review skip: add skip-ai-review label to suppress next review
+  #   /ai-pr-review dismiss: reply to an inline finding to dismiss it
+  #   /ai-pr-review dismiss F<n>: dismiss a body-level finding by its stable ID
+  #   /ai-pr-review help: post the command list as a reply
+  #   /ai-pr-review false-positive [F<n>] [reason]: record a false-positive verdict
+  #   /ai-pr-review wont-fix [F<n>] [reason]: record a "won't fix" verdict
+  #   /ai-pr-review fixed [F<n>] [sha]: mark a finding fixed (no learning-loop write, no auto-approve)
+  #   /ai-pr-review feedback <text>: store free-form feedback
   slash-commands:
     # author_association is unreliable on pull_request_review_comment webhooks
     # (see #732), so it can't be the gate for inline replies. Pre-filter on it
@@ -262,7 +274,7 @@ jobs:
            github.event.comment.author_association
          ))
       )
-    uses: tag1consulting/ai-pr-review/.github/workflows/slash-commands.yml@ef8ae600a86707cb297d53a79c978bb91e789465 # v2.12.0
+    uses: tag1consulting/ai-pr-review/.github/workflows/slash-commands.yml@e2ca89badf9fd2539189326e2ed874c38aeee247 # v2.24.0
     with:
       approval-ceiling: ${{ vars.AI_REVIEW_APPROVAL_CEILING || 'request-changes' }}
       event-name: ${{ github.event_name }}
@@ -295,10 +307,43 @@ jobs:
       exclude-analyzers: ${{ vars.AI_REVIEW_EXCLUDE_ANALYZERS || '' }}
       agents: ${{ vars.AI_REVIEW_AGENTS || '' }}
       exclude-agents: ${{ vars.AI_REVIEW_EXCLUDE_AGENTS || '' }}
+      # --- Review tuning (same as the review job above) ---
+      # Forwarded to rescan and review-full so they stay in sync with the
+      # main review (issue #863).
+      max-diff-lines: ${{ vars.AI_REVIEW_MAX_DIFF_LINES || '5000' }}
+      max-inline: ${{ vars.AI_REVIEW_MAX_INLINE || '25' }}
+      ignore-merge-commits: ${{ vars.AI_REVIEW_IGNORE_MERGE_COMMITS || 'true' }}
+      context-enrichment: ${{ vars.AI_REVIEW_CONTEXT_ENRICHMENT || 'true' }}
+      model-standard: ${{ vars.AI_REVIEW_MODEL_STANDARD || '' }}
+      model-premium: ${{ vars.AI_REVIEW_MODEL_PREMIUM || '' }}
+      parallel: ${{ vars.AI_REVIEW_PARALLEL || 'true' }}
+      max-tokens-per-agent: ${{ vars.AI_REVIEW_MAX_TOKENS_PER_AGENT || '32768' }}
+      enable-suggestions: ${{ vars.AI_REVIEW_ENABLE_SUGGESTIONS || 'true' }}
+      # Separate variable from the review job above (AI_REVIEW_FAIL_ON_FINDINGS):
+      # a non-zero exit on this path fails the workflow run and misfires the
+      # failure-reaction step on a rescan that simply found something, rather
+      # than gating a required check the way it does on the pull_request
+      # trigger. A shared variable would turn this on whenever the review
+      # job's gate is on. Set AI_REVIEW_SLASH_FAIL_ON_FINDINGS=true to gate
+      # rescan/review-full too.
+      fail-on-findings: ${{ vars.AI_REVIEW_SLASH_FAIL_ON_FINDINGS || 'false' }}
+      feedback-loop: ${{ vars.AI_REVIEW_FEEDBACK_LOOP || 'false' }}
+      token-usage-display: ${{ vars.AI_REVIEW_TOKEN_USAGE_DISPLAY || 'compact' }}
+      suppress-walkthrough: ${{ vars.AI_REVIEW_SUPPRESS_WALKTHROUGH || 'false' }}
+      finding-badges: ${{ vars.AI_REVIEW_FINDING_BADGES || 'true' }}
+      token-usage-warn-usd: ${{ vars.AI_REVIEW_TOKEN_USAGE_WARN_USD || '1.00' }}
+      max-cost-usd: ${{ vars.AI_REVIEW_MAX_COST_USD || '0' }}
+      fail-on-cost-ceiling: ${{ vars.AI_REVIEW_FAIL_ON_COST_CEILING || 'false' }}
+      cost-ceiling-unpriced: ${{ vars.AI_REVIEW_COST_CEILING_UNPRICED || 'warn' }}
+      context-max-queries: ${{ vars.AI_REVIEW_CONTEXT_MAX_QUERIES || '200' }}
+      policy-source: ${{ vars.AI_REVIEW_POLICY_SOURCE || 'base-ref' }}
+      exclude-patterns: ${{ vars.AI_REVIEW_EXCLUDE_PATTERNS || '' }}
+      exclude-patterns-mode: ${{ vars.AI_REVIEW_EXCLUDE_PATTERNS_MODE || 'append' }}
+      analyzer-diff-scope: ${{ vars.AI_REVIEW_ANALYZER_DIFF_SCOPE || 'cap' }}
     secrets:
-      # Accept either AI_REVIEW_API_KEY or ANTHROPIC_API_KEY — both work.
+      # Accept either AI_REVIEW_API_KEY or ANTHROPIC_API_KEY: both work.
       api-key: ${{ secrets.AI_REVIEW_API_KEY || secrets.ANTHROPIC_API_KEY }}
-      # GH_TOKEN must be a PAT (repo scope) or GitHub App token — not GITHUB_TOKEN.
+      # GH_TOKEN must be a PAT (repo scope) or GitHub App token: not GITHUB_TOKEN.
       # Required only for the dismiss command's resolveReviewThread mutation.
       # See: docs/slash-commands.md#pat-requirement
       github-token: ${{ secrets.GH_TOKEN }}

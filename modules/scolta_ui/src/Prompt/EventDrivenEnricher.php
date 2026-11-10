@@ -4,17 +4,23 @@ declare(strict_types=1);
 
 namespace Drupal\scolta_ui\Prompt;
 
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\scolta_ui\Event\PromptEnrichEvent;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface as ComponentEventDispatcherInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Tag1\Scolta\Prompt\PromptEnricherInterface;
 
 /**
- * Prompt enricher that dispatches a Symfony event for Drupal subscribers.
+ * Enriches prompts by dispatching a PromptEnrichEvent.
  *
- * This bridges the scolta-php PromptEnricherInterface with Drupal's event
- * system. Modules can subscribe to PromptEnrichEvent to inject site-specific
+ * Bridges scolta-php's PromptEnricherInterface to Drupal's event system so
+ * any module can subscribe to PromptEnrichEvent and inject site-specific
  * context into AI prompts.
+ *
+ * When built with a CacheableMetadata, each enrich() seeds the event from it
+ * and writes the refined result back into the same object, so a cache driver
+ * holding that object caches the response with the cacheability the
+ * subscribers declared. See PromptEnrichEvent for the contract.
  *
  * @since 1.0.0-rc1
  * @stability experimental
@@ -41,13 +47,14 @@ class EventDrivenEnricher implements PromptEnricherInterface {
 
   public function __construct(
     private readonly EventDispatcherInterface $eventDispatcher,
+    private readonly ?CacheableMetadata $cacheability = NULL,
   ) {}
 
   /**
    * {@inheritdoc}
    */
   public function enrich(string $resolvedPrompt, string $promptName, array $context = []): string {
-    $event = new PromptEnrichEvent($resolvedPrompt, $promptName, $context);
+    $event = new PromptEnrichEvent($resolvedPrompt, $promptName, $context, $this->cacheability);
     $this->eventDispatcher->dispatch($event);
 
     // Subscribers still on the old name hear the same event object after the
@@ -62,6 +69,15 @@ class EventDrivenEnricher implements PromptEnricherInterface {
       // phpcs:ignore Drupal.Semantics.FunctionTriggerError.TriggerErrorSeeUrlFormat
       @trigger_error('Subscribing to Drupal\\scolta\\Event\\PromptEnrichEvent is deprecated in scolta:2.0.0 and is removed from scolta:3.0.0. Subscribe to Drupal\\scolta_ui\\Event\\PromptEnrichEvent instead. See https://github.com/tag1consulting/scolta-drupal/issues/168', E_USER_DEPRECATED);
       $this->eventDispatcher->dispatch($event, self::LEGACY_EVENT_NAME);
+    }
+
+    // After both dispatches, so what an old-name subscriber declares travels
+    // with the response too.
+    if ($this->cacheability !== NULL) {
+      $this->cacheability
+        ->setCacheTags($event->getCacheTags())
+        ->setCacheContexts($event->getCacheContexts())
+        ->setCacheMaxAge($event->getCacheMaxAge());
     }
 
     return $event->getResolvedPrompt();

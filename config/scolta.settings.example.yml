@@ -10,10 +10,7 @@
 # --- What is indexed ---
 entity_types:                       # Entity type => bundles to index ([] means every bundle)
   node: []
-body_fields:                        # Fields read, in order, for each item's body text
-  - body
-  - field_body
-  - field_content
+view_mode: search_index             # Each item is indexed as it renders in this view mode (falls back to default)
 
 # --- Index dimensions ---
 # The names are baked into the index at build time, so changing them means a

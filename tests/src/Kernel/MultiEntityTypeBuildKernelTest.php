@@ -51,7 +51,7 @@ class MultiEntityTypeBuildKernelTest extends KernelTestBase {
     $this->installEntitySchema('taxonomy_term');
     $this->installSchema('node', ['node_access']);
     $this->installSchema('dblog', ['watchdog']);
-    $this->installConfig(['scolta', 'field', 'node', 'filter']);
+    $this->installConfig(['system', 'scolta', 'field', 'node', 'filter']);
 
     // A real directory: scolta-php's FilesystemDriver rejects vfs:// URIs.
     $this->indexRoot = sys_get_temp_dir() . '/scolta-multi-type-' . uniqid();
@@ -60,7 +60,6 @@ class MultiEntityTypeBuildKernelTest extends KernelTestBase {
       ->set('pagefind.output_dir', $this->indexRoot . '/output')
       ->set('pagefind.build_dir', $this->indexRoot . '/build')
       ->set('entity_types', ['node' => [], 'taxonomy_term' => ['tags']])
-      ->set('body_fields', ['body', 'description'])
       ->save();
 
     $this->createContentType(['type' => 'article']);

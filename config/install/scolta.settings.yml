@@ -6,10 +6,7 @@ sortable_fields: []
 filter_fields: []
 entity_types:
   node: []
-body_fields:
-  - body
-  - field_body
-  - field_content
+view_mode: search_index
 field_mappings:
   sortable: {}
   filters: {}

@@ -56,7 +56,7 @@ class ScoltaRebuildWorkerResumeKernelTest extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installSchema('node', ['node_access']);
     $this->installSchema('dblog', ['watchdog']);
-    $this->installConfig(['scolta', 'field', 'node', 'filter']);
+    $this->installConfig(['system', 'scolta', 'field', 'node', 'filter']);
 
     // A real directory: scolta-php's FilesystemDriver rejects vfs:// URIs.
     $this->indexRoot = sys_get_temp_dir() . '/scolta-resume-' . uniqid();

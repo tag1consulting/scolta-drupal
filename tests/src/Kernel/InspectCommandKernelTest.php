@@ -57,7 +57,7 @@ class InspectCommandKernelTest extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installSchema('node', ['node_access']);
     $this->installSchema('dblog', ['watchdog']);
-    $this->installConfig(['scolta', 'field', 'node', 'filter']);
+    $this->installConfig(['system', 'scolta', 'field', 'node', 'filter']);
 
     $this->dir = sys_get_temp_dir() . '/scolta-inspect-test-' . uniqid();
     mkdir($this->dir, 0755, TRUE);

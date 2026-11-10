@@ -441,8 +441,6 @@ class ScoltaCommands extends DrushCommands {
     $this->assertIndexUsable($outputDir);
 
     $fragments = glob($outputDir . '/pagefind/fragment/*.pf_fragment') ?: [];
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->state->set('scolta.generation', $generation + 1);
     $this->logger()->success('Index built: {pages} pages on disk{via}.', [
       'pages' => count($fragments),
       'via' => $chained ? ' (completed across resume segments)' : ' (finalized in a fresh process)',
@@ -456,8 +454,6 @@ class ScoltaCommands extends DrushCommands {
   private function reportBuildSuccess($report, string $outputDir): void {
     $this->assertIndexUsable($outputDir);
 
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->state->set('scolta.generation', $generation + 1);
     $this->logger()->success('Index built: {pages} pages in {time}s ({mem} peak RAM).', [
       'pages' => $report->pagesProcessed,
       'time' => $report->durationSeconds,
@@ -573,8 +569,6 @@ class ScoltaCommands extends DrushCommands {
     $report       = $orchestrator->finalize($budget, $this->logger());
 
     if ($report->success) {
-      $generation = $this->state->get('scolta.generation', 0);
-      $this->state->set('scolta.generation', $generation + 1);
       $this->logger()->success('Index finalized: {pages} pages in {time}s ({mem} peak RAM).', [
         'pages' => $report->pagesProcessed,
         'time' => $report->durationSeconds,

@@ -62,7 +62,7 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installSchema('node', ['node_access']);
     $this->installSchema('dblog', ['watchdog']);
-    $this->installConfig(['scolta', 'field', 'node', 'filter']);
+    $this->installConfig(['system', 'scolta', 'field', 'node', 'filter']);
 
     // KernelTestBase mounts public:// on a vfsStream virtual filesystem, and
     // its own realpath() is a vfs:// URI — still stream-wrapper syntax, which
@@ -302,6 +302,38 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
     $this->drainOneQueueItem();
     $this->assertStringContainsStringInArray('quokkas', $this->fragmentContents(),
       'The surviving request must be applied by the next run');
+  }
+
+  /**
+   * Neither a full build nor an incremental update touches the AI cache.
+   *
+   * scolta.generation prefixes every expand/summarize cache key. Before 2.0
+   * both paths bumped it, so on a site whose content changes hourly the
+   * 30-day AI response cache lived for about an hour. Only
+   * `drush scolta:clear-cache` bumps it now.
+   */
+  public function testIndexBuildsLeaveTheAiCacheGenerationAlone(): void {
+    $state = \Drupal::state();
+    $state->set('scolta.generation', 7);
+
+    // Full rebuild.
+    $this->runWorker(['type' => 'install']);
+    $this->assertSame(7, $state->get('scolta.generation'), 'A full rebuild must not bump the AI cache generation');
+
+    // Incremental update.
+    $node = Node::load($this->nids[3]);
+    $node->set('body', [
+      'value' => 'An edited body about aardvarks, long enough to clear the exporter minimum content length for a page.',
+      'format' => 'plain_text',
+    ]);
+    $node->save();
+    $this->drainOneQueueItem();
+
+    $this->assertTrue(
+      $this->loggedMessageMatching('%updated incrementally%'),
+      'The edit must have taken the incremental path for this assertion to mean anything'
+    );
+    $this->assertSame(7, $state->get('scolta.generation'), 'An incremental update must not bump the AI cache generation');
   }
 
   /**

@@ -58,7 +58,7 @@ class ScoltaReindexerKernelTest extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installSchema('node', ['node_access']);
     $this->installSchema('dblog', ['watchdog']);
-    $this->installConfig(['scolta', 'field', 'node', 'filter']);
+    $this->installConfig(['system', 'scolta', 'field', 'node', 'filter']);
 
     // A real directory rather than the vfsStream public:// mount, which
     // scolta-php's FilesystemDriver rejects. See IncrementalQueueUpdateKernelTest.
