@@ -15,10 +15,11 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\Core\StringTranslation\TranslationInterface;
-use Drupal\scolta\Access\AiAccessInterface;
-use Drupal\scolta\Plugin\Block\ScoltaSearchBlock;
-use Drupal\scolta\Service\IndexLocator;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Access\AiAccessInterface;
+use Drupal\scolta_ui\Plugin\Block\ScoltaSearchBlock;
+use Drupal\scolta_ui\Service\AiOrigin;
+use Drupal\scolta_ui\Service\IndexOrigin;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -67,9 +68,10 @@ class ScoltaSearchBlockTest extends TestCase {
    * Builds a real ScoltaSearchBlock with stubbed collaborators.
    *
    * @param array<string, mixed> $scoltaSettings
-   *   Keyed values returned by $configFactory->get('scolta.settings')->get().
+   *   Keyed values returned by ->get() on both settings objects, so a test
+   *   can set a query-time key and a build-time key in one array.
    * @param bool $indexExists
-   *   What IndexLocator::exists() reports.
+   *   What IndexOrigin::exists() reports.
    */
   private function createBlock(
     ScoltaConfig $scoltaConfig,
@@ -92,6 +94,7 @@ class ScoltaSearchBlockTest extends TestCase {
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
     $configFactory->method('get')
       ->willReturnMap([
+        ['scolta_ui.settings', $scoltaSettingsConfig],
         ['scolta.settings', $scoltaSettingsConfig],
         ['system.site', $systemSiteConfig],
       ]);
@@ -121,22 +124,26 @@ class ScoltaSearchBlockTest extends TestCase {
         [$currentUser, AiAccessInterface::FEATURE_SUMMARIZE, AccessResult::allowed()],
       ]);
 
-    $indexLocator = $this->createMock(IndexLocator::class);
-    $indexLocator->method('exists')->willReturn($indexExists);
+    // Mocked rather than built: exists() looks for a real index on disk.
+    $indexOrigin = $this->createMock(IndexOrigin::class);
+    $indexOrigin->method('exists')->willReturn($indexExists);
+    $indexOrigin->method('isRemote')->willReturn(FALSE);
+    $indexOrigin->method('outputDirUri')->willReturn($scoltaSettings['pagefind.output_dir']);
 
     $streamWrapperManager = $this->createMock(StreamWrapperManagerInterface::class);
 
     $block = new ScoltaSearchBlock(
       [],
       'scolta_search',
-      ['provider' => 'scolta'],
+      ['provider' => 'scolta_ui'],
       $aiService,
       $fileUrlGenerator,
       $configFactory,
       $languageManager,
       $currentUser,
       $streamWrapperManager,
-      $indexLocator,
+      $indexOrigin,
+      new AiOrigin($configFactory),
       $aiAccess,
     );
     $block->setStringTranslation($this->stubTranslation());
@@ -154,7 +161,7 @@ class ScoltaSearchBlockTest extends TestCase {
 
     $this->assertStringContainsString('<div id="scolta-search"></div>', $build['#markup']);
     $this->assertSame(
-      ['scolta/search', 'scolta/drupal_bridge'],
+      ['scolta_ui/search', 'scolta_ui/drupal_bridge'],
       $build['#attached']['library'],
     );
   }
@@ -198,6 +205,7 @@ class ScoltaSearchBlockTest extends TestCase {
     $block = $this->createBlock(new ScoltaConfig());
     $build = $block->build();
 
+    $this->assertContains('config:scolta_ui.settings', $build['#cache']['tags']);
     $this->assertContains('config:scolta.settings', $build['#cache']['tags']);
     $this->assertContains('scolta_search_index', $build['#cache']['tags']);
     $this->assertContains('languages:language_content', $build['#cache']['contexts']);
@@ -268,13 +276,14 @@ class ScoltaSearchBlockTest extends TestCase {
           'language_manager' => $this->createMock(LanguageManagerInterface::class),
           'current_user' => $this->createMock(AccountInterface::class),
           'stream_wrapper_manager' => $this->createMock(StreamWrapperManagerInterface::class),
-          'scolta.index_locator' => $this->createMock(IndexLocator::class),
+          'scolta_ui.index_origin' => $this->createMock(IndexOrigin::class),
+          'scolta_ui.ai_origin' => $this->createMock(AiOrigin::class),
           'scolta.ai_access' => $this->createMock(AiAccessInterface::class),
           default => NULL,
         };
       });
 
-    $block = ScoltaSearchBlock::create($container, [], 'scolta_search', ['provider' => 'scolta']);
+    $block = ScoltaSearchBlock::create($container, [], 'scolta_search', ['provider' => 'scolta_ui']);
 
     $this->assertInstanceOf(ScoltaSearchBlock::class, $block);
     $this->assertSame(
@@ -285,7 +294,8 @@ class ScoltaSearchBlockTest extends TestCase {
         'language_manager',
         'current_user',
         'stream_wrapper_manager',
-        'scolta.index_locator',
+        'scolta_ui.index_origin',
+        'scolta_ui.ai_origin',
         'scolta.ai_access',
       ],
       $requestedIds,

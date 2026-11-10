@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use Drupal\user\Entity\Role;
 use Drupal\user\RoleInterface;
 use Tag1\Scolta\Exception\ApiKeyMissingException;
@@ -31,7 +31,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta', 'scolta_ui'];
 
   private const STATE_KEY = 'scolta.amazee.credentials';
   private const TOKEN = 'sk-stored-token';
@@ -50,7 +50,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->installConfig(['scolta', 'user']);
+    $this->installConfig(['scolta', 'scolta_ui', 'user']);
     // Kernel tests enable a module via $modules without installing it, so
     // hook_install() (scolta_install()) never runs — including the grant of
     // 'use scolta ai' to the authenticated role that a real install performs.
@@ -85,7 +85,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
     );
     $this->assertSame(
       '',
-      $this->config('scolta.settings')->get('ai_provider'),
+      $this->config('scolta_ui.settings')->get('ai_provider'),
       'A fresh install must select no AI provider at all: AI is off until an '
       . 'operator chooses one, and in particular is not Anthropic'
     );
@@ -223,7 +223,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
 
     $this->assertSame(
       'amazee',
-      $this->config('scolta.settings')->get('ai_provider'),
+      $this->config('scolta_ui.settings')->get('ai_provider'),
       'A site whose traffic already went through the stored connection must keep working'
     );
   }
@@ -242,7 +242,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
 
     $this->assertSame(
       'anthropic',
-      $this->config('scolta.settings')->get('ai_provider'),
+      $this->config('scolta_ui.settings')->get('ai_provider'),
       'The stored connection never served this site, so its provider must not be touched'
     );
   }
@@ -257,7 +257,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
 
     $this->assertSame(
       'openai',
-      $this->config('scolta.settings')->get('ai_provider'),
+      $this->config('scolta_ui.settings')->get('ai_provider'),
       'There is no connection to carry over, so nothing changes'
     );
   }
@@ -294,10 +294,10 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
     $this->selectProvider('anthropic');
 
     $this->runUpdate();
-    $afterFirst = $this->config('scolta.settings')->get('ai_provider');
+    $afterFirst = $this->config('scolta_ui.settings')->get('ai_provider');
     $this->runUpdate();
 
-    $this->assertSame($afterFirst, $this->config('scolta.settings')->get('ai_provider'));
+    $this->assertSame($afterFirst, $this->config('scolta_ui.settings')->get('ai_provider'));
     $this->assertFalse(
       $this->reloadRole(RoleInterface::ANONYMOUS_ID)->hasPermission('use scolta ai')
     );
@@ -352,7 +352,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
       'litellm_api_url' => self::GATEWAY_URL,
       'region' => 'test-region',
     ]);
-    \Drupal::configFactory()->getEditable('scolta.settings')
+    \Drupal::configFactory()->getEditable('scolta_ui.settings')
       ->set('amazee_model', self::GATEWAY_ALIAS)
       ->save();
   }
@@ -361,7 +361,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
    * Save an AI provider selection.
    */
   private function selectProvider(string $provider): void {
-    \Drupal::configFactory()->getEditable('scolta.settings')
+    \Drupal::configFactory()->getEditable('scolta_ui.settings')
       ->set('ai_provider', $provider)
       ->save();
   }

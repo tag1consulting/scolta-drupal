@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\scolta\Service\AssetDeployer;
+use Drupal\scolta_ui\Service\AssetDeployer;
 
 /**
  * Proves the browser bundle deploys from vendor and stays current.
@@ -27,14 +27,14 @@ class AssetDeploymentKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->installConfig(['scolta']);
+    $this->installConfig(['scolta', 'scolta_ui']);
     // scolta_uninstall() deletes per-user data via user.data, which needs
     // the users_data table KernelTestBase does not install just because
     // the 'user' module is enabled.
@@ -45,7 +45,7 @@ class AssetDeploymentKernelTest extends KernelTestBase {
    * Install deploys every bundle file, byte-identical to the vendored source.
    */
   public function testInstallDeploysBundleFromVendor(): void {
-    /** @var \Drupal\scolta\Service\AssetDeployer $deployer */
+    /** @var \Drupal\scolta_ui\Service\AssetDeployer $deployer */
     $deployer = \Drupal::service('scolta.asset_deployer');
     $sourceDir = $deployer->sourceDir();
     $this->assertNotNull($sourceDir, 'The installed tag1/scolta-php must carry an assets/ directory.');
@@ -72,7 +72,7 @@ class AssetDeploymentKernelTest extends KernelTestBase {
    * A cache rebuild repairs a stale deployed file; a current one is left be.
    */
   public function testCacheRebuildRedeploysStaleAssets(): void {
-    /** @var \Drupal\scolta\Service\AssetDeployer $deployer */
+    /** @var \Drupal\scolta_ui\Service\AssetDeployer $deployer */
     $deployer = \Drupal::service('scolta.asset_deployer');
     $deployer->deploy();
 
@@ -110,15 +110,19 @@ class AssetDeploymentKernelTest extends KernelTestBase {
   }
 
   /**
-   * Uninstall removes the deployed directory.
+   * Uninstalling scolta_ui removes the deployed directory.
+   *
+   * The bundle is the frontend's to serve, so its lifecycle follows scolta_ui:
+   * a site that drops the frontend and keeps building an index has no
+   * browser left to hand the bundle to.
    */
   public function testUninstallRemovesDeployedAssets(): void {
-    /** @var \Drupal\scolta\Service\AssetDeployer $deployer */
+    /** @var \Drupal\scolta_ui\Service\AssetDeployer $deployer */
     $deployer = \Drupal::service('scolta.asset_deployer');
     $deployer->deploy();
     $this->assertFileExists(AssetDeployer::DIRECTORY . '/js/scolta.js');
 
-    \Drupal::service('module_installer')->uninstall(['scolta']);
+    \Drupal::service('module_installer')->uninstall(['scolta_ui']);
 
     $this->assertDirectoryDoesNotExist(AssetDeployer::DIRECTORY);
   }

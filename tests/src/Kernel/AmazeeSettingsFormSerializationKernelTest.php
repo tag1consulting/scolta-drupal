@@ -6,8 +6,8 @@ namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\Component\Serialization\PhpSerialize;
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\scolta\AiProvider\Amazee\DrupalConfigStorage;
-use Drupal\scolta\Form\AmazeeSettingsForm;
+use Drupal\scolta_ui\AiProvider\Amazee\DrupalConfigStorage;
+use Drupal\scolta_ui\Form\AmazeeSettingsForm;
 
 /**
  * The Amazee.ai settings form survives the serialization a rebuild requires.
@@ -25,7 +25,7 @@ class AmazeeSettingsFormSerializationKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta_ui'];
 
   /**
    * A serialize/unserialize round trip returns a working form.

@@ -27,7 +27,7 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'node', 'block'];
+  protected static $modules = ['scolta', 'scolta_ui', 'node', 'block'];
 
   /**
    * {@inheritdoc}
@@ -64,6 +64,7 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
     parent::setUp();
     $this->adminUser = $this->drupalCreateUser([
       'administer scolta',
+      'administer scolta ui',
       'access administration pages',
     ]);
     // ScoltaSearchBlock::build() attaches no drupalSettings at all when the
@@ -138,7 +139,7 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
     ], 'Save configuration');
     $this->assertSession()->pageTextContains('The configuration options have been saved.');
 
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $this->assertFalse($config->get('sayt_enabled'), 'The off switch must save as a literal false, not silently as true');
     $this->assertSame(1, $config->get('sayt_min_chars'));
     $this->assertSame(220, $config->get('sayt_debounce_ms'));
@@ -232,7 +233,7 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
    */
   public function testUnknownSuggestionActionClampsToNavigate(): void {
     $node = $this->placeBlockOnANode();
-    $this->config('scolta.settings')->set('sayt_suggestion_action', 'teleport')->save();
+    $this->config('scolta_ui.settings')->set('sayt_suggestion_action', 'teleport')->save();
 
     $this->assertSame('navigate', $this->renderedScoltaSettings($node)['saytSuggestionAction']);
   }
@@ -249,14 +250,14 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
 
     foreach (array_keys(self::DEFAULTS) as $key) {
       $this->assertNull(
-        $this->config('scolta.settings')->get($key),
+        $this->config('scolta_ui.settings')->get($key),
         "Precondition: {$key} must start absent"
       );
     }
 
     $this->runSaytUpdate();
 
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     foreach (self::DEFAULTS as $key => $value) {
       $this->assertSame($value, $config->get($key), "The update must add {$key}");
     }
@@ -271,7 +272,7 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
    */
   public function testUpdateLeavesExistingValuesAlone(): void {
     $this->simulatePreSaytSite();
-    $this->config('scolta.settings')
+    $this->config('scolta_ui.settings')
       ->set('sayt_enabled', FALSE)
       ->set('sayt_max_suggestions', 20)
       ->set('sayt_suggestion_action', 'search')
@@ -279,7 +280,7 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
 
     $this->runSaytUpdate();
 
-    $config = $this->config('scolta.settings');
+    $config = $this->config('scolta_ui.settings');
     $this->assertFalse($config->get('sayt_enabled'), 'A deliberate opt-out must survive the update');
     $this->assertSame(20, $config->get('sayt_max_suggestions'));
     $this->assertSame('search', $config->get('sayt_suggestion_action'));
@@ -295,13 +296,13 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
   public function testUpdateIsIdempotent(): void {
     $this->simulatePreSaytSite();
     $this->runSaytUpdate();
-    $after_first = $this->config('scolta.settings')->getRawData();
+    $after_first = $this->config('scolta_ui.settings')->getRawData();
 
     $this->runSaytUpdate();
 
     $this->assertSame(
       $after_first,
-      $this->config('scolta.settings')->getRawData(),
+      $this->config('scolta_ui.settings')->getRawData(),
       'A second run of the update must be a no-op'
     );
   }
@@ -314,7 +315,7 @@ class SaytSettingsFunctionalTest extends BrowserTestBase {
    * Removes the SAYT keys, leaving the config state of a pre-SAYT site.
    */
   private function simulatePreSaytSite(): void {
-    $config = \Drupal::configFactory()->getEditable('scolta.settings');
+    $config = \Drupal::configFactory()->getEditable('scolta_ui.settings');
     foreach (array_keys(self::DEFAULTS) as $key) {
       $config->clear($key);
     }

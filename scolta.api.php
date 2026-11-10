@@ -63,9 +63,9 @@ function hook_scolta_content_item_alter(\Tag1\Scolta\Export\ContentItem &$item, 
  * @{
  * Events dispatched by the Scolta module.
  *
- * \Drupal\scolta\Event\PromptEnrichEvent fires before each AI prompt
- * (expand_query, summarize, follow_up) is sent to the provider. A subscriber
- * may rewrite the prompt:
+ * \Drupal\scolta_ui\Event\PromptEnrichEvent, dispatched by scolta_ui, fires
+ * before each AI prompt (expand_query, summarize, follow_up) is sent to the
+ * provider. A subscriber may rewrite the prompt:
  *
  * @code
  * public function onPromptEnrich(PromptEnrichEvent $event): void {

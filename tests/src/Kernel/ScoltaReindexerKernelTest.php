@@ -33,7 +33,7 @@ class ScoltaReindexerKernelTest extends KernelTestBase {
    * {@inheritdoc}
    */
   protected static $modules = [
-    'system', 'user', 'scolta', 'scolta_reindex_test', 'node', 'filter', 'field', 'text', 'dblog',
+    'system', 'user', 'scolta', 'scolta_ui', 'scolta_reindex_test', 'node', 'filter', 'field', 'text', 'dblog',
   ];
 
   /**

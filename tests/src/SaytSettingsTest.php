@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\scolta\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Pins the search-as-you-type settings surface in the shipped config files.
@@ -49,7 +48,7 @@ class SaytSettingsTest extends TestCase {
   }
 
   public function testInstallConfigCarriesEveryDefault(): void {
-    $install = Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
+    $install = PackageManifest::settings();
 
     foreach (self::DEFAULTS as $key => $value) {
       $this->assertArrayHasKey(
@@ -64,7 +63,7 @@ class SaytSettingsTest extends TestCase {
   }
 
   public function testSchemaTypesMatchTheDefaults(): void {
-    $schema = Yaml::parseFile($this->moduleRoot . '/config/schema/scolta.schema.yml');
+    $schema = PackageManifest::settingsSchema();
     $mapping = $schema['scolta.settings']['mapping'];
 
     $expectedTypes = [

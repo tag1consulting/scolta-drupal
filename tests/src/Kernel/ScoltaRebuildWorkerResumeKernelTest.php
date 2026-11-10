@@ -38,7 +38,7 @@ class ScoltaRebuildWorkerResumeKernelTest extends KernelTestBase {
    * {@inheritdoc}
    */
   protected static $modules = [
-    'system', 'user', 'scolta', 'node', 'filter', 'field', 'text', 'dblog',
+    'system', 'user', 'scolta', 'scolta_ui', 'node', 'filter', 'field', 'text', 'dblog',
   ];
 
   /**

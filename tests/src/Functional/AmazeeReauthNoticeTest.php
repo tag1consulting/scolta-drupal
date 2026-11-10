@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Functional;
 
-use Drupal\scolta\Cache\DrupalCacheDriver;
+use Drupal\scolta_ui\Cache\DrupalCacheDriver;
 use Drupal\Tests\BrowserTestBase;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 
@@ -24,7 +24,7 @@ class AmazeeReauthNoticeTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta'];
+  protected static $modules = ['scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
@@ -47,14 +47,16 @@ class AmazeeReauthNoticeTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->adminUser = $this->drupalCreateUser(['administer scolta']);
+    // The re-authentication notice is rendered by scolta_ui_page_top(),
+    // which gates on 'administer scolta ui'.
+    $this->adminUser = $this->drupalCreateUser(['administer scolta', 'administer scolta ui']);
 
     // Put the site on the Amazee.ai path: the provider selected and a stored
     // connection, with no explicit key, so ScoltaAiService wires the recovery
     // whose marker drives the notice.
     \Drupal::service('scolta.amazee_config_storage')
       ->store('sk-stored-token', 'https://llm.test.amazee.ai', 'test-region');
-    $this->config('scolta.settings')->set('ai_provider', 'amazee')->save();
+    $this->config('scolta_ui.settings')->set('ai_provider', 'amazee')->save();
   }
 
   /**
@@ -123,7 +125,7 @@ class AmazeeReauthNoticeTest extends BrowserTestBase {
    */
   public function testNoNoticeWhenAnotherProviderIsSelected(): void {
     $this->recovery()->flagUpgradeNeeded();
-    $this->config('scolta.settings')->set('ai_provider', 'anthropic')->save();
+    $this->config('scolta_ui.settings')->set('ai_provider', 'anthropic')->save();
     $this->drupalLogin($this->adminUser);
 
     $this->drupalGet('/admin/config/search/scolta');

@@ -6,10 +6,10 @@ namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\scolta\Cache\DrupalCacheDriver;
-use Drupal\scolta\Controller\AiApiControllerBase;
-use Drupal\scolta\Event\PromptEnrichEvent;
-use Drupal\scolta\Prompt\EventDrivenEnricher;
+use Drupal\scolta_ui\Cache\DrupalCacheDriver;
+use Drupal\scolta_ui\Controller\AiApiControllerBase;
+use Drupal\scolta_ui\Event\PromptEnrichEvent;
+use Drupal\scolta_ui\Prompt\EventDrivenEnricher;
 
 /**
  * What retires a cached AI response, and what leaves it alone.
@@ -27,14 +27,14 @@ class AiCacheInvalidationKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->installConfig(['system', 'scolta']);
+    $this->installConfig(['system', 'scolta', 'scolta_ui']);
   }
 
   /**
@@ -61,9 +61,24 @@ class AiCacheInvalidationKernelTest extends KernelTestBase {
     $driver->set('scolta_expand_0_abc', ['terms' => ['math']], 3600);
     $this->assertSame(['terms' => ['math']], $driver->get('scolta_expand_0_abc'));
 
-    $this->config('scolta.settings')->set('ai_model', 'claude-haiku-5-5')->save();
+    $this->config('scolta_ui.settings')->set('ai_model', 'claude-haiku-5-5')->save();
 
-    $this->assertNull($driver->get('scolta_expand_0_abc'), 'A scolta.settings save must retire cached AI responses: the prompt they were generated with may have changed');
+    $this->assertNull($driver->get('scolta_expand_0_abc'), 'A scolta_ui.settings save must retire cached AI responses: the prompt they were generated with may have changed');
+  }
+
+  /**
+   * The backend's dimension names reach the prompt too.
+   *
+   * The sortable and filter dimension names stay in scolta.settings after the
+   * split, and the frontend reads them into the prompt from there.
+   */
+  public function testBuildSettingsSaveRetiresCachedAiResponses(): void {
+    $driver = $this->enrichedDriver();
+    $driver->set('scolta_expand_0_abc', ['terms' => ['math']], 3600);
+
+    $this->config('scolta.settings')->set('filter_fields', ['topic'])->save();
+
+    $this->assertNull($driver->get('scolta_expand_0_abc'), 'A scolta.settings save must retire cached AI responses: the filter and sort dimension names are part of the prompt');
   }
 
   public function testSiteNameSaveRetiresCachedAiResponses(): void {
@@ -103,7 +118,7 @@ class AiCacheInvalidationKernelTest extends KernelTestBase {
 
     // The seeded config tags are still there: a tag merge only accumulates.
     $driver->set('scolta_expand_0_def', ['terms' => ['math']], 3600);
-    $this->config('scolta.settings')->set('ai_model', 'claude-haiku-5-5')->save();
+    $this->config('scolta_ui.settings')->set('ai_model', 'claude-haiku-5-5')->save();
     $this->assertNull($driver->get('scolta_expand_0_def'));
   }
 

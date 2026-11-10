@@ -1,0 +1,6 @@
+name: 'Scolta legacy enricher test'
+type: module
+description: 'A prompt enricher still written against the pre-split PromptEnrichEvent namespace.'
+package: Testing
+dependencies:
+  - scolta:scolta_ui

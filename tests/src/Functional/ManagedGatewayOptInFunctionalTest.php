@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Functional;
 
-use Drupal\scolta\Cache\DrupalCacheDriver;
+use Drupal\scolta_ui\Cache\DrupalCacheDriver;
 use Drupal\Tests\BrowserTestBase;
 use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 
@@ -23,7 +23,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta'];
+  protected static $modules = ['scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
@@ -54,7 +54,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->adminUser = $this->drupalCreateUser(['administer scolta']);
+    $this->adminUser = $this->drupalCreateUser(['administer scolta', 'administer scolta ui']);
     // The explicit-key paths outrank everything and are covered by the source
     // matrix; these cases are about the gateway, so make sure none is set.
     $this->originalEnvKey = getenv('SCOLTA_API_KEY');
@@ -92,7 +92,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
 
     $this->assertSame(
       'anthropic',
-      $this->config('scolta.settings')->get('ai_provider'),
+      $this->config('scolta_ui.settings')->get('ai_provider'),
       'The selected provider must be saved'
     );
     $this->assertNull(
@@ -187,7 +187,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
       'litellm_api_url' => self::GATEWAY_URL,
       'region' => 'test-region',
     ]);
-    \Drupal::configFactory()->getEditable('scolta.settings')
+    \Drupal::configFactory()->getEditable('scolta_ui.settings')
       ->set('amazee_model', self::GATEWAY_ALIAS)
       ->save();
   }
@@ -196,7 +196,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
    * Save an AI provider selection.
    */
   private function selectProvider(string $provider): void {
-    \Drupal::configFactory()->getEditable('scolta.settings')
+    \Drupal::configFactory()->getEditable('scolta_ui.settings')
       ->set('ai_provider', $provider)
       ->save();
   }

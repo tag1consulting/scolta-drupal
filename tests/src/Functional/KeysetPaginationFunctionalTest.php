@@ -28,7 +28,7 @@ class KeysetPaginationFunctionalTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta', 'node', 'filter', 'field'];
+  protected static $modules = ['scolta', 'scolta_ui', 'node', 'filter', 'field'];
 
   /**
    * {@inheritdoc}

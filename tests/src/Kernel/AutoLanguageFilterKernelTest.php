@@ -6,7 +6,7 @@ namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\Core\Form\FormState;
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\scolta\Form\ScoltaSettingsForm;
+use Drupal\scolta_ui\Form\ScoltaSettingsForm;
 
 /**
  * The auto_language_filter setting is declared, editable, and emitted.
@@ -23,14 +23,14 @@ class AutoLanguageFilterKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->installConfig(['system', 'scolta']);
+    $this->installConfig(['system', 'scolta', 'scolta_ui']);
   }
 
   /**
@@ -43,7 +43,7 @@ class AutoLanguageFilterKernelTest extends KernelTestBase {
     $this->container->get('form_builder')->submitForm(ScoltaSettingsForm::class, $formState);
     $this->assertSame([], $formState->getErrors());
 
-    $this->assertTrue($this->config('scolta.settings')->get('auto_language_filter'));
+    $this->assertTrue($this->config('scolta_ui.settings')->get('auto_language_filter'));
     $this->assertTrue($this->jsScoringConfig()['AUTO_LANGUAGE_FILTER']);
   }
 
@@ -53,13 +53,13 @@ class AutoLanguageFilterKernelTest extends KernelTestBase {
   public function testUpdateHookAddsDefaultAndKeepsExistingValue(): void {
     $this->container->get('module_handler')->loadInclude('scolta', 'install');
 
-    $this->config('scolta.settings')->clear('auto_language_filter')->save();
+    $this->config('scolta_ui.settings')->clear('auto_language_filter')->save();
     scolta_update_10009();
-    $this->assertFalse($this->config('scolta.settings')->get('auto_language_filter'));
+    $this->assertFalse($this->config('scolta_ui.settings')->get('auto_language_filter'));
 
-    $this->config('scolta.settings')->set('auto_language_filter', TRUE)->save();
+    $this->config('scolta_ui.settings')->set('auto_language_filter', TRUE)->save();
     scolta_update_10009();
-    $this->assertTrue($this->config('scolta.settings')->get('auto_language_filter'));
+    $this->assertTrue($this->config('scolta_ui.settings')->get('auto_language_filter'));
   }
 
   /**

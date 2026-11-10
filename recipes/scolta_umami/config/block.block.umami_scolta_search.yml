@@ -2,7 +2,7 @@ langcode: en
 status: true
 dependencies:
   module:
-    - scolta
+    - scolta_ui
   theme:
     - umami
 id: umami_scolta_search
@@ -15,5 +15,5 @@ settings:
   id: scolta_search
   label: 'Search'
   label_display: '0'
-  provider: scolta
+  provider: scolta_ui
 visibility: {}

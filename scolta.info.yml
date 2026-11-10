@@ -3,6 +3,6 @@ type: module
 description: 'AI-powered search with Pagefind — a PHP-built index searched client-side.'
 core_version_requirement: ^10.5 || ^11
 package: Search
-configure: scolta.settings
+configure: scolta.index_settings
 version: '2.0.0-dev'
 lifecycle: stable

@@ -1,0 +1,43 @@
+<?php
+
+/**
+ * @file
+ * Install and uninstall hooks for the Scolta AI Search UI module.
+ */
+
+use Drupal\user\RoleInterface;
+
+/**
+ * Implements hook_install().
+ */
+function scolta_ui_install() {
+  // The browser bundle is what this module exists to serve, so it deploys
+  // here rather than with the backend. A site that only builds an index has
+  // no browser to hand it to and no reason to write it into public files.
+  \Drupal::service('scolta.asset_deployer')->deploy();
+
+  // POLICY: installing the module configures no AI provider. The managed
+  // Amazee.ai gateway is enabled by an explicit operator action — selecting it
+  // on the AI settings screen and completing the connect flow — so nothing
+  // here reaches out to a gateway or writes credentials.
+  //
+  // Grant 'use scolta ai' to authenticated users only. Logged-in AI search is
+  // the intended out-of-the-box behavior; the anonymous role is deliberately
+  // left without it, so the cost-bearing AI endpoints are not open to
+  // unauthenticated traffic until a site admin decides otherwise at
+  // Administration › People › Permissions.
+  user_role_grant_permissions(RoleInterface::AUTHENTICATED_ID, ['use scolta ai']);
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function scolta_ui_uninstall() {
+  // Remove the deployed browser bundle from the public files directory.
+  \Drupal::service('scolta.asset_deployer')->remove();
+
+  // The managed-gateway credential and its budget notice are AI state, so
+  // they belong to this module's lifecycle and not the index builder's.
+  \Drupal::state()->delete('scolta.amazee.credentials');
+  \Drupal::state()->delete('scolta.amazee.budget_notice_time');
+}

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\scolta\Functional;
 
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use Drupal\Tests\BrowserTestBase;
 
 /**
@@ -31,7 +31,7 @@ class AmazeeStoredTokenDecryptionTest extends BrowserTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['scolta'];
+  protected static $modules = ['scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
@@ -159,7 +159,7 @@ class AmazeeStoredTokenDecryptionTest extends BrowserTestBase {
     \Drupal::service('scolta.amazee_config_storage')
       ->store(self::TOKEN, self::GATEWAY_URL, 'test-region');
 
-    \Drupal::configFactory()->getEditable('scolta.settings')
+    \Drupal::configFactory()->getEditable('scolta_ui.settings')
       ->set('ai_provider', 'amazee')
       ->set('amazee_model', 'claude-4-5-sonnet')
       ->set('amazee_expansion_model', 'claude-3-5-haiku')

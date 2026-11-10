@@ -7,8 +7,8 @@ namespace Drupal\Tests\scolta\Kernel;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\StringTranslation\TranslationInterface;
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\scolta\Form\ScoltaSettingsForm;
-use Drupal\scolta\Service\ScoltaAiService;
+use Drupal\scolta_ui\Form\ScoltaSettingsForm;
+use Drupal\scolta_ui\Service\ScoltaAiService;
 use Symfony\Component\Yaml\Yaml;
 use Tag1\Scolta\Config\ScoltaConfig;
 
@@ -35,14 +35,14 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'scolta'];
+  protected static $modules = ['system', 'user', 'scolta', 'scolta_ui'];
 
   /**
    * {@inheritdoc}
    *
    * The top-level-key-precedence style writes below (setNestedValue() on a
    * copy of the install defaults, then realGetConfig()) can produce
-   * scolta.settings states the schema does not declare — see
+   * scolta_ui.settings states the schema does not declare — see
    * ScoltaAiServiceConfigMappingKernelTest for why that state is real
    * (drush config:set bypasses schema enforcement) and needs to be
    * constructible here too.
@@ -53,7 +53,7 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
 
   protected function setUp(): void {
     parent::setUp();
-    $this->installConfig(['scolta']);
+    $this->installConfig(['scolta', 'scolta_ui']);
     $this->moduleRoot = dirname(__DIR__, 3);
   }
 
@@ -323,29 +323,26 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
    *
    * Runs the real validateForm() against a stub form state: getValue() feeds
    * the candidate URL and setErrorByName() records what the form flags. The
-   * form object is built without its constructor; only the two services the
-   * entity-types rule reads are set on it.
+   * form object is built without its constructor: nothing validateForm()
+   * reads needs a service. The entity-types rule moved to the index settings
+   * form with the setting (see ScoltaIndexSettingsFormKernelTest).
    *
    * @dataProvider urlValidationProvider
    */
   public function testValidateFormBaseUrlValidation(string $url, bool $shouldBeValid): void {
-    /** @var \Drupal\scolta\Form\ScoltaSettingsForm $formObject */
+    /** @var \Drupal\scolta_ui\Form\ScoltaSettingsForm $formObject */
     $reflection = new \ReflectionClass(ScoltaSettingsForm::class);
     $formObject = $reflection->newInstanceWithoutConstructor();
     $formObject->setStringTranslation($this->createStub(TranslationInterface::class));
-    // The entity-types rule reads the configured and the listable types.
-    $reflection->getProperty('contentGatherer')->setValue($formObject, $this->container->get('scolta.content_gatherer'));
-    $reflection->getProperty('entityTypeManager')->setValue($formObject, $this->container->get('entity_type.manager'));
 
     $errors = [];
     $formState = $this->createStub(FormStateInterface::class);
-    // ai_base_url carries the candidate; one entity type is checked and
-    // every other validated field (the recency curve, the pipe-separated
-    // mappings) reads as empty so only the URL rule can fire.
+    // ai_base_url carries the candidate; every other validated field (the
+    // origins, the recency curve, the pipe-separated descriptions) reads as
+    // empty so only the URL rule can fire.
     $formState->method('getValue')->willReturnCallback(
       static fn ($key, $default = NULL) => match ($key) {
         'ai_base_url' => $url,
-        'entity_types' => ['node' => ['enabled' => 1, 'bundles' => []]],
         default => '',
       }
     );
@@ -386,21 +383,67 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
     ];
   }
 
+  /**
+   * validateForm() accepts <local>, empty or an http(s) URL for both origins.
+   *
+   * An empty origin is normalized to <local> on save, so it is accepted here
+   * rather than rejected as malformed.
+   *
+   * @dataProvider originValidationProvider
+   */
+  public function testValidateFormOriginValidation(string $field, string $value, bool $shouldBeValid): void {
+    $reflection = new \ReflectionClass(ScoltaSettingsForm::class);
+    $formObject = $reflection->newInstanceWithoutConstructor();
+    $formObject->setStringTranslation($this->createStub(TranslationInterface::class));
+
+    $errors = [];
+    $formState = $this->createStub(FormStateInterface::class);
+    $formState->method('getValue')->willReturnCallback(
+      static fn ($key, $default = NULL) => $key === $field ? $value : ''
+    );
+    $formState->method('setErrorByName')->willReturnCallback(
+      function ($name, $message = '') use (&$errors, $formState) {
+        $errors[] = $name;
+        return $formState;
+      }
+    );
+
+    $form = [];
+    $formObject->validateForm($form, $formState);
+
+    $this->assertSame($shouldBeValid ? [] : [$field], $errors);
+  }
+
+  /**
+   * @return array<string, array{string, string, bool}>
+   */
+  public static function originValidationProvider(): array {
+    $cases = [];
+    foreach (['index_origin', 'ai_origin'] as $field) {
+      $cases["{$field} local"] = [$field, '<local>', TRUE];
+      $cases["{$field} empty"] = [$field, '', TRUE];
+      $cases["{$field} https"] = [$field, 'https://search.example.com', TRUE];
+      $cases["{$field} relative path"] = [$field, '/pagefind', FALSE];
+      $cases["{$field} ftp"] = [$field, 'ftp://search.example.com', FALSE];
+    }
+    return $cases;
+  }
+
   // -------------------------------------------------------------------
   // Helpers.
   // -------------------------------------------------------------------
 
   private function getInstallDefaults(): array {
-    return Yaml::parseFile($this->moduleRoot . '/config/install/scolta.settings.yml');
+    return Yaml::parseFile($this->moduleRoot . '/modules/scolta_ui/config/install/scolta_ui.settings.yml');
   }
 
   /**
-   * Build a real ScoltaAiService over the given full scolta.settings state
+   * Build a real ScoltaAiService over the given full scolta_ui.settings state
    * and return its real getConfig() — see ScoltaAiServiceConfigMappingKernelTest
    * for why this replaced a hand-copied flattening reimplementation.
    */
   private function realGetConfig(array $drupalConfig, string $apiKey = 'test-key'): ScoltaConfig {
-    $this->config('scolta.settings')->setData($drupalConfig)->save();
+    $this->config('scolta_ui.settings')->setData($drupalConfig)->save();
     putenv('SCOLTA_API_KEY=' . $apiKey);
 
     $service = new ScoltaAiService(
@@ -468,7 +511,7 @@ class ScoltaSettingsFormKernelTest extends KernelTestBase {
     $this->assertArrayHasKey(
       'show_attribution',
       $defaults,
-      'show_attribution must be present in config/install/scolta.settings.yml'
+      'show_attribution must be present in config/install/scolta_ui.settings.yml'
     );
     $this->assertFalse(
       $defaults['show_attribution'],

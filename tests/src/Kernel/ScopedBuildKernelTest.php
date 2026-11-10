@@ -40,7 +40,7 @@ class ScopedBuildKernelTest extends KernelTestBase {
    * {@inheritdoc}
    */
   protected static $modules = [
-    'system', 'user', 'scolta', 'node', 'filter', 'field', 'text', 'dblog',
+    'system', 'user', 'scolta', 'scolta_ui', 'node', 'filter', 'field', 'text', 'dblog',
   ];
 
   /**
@@ -118,8 +118,6 @@ class ScopedBuildKernelTest extends KernelTestBase {
     $commands = new ScoltaCommands(
       $this->container->get('config.factory'),
       $this->container->get('state'),
-      $this->container->get('cache.default'),
-      $this->container->get('scolta.ai_service'),
       $this->container->get('stream_wrapper_manager'),
       $this->container->get('scolta.content_gatherer'),
       $this->container->get('file_system'),
