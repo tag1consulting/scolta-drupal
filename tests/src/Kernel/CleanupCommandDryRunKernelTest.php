@@ -85,8 +85,7 @@ class CleanupCommandDryRunKernelTest extends KernelTestBase {
   private function commands(): ScoltaCommands {
     $commands = new ScoltaCommands(
       \Drupal::service('config.factory'),
-      \Drupal::service('state'),
-      \Drupal::service('cache.default'),
+      \Drupal::service('cache.scolta'),
       \Drupal::service('scolta.ai_service'),
       \Drupal::service('stream_wrapper_manager'),
       \Drupal::service('scolta.content_gatherer'),

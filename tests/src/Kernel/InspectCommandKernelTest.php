@@ -103,8 +103,7 @@ class InspectCommandKernelTest extends KernelTestBase {
   private function commands(): ScoltaCommands {
     $commands = new ScoltaCommands(
       $this->container->get('config.factory'),
-      $this->container->get('state'),
-      $this->container->get('cache.default'),
+      $this->container->get('cache.scolta'),
       $this->container->get('scolta.ai_service'),
       $this->container->get('stream_wrapper_manager'),
       $this->container->get('scolta.content_gatherer'),

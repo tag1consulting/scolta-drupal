@@ -573,6 +573,18 @@ function scolta_reset_index_state(string $reason) {
 }
 
 /**
+ * Move Scolta's cache entries into the new cache.scolta bin.
+ *
+ * The bin is created on first write. Entries Scolta left in cache.default
+ * expire on their TTL; the scolta.generation counter that prefixed them is
+ * no longer read, so it is deleted.
+ */
+function scolta_update_10012() {
+  \Drupal::state()->delete('scolta.generation');
+  return t('Scolta now caches in its own cache.scolta bin.');
+}
+
+/**
  * Delete everything inside a directory, keeping the directory itself.
  *
  * @param string $uri

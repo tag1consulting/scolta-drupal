@@ -7,9 +7,12 @@ namespace Drupal\Tests\scolta\Kernel;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\scolta\Cache\DrupalCacheDriver;
+use Drupal\scolta\Commands\ScoltaCommands;
 use Drupal\scolta\Controller\AiApiControllerBase;
 use Drupal\scolta\Event\PromptEnrichEvent;
 use Drupal\scolta\Prompt\EventDrivenEnricher;
+use Drush\Log\DrushLoggerManager;
+use Symfony\Component\Console\Output\NullOutput;
 
 /**
  * What retires a cached AI response, and what leaves it alone.
@@ -18,7 +21,7 @@ use Drupal\scolta\Prompt\EventDrivenEnricher;
  * their system prompt is built from and the configured TTL, hand it to both
  * the prompt enricher and the cache driver, and let PromptEnrichEvent
  * subscribers refine it. Each test here runs that pipeline against the real
- * cache.default bin: enrich, then write, then see what retires the entry.
+ * cache.scolta bin: enrich, then write, then see what retires the entry.
  *
  * @group scolta
  */
@@ -53,7 +56,7 @@ class AiCacheInvalidationKernelTest extends KernelTestBase {
       ->setCacheMaxAge(3600);
     (new EventDrivenEnricher($this->container->get('event_dispatcher'), $cacheability))
       ->enrich('System prompt.', 'expand_query', ['query' => 'math']);
-    return new DrupalCacheDriver($this->container->get('cache.default'), $cacheability);
+    return new DrupalCacheDriver($this->container->get('cache.scolta'), $cacheability);
   }
 
   public function testSettingsSaveRetiresCachedAiResponses(): void {
@@ -128,7 +131,7 @@ class AiCacheInvalidationKernelTest extends KernelTestBase {
     });
     $driver->set('scolta_expand_0_abc', ['terms' => ['math']], 3600);
 
-    $item = $this->container->get('cache.default')->get('scolta_expand_0_abc');
+    $item = $this->container->get('cache.scolta')->get('scolta_expand_0_abc');
     $this->assertNotFalse($item);
     $this->assertEqualsWithDelta(time() + 60, $item->expire, 5, 'The entry must expire at the subscriber\'s max-age, not the configured TTL');
   }
@@ -143,6 +146,37 @@ class AiCacheInvalidationKernelTest extends KernelTestBase {
     $driver->set('scolta_expand_0_abc', ['terms' => ['math']], 3600);
 
     $this->assertNull($driver->get('scolta_expand_0_abc'), 'A response that varies by a cache context cannot be keyed for it and must not be cached');
+  }
+
+  /**
+   * `drush scolta:clear-cache` empties Scolta's bin and nothing else.
+   */
+  public function testClearCacheEmptiesOnlyTheScoltaBin(): void {
+    $this->enrichedDriver()->set('scolta_expand_0_abc', ['terms' => ['math']], 3600);
+    $this->container->get('cache.default')->set('other_module_entry', 'precious');
+
+    $c = $this->container;
+    $commands = new ScoltaCommands(
+      $c->get('config.factory'),
+      $c->get('cache.scolta'),
+      $c->get('scolta.ai_service'),
+      $c->get('stream_wrapper_manager'),
+      $c->get('scolta.content_gatherer'),
+      $c->get('file_system'),
+      $c->get('cache_tags.invalidator'),
+      $c->get('scolta.index_locator'),
+      $c->get('scolta.index_build_runner'),
+      $c->get('queue'),
+      $c->get('entity_type.manager'),
+      $c->get('scolta.reindexer'),
+      $c->get('router.no_access_checks'),
+    );
+    $commands->setLogger(new DrushLoggerManager());
+    $commands->setOutput(new NullOutput());
+    $commands->clearCache();
+
+    $this->assertFalse($c->get('cache.scolta')->get('scolta_expand_0_abc'), 'clear-cache must empty the cache.scolta bin');
+    $this->assertNotFalse($c->get('cache.default')->get('other_module_entry'), 'clear-cache must leave other modules\' entries alone');
   }
 
 }

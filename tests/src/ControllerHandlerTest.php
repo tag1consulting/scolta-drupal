@@ -6,7 +6,6 @@ namespace Drupal\scolta\Tests;
 
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Flood\FloodInterface;
-use Drupal\Core\State\StateInterface;
 use Drupal\scolta\Controller\AiApiControllerBase;
 use Drupal\scolta\Controller\ExpandQueryController;
 use Drupal\scolta\Service\ScoltaAiService;
@@ -30,8 +29,7 @@ class ControllerHandlerTest extends TestCase {
       'scolta.ai_service' => $this->createStub(ScoltaAiService::class),
       'event_dispatcher' => $this->createStub(EventDispatcherInterface::class),
       'flood' => $this->createStub(FloodInterface::class),
-      'cache.default' => $this->createStub(CacheBackendInterface::class),
-      'state' => $this->createStub(StateInterface::class),
+      'cache.scolta' => $this->createStub(CacheBackendInterface::class),
     ];
     $requested = [];
     $container = $this->createStub(ContainerInterface::class);

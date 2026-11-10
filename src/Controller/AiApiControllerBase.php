@@ -8,7 +8,6 @@ use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Flood\FloodInterface;
-use Drupal\Core\State\StateInterface;
 use Drupal\scolta\Cache\DrupalCacheDriver;
 use Drupal\scolta\Prompt\EventDrivenEnricher;
 use Drupal\scolta\Service\ScoltaAiService;
@@ -85,7 +84,6 @@ abstract class AiApiControllerBase extends ControllerBase {
     protected readonly EventDispatcherInterface $eventDispatcher,
     protected readonly FloodInterface $flood,
     protected readonly ?CacheBackendInterface $cache = NULL,
-    protected readonly ?StateInterface $state = NULL,
   ) {}
 
   /**
@@ -96,8 +94,7 @@ abstract class AiApiControllerBase extends ControllerBase {
       $container->get('scolta.ai_service'),
       $container->get('event_dispatcher'),
       $container->get('flood'),
-      $container->get('cache.default'),
-      $container->get('state'),
+      $container->get('cache.scolta'),
     );
   }
 
@@ -209,14 +206,12 @@ abstract class AiApiControllerBase extends ControllerBase {
   /**
    * {@inheritdoc}
    *
-   * The generation is a manual kill switch, bumped only by
-   * `drush scolta:clear-cache`. Index builds, full or incremental, leave it
-   * alone: see CACHE_TAGS for why they do not need to.
+   * Always 0. Scolta's entries live in their own cache.scolta bin, which
+   * `drush scolta:clear-cache` empties outright, so no key prefix is needed
+   * to orphan them. Index builds leave the bin alone: see CACHE_TAGS.
    */
   protected function getCacheGeneration(): int {
-    return $this->state !== NULL
-      ? (int) $this->state->get('scolta.generation', 0)
-      : 0;
+    return 0;
   }
 
   /**

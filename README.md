@@ -78,7 +78,7 @@ button rebuilds it from the browser.
 | `drush scolta:request-build` (`srb`) | Queue one full rebuild for the next `drush queue:run scolta_rebuild` tick; adds nothing if a request is already waiting. For operators and deploy scripts |
 | `drush scolta:build --entity-ids=12,34` | Scope the build to these entities; IDs that cannot be loaded are logged and skipped. `--bundle` is ignored. See **Scoped builds** below |
 | `drush scolta:finalize` (`sf`) | Merge chunks into the final search index |
-| `drush scolta:clear-cache` (`scc`) | Clear expansion and summary caches |
+| `drush scolta:clear-cache` (`scc`) | Empty the `cache.scolta` bin (AI expansion and summary responses) |
 | `drush scolta:check-setup` (`scs`) | Verify dependencies and configuration |
 | `drush scolta:status` (`sst`) | Show current index, in-progress build, indexer, and AI provider status; YAML by default, `--format=json` for machines |
 | `drush scolta:reindex <entity-type> [<bundle>]` (`sri`) | Queue entities for reindexing without re-saving them, for when an alter hook or field mapping changed but the content did not. `--ids=12,34` for specific entities. Refused above `incremental.max_changed_items`; use `drush scolta:build --force` for a whole corpus, or `scolta_queue_full_rebuild(__FUNCTION__, TRUE)` from an update hook |

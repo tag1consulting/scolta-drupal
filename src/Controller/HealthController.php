@@ -87,7 +87,7 @@ class HealthController extends ControllerBase {
       $container->get('scolta.ai_service'),
       $container->get('stream_wrapper_manager'),
       $container->get('scolta.index_locator'),
-      $container->get('cache.default'),
+      $container->get('cache.scolta'),
     );
   }
 
