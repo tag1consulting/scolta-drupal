@@ -170,7 +170,7 @@ class ManagedGatewayOptInFunctionalTest extends BrowserTestBase {
   private function recovery(): KeyExpiryRecovery {
     return new KeyExpiryRecovery(
       \Drupal::service('scolta.amazee_config_storage'),
-      new DrupalCacheDriver(\Drupal::cache('scolta')),
+      new DrupalCacheDriver(\Drupal::cache()),
     );
   }
 

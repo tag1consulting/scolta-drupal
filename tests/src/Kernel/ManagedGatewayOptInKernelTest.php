@@ -322,7 +322,7 @@ class ManagedGatewayOptInKernelTest extends KernelTestBase {
       NULL,
       \Drupal::service('scolta.amazee_config_storage'),
       NULL,
-      \Drupal::cache('scolta'),
+      \Drupal::cache(),
     );
   }
 

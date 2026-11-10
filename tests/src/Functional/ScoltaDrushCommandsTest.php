@@ -116,7 +116,7 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
    * without requiring a separate /health request.
    */
   public function testStatusReportsARecordedAuthFailure(): void {
-    $this->container->get('cache.scolta')->set('scolta_amazee_auth_failure', time());
+    $this->container->get('cache.default')->set('scolta_amazee_auth_failure', time());
 
     $this->drush('scolta:status');
     $status = Yaml::parse($this->getOutput());

@@ -13,6 +13,7 @@ use Drupal\scolta\Event\PromptEnrichEvent;
 use Drupal\scolta\Prompt\EventDrivenEnricher;
 use Drush\Log\DrushLoggerManager;
 use Symfony\Component\Console\Output\NullOutput;
+use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 
 /**
  * What retires a cached AI response, and what leaves it alone.
@@ -150,10 +151,14 @@ class AiCacheInvalidationKernelTest extends KernelTestBase {
 
   /**
    * `drush scolta:clear-cache` empties Scolta's bin and nothing else.
+   *
+   * In particular not the Amazee auth-failure marker in cache.default:
+   * clearing caches must not make a rejected key look healthy.
    */
   public function testClearCacheEmptiesOnlyTheScoltaBin(): void {
     $this->enrichedDriver()->set('scolta_expand_0_abc', ['terms' => ['math']], 3600);
     $this->container->get('cache.default')->set('other_module_entry', 'precious');
+    $this->container->get('scolta.amazee_cache_driver')->set(KeyExpiryRecovery::CACHE_KEY_AUTH_FAILURE, time(), 3600);
 
     $c = $this->container;
     $commands = new ScoltaCommands(
@@ -177,6 +182,7 @@ class AiCacheInvalidationKernelTest extends KernelTestBase {
 
     $this->assertFalse($c->get('cache.scolta')->get('scolta_expand_0_abc'), 'clear-cache must empty the cache.scolta bin');
     $this->assertNotFalse($c->get('cache.default')->get('other_module_entry'), 'clear-cache must leave other modules\' entries alone');
+    $this->assertTrue($c->get('scolta.ai_service')->getAmazeeAuthFailure()['failing'], 'clear-cache must leave the Amazee auth-failure marker alone');
   }
 
 }

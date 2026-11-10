@@ -14,7 +14,6 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\ParamConverter\ParamNotConvertedException;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
-use Drupal\scolta\Cache\DrupalCacheDriver;
 use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
 use Drupal\scolta\Progress\DrushProgressReporter;
 use Drupal\scolta\Service\IndexBuildRunner;
@@ -27,7 +26,6 @@ use Drush\Commands\DrushCommands;
 use Symfony\Component\Routing\Exception\MethodNotAllowedException;
 use Symfony\Component\Routing\Exception\ResourceNotFoundException;
 use Symfony\Component\Routing\Matcher\UrlMatcherInterface;
-use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\CborDecoder;
@@ -708,7 +706,8 @@ class ScoltaCommands extends DrushCommands {
   /**
    * Clear Scolta caches (expansion and summary).
    *
-   * Empties the cache.scolta bin, which holds only Scolta's entries. A
+   * Empties the cache.scolta bin, which holds only cached AI responses. The
+   * Amazee auth-failure marker lives in cache.default and is left alone. A
    * scolta.settings or system.site save already retires the AI entries
    * through their cache tags, and index builds do not touch them at all (see
    * AiApiControllerBase::CACHE_TAGS), so this is for everything else: a new
@@ -903,11 +902,10 @@ class ScoltaCommands extends DrushCommands {
     // than only surfacing once someone happens to check /health. A cached
     // marker, not a live probe — see KeyExpiryRecovery and
     // docs/HEALTH_REFERENCE.md in scolta-php.
-    $cacheDriver = new DrupalCacheDriver($this->cache);
-    $authFailing = (bool) $cacheDriver->get(KeyExpiryRecovery::CACHE_KEY_AUTH_FAILURE);
-    $providerRow['auth_failing'] = $authFailing;
-    $providerRow['auth_failing_since'] = $authFailing
-      ? (($since = KeyExpiryRecovery::readFailureTimestamp($cacheDriver)) !== NULL ? date('c', $since) : NULL)
+    $authFailure = $this->aiService->getAmazeeAuthFailure();
+    $providerRow['auth_failing'] = $authFailure['failing'];
+    $providerRow['auth_failing_since'] = $authFailure['failing'] && $authFailure['since'] !== NULL
+      ? date('c', $authFailure['since'])
       : NULL;
 
     $status['ai_provider'] = $providerRow;

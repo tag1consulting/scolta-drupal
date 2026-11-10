@@ -37,8 +37,7 @@ services:
     arguments: ['@scolta.amazee_client', '@scolta.amazee_config_storage']
   Tag1\Scolta\AiProvider\Amazee\AmazeeAccountUpgrader: '@scolta.amazee_account_upgrader'
 
-  # Scolta's own bin: cached AI responses and the Amazee re-authentication
-  # marker the admin notice and /health observe. Its own bin so
+  # Scolta's own bin, holding cached AI responses only. Its own bin so
   # `drush scolta:clear-cache` can empty it without touching other modules'
   # entries, and so a site can route it to its own backend.
   cache.scolta:
@@ -48,9 +47,13 @@ services:
     factory: ['@cache_factory', 'get']
     arguments: [scolta]
 
+  # The default bin, where ScoltaAiService records the re-authentication
+  # marker the admin notice and /health observe. Not cache.scolta: the marker
+  # is health state rather than a cached response, and clearing Scolta's
+  # caches must not make a rejected key look healthy.
   scolta.amazee_cache_driver:
     class: Drupal\scolta\Cache\DrupalCacheDriver
-    arguments: ['@cache.scolta']
+    arguments: ['@cache.default']
   Drupal\scolta\Cache\DrupalCacheDriver: '@scolta.amazee_cache_driver'
 
   scolta.amazee_key_expiry_recovery:
@@ -65,7 +68,7 @@ services:
 
   scolta.ai_service:
     class: Drupal\scolta\Service\ScoltaAiService
-    arguments: ['@http_client', '@config.factory', '@logger.channel.scolta', '@scolta.amazee_budget_handler', '@scolta.amazee_config_storage', '@?ai.provider', '@cache.scolta']
+    arguments: ['@http_client', '@config.factory', '@logger.channel.scolta', '@scolta.amazee_budget_handler', '@scolta.amazee_config_storage', '@?ai.provider', '@cache.default']
   Drupal\scolta\Service\ScoltaAiService: '@scolta.ai_service'
 
   scolta.content_gatherer:

@@ -58,12 +58,12 @@ class AmazeeReauthNoticeTest extends BrowserTestBase {
   }
 
   /**
-   * Build a recovery over the same store + cache bin the service uses.
+   * Build a recovery over the same store + default cache the service uses.
    */
   private function recovery(): KeyExpiryRecovery {
     return new KeyExpiryRecovery(
       \Drupal::service('scolta.amazee_config_storage'),
-      new DrupalCacheDriver(\Drupal::cache('scolta')),
+      new DrupalCacheDriver(\Drupal::cache()),
     );
   }
 
