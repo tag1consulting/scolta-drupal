@@ -6,6 +6,9 @@ This project uses [Semantic Versioning](https://semver.org/). Each Scolta packag
 
 ## [Unreleased]
 
+### Changed
+- **Scolta caches AI responses in its own `cache.scolta` bin instead of `cache.default`.** `drush scolta:clear-cache` now empties the bin outright, and a site can route it to its own backend via `$settings['cache']['bins']['scolta']`. The `scolta.generation` counter that used to orphan entries in the shared bin is gone (`scolta_update_10012()` deletes it), and `scolta:status` no longer reports a `cache.generation` value. Existing entries in `cache.default` expire on their TTL. The Amazee auth-failure marker stays in `cache.default`, so clearing Scolta's caches does not make a rejected key look healthy; `scolta:status` reads it through the new `ScoltaAiService::getAmazeeAuthFailure()`. `ScoltaCommands` and `AiApiControllerBase` no longer take the state service.
+
 ### Fixed
 - **A queue tick refused the state-directory build lock is requeued for 60 s instead of being counted as a failed segment (`ScoltaRebuildWorker::finish()`).** On Kubernetes a deploy that kills a build mid-merge leaves a lock record whose heartbeat stays fresh for `BuildState::STALE_LOCK_SECONDS`, and the Drupal lock that normally turns a tick back at the door does not survive the pod replacement, so every tick in that five-minute window reached the orchestrator and was refused. Three refusals exhausted `MAX_SEGMENT_FAILURES`, the marker was deleted, and the resumable build was abandoned for a fresh full one (sharemylesson.com, 2026-10-28). Requires scolta-php with `StatusReport::isLockContention()` (tag1consulting/scolta-php#389).
 

@@ -838,8 +838,8 @@ class ScoltaRebuildWorker extends QueueWorkerBase implements ContainerFactoryPlu
    * Retire render caches that embed the index: the search block's.
    *
    * Cached AI responses are deliberately left alone. Until 2.0 every build,
-   * the hourly incremental update included, also bumped scolta.generation,
-   * which prefixes every expand/summarize cache key, so the 30-day AI cache
+   * the hourly incremental update included, also bumped a generation counter
+   * that prefixed every expand/summarize cache key, so the 30-day AI cache
    * lived for about an hour on a busy site and repeat queries went back to
    * the provider each time. An expansion depends on the query and the
    * prompt, not the index; a summary's key hashes the excerpts the browser

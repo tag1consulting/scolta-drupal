@@ -573,6 +573,18 @@ function scolta_reset_index_state(string $reason) {
 }
 
 /**
+ * Delete the scolta.generation state key.
+ *
+ * Scolta now caches AI responses in its own cache.scolta bin, which
+ * scolta:clear-cache empties directly, so the counter is no longer read.
+ * Entries Scolta left in cache.default expire on their TTL.
+ */
+function scolta_update_10012() {
+  \Drupal::state()->delete('scolta.generation');
+  return t('Deleted the unused scolta.generation state key.');
+}
+
+/**
  * Delete everything inside a directory, keeping the directory itself.
  *
  * @param string $uri
