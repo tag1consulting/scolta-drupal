@@ -15,6 +15,7 @@ site_name: ''
 site_description: 'website'
 sortable_fields: []
 sortable_field_descriptions: {}
+sort_options: []
 filter_fields: []
 filter_field_descriptions: {}
 hide_empty_facets: true

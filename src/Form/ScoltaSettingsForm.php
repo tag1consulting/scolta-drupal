@@ -484,6 +484,18 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#description' => $this->t('One <code>field_name|Description</code> per line. Descriptions help the AI map natural language to field names. Example: <code>word_count|Article length in words — higher means more comprehensive coverage</code>.'),
     ];
 
+    $sortOptionsDisplay = '';
+    foreach ($config->get('sort_options') ?? [] as $option) {
+      $sortOptionsDisplay .= ($option['field'] ?? '') . ':' . ($option['direction'] ?? 'desc') . '|' . ($option['label'] ?? '') . "\n";
+    }
+    $form['content']['sort_options'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Sort options'),
+      '#default_value' => trim($sortOptionsDisplay),
+      '#rows' => 3,
+      '#description' => $this->t('The orders visitors can choose besides relevance, one <code>field:direction|Label</code> per line, direction <code>asc</code> or <code>desc</code>. Example: <code>date:desc|Newest</code>. When non-empty, a "Sort: Relevance | Newest" control is shown above the results. The field must be one the index can sort by: <code>date</code> (last changed), or a field mapped as sortable below.'),
+    ];
+
     $form['content']['filter_fields'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Filter fields'),
@@ -1468,6 +1480,16 @@ class ScoltaSettingsForm extends ConfigFormBase {
       }
     }
 
+    // Reject a sort option the bundle would drop, rather than saving a line
+    // that renders nothing.
+    foreach (explode("\n", (string) ($form_state->getValue('sort_options') ?? '')) as $line) {
+      $line = trim($line);
+      if ($line !== '' && preg_match('/^[A-Za-z0-9_-]+:(asc|desc)\|.*\S/', $line) !== 1) {
+        $form_state->setErrorByName('sort_options', $this->t('Sort options: the line "@line" is not in the form field:direction|Label, with direction asc or desc.', ['@line' => $line]));
+        break;
+      }
+    }
+
     // Reject key|value lines without a pipe instead of silently dropping them.
     $pipeFields = [
       'sortable_field_descriptions' => $this->t('Sortable field descriptions'),
@@ -1550,6 +1572,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
         explode(',', $form_state->getValue('sortable_fields') ?? '')
       ))))
       ->set('sortable_field_descriptions', $this->parseKeyValueLines($form_state->getValue('sortable_field_descriptions') ?? ''))
+      ->set('sort_options', $this->parseSortOptions($form_state->getValue('sort_options') ?? ''))
       ->set('filter_fields', array_values(array_filter(array_map(
         'trim',
         explode(',', $form_state->getValue('filter_fields') ?? '')
@@ -1849,6 +1872,24 @@ class ScoltaSettingsForm extends ConfigFormBase {
     ];
 
     batch_set($batch);
+  }
+
+  /**
+   * Parse the "field:direction|Label" textarea into sort_options entries.
+   *
+   * @param string $raw
+   *   The raw textarea value, already validated line by line.
+   *
+   * @return list<array{field: string, direction: string, label: string}>
+   *   One entry per line, in order.
+   */
+  protected function parseSortOptions(string $raw): array {
+    $options = [];
+    foreach ($this->parseKeyValueLines($raw) as $sort => $label) {
+      [$field, $direction] = explode(':', $sort, 2) + [1 => 'desc'];
+      $options[] = ['field' => $field, 'direction' => $direction, 'label' => $label];
+    }
+    return $options;
   }
 
   /**

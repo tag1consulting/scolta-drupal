@@ -59,6 +59,22 @@ scolta.settings:
       sequence:
         type: string
         label: 'Field description'
+    sort_options:
+      type: sequence
+      label: 'Sort options'
+      sequence:
+        type: mapping
+        label: 'Sort option'
+        mapping:
+          field:
+            type: string
+            label: 'Sortable field'
+          direction:
+            type: string
+            label: 'Direction'
+          label:
+            type: label
+            label: 'Label'
     filter_fields:
       type: sequence
       label: 'Filter fields'

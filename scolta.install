@@ -512,6 +512,16 @@ function scolta_update_10011() {
 }
 
 /**
+ * Add the sort_options setting, empty: no sort control until one is configured.
+ */
+function scolta_update_10012() {
+  $config = \Drupal::configFactory()->getEditable('scolta.settings');
+  if ($config->get('sort_options') === NULL) {
+    $config->set('sort_options', [])->save();
+  }
+}
+
+/**
  * Discard the build state and queue one full rebuild.
  *
  * For any release whose page IDs, ledger layout or manifest keys are not
