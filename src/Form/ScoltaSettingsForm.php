@@ -493,7 +493,7 @@ class ScoltaSettingsForm extends ConfigFormBase {
       '#title' => $this->t('Sort options'),
       '#default_value' => trim($sortOptionsDisplay),
       '#rows' => 3,
-      '#description' => $this->t('The orders visitors can choose besides relevance, one <code>field:direction|Label</code> per line, direction <code>asc</code> or <code>desc</code>. Example: <code>date:desc|Newest</code>. When non-empty, a "Sort: Relevance | Newest" control is shown above the results. The field must be one the index can sort by: <code>date</code> (last changed), or a field mapped as sortable below.'),
+      '#description' => $this->t('The orders visitors can choose besides relevance, one <code>field:direction|Label</code> per line, direction <code>asc</code> or <code>desc</code>. Example: <code>created:desc|Newest</code>. When non-empty, a "Sort: Relevance | Newest" control is shown above the results. The field must be one the index can sort by. <code>date</code> is always there, but it is the day a page was last changed, so an old page with a recent edit sorts as new; label it accordingly (<code>date:desc|Recently updated</code>). To sort by publish date, add <code>created|created</code> to the sortable field mappings below and rebuild the index: that indexes the full created timestamp.'),
     ];
 
     $form['content']['filter_fields'] = [
