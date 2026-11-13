@@ -96,7 +96,7 @@ class ScoltaAiService extends AiServiceAdapter {
   protected ?ConfigStorageInterface $amazeeConfigStorage;
 
   /**
-   * Cache backend used for the KeyExpiryRecovery markers and AI response cache.
+   * Cache backend holding the KeyExpiryRecovery markers (cache.default).
    *
    * The SAME backend HealthController hands to HealthChecker, so a recorded
    * auth failure makes both /health report the truth and the admin notice
@@ -227,6 +227,32 @@ class ScoltaAiService extends AiServiceAdapter {
    */
   public function isAmazeeReauthNeeded(): bool {
     return $this->keyExpiryRecovery?->isUpgradeNeeded() ?? FALSE;
+  }
+
+  /**
+   * The recorded Amazee.ai auth-failure marker.
+   *
+   * The marker KeyExpiryRecovery records when the gateway rejects the stored
+   * key, and that /health reports as `ai_auth_failing`. Read from the bin
+   * this service writes it to, whether or not recovery is wired, so a marker
+   * left by a connection since abandoned is still reported. A failing marker
+   * whose value predates the timestamp has a NULL `since`.
+   *
+   * @return array{failing: bool, since: int|null}
+   *   Whether a failure is recorded, and its Unix timestamp when known.
+   *
+   * @since 2.0.0
+   * @stability experimental
+   */
+  public function getAmazeeAuthFailure(): array {
+    if ($this->cache === NULL) {
+      return ['failing' => FALSE, 'since' => NULL];
+    }
+    $driver = new DrupalCacheDriver($this->cache);
+    return [
+      'failing' => (bool) $driver->get(KeyExpiryRecovery::CACHE_KEY_AUTH_FAILURE),
+      'since' => KeyExpiryRecovery::readFailureTimestamp($driver),
+    ];
   }
 
   /**

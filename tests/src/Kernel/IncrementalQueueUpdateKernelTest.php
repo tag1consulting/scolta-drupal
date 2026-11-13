@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Drupal\Tests\scolta\Kernel;
 
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Queue\DelayedRequeueException;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\node\Entity\Node;
+use Drupal\scolta\Controller\AiApiControllerBase;
 use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
 use Drupal\Tests\node\Traits\ContentTypeCreationTrait;
 
@@ -307,18 +309,17 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
   /**
    * Neither a full build nor an incremental update touches the AI cache.
    *
-   * scolta.generation prefixes every expand/summarize cache key. Before 2.0
-   * both paths bumped it, so on a site whose content changes hourly the
-   * 30-day AI response cache lived for about an hour. Only
-   * `drush scolta:clear-cache` bumps it now.
+   * Before 2.0 both paths retired every cached AI response, so on a site
+   * whose content changes hourly the 30-day AI response cache lived for
+   * about an hour. Only `drush scolta:clear-cache` empties the bin now.
    */
-  public function testIndexBuildsLeaveTheAiCacheGenerationAlone(): void {
-    $state = \Drupal::state();
-    $state->set('scolta.generation', 7);
+  public function testIndexBuildsLeaveTheAiCacheAlone(): void {
+    $bin = \Drupal::cache('scolta');
+    $bin->set('scolta_expand_0_abc', ['math'], CacheBackendInterface::CACHE_PERMANENT, AiApiControllerBase::CACHE_TAGS);
 
     // Full rebuild.
     $this->runWorker(['type' => 'install']);
-    $this->assertSame(7, $state->get('scolta.generation'), 'A full rebuild must not bump the AI cache generation');
+    $this->assertNotFalse($bin->get('scolta_expand_0_abc'), 'A full rebuild must not retire cached AI responses');
 
     // Incremental update.
     $node = Node::load($this->nids[3]);
@@ -333,7 +334,7 @@ class IncrementalQueueUpdateKernelTest extends KernelTestBase {
       $this->loggedMessageMatching('%updated incrementally%'),
       'The edit must have taken the incremental path for this assertion to mean anything'
     );
-    $this->assertSame(7, $state->get('scolta.generation'), 'An incremental update must not bump the AI cache generation');
+    $this->assertNotFalse($bin->get('scolta_expand_0_abc'), 'An incremental update must not retire cached AI responses');
   }
 
   /**

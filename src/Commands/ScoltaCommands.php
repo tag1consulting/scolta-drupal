@@ -13,9 +13,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\ParamConverter\ParamNotConvertedException;
 use Drupal\Core\Queue\QueueFactory;
-use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
-use Drupal\scolta\Cache\DrupalCacheDriver;
 use Drupal\scolta\Plugin\QueueWorker\ScoltaRebuildWorker;
 use Drupal\scolta\Progress\DrushProgressReporter;
 use Drupal\scolta\Service\IndexBuildRunner;
@@ -28,7 +26,6 @@ use Drush\Commands\DrushCommands;
 use Symfony\Component\Routing\Exception\MethodNotAllowedException;
 use Symfony\Component\Routing\Exception\ResourceNotFoundException;
 use Symfony\Component\Routing\Matcher\UrlMatcherInterface;
-use Tag1\Scolta\AiProvider\Amazee\KeyExpiryRecovery;
 use Tag1\Scolta\Index\BuildIntentFactory;
 use Tag1\Scolta\Index\BuildState;
 use Tag1\Scolta\Index\CborDecoder;
@@ -58,10 +55,8 @@ class ScoltaCommands extends DrushCommands {
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
-   * @param \Drupal\Core\State\StateInterface $state
-   *   The state service.
    * @param \Drupal\Core\Cache\CacheBackendInterface $cache
-   *   The default cache backend.
+   *   The cache.scolta bin.
    * @param \Drupal\scolta\Service\ScoltaAiService $aiService
    *   The Scolta AI service.
    * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $streamWrapperManager
@@ -87,7 +82,6 @@ class ScoltaCommands extends DrushCommands {
    */
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
-    private readonly StateInterface $state,
     private readonly CacheBackendInterface $cache,
     private readonly ScoltaAiService $aiService,
     private readonly StreamWrapperManagerInterface $streamWrapperManager,
@@ -712,31 +706,18 @@ class ScoltaCommands extends DrushCommands {
   /**
    * Clear Scolta caches (expansion and summary).
    *
-   * Scolta shares the cache.default bin with every other module, so wiping
-   * the bin is off limits. AI expansion/summary entries embed the
-   * scolta.generation counter in their cache key, so bumping the generation
-   * orphans all existing entries; the resolved-prompt entries use known
-   * fixed keys and are deleted directly.
-   *
-   * This command is the only thing that bumps the generation. A scolta.settings
-   * or system.site save retires the AI entries through their cache tags, and
-   * index builds do not touch them at all (see
+   * Empties the cache.scolta bin, which holds only cached AI responses. The
+   * Amazee auth-failure marker lives in cache.default and is left alone. A
+   * scolta.settings or system.site save already retires the AI entries
+   * through their cache tags, and index builds do not touch them at all (see
    * AiApiControllerBase::CACHE_TAGS), so this is for everything else: a new
    * scolta-php whose default prompts changed, or a site-specific prompt
    * enricher whose output changed.
    */
   #[CLI\Command(name: 'scolta:clear-cache', aliases: ['scc'])]
   public function clearCache(): void {
-    $generation = $this->state->get('scolta.generation', 0);
-    $this->state->set('scolta.generation', $generation + 1);
-
-    $this->cache->deleteMultiple([
-      'scolta.prompt.expand_query',
-      'scolta.prompt.summarize',
-      'scolta.prompt.follow_up',
-    ]);
-
-    $this->logger()->success('Scolta caches cleared (generation bumped, resolved prompts deleted).');
+    $this->cache->deleteAll();
+    $this->logger()->success('Scolta caches cleared.');
   }
 
   /**
@@ -921,19 +902,13 @@ class ScoltaCommands extends DrushCommands {
     // than only surfacing once someone happens to check /health. A cached
     // marker, not a live probe — see KeyExpiryRecovery and
     // docs/HEALTH_REFERENCE.md in scolta-php.
-    $cacheDriver = new DrupalCacheDriver($this->cache);
-    $authFailing = (bool) $cacheDriver->get(KeyExpiryRecovery::CACHE_KEY_AUTH_FAILURE);
-    $providerRow['auth_failing'] = $authFailing;
-    $providerRow['auth_failing_since'] = $authFailing
-      ? (($since = KeyExpiryRecovery::readFailureTimestamp($cacheDriver)) !== NULL ? date('c', $since) : NULL)
+    $authFailure = $this->aiService->getAmazeeAuthFailure();
+    $providerRow['auth_failing'] = $authFailure['failing'];
+    $providerRow['auth_failing_since'] = $authFailure['failing'] && $authFailure['since'] !== NULL
+      ? date('c', $authFailure['since'])
       : NULL;
 
     $status['ai_provider'] = $providerRow;
-
-    // Generation counter.
-    $status['cache'] = [
-      'generation' => $this->state->get('scolta.generation', 0),
-    ];
 
     return new UnstructuredListData($status);
   }

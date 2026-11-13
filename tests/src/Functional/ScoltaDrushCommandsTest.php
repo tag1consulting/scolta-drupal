@@ -45,14 +45,12 @@ class ScoltaDrushCommandsTest extends BrowserTestBase {
       'build',
       'pagefind_index',
       'ai_provider',
-      'cache',
     ] as $section) {
       $this->assertArrayHasKey($section, $status,
         "scolta:status must report the {$section} section");
     }
     // Groupings are nested maps, not flattened lines.
     $this->assertFalse($status['pagefind_index']['built']);
-    $this->assertIsInt($status['cache']['generation']);
     // A fresh site has no recorded Amazee auth failure, but the field must be
     // reported so an operator does not have to check /health separately to
     // learn a provider's stored credentials are being rejected.

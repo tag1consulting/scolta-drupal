@@ -3,8 +3,7 @@ services:
     class: Drupal\scolta\Commands\ScoltaCommands
     arguments:
       - '@config.factory'
-      - '@state'
-      - '@cache.default'
+      - '@cache.scolta'
       - '@scolta.ai_service'
       - '@stream_wrapper_manager'
       - '@scolta.content_gatherer'
