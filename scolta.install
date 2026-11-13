@@ -585,6 +585,16 @@ function scolta_update_10012() {
 }
 
 /**
+ * Add the sort_options setting, empty: no sort control until one is configured.
+ */
+function scolta_update_10013() {
+  $config = \Drupal::configFactory()->getEditable('scolta.settings');
+  if ($config->get('sort_options') === NULL) {
+    $config->set('sort_options', [])->save();
+  }
+}
+
+/**
  * Delete everything inside a directory, keeping the directory itself.
  *
  * @param string $uri

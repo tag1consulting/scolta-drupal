@@ -204,6 +204,34 @@ class ScoltaSearchBlockTest extends TestCase {
   }
 
   // -------------------------------------------------------------------
+  // sort_options.
+  // -------------------------------------------------------------------
+
+  public function testSortOptionsDefaultToEmpty(): void {
+    $build = $this->createBlock(new ScoltaConfig())->build();
+
+    $this->assertSame([], $build['#attached']['drupalSettings']['scolta']['sortOptions']);
+  }
+
+  public function testSortOptionsAreEmittedAndMalformedOnesDropped(): void {
+    $block = $this->createBlock(new ScoltaConfig(), [
+      'sort_options' => [
+        ['field' => 'date', 'direction' => 'desc', 'label' => 'Newest'],
+        ['field' => 'price', 'label' => ''],
+        ['field' => 'bad field', 'direction' => 'desc', 'label' => 'x'],
+        ['field' => 'date', 'direction' => 'sideways', 'label' => 'x'],
+        'date',
+      ],
+    ]);
+    $build = $block->build();
+
+    $this->assertSame([
+      ['field' => 'date', 'direction' => 'desc', 'label' => 'Newest'],
+      ['field' => 'price', 'direction' => 'desc', 'label' => 'price'],
+    ], $build['#attached']['drupalSettings']['scolta']['sortOptions']);
+  }
+
+  // -------------------------------------------------------------------
   // facet_mode clamping.
   // -------------------------------------------------------------------
 

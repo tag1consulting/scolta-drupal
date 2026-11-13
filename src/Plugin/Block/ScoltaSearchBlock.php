@@ -169,6 +169,9 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       'facetMode' => in_array($drupalConfig->get('facet_mode'), ['eager', 'deferred', 'disabled'], TRUE)
         ? $drupalConfig->get('facet_mode')
         : 'eager',
+      // The "Sort: Relevance | ..." control. From Drupal config for the same
+      // reason as facetMode above: the control lives in the deployed bundle.
+      'sortOptions' => self::sortOptions($drupalConfig->get('sort_options')),
       'container' => '#scolta-search',
       'allowedLinkDomains' => [],
       'disclaimer' => '',
@@ -249,6 +252,39 @@ class ScoltaSearchBlock extends BlockBase implements ContainerFactoryPluginInter
       }
     }
     return rtrim($uri, '/');
+  }
+
+  /**
+   * Reduces the sort_options setting to entries the bundle can render.
+   *
+   * The bundle drops malformed entries too; doing it here keeps a broken
+   * settings.php override out of the page payload.
+   *
+   * @param mixed $options
+   *   The raw scolta.settings:sort_options value.
+   *
+   * @return list<array{field: string, direction: string, label: string}>
+   *   One entry per valid option, in order.
+   */
+  private static function sortOptions(mixed $options): array {
+    $normalized = [];
+    foreach (is_array($options) ? $options : [] as $option) {
+      if (!is_array($option)) {
+        continue;
+      }
+      $field = $option['field'] ?? NULL;
+      $direction = $option['direction'] ?? 'desc';
+      if (!is_string($field) || preg_match('/^[A-Za-z0-9_-]+$/', $field) !== 1 || !in_array($direction, ['asc', 'desc'], TRUE)) {
+        continue;
+      }
+      $label = $option['label'] ?? '';
+      $normalized[] = [
+        'field' => $field,
+        'direction' => $direction,
+        'label' => is_string($label) && $label !== '' ? $label : $field,
+      ];
+    }
+    return $normalized;
   }
 
 }
